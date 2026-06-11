@@ -44,17 +44,26 @@ function nomCorrespond(nomFiche, nomEntreprise) {
   const fiche = normaliser(nomFiche);
   const tokens = normaliser(nomEntreprise).split(/[^a-z0-9]+/).filter(t => t.length >= 3);
   if (!tokens.length) return false;
-  // Au moins la moitié des mots significatifs présents en mots entiers
   const trouves = tokens.filter(t => new RegExp('\\b' + t.replace(/[.*+?^${}()|[\]\\]/g, '') + '\\b').test(fiche));
+  // Un mot distinctif (5 lettres et +) trouvé en mot entier suffit ; sinon, moitié des mots
+  if (trouves.some(t => t.length >= 5)) return true;
   return trouves.length >= Math.ceil(tokens.length / 2);
 }
 
-// La catégorie Google de la fiche doit être cohérente avec le NAF (si la famille est connue)
+// Types Google "forts" = catégories métier distinctives (vs types génériques comme establishment)
+const TYPES_FORTS = ['car_dealer','car_repair','car_rental','car_wash','restaurant','meal_takeaway','meal_delivery','bakery','bar','cafe','night_club','pharmacy','hair_care','beauty_salon','spa','lodging','real_estate_agency','gym','clothing_store','jewelry_store','veterinary_care','funeral_home'];
+
+// On ne rejette que les CONTRADICTIONS franches : la fiche a un type métier fort
+// qui n'appartient PAS à la famille NAF attendue. Types génériques = on laisse passer.
 function typeCoherent(typesFiche, naf) {
   const prefixe = (naf || '').slice(0, 5);
   const attendus = TYPES_ATTENDUS[prefixe];
   if (!attendus) return true; // famille NAF inconnue : pas de contrainte
-  return (typesFiche || []).some(t => attendus.includes(t));
+  const types = typesFiche || [];
+  if (types.some(t => attendus.includes(t))) return true;          // type attendu présent → OK
+  const fortsPresents = types.filter(t => TYPES_FORTS.includes(t));
+  if (!fortsPresents.length) return true;                          // que des types génériques → OK (le nom tranche)
+  return false;                                                     // type métier fort d'une AUTRE famille → rejet
 }
 
 async function gPlaces(url) {
