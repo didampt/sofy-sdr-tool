@@ -13,7 +13,7 @@ function meilleurDirigeant(representants) {
   const prio = persons.find(p => FONCTIONS_PRIORITAIRES.some(f => (p.qualite || '').toLowerCase().includes(f)));
   const d = prio || persons[0];
   return {
-    prenom: d.prenom || '',
+    prenom: (d.prenom || '').split(',')[0].trim(),
     nom: d.nom || d.nom_complet || '',
     fonction: d.qualite || '',
     age: d.age || null
