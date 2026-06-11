@@ -50,14 +50,23 @@ function nomCorrespond(nomFiche, nomEntreprise) {
   return false;
 }
 
-// Adresse : code postal présent + au moins un mot distinctif de la rue/zone (≥4 lettres)
+// Adresse : 'exacte' = numéro de rue identique + mot de rue → fiable seul.
+// 'zone' = même zone/CP → INSUFFISANT seul (à Jarry, tous les concurrents sont voisins).
 function adresseCorrespond(adresseFiche, adressePappers, codePostal) {
   const fiche = normaliser(adresseFiche);
   if (codePostal && !fiche.includes(codePostal)) return false;
+  const numero = (adressePappers || '').match(/^\s*(\d{1,5})\b/);
   const tokens = normaliser(adressePappers).split(/[^a-z0-9]+/)
     .filter(t => t.length >= 4 && !['rue','avenue','boulevard','route','chemin','impasse','place','allee','zone','lieu','dit'].includes(t));
-  if (!tokens.length) return !!codePostal && fiche.includes(codePostal);
-  return tokens.some(t => fiche.includes(t));
+  const tokenOk = tokens.some(t => fiche.includes(t));
+  if (numero && new RegExp('\\b' + numero[1] + '\\b').test(fiche) && tokenOk) return 'exacte';
+  if (tokenOk) return 'zone';
+  return false;
+}
+
+function domaine(url) {
+  try { return new URL(/^https?:/.test(url) ? url : 'https://' + url).hostname.replace(/^www\./, ''); }
+  catch { return ''; }
 }
 
 function typeCoherent(typesFiche, naf) {
@@ -88,7 +97,7 @@ export default async function handler(req, res) {
   const key = process.env.GOOGLE_PLACES_API_KEY;
   if (!key) return res.status(500).json({ erreur: 'GOOGLE_PLACES_API_KEY manquante dans Vercel' });
 
-  const { nom = '', enseigne = '', ville = '', naf = '', adresse = '', cp = '' } = req.query;
+  const { nom = '', enseigne = '', ville = '', naf = '', adresse = '', cp = '', site = '' } = req.query;
   if (!nom) return res.status(400).json({ erreur: "Paramètre 'nom' requis" });
 
   const prefixeNaf = (naf || '').slice(0, 5);
@@ -127,18 +136,34 @@ export default async function handler(req, res) {
       .map(r => {
         const matchNom = nomCorrespond(r.name, enseigne) || nomCorrespond(r.name, nom);
         const matchAdresse = adresse || cp ? adresseCorrespond(r.formatted_address || '', adresse, cp) : false;
-        return { r, score: (matchNom ? 2 : 0) + (matchAdresse ? 2 : 0), matchNom, matchAdresse };
-      })
-      .filter(c => c.score >= 2)
-      .sort((a, b) => b.score - a.score || b.r.user_ratings_total - a.r.user_ratings_total);
+        return { r, matchNom, matchAdresse };
+      });
 
-    const fiches = valides.slice(0, 5).map(c => ({
+    // Acceptés d'office : nom OU adresse exacte (numéro de rue identique)
+    let retenus = valides.filter(c => c.matchNom || c.matchAdresse === 'exacte');
+
+    // Candidats "même zone" sans nom : confirmation par le DOMAINE du site web (max 3 vérifications)
+    if (site) {
+      const domaineSofy = domaine(site);
+      const aVerifier = valides.filter(c => !c.matchNom && c.matchAdresse === 'zone')
+        .sort((a, b) => b.r.user_ratings_total - a.r.user_ratings_total).slice(0, 3);
+      for (const c of aVerifier) {
+        if (!domaineSofy) break;
+        const d = await gPlaces(`https://maps.googleapis.com/maps/api/place/details/json?place_id=${c.r.place_id}&fields=website&language=fr&key=${key}`);
+        const w = domaine(d.result?.website || '');
+        if (w && w === domaineSofy) { c.matchSite = true; retenus.push(c); }
+      }
+    }
+
+    retenus.sort((a, b) => ((b.matchNom?2:0)+(b.matchAdresse==='exacte'?2:0)+(b.matchSite?2:0)) - ((a.matchNom?2:0)+(a.matchAdresse==='exacte'?2:0)+(a.matchSite?2:0)) || b.r.user_ratings_total - a.r.user_ratings_total);
+
+    const fiches = retenus.slice(0, 5).map(c => ({
       nom: c.r.name,
       note: c.r.rating,
       nb_avis: c.r.user_ratings_total,
       adresse: c.r.formatted_address || '',
       place_id: c.r.place_id,
-      match: c.matchNom && c.matchAdresse ? 'nom + adresse' : (c.matchNom ? 'nom' : 'adresse'),
+      match: [c.matchNom?'nom':null, c.matchAdresse==='exacte'?'adresse exacte':null, c.matchSite?'site web':null].filter(Boolean).join(' + ') || 'zone',
       lien: `https://www.google.com/maps/place/?q=place_id:${c.r.place_id}`
     }));
 
