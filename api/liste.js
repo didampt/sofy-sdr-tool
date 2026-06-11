@@ -3,13 +3,18 @@
 // pour maîtriser la consommation de crédits Pappers (~1 crédit / fiche détaillée).
 
 const FONCTIONS_PRIORITAIRES = ['président', 'directeur général', 'gérant', 'directrice générale', 'présidente', 'gérante'];
+const FONCTIONS_EXCLUES = ['commissaire', 'liquidateur', 'administrateur judiciaire'];
 
 function meilleurDirigeant(representants) {
   if (!Array.isArray(representants)) return null;
-  // Personnes physiques uniquement
-  const persons = representants.filter(r => !r.personne_morale && (r.nom || r.nom_complet));
+  // Personnes physiques uniquement, hors commissaires aux comptes & co
+  const persons = representants.filter(r =>
+    !r.personne_morale &&
+    (r.nom || r.nom_complet) &&
+    !FONCTIONS_EXCLUES.some(f => (r.qualite || '').toLowerCase().includes(f))
+  );
   if (!persons.length) return null;
-  // Priorité aux fonctions de direction
+  // Priorité aux fonctions de direction ; sinon premier représentant restant
   const prio = persons.find(p => FONCTIONS_PRIORITAIRES.some(f => (p.qualite || '').toLowerCase().includes(f)));
   const d = prio || persons[0];
   return {
@@ -34,7 +39,15 @@ async function detailEntreprise(siren, apiKey) {
     const r = await fetch(`https://api.pappers.fr/v2/entreprise?api_token=${apiKey}&siren=${siren}`);
     if (!r.ok) return null;
     const e = await r.json();
+    // Procédure collective en cours (liquidation, redressement, sauvegarde)
+    const procEnCours = !!(
+      e.procedure_collective_en_cours === true ||
+      e.procedure_collective === true ||
+      (Array.isArray(e.procedures_collectives) && e.procedures_collectives.some(p => p.en_cours === true || !p.date_fin))
+    );
     return {
+      cessee: e.entreprise_cessee === true || !!e.date_cessation,
+      procedure_collective: procEnCours,
       dirigeant: meilleurDirigeant(e.representants),
       chiffre_affaires: dernierCA(e),
       nb_etablissements: e.nombre_etablissements_ouverts || e.nombre_etablissements || null,
@@ -113,7 +126,8 @@ export default async function handler(req, res) {
       resultats.forEach((d, j) => { details[i + j] = d; });
     }
 
-    // ── 3. Fusion ──
+    // ── 3. Fusion + exclusion des entreprises cessées ou en procédure collective ──
+    let exclues = 0;
     const entreprises = bruts.map((e, i) => {
       const d = details[i] || {};
       return {
@@ -129,14 +143,20 @@ export default async function handler(req, res) {
         site_web: d.site_web || e.site_internet || null,
         date_creation: d.date_creation || null,
         dirigeant: d.dirigeant || null,
-        detail_charge: details[i] !== null
+        detail_charge: details[i] !== null,
+        _cessee: d.cessee === true,
+        _proc: d.procedure_collective === true
       };
-    });
+    }).filter(e => {
+      if (e._cessee || e._proc) { exclues++; return false; }
+      return true;
+    }).map(({ _cessee, _proc, ...e }) => e);
 
     return res.status(200).json({
       total: result.data.total || entreprises.length,
       filtre_effectif: filtreEffectif,
       fiches_detaillees: nDetail,
+      exclues_cessees_ou_liquidation: exclues,
       credits_estimes: nDetail + 1,
       entreprises
     });
