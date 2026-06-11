@@ -33,14 +33,23 @@ function normaliser(s) {
 }
 function echapper(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, ''); }
 
-// Nom en mots entiers + variante compacte ("A 2G" matche "A2G", "COI" ne matche pas "Coin")
-function nomCorrespond(nomFiche, nomEntreprise) {
+// Mots interdits comme preuve de matching : génériques du secteur + géographie
+// ("AUTO FIRST" ne doit pas matcher "FIRST OCCASIONS", ni "Martinique Automobiles" matcher "AUTOMOBILE IMPORT MARTINIQUE")
+const STOP_NOM = new Set(['auto','autos','automobile','automobiles','garage','garages','occasion','occasions','motor','motors','distribution','service','services','import','imports','export','societe','groupe','group','centre','center','car','cars','vehicules','vehicule','location','agence','magasin','boutique','salon','institut','hotel','restaurant','pizzeria','pharmacie','immobilier','martinique','guadeloupe','guyane','reunion','mayotte','antilles','caraibes','caraibe','karaib','caribbean','france','french','prestige','premium','general','generale']);
+
+// Nom en mots entiers + variante compacte ("A 2G" matche "A2G").
+// Seuls les mots DISTINCTIFS comptent (hors génériques, géographie et ville de l'entreprise).
+function nomCorrespond(nomFiche, nomEntreprise, villeNorm) {
   if (!nomEntreprise) return false;
   const fiche = normaliser(nomFiche);
-  const tokens = normaliser(nomEntreprise).split(/[^a-z0-9]+/).filter(t => t.length >= 3);
-  const trouves = tokens.filter(t => new RegExp('\\b' + echapper(t) + '\\b').test(fiche));
-  if (trouves.some(t => t.length >= 5)) return true;
-  if (tokens.length && trouves.length >= Math.ceil(tokens.length / 2)) return true;
+  const villeTokens = new Set((villeNorm || '').split(/[^a-z0-9]+/).filter(Boolean));
+  const tokens = normaliser(nomEntreprise).split(/[^a-z0-9]+/)
+    .filter(t => t.length >= 3 && !STOP_NOM.has(t) && !villeTokens.has(t));
+  if (tokens.length) {
+    const trouves = tokens.filter(t => new RegExp('\\b' + echapper(t) + '\\b').test(fiche));
+    if (trouves.some(t => t.length >= 5)) return true;
+    if (trouves.length && trouves.length >= Math.ceil(tokens.length / 2)) return true;
+  }
   // Variante compacte : "a 2g" → /\ba\s*2\s*g\b/ matche "A2G" et "A 2G"
   const compact = normaliser(nomEntreprise).replace(/[^a-z0-9]/g, '');
   if (compact.length >= 3 && compact.length <= 10) {
@@ -126,6 +135,7 @@ export default async function handler(req, res) {
     // ── 2. Scoring multi-signaux (avec garde-fou géographique) ──
     const villeNorm = normaliser(ville);
     const valides = candidats
+      .filter(r => !r.business_status || r.business_status === 'OPERATIONAL') // exclure fermées définitivement/temporairement
       .filter(r => typeof r.rating === 'number' && r.user_ratings_total > 0)
       .filter(r => typeCoherent(r.types, naf))
       .filter(r => { // la fiche doit être dans la ville ou le code postal de l'entreprise
@@ -134,7 +144,7 @@ export default async function handler(req, res) {
         return (villeNorm && fa.includes(villeNorm)) || (cp && fa.includes(cp));
       })
       .map(r => {
-        const matchNom = nomCorrespond(r.name, enseigne) || nomCorrespond(r.name, nom);
+        const matchNom = enseigne ? nomCorrespond(r.name, enseigne, villeNorm) : nomCorrespond(r.name, nom, villeNorm);
         const matchAdresse = adresse || cp ? adresseCorrespond(r.formatted_address || '', adresse, cp) : false;
         return { r, matchNom, matchAdresse };
       });
@@ -194,6 +204,7 @@ export default async function handler(req, res) {
     let concurrents = null;
     const idsEntreprise = new Set(fiches.map(f => f.place_id));
     const autres = resultatsCategorie
+      .filter(r => !r.business_status || r.business_status === 'OPERATIONAL')
       .filter(r => typeof r.rating === 'number' && r.user_ratings_total >= 5)
       .filter(r => !idsEntreprise.has(r.place_id))
       .slice(0, 10);
