@@ -18,6 +18,45 @@ const MOTS_CLES_CONCURRENTS = {
   '77.11': 'location de voitures'
 };
 
+// Types Google Places attendus par famille NAF (validation de cohérence)
+const TYPES_ATTENDUS = {
+  '45.11': ['car_dealer', 'car_repair', 'car_rental', 'store'],
+  '45.20': ['car_repair', 'car_dealer', 'car_wash'],
+  '45.32': ['car_repair', 'store'],
+  '45.40': ['car_dealer', 'car_repair', 'store'],
+  '77.11': ['car_rental'],
+  '96.02': ['hair_care', 'beauty_salon', 'spa'],
+  '47.73': ['pharmacy', 'drugstore', 'health'],
+  '56.10': ['restaurant', 'food', 'meal_takeaway'],
+  '56.30': ['bar', 'night_club', 'cafe'],
+  '55.10': ['lodging'],
+  '68.31': ['real_estate_agency'],
+  '93.13': ['gym', 'health'],
+  '47.24': ['bakery', 'food', 'store']
+};
+
+function normaliser(s) {
+  return (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+// Le nom de l'entreprise (ou l'enseigne) doit apparaître en MOT ENTIER dans le nom de la fiche Google
+function nomCorrespond(nomFiche, nomEntreprise) {
+  const fiche = normaliser(nomFiche);
+  const tokens = normaliser(nomEntreprise).split(/[^a-z0-9]+/).filter(t => t.length >= 3);
+  if (!tokens.length) return false;
+  // Au moins la moitié des mots significatifs présents en mots entiers
+  const trouves = tokens.filter(t => new RegExp('\\b' + t.replace(/[.*+?^${}()|[\]\\]/g, '') + '\\b').test(fiche));
+  return trouves.length >= Math.ceil(tokens.length / 2);
+}
+
+// La catégorie Google de la fiche doit être cohérente avec le NAF (si la famille est connue)
+function typeCoherent(typesFiche, naf) {
+  const prefixe = (naf || '').slice(0, 5);
+  const attendus = TYPES_ATTENDUS[prefixe];
+  if (!attendus) return true; // famille NAF inconnue : pas de contrainte
+  return (typesFiche || []).some(t => attendus.includes(t));
+}
+
 async function gPlaces(url) {
   const r = await fetch(url);
   return r.json().catch(() => ({}));
@@ -51,8 +90,11 @@ export default async function handler(req, res) {
       if (['REQUEST_DENIED', 'OVER_QUERY_LIMIT', 'INVALID_REQUEST'].includes(statutGoogle)) {
         return res.status(502).json({ erreur: 'Erreur Google Places : ' + statutGoogle, detail: search.error_message || 'Vérifier que "Places API" (version classique) est bien activée dans Google Cloud Console + facturation active' });
       }
+      const nomRef = t.startsWith(enseigne) && enseigne ? enseigne : nom;
       fiches = (search.results || [])
         .filter(r => typeof r.rating === 'number' && r.user_ratings_total > 0)
+        .filter(r => typeCoherent(r.types, naf))
+        .filter(r => nomCorrespond(r.name, nomRef) || nomCorrespond(r.name, enseigne || nom))
         .slice(0, 5)
         .map(r => ({
           nom: r.name,
