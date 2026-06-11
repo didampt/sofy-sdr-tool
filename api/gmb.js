@@ -32,24 +32,41 @@ export default async function handler(req, res) {
   const { nom = '', ville = '', naf = '' } = req.query;
   if (!nom) return res.status(400).json({ erreur: "Paramètre 'nom' requis" });
 
+  const { enseigne = '' } = req.query;
+
   try {
-    // ── 1. Fiches GMB de l'entreprise ──
-    const q = encodeURIComponent(`${nom} ${ville}`.trim());
-    const search = await gPlaces(`https://maps.googleapis.com/maps/api/place/textsearch/json?query=${q}&language=fr&region=fr&key=${key}`);
-    const fiches = (search.results || [])
-      .filter(r => typeof r.rating === 'number' && r.user_ratings_total > 0)
-      .slice(0, 5)
-      .map(r => ({
-        nom: r.name,
-        note: r.rating,
-        nb_avis: r.user_ratings_total,
-        adresse: r.formatted_address || '',
-        place_id: r.place_id,
-        lien: `https://www.google.com/maps/place/?q=place_id:${r.place_id}`
-      }));
+    // ── 1. Fiches GMB : plusieurs tentatives (enseigne commerciale, puis raison sociale) ──
+    const tentatives = [];
+    if (enseigne) tentatives.push(`${enseigne} ${ville}`.trim());
+    tentatives.push(`${nom} ${ville}`.trim());
+    if (enseigne) tentatives.push(enseigne);
+    tentatives.push(nom);
+
+    let fiches = [], requeteUtilisee = '', statutGoogle = '';
+    for (const t of tentatives) {
+      const q = encodeURIComponent(t);
+      const search = await gPlaces(`https://maps.googleapis.com/maps/api/place/textsearch/json?query=${q}&language=fr&region=fr&key=${key}`);
+      statutGoogle = search.status || '';
+      // Erreur de configuration Google : on la remonte clairement
+      if (['REQUEST_DENIED', 'OVER_QUERY_LIMIT', 'INVALID_REQUEST'].includes(statutGoogle)) {
+        return res.status(502).json({ erreur: 'Erreur Google Places : ' + statutGoogle, detail: search.error_message || 'Vérifier que "Places API" (version classique) est bien activée dans Google Cloud Console + facturation active' });
+      }
+      fiches = (search.results || [])
+        .filter(r => typeof r.rating === 'number' && r.user_ratings_total > 0)
+        .slice(0, 5)
+        .map(r => ({
+          nom: r.name,
+          note: r.rating,
+          nb_avis: r.user_ratings_total,
+          adresse: r.formatted_address || '',
+          place_id: r.place_id,
+          lien: `https://www.google.com/maps/place/?q=place_id:${r.place_id}`
+        }));
+      if (fiches.length) { requeteUtilisee = t; break; }
+    }
 
     if (!fiches.length) {
-      return res.status(200).json({ trouve: false, message: 'Aucune fiche Google trouvée pour cette entreprise' });
+      return res.status(200).json({ trouve: false, statut_google: statutGoogle, message: 'Aucune fiche Google trouvée pour cette entreprise' });
     }
 
     // Note moyenne pondérée par le nombre d'avis
@@ -97,6 +114,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       trouve: true,
+      requete_utilisee: requeteUtilisee,
       note_moyenne: noteMoyenne,
       total_avis: totalAvis,
       nb_fiches: fiches.length,

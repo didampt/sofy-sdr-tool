@@ -52,7 +52,8 @@ async function detailEntreprise(siren, apiKey) {
       chiffre_affaires: dernierCA(e),
       nb_etablissements: e.nombre_etablissements_ouverts || e.nombre_etablissements || null,
       site_web: e.site_internet || null,
-      date_creation: e.date_creation || null
+      date_creation: e.date_creation || null,
+      enseigne: e.siege?.enseigne || e.nom_commercial || e.sigle || null
     };
   } catch { return null; }
 }
@@ -143,6 +144,7 @@ export default async function handler(req, res) {
         site_web: d.site_web || e.site_internet || null,
         date_creation: d.date_creation || null,
         dirigeant: d.dirigeant || null,
+        enseigne: d.enseigne || null,
         detail_charge: details[i] !== null,
         _cessee: d.cessee === true,
         _proc: d.procedure_collective === true
