@@ -138,6 +138,7 @@ export default async function handler(req, res) {
         activite: e.libelle_code_naf,
         ville: e.siege?.ville || '',
         code_postal: e.siege?.code_postal || '',
+        adresse: e.siege?.adresse_ligne_1 || '',
         effectif: e.effectif || e.tranche_effectif || null,
         chiffre_affaires: d.chiffre_affaires || e.dernier_chiffre_affaires || null,
         nb_etablissements: d.nb_etablissements || e.nombre_etablissements_ouverts || null,
