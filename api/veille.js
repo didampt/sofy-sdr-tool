@@ -22,22 +22,38 @@ function normaliserLinkedin(url) {
   return m ? `${m[1]}/${decodeURIComponent(m[2]).replace(/\/$/, '')}` : null;
 }
 
+function normaliserNom(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 function extraireProfils(data) {
   // Les exports PhantomBuster varient selon le Phantom : on cherche toute URL LinkedIn /in/ ou /company/
+  // ⚠️ Post Likers renvoie des URLs cryptées (/in/ACoAA…) ≠ URLs lisibles de Dropcontact → le match
+  // se fait aussi PAR NOM (prénom+nom normalisés). La clé de dédup est memberId quand présent.
   const profils = [];
   const lignes = Array.isArray(data) ? data : (data && Array.isArray(data.result) ? data.result : []);
   for (const ligne of lignes) {
     if (!ligne || typeof ligne !== 'object') continue;
-    let url = null, nom = null;
+    let url = null, nom = null, occupation = null, post = null, memberId = null, reaction = null;
     for (const [k, v] of Object.entries(ligne)) {
-      if (typeof v !== 'string') continue;
-      if (!url && /linkedin\.com\/(in|company)\//i.test(v)) url = v;
       const kl = k.toLowerCase();
-      if (!nom && (kl === 'name' || kl === 'fullname' || kl === 'full_name' || kl === 'profilename')) nom = v;
+      if (typeof v === 'string') {
+        if (!url && /linkedin\.com\/(in|company)\//i.test(v) && !kl.includes('post')) url = v;
+        if (!post && kl.includes('post') && /linkedin\.com/i.test(v)) post = v;
+        if (!nom && (kl === 'name' || kl === 'fullname' || kl === 'full_name' || kl === 'profilename')) nom = v;
+        if (!occupation && (kl === 'occupation' || kl === 'title' || kl === 'headline' || kl === 'job')) occupation = v;
+        if (!reaction && kl === 'reactiontype') reaction = v;
+      }
+      if ((kl === 'memberid' || kl === 'membre_id') && v) memberId = String(v);
     }
-    if (url) profils.push({ url: normaliserLinkedin(url), brut: url, nom: nom || '' });
+    if (url || nom) profils.push({
+      url: normaliserLinkedin(url), brut: url || '', nom: nom || '', nomNorm: normaliserNom(nom),
+      occupation: occupation || '', post: post || '', reaction: reaction || '',
+      cle: memberId || normaliserLinkedin(url) || normaliserNom(nom)
+    });
   }
-  return profils.filter(p => p.url);
+  return profils.filter(p => p.cle);
 }
 
 async function envoyerSlack(texte) {
@@ -71,12 +87,16 @@ export default async function handler(req, res) {
     // ── 1. Listes en veille active + index des contacts par URL LinkedIn ──
     const listes = await sql`SELECT id, nom, sdr, entreprises FROM listes
       WHERE veille = TRUE AND (veille_fin IS NULL OR veille_fin > NOW())`;
-    const index = new Map(); // linkedin normalisé → {liste, e_idx, c_idx, entreprise, contact}
+    const index = new Map();     // linkedin normalisé → match
+    const indexNoms = new Map(); // "prenom nom" normalisé → match (repli : les Phantoms renvoient des URLs cryptées)
     for (const l of listes) {
       (l.entreprises || []).forEach((e, ei) => {
         (e.contacts || []).forEach((c, ci) => {
+          const m = { liste: l, ei, ci, entreprise: e.enseigne_ia || e.enseigne || e.nom, contact: `${c.prenom || ''} ${c.nom || ''}`.trim() };
           const url = normaliserLinkedin(c.enrich && c.enrich.linkedin);
-          if (url) index.set(url, { liste: l, ei, ci, entreprise: e.enseigne_ia || e.enseigne || e.nom, contact: `${c.prenom || ''} ${c.nom || ''}`.trim() });
+          if (url) index.set(url, m);
+          const nomCle = normaliserNom(`${c.prenom || ''} ${c.nom || ''}`);
+          if (nomCle && nomCle.includes(' ')) indexNoms.set(nomCle, m);
         });
         // Page entreprise LinkedIn (suivie par les Phantoms "followers")
         const pageCo = normaliserLinkedin(e.linkedin_entreprise);
@@ -117,11 +137,11 @@ export default async function handler(req, res) {
       const etat = await sql`SELECT deja_vus FROM veille_etat WHERE cle = ${String(agentId)}`;
       const dejaVus = new Set(etat.length ? etat[0].deja_vus : []);
       const premierPassage = etat.length === 0;
-      const nouveaux = profils.filter(p => !dejaVus.has(p.url));
+      const nouveaux = profils.filter(p => !dejaVus.has(p.cle));
       resume.nouveaux += premierPassage ? 0 : nouveaux.length;
 
       // Mémoriser l'état (plafonné à 5000 profils)
-      const tous = [...new Set([...dejaVus, ...profils.map(p => p.url)])].slice(-5000);
+      const tous = [...new Set([...dejaVus, ...profils.map(p => p.cle)])].slice(-5000);
       await sql`INSERT INTO veille_etat (cle, deja_vus, maj) VALUES (${String(agentId)}, ${JSON.stringify(tous)}, NOW())
                 ON CONFLICT (cle) DO UPDATE SET deja_vus = ${JSON.stringify(tous)}, maj = NOW()`;
 
@@ -129,10 +149,12 @@ export default async function handler(req, res) {
 
       // Croisement avec les contacts en veille
       for (const p of nouveaux) {
-        const m = index.get(p.url);
+        const m = (p.url && index.get(p.url)) || (p.nomNorm && indexNoms.get(p.nomNorm));
         if (!m) continue;
         resume.matches++;
-        const detail = `${p.nom || m.contact || 'Un profil suivi'} a interagi (${nomAgent})`;
+        const quoi = p.reaction ? `a réagi (${p.reaction})` : 'a interagi';
+        const surQuoi = p.post ? ` sur ${p.post.includes('/posts/') ? p.post.split('/posts/')[1].split('_')[0] : 'un post'}` : '';
+        const detail = `${p.nom || m.contact} ${quoi}${surQuoi}${p.occupation ? ' · ' + p.occupation.slice(0, 80) : ''} (${nomAgent})`;
         await sql`INSERT INTO signaux (liste_id, entreprise_nom, contact_nom, linkedin, type, source, detail, sdr)
           VALUES (${m.liste.id}, ${m.entreprise}, ${m.contact || p.nom}, ${p.brut}, 'linkedin', ${nomAgent}, ${detail}, ${m.liste.sdr})`;
         // Marquer la fiche 🔥
@@ -143,7 +165,7 @@ export default async function handler(req, res) {
         if (m.ci >= 0 && e.contacts && e.contacts[m.ci]) e.contacts[m.ci].signal = sig;
         else e.signal = sig;
         aSauver.set(m.liste.id, ents);
-        await envoyerSlack(`🔥 *Signal LinkedIn* — ${m.contact || p.nom} (${m.entreprise})\n${nomAgent} · liste « ${m.liste.nom} » · SDR *${m.liste.sdr}*\n${p.brut}`);
+        await envoyerSlack(`🔥 *Signal LinkedIn* — ${m.contact || p.nom} (${m.entreprise})\n${detail}\nListe « ${m.liste.nom} » · SDR *${m.liste.sdr}*${p.post ? '\n' + p.post : ''}`);
       }
     }
 
