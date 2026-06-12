@@ -183,6 +183,21 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
 .login-links a{cursor:pointer}
 .user-badge{margin-top:auto;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.06);font-size:13px;color:#C6CBE0;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .user-badge button{background:none;color:#8FA0FF;font-size:12px;font-weight:600}
+.fiche-head{display:flex;gap:18px;align-items:flex-start;cursor:pointer}
+.pscores{min-width:225px;display:flex;flex-direction:column;gap:7px;padding-top:4px;flex-shrink:0}
+.pscore{display:grid;grid-template-columns:80px 1fr 30px;align-items:center;gap:10px;font-size:12.5px;font-weight:700}
+.pscore-bar{height:8px;background:var(--line);border-radius:99px;overflow:hidden;display:block}
+.pscore-bar span{display:block;height:100%;border-radius:99px;transition:width .4s}
+.pscore-v{text-align:right;font-weight:800}
+.fiche-chev{font-size:17px;color:var(--ink-soft);padding-top:4px;flex-shrink:0}
+.fiche-cols{display:grid;grid-template-columns:1.05fr .95fr;gap:28px;margin-top:6px}
+@media(max-width:980px){.fiche-cols{grid-template-columns:1fr}.pscores{display:none}}
+.col-title{font-size:11.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-soft);font-weight:800;margin:16px 0 8px}
+.cta-row{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0 4px}
+.btn-cta{border:none;border-radius:12px;padding:12px 18px;font-weight:700;font-size:13.5px;cursor:pointer;color:#fff;font-family:inherit}
+.btn-cta:hover{filter:brightness(1.08)}
+.btn-cta-green{background:#16A34A}.btn-cta-orange{background:#EA580C}.btn-cta-blue{background:#3B82F6}.btn-cta-dark{background:#111827}.btn-cta-coral{background:#FB7160}
+.email-box{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;font-size:13.5px;line-height:1.6}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:12px 22px;border-radius:11px;font-size:14px;font-weight:500;box-shadow:var(--shadow);transition:.25s;z-index:99;opacity:0}
 .toast.on{transform:translateX(-50%);opacity:1}
 @media(max-width:880px){.app{grid-template-columns:1fr}.side{position:static;height:auto;flex-direction:row;align-items:center;flex-wrap:wrap}.demo-pill{margin-top:0}.main{padding:24px}.fiche-grid,.api-grid,.row3,.comp-grid{grid-template-columns:1fr}.fiche-top{grid-template-columns:1fr}}
@@ -244,7 +259,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
     <button class="nav-btn" data-view="mapping" onclick="nav('mapping',this);chargerEnvois()">⚙️ Envois & mapping</button>
     <button class="nav-btn" data-view="stats" onclick="nav('stats',this);chargerStats()">📊 Statistiques</button>
     <button class="nav-btn" data-view="params" onclick="nav('params',this);chargerSdrs();chargerTarifs()">⚙️ Paramètres</button>
-    <button class="nav-btn" data-view="settings" onclick="nav('settings',this);chargerHotleads();chargerRingover()">🔌 Connexions</button>
+    <button class="nav-btn" data-view="settings" onclick="nav('settings',this);chargerHotleads()">🔌 Connexions</button>
     <div class="user-badge" id="user-badge" style="display:none"><span id="user-nom"></span><button onclick="deconnexion(true)">Déconnexion</button></div>
     <div class="demo-pill">PAPPERS + GMB + IA ✓</div>
     <div style="text-align:center;font-size:11px;color:#6B7390;margin-top:8px">Sofy Scrap <span id="ver-side"></span></div>
@@ -547,6 +562,7 @@ Spot-Hit</textarea>
           <input class="field" id="new-sdr-nom" placeholder="Prénom (ex : Sarah)">
           <input class="field" id="new-sdr-email" placeholder="Email (ex : sarah@sofy.fr)">
           <input class="field" id="new-sdr-limite" type="number" min="0" placeholder="Limite € / mois (vide = illimité)">
+          <input class="field" id="new-sdr-ringover" placeholder="☎️ Ligne Ringover (ex : 07 12 34 56 78 → +33 auto)" style="margin-top:10px">
         </div>
         <div class="save-bar"><button class="btn btn-primary" onclick="ajouterSdr()">+ Ajouter</button></div>
       </div>
@@ -567,16 +583,6 @@ Spot-Hit</textarea>
           <div class="toggle-row" style="margin:0"><input type="checkbox" id="cfg-hl-hub" checked><label for="cfg-hl-hub">Exclure les clients HubSpot</label></div>
         </div>
         <div class="save-bar"><button class="btn btn-primary" onclick="sauverHotleads()">💾 Enregistrer</button></div>
-      </div>
-      <div class="map-card" style="margin-top:16px">
-        <h2>☎️ Ringover — click-to-call</h2>
-        <div class="role">Un clic sur 📞 fait sonner le poste Ringover du SDR, puis appelle le prospect. Une ligne par SDR (format international : +590690…, +336…).</div>
-        <div class="row3" style="margin-top:10px">
-          <input class="field" id="cfg-ring-alicia" placeholder="Ligne d'Alicia (+590…)">
-          <input class="field" id="cfg-ring-franck" placeholder="Ligne de Franck (+590…)">
-          <input class="field" id="cfg-ring-defaut" placeholder="Ligne par défaut (autres comptes)">
-        </div>
-        <div class="save-bar"><button class="btn btn-primary" onclick="sauverRingover()">💾 Enregistrer</button></div>
       </div>
         <table class="map-table" id="tarifs-table"></table>
       </div>
@@ -636,7 +642,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v45';
+const VERSION='v46';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -670,10 +676,10 @@ function demarrerApp(u){
  document.getElementById('login-overlay').style.display='none';
  const badge=document.getElementById('user-badge');
  badge.style.display='flex';
- document.getElementById('user-nom').textContent=u.nom+(u.role==='superadmin'?' 👑':'');
+ document.getElementById('user-nom').textContent=u.nom+(u.role==='superadmin'?' 👑':u.role==='admin'?' 🛡️':'');
  document.getElementById('bonjour-sdr').textContent='Bonjour '+u.nom+' 👋';
  const sn=document.getElementById('sdr-name');if(sn)sn.textContent=u.nom;
- if(u.role!=='superadmin'){['params','stats'].forEach(v=>{const b=document.querySelector(`[data-view="${v}"]`);if(b)b.style.display='none';});}
+ if(!['superadmin','admin'].includes(u.role)){['params','stats'].forEach(v=>{const b=document.querySelector(`[data-view="${v}"]`);if(b)b.style.display='none';});}
  chargerSdrChips();
  chargerStatut();
 }
@@ -947,7 +953,7 @@ function showRealResults(total,c){
 function persister(){
  if(state.savedId){
   api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({id:state.savedId,entreprises:REAL},(k,v)=>k==='_busy'?undefined:v)}).catch(()=>{});
+   body:JSON.stringify({id:state.savedId,entreprises:REAL},(k,v)=>(k==='_busy'||k==='_open')?undefined:v)}).catch(()=>{});
  }
 }
 
@@ -1030,70 +1036,118 @@ function contactHtml(c,i,j){
  </div>`;
 }
 
+function scoreBar(label,val,couleur){
+ const v=(val===null||val===undefined)?null:Math.max(0,Math.min(100,val));
+ return `<div class="pscore"><span>${label}</span><span class="pscore-bar"><span style="width:${v==null?0:v}%;background:${couleur}"></span></span><span class="pscore-v">${v==null?'—':v}</span></div>`;
+}
+function premierTel(e){
+ const cs=contactsDe(e);
+ const cm=cs.find(c=>c.enrich&&c.enrich.telephone&&estMobile(c.enrich.telephone));
+ if(cm)return cm.enrich.telephone;
+ const ct=cs.find(c=>c.enrich&&c.enrich.telephone);
+ if(ct)return ct.enrich.telephone;
+ if(e.gmb&&e.gmb.telephone)return e.gmb.telephone;
+ if(e.ia&&e.ia.telephone)return e.ia.telephone;
+ return null;
+}
+function toggleFiche(i){REAL[i]._open=!REAL[i]._open;rerender(i);}
+function copierEmail(i){
+ const m=REAL[i].score&&REAL[i].score.email;
+ if(!m)return;
+ navigator.clipboard.writeText('Objet : '+m.objet+'\n\n'+m.corps);
+ toast('✉️ Email copié dans le presse-papier');
+}
 function ficheReal(e,i){
  const ca=e.chiffre_affaires?Number(e.chiffre_affaires).toLocaleString('fr-FR')+' €':null;
  const contacts=contactsDe(e);
  const siteWeb=domaineDe(e);
  const titre=contacts.length&&contacts[0].nom?`${contacts[0].prenom} ${contacts[0].nom} — ${(contacts[0].enrich&&contacts[0].enrich.fonction)||contacts[0].fonction||'Dirigeant'}`:e.nom;
  const aEmail=contacts.some(c=>c.enrich&&c.enrich.email);
+ const s=e.score&&e.score.scores;
+ const tel=premierTel(e);
+ const open=!!(e._open||e._busy);
  return `<div class="fiche${e._busy?' fiche-busy':''}" id="fr${i}">
   ${e._busy?`<div style="display:flex;align-items:center;gap:8px;color:var(--accent);font-weight:600;font-size:13px;margin-bottom:10px"><span class="spin"></span> Enrichissement en cours… (boutons verrouillés)</div>`:''}
-  <div class="fiche-top" style="grid-template-columns:1fr">
-   <div>
-    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
-     <div>
-      <div class="lead-name">${titre}</div>
-      <div class="lead-meta">${contacts.length&&contacts[0].nom?e.nom+' · ':''}${e.enseigne&&e.enseigne!==e.nom?'Enseigne : '+e.enseigne+' · ':''}${e.naf} · ${e.activite||''} · ${e.ville||'—'}${e.code_postal?' ('+e.code_postal+')':''} · SIREN ${e.siren}</div>
-     </div>
-     <div style="display:flex;gap:6px">
-      <button class="act act-copy" title="Informations : explications IA, personas, preuves de matching" onclick="ouvrirInfo(${i})">ℹ️</button>
-      <button class="act act-copy" title="Modifier la fiche (nom commercial, site web)" onclick="document.getElementById('edit${i}').style.display=document.getElementById('edit${i}').style.display==='none'?'block':'none'">✏️</button>
-      <button class="act act-export" title="Exclure de l'enrichissement" onclick="exclure(${i})">🗑</button>
-     </div>
-    </div>
+  <div class="fiche-head" onclick="toggleFiche(${i})" title="Cliquer pour ${open?'replier':'déployer'} la fiche">
+   <div style="flex:1;min-width:0">
+    <div class="lead-name">${titre}</div>
+    <div class="lead-meta">${contacts.length&&contacts[0].nom?e.nom+' · ':''}${e.enseigne&&e.enseigne!==e.nom?'Enseigne : '+e.enseigne+' · ':''}${e.naf}${e.nb_etablissements?' · '+e.nb_etablissements+' établissement'+(e.nb_etablissements>1?'s':''):''}${e.effectif?' · '+e.effectif+' salariés':''}${ca?' · CA '+ca:''} · ${e.ville||'—'}</div>
     <div class="badges">
-     ${e.signal_hot?'<span class="badge b-signal">🔥 SIGNAL</span>':''}
+     ${e.gmb&&e.gmb.trouve?`<span class="badge b-gmb">GMB ${String(e.gmb.note_moyenne).replace('.',',')} ★ (${e.gmb.total_avis} avis)</span>`:''}
+     ${e.signal_hot?'<span class="badge b-signal">🔥 Signal détecté</span>':''}
+     ${aEmail?'<span class="badge b-new">Nouveau ✓</span>':(e.detail_charge?'<span class="badge b-signal">À enrichir</span>':'<span class="badge b-dup">Détail non chargé</span>')}
      ${e.lemlist_envoye?'<span class="badge b-new">✈️ Lemlist ✓</span>':''}${e.hubspot_envoye?'<span class="badge b-new">🤝 HubSpot ✓</span>':''}${e.sms_envoye?'<span class="badge b-new">💬 SMS ✓</span>':''}
-     ${e.effectif?`<span class="badge b-gmb">👥 ${e.effectif}</span>`:''}
-     ${ca?`<span class="badge b-new">CA ${ca}</span>`:''}
-     ${e.nb_etablissements?`<span class="badge b-gmb">🏬 ${e.nb_etablissements} établissement${e.nb_etablissements>1?'s':''}</span>`:''}
-     ${aEmail?'<span class="badge b-new">✉️ Email trouvé ✓</span>':(e.detail_charge?'<span class="badge b-signal">À enrichir</span>':'<span class="badge b-dup">Détail non chargé</span>')}
-     ${siteWeb?`<span class="badge b-new"><a href="${siteWeb.startsWith('http')?siteWeb:'https://'+siteWeb}" target="_blank" style="color:inherit">🌐 ${siteWeb.replace(/^https?:\/\/(www\.)?/,'').split('/')[0]}</a></span>`:''}
+     ${siteWeb?`<span class="badge b-new"><a href="${siteWeb.startsWith('http')?siteWeb:'https://'+siteWeb}" target="_blank" onclick="event.stopPropagation()" style="color:inherit">🌐 ${siteWeb.replace(/^https?:\/\/(www\.)?/,'').split('/')[0]}</a></span>`:''}
     </div>
-    <div id="edit${i}" style="display:none;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:12px">
-     <div class="map-sub" style="margin-top:0">✏️ Corriger la fiche (le SDR connaît son terrain mieux que les bases)</div>
-     <div class="row3" style="grid-template-columns:1fr 1fr auto">
-      <input class="field" id="edit-ens${i}" placeholder="Nom commercial / Google Maps (ex : Centre Porsche Guadeloupe)" value="${(e.enseigne_ia||e.enseigne||'').replace(/"/g,'&quot;')}">
-      <input class="field" id="edit-site${i}" placeholder="Site web (ex : porsche-guadeloupe.fr)" value="${(e.site_web||'').replace(/"/g,'&quot;')}">
-      <button class="btn btn-primary" onclick="majFiche(${i})">💾 Enregistrer + relancer GMB</button>
+   </div>
+   <div class="pscores">
+    ${scoreBar('Soview',s?s.soview:null,'#16A34A')}
+    ${scoreBar('SoConnect',s?s.soconnect:null,'#7C3AED')}
+    ${scoreBar('SoReach',s?s.soreach:null,'#EA580C')}
+   </div>
+   <div class="fiche-chev">${open?'▾':'▸'}</div>
+  </div>
+  <div class="fiche-body" style="display:${open?'block':'none'}">
+   <div id="edit${i}" style="display:none;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:12px">
+    <div class="map-sub" style="margin-top:0">✏️ Corriger la fiche (le SDR connaît son terrain mieux que les bases)</div>
+    <div class="row3" style="grid-template-columns:1fr 1fr auto">
+     <input class="field" id="edit-ens${i}" placeholder="Nom commercial / Google Maps" value="${(e.enseigne_ia||e.enseigne||'').replace(/"/g,'&quot;')}">
+     <input class="field" id="edit-site${i}" placeholder="Site web (ex : porsche-guadeloupe.fr)" value="${(e.site_web||'').replace(/"/g,'&quot;')}">
+     <button class="btn btn-primary" onclick="majFiche(${i})">💾 Enregistrer + relancer GMB</button>
+    </div>
+    <div style="margin-top:8px;text-align:right"><button class="act act-export" onclick="reinitFiche(${i})">♻️ Réinitialiser la fiche + re-analyser</button></div>
+   </div>
+   ${e.ia?`<div class="contact-line" style="margin-top:8px" title="${(e.ia.explication||'').replace(/"/g,'&quot;')}">🤖 IA : ${e.ia.nom_commercial||e.ia.site_web?`${e.ia.nom_commercial||''}${e.ia.site_web?' · '+e.ia.site_web:''}`:'rien de fiable trouvé'} <span class="badge b-gmb">confiance ${e.ia.confiance||'?'}</span></div>`:''}
+   <div class="fiche-cols">
+    <div>
+     <div class="col-title">Contact</div>
+     ${(!(e.gmb&&e.gmb.telephone))&&e.ia&&e.ia.telephone?`<div class="contact-line">☎️ Standard : <b>${e.ia.telephone}</b>${telBtns(e.ia.telephone)} <span class="badge b-signal">trouvé sur le web (IA)</span></div>`:''}
+     ${(!(e.gmb&&e.gmb.trouve))&&e.ia&&e.ia.adresse?`<div class="contact-line" style="color:var(--ink-soft)">📍 ${e.ia.adresse} <span class="badge b-gmb">source web</span></div>`:''}
+     ${contacts.map((c,j)=>contactHtml(c,i,j)).join('')||'<div class="hint">Aucun contact identifié — lance 🚀 Fiche.</div>'}
+     ${e.linkedin_entreprise?`<div class="contact-line">🏢 <a href="${e.linkedin_entreprise.startsWith('http')?e.linkedin_entreprise:'https://'+e.linkedin_entreprise}" target="_blank">Page LinkedIn entreprise ✓</a></div>`:''}
+     <div class="cta-row">
+      ${tel?`<button class="btn-cta btn-cta-green" onclick="appeler('${telNorm(tel)}')">📞 Appeler (Ringover)</button>`:''}
+      <button class="btn-cta btn-cta-orange" onclick="ouvrirSms(${i})">💬 SMS / RCS (Sofy)</button>
      </div>
-     <div style="margin-top:8px;text-align:right"><button class="act act-export" onclick="reinitFiche(${i})" title="Efface IA, site web, enseigne corrigée et GMB, puis relance l'analyse complète">♻️ Réinitialiser la fiche + re-analyser</button></div>
+     ${gmbHtml(e.gmb)}
+     ${e.score?`
+     <div class="col-title">Synthèse pour l'appel</div>
+     <div class="review-box" style="background:#F4F6FF;border-color:#D9DEFF;color:var(--ink)">
+      ${e.score.synthese}
+      ${e.score.accroche?`<div style="margin-top:10px"><b>🗣 Accroche :</b> « ${e.score.accroche} »</div>`:''}
+      ${(e.score.signaux||[]).length?`<div class="badges" style="margin-top:10px">${e.score.signaux.map(x=>`<span class="badge b-new">🔥 ${x}</span>`).join('')}</div>`:''}
+      <span class="who" style="color:var(--ink-soft)">Synthèse d'appel IA · score global ${e.score.scores.global}/100</span>
+     </div>`:''}
     </div>
-    ${e.ia?`<div class="contact-line" style="margin-top:8px" title="${(e.ia.explication||'').replace(/"/g,'&quot;')}">🤖 IA : ${e.ia.nom_commercial||e.ia.site_web?`${e.ia.nom_commercial||''}${e.ia.site_web?' · '+e.ia.site_web:''}`:'rien de fiable trouvé'} <span class="badge b-gmb">confiance ${e.ia.confiance||'?'}</span></div>`:''}
-    ${(!(e.gmb&&e.gmb.telephone))&&e.ia&&e.ia.telephone?`<div class="contact-line">☎️ Standard : <b>${e.ia.telephone}</b>${telBtns(e.ia.telephone)} <span class="badge b-signal">trouvé sur le web (IA) — pas de fiche GMB</span></div>`:''}
-    ${(!(e.gmb&&e.gmb.trouve))&&e.ia&&e.ia.adresse?`<div class="contact-line" style="color:var(--ink-soft)">📍 ${e.ia.adresse} <span class="badge b-gmb">source web</span></div>`:''}
-    ${contacts.map((c,j)=>contactHtml(c,i,j)).join('')}
-    <div class="act-row"><button class="act act-call" onclick="lancerFiche(${i})" title="Pipeline complet sur cette fiche uniquement">🚀 Fiche</button><button class="act act-export" id="gmbbtn${i}" onclick="analyserFiche(${i})" title="GMB, puis IA automatiquement si introuvable">${!e.gmb?'⭐ Analyser (GMB + IA)':'↻ Analyser'}</button><button class="act act-copy" onclick="(async()=>{if(REAL[${i}]._busy){toast('Analyse en cours ⏳');return;}REAL[${i}]._busy=true;rerender(${i});try{toast('👥 Recherche des personas (IA)…');await chercherPersonas(${i});}finally{REAL[${i}]._busy=false;rerender(${i});}})()" title="Chercher les postes ciblés de la liste (Dir Commercial, etc.) via LinkedIn public">👥 Personas</button><button class="act act-lemlist" onclick="envoyerLemlist(${i})" title="Pas de décroché : envoyer en séquence email (campagne selon produit dominant)">✈️ Lemlist</button><button class="act act-hubspot" onclick="envoyerHubspot(${i})" title="RDV pris : contact + synthèse en note + transaction pour l'AE">🤝 RDV → HubSpot</button><button class="act act-call" onclick="ouvrirSms(${i})" title="SMS SoReach (texte IA modifiable)">💬 SMS</button></div>
-    ${e.linkedin_entreprise?`<div class="contact-line">🏢 <a href="${e.linkedin_entreprise.startsWith('http')?e.linkedin_entreprise:'https://'+e.linkedin_entreprise}" target="_blank">Page LinkedIn entreprise ✓</a></div>`:''}
-    ${gmbHtml(e.gmb)}
-    ${e.score?`
-    <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);margin:16px 0 8px">🎯 Scoring Sofy — global ${e.score.scores.global}/100</h3>
-    <div class="badges" style="margin-top:0">
-     <span class="badge ${e.score.scores.soview>=60?'b-signal':'b-gmb'}">Soview ${e.score.scores.soview}</span>
-     <span class="badge ${e.score.scores.soconnect>=60?'b-signal':'b-gmb'}">SoConnect ${e.score.scores.soconnect}</span>
-     <span class="badge ${e.score.scores.soreach>=60?'b-signal':'b-gmb'}">SoReach ${e.score.scores.soreach}</span>
-     ${(e.score.signaux||[]).map(s=>`<span class="badge b-new">🔥 ${s}</span>`).join('')}
+    <div>
+     <div class="col-title">Email personnalisé ${e.score&&e.score.email?'prêt à envoyer':''}</div>
+     ${e.score&&e.score.email?`
+     <div class="email-box">
+      <div><b>Objet :</b> ${e.score.email.objet}</div>
+      <div style="white-space:pre-wrap;margin-top:12px">${e.score.email.corps}</div>
+     </div>
+     <div class="cta-row">
+      <button class="btn-cta btn-cta-dark" onclick="copierEmail(${i})">Copier l'email</button>
+      <button class="btn-cta btn-cta-blue" onclick="envoyerLemlist(${i})">✈️ Envoyer via Lemlist</button>
+     </div>
+     <div class="cta-row" style="margin-top:0">
+      <button class="btn-cta btn-cta-coral" onclick="envoyerHubspot(${i})">🤝 RDV pris → HubSpot</button>
+     </div>`:`
+     <div class="hint" style="margin-bottom:10px">Lance 🎯 Scorer (ou 🚀 Fiche) pour générer la synthèse d'appel et l'email personnalisé.</div>
+     <div class="cta-row">
+      <button class="btn-cta btn-cta-blue" onclick="envoyerLemlist(${i})">✈️ Envoyer via Lemlist</button>
+      <button class="btn-cta btn-cta-coral" onclick="envoyerHubspot(${i})">🤝 RDV pris → HubSpot</button>
+     </div>`}
     </div>
-    <div class="review-box" style="background:#F4F6FF;border-color:#D9DEFF;color:var(--ink)">
-     ${e.score.synthese}
-     ${e.score.accroche?`<div style="margin-top:10px"><b>🗣 Accroche :</b> « ${e.score.accroche} »</div>`:''}
-     <span class="who" style="color:var(--ink-soft)">Synthèse d'appel IA</span>
-    </div>
-    <div class="act-row">
-     ${e.score.email?`<button class="act act-lemlist" onclick="voirEmail(${i})">✉️ Email perso</button>`:''}
-     <button class="act act-copy" onclick="lancerScore(${i})" title="Re-générer avec les données à jour">↻ Re-scorer</button>
-    </div>`:`
-    <div class="act-row"><button class="act act-call" onclick="lancerScore(${i})" title="Scores Soview/SoConnect/SoReach + synthèse d'appel + email perso">🎯 Scorer + synthèse</button></div>`}
+   </div>
+   <div class="act-row" style="border-top:1px solid var(--line);padding-top:12px;margin-top:16px">
+    <button class="act act-call" onclick="lancerFiche(${i})" title="Pipeline complet sur cette fiche">🚀 Fiche</button>
+    <button class="act act-export" id="gmbbtn${i}" onclick="analyserFiche(${i})">${!e.gmb?'⭐ Analyser (GMB + IA)':'↻ Analyser'}</button>
+    <button class="act act-copy" onclick="(async()=>{if(REAL[${i}]._busy){toast('Analyse en cours ⏳');return;}REAL[${i}]._busy=true;rerender(${i});try{toast('👥 Recherche des personas (IA)…');await chercherPersonas(${i});}finally{REAL[${i}]._busy=false;rerender(${i});}})()">👥 Personas</button>
+    <button class="act ${e.score?'act-copy':'act-call'}" onclick="lancerScore(${i})">${e.score?'↻ Re-scorer':'🎯 Scorer + synthèse'}</button>
+    <button class="act act-copy" onclick="ouvrirInfo(${i})">ℹ️</button>
+    <button class="act act-copy" onclick="document.getElementById('edit${i}').style.display=document.getElementById('edit${i}').style.display==='none'?'block':'none'">✏️</button>
+    <button class="act act-export" onclick="exclure(${i})">🗑</button>
    </div>
   </div>
  </div>`;
@@ -1712,22 +1766,6 @@ async function chargerHotleads(){
   if(a){a.checked=h.actif!==false;document.getElementById('cfg-hl-sdr').value=h.sdr||'';document.getElementById('cfg-hl-hub').checked=h.exclure_hubspot!==false;}
  }catch(_){}
 }
-async function chargerRingover(){
- try{
-  const r=await api('/api/config');const d=await r.json();
-  const c=(d.config&&d.config.ringover)||{};
-  const a=document.getElementById('cfg-ring-alicia');
-  if(a){a.value=c.alicia||'';document.getElementById('cfg-ring-franck').value=c.franck||'';document.getElementById('cfg-ring-defaut').value=c.defaut||'';}
- }catch(_){}
-}
-async function sauverRingover(){
- const v={alicia:document.getElementById('cfg-ring-alicia').value.trim(),
-  franck:document.getElementById('cfg-ring-franck').value.trim(),
-  defaut:document.getElementById('cfg-ring-defaut').value.trim()};
- const r=await api('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({cle:'ringover',valeur:v})});
- const d=await r.json();toast(d.ok?'☎️ Lignes Ringover enregistrées ✓':(d.erreur||'Erreur'));
- if(d.ok)RINGOVER_OK=null;
-}
 async function sauverHotleads(){
  const v={actif:document.getElementById('cfg-hl-actif').checked,
   sdr:document.getElementById('cfg-hl-sdr').value.trim()||'didier',
@@ -1922,10 +1960,17 @@ async function chargerSdrs(){
   const r=await api('/api/sdrs');
   const d=await r.json();
   if(d.erreur){t.innerHTML='<tr><td colspan="6">'+d.erreur+'</td></tr>';return;}
-  t.innerHTML='<tr><th>Nom</th><th>Email</th><th>Limite € / mois</th><th>Mot de passe</th><th>Actif</th><th></th></tr>'+
+  const sup=state.user&&state.user.role==='superadmin';
+  t.innerHTML='<tr><th>Nom</th><th>Email</th><th>☎️ Ringover</th><th>Rôle</th><th>Limite € / mois</th><th>Mot de passe</th><th>Actif</th><th></th></tr>'+
    (d.sdrs||[]).map(s=>`<tr>
     <td><input class="field" value="${s.nom}" id="sn${s.id}"></td>
     <td><input class="field" value="${s.email||''}" placeholder="email@sofy.fr" id="se${s.id}"></td>
+    <td><input class="field" value="${s.ringover_numero||''}" placeholder="07 12 34 56 78" id="sr${s.id}" title="Ligne Ringover du SDR/AE — l'indicatif +33 (ou DOM) est ajouté automatiquement"></td>
+    <td><select class="field" id="sg${s.id}" ${sup?'':'disabled title="Seul le superadmin change les rôles"'}>
+      <option value="sdr" ${(!s.role||s.role==='sdr')?'selected':''}>SDR</option>
+      <option value="admin" ${s.role==='admin'?'selected':''}>Admin (paramètres + stats)</option>
+      <option value="superadmin" ${s.role==='superadmin'?'selected':''}>Superadmin</option>
+    </select></td>
     <td><input class="field" type="number" min="0" value="${s.limite_credits??''}" placeholder="Illimité" id="sl${s.id}"></td>
     <td><input class="field" type="password" placeholder="${s.mdp_defini?'Défini ✓ (remplacer)':'À définir'}" id="sp${s.id}"></td>
     <td style="text-align:center"><input type="checkbox" ${s.actif?'checked':''} id="sa${s.id}" style="width:18px;height:18px;accent-color:var(--accent)"></td>
@@ -1941,7 +1986,7 @@ async function ajouterSdr(){
  const email=document.getElementById('new-sdr-email').value.trim();
  const limite=document.getElementById('new-sdr-limite').value;
  if(!nom){toast('Le prénom est requis');return;}
- const r=await api('/api/sdrs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nom,email,limite_credits:limite===''?null:limite})});
+ const r=await api('/api/sdrs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nom,email,limite_credits:limite===''?null:limite,ringover_numero:document.getElementById('new-sdr-ringover').value})});
  const d=await r.json();
  if(d.erreur){toast(d.erreur);return;}
  document.getElementById('new-sdr-nom').value='';document.getElementById('new-sdr-email').value='';document.getElementById('new-sdr-limite').value='';
@@ -1991,7 +2036,7 @@ async function chargerHistorique(){
 }
 async function basculerVeille(id,activer){
  if(activer&&!confirm('🔔 Activer la veille 60 jours sur cette liste ?\n\nPhantomBuster + notre robot (toutes les 6 h) surveilleront les likes/follows LinkedIn des contacts de la liste. Match → 🔥 sur la fiche + alerte Slack au SDR.'))return;
- const r=await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,veille:activer,veille_jours:60})});
+ const r=await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,veille:activer,veille_jours:60,ringover_numero:document.getElementById('sr'+id).value,role:document.getElementById('sg'+id).value})});
  const d=await r.json();
  if(d.erreur){toast(d.erreur);return;}
  toast(activer?'🔔 Veille activée (60 j) ✓':'🔕 Veille arrêtée');
