@@ -164,7 +164,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
 .load-step{color:var(--ink-soft);font-size:14px}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:rot .8s linear infinite;vertical-align:-2px}
 @keyframes rot{to{transform:rotate(360deg)}}
-.fiche-busy{opacity:.65;pointer-events:none}
+.fiche-busy{}
 #wf-modal{display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:900;align-items:center;justify-content:center}
 .wf-panel{background:#fff;border-radius:16px;box-shadow:var(--shadow);width:min(620px,94vw);max-height:80vh;display:flex;flex-direction:column}
 .wf-head{padding:20px 24px 12px;font-family:'Sora';font-weight:700;font-size:17px}
@@ -183,6 +183,12 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
 .login-links a{cursor:pointer}
 .user-badge{margin-top:auto;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.06);font-size:13px;color:#C6CBE0;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .user-badge button{background:none;color:#8FA0FF;font-size:12px;font-weight:600}
+.prog-wrap{margin:4px 0 12px;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
+.prog-top{display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:700;margin-bottom:8px}
+.prog-label{color:var(--accent);display:flex;align-items:center;gap:8px}
+.prog-bar{height:10px;background:var(--line);border-radius:99px;overflow:hidden}
+.prog-bar span{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#3B82F6,#16A34A);transition:width .5s}
+.fiche-busy .act,.fiche-busy .btn-cta{pointer-events:none;opacity:.45}
 .fiche-head{display:flex;gap:18px;align-items:flex-start;cursor:pointer}
 .pscores{min-width:225px;display:flex;flex-direction:column;gap:7px;padding-top:4px;flex-shrink:0}
 .pscore{display:grid;grid-template-columns:80px 1fr 30px;align-items:center;gap:10px;font-size:12.5px;font-weight:700}
@@ -198,6 +204,8 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
 .btn-cta:hover{filter:brightness(1.08)}
 .btn-cta-green{background:#16A34A}.btn-cta-orange{background:#EA580C}.btn-cta-blue{background:#3B82F6}.btn-cta-dark{background:#111827}.btn-cta-coral{background:#FB7160}
 .email-box{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;font-size:13.5px;line-height:1.6}
+.map-table input.field,.map-table select.field{min-width:120px;width:100%;padding:9px 10px}
+.map-table td{vertical-align:middle}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:12px 22px;border-radius:11px;font-size:14px;font-weight:500;box-shadow:var(--shadow);transition:.25s;z-index:99;opacity:0}
 .toast.on{transform:translateX(-50%);opacity:1}
 @media(max-width:880px){.app{grid-template-columns:1fr}.side{position:static;height:auto;flex-direction:row;align-items:center;flex-wrap:wrap}.demo-pill{margin-top:0}.main{padding:24px}.fiche-grid,.api-grid,.row3,.comp-grid{grid-template-columns:1fr}.fiche-top{grid-template-columns:1fr}}
@@ -554,9 +562,9 @@ Spot-Hit</textarea>
       <div class="map-card">
         <h2>👥 SDR & utilisateurs</h2>
         <div class="role">Limite de crédits : montant maximum de crédits consommables par mois. Vide = illimité.</div>
-        <table class="map-table" id="sdr-table">
-          <tr><th>Nom</th><th>Email</th><th>Limite € / mois</th><th>Actif</th><th></th></tr>
-        </table>
+        <div style="overflow-x:auto"><table class="map-table" id="sdr-table" style="min-width:980px">
+          <tr><th>Nom</th><th>Email</th><th>☎️ Ringover</th><th>Rôle</th><th>Limite € / mois</th><th>Mot de passe</th><th>Actif</th><th></th></tr>
+        </table></div>
         <div class="map-sub">Ajouter un SDR / utilisateur</div>
         <div class="row3">
           <input class="field" id="new-sdr-nom" placeholder="Prénom (ex : Sarah)">
@@ -642,7 +650,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v46';
+const VERSION='v47';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -953,7 +961,7 @@ function showRealResults(total,c){
 function persister(){
  if(state.savedId){
   api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({id:state.savedId,entreprises:REAL},(k,v)=>(k==='_busy'||k==='_open')?undefined:v)}).catch(()=>{});
+   body:JSON.stringify({id:state.savedId,entreprises:REAL},(k,v)=>(k==='_busy'||k==='_open'||k==='_prog')?undefined:v)}).catch(()=>{});
  }
 }
 
@@ -1067,7 +1075,7 @@ function ficheReal(e,i){
  const tel=premierTel(e);
  const open=!!(e._open||e._busy);
  return `<div class="fiche${e._busy?' fiche-busy':''}" id="fr${i}">
-  ${e._busy?`<div style="display:flex;align-items:center;gap:8px;color:var(--accent);font-weight:600;font-size:13px;margin-bottom:10px"><span class="spin"></span> Enrichissement en cours… (boutons verrouillés)</div>`:''}
+  ${e._busy?`<div class="prog-wrap"><div class="prog-top"><span class="prog-label"><span class="spin"></span> <span id="progl${i}">${(e._prog&&e._prog.label)||'Démarrage…'}</span></span><span id="progp${i}">${(e._prog&&e._prog.pct)||0} %</span></div><div class="prog-bar"><span id="progb${i}" style="width:${(e._prog&&e._prog.pct)||0}%"></span></div></div>`:''}
   <div class="fiche-head" onclick="toggleFiche(${i})" title="Cliquer pour ${open?'replier':'déployer'} la fiche">
    <div style="flex:1;min-width:0">
     <div class="lead-name">${titre}</div>
@@ -1551,12 +1559,19 @@ function wfSet(i,col,etat){
  el.textContent=etat==='ok'?'✅':etat==='ko'?'❌':etat==='run'?'⏳':'—';
 }
 
+function prog(i,pct,label){
+ const e=REAL[i];e._prog={pct,label};
+ const b=document.getElementById('progb'+i),p=document.getElementById('progp'+i),l=document.getElementById('progl'+i);
+ if(b){b.style.width=pct+'%';p.textContent=pct+' %';l.textContent=label;}
+}
 async function pipelineFiche(i){
  let tentes=0,ok=0;
   const e=REAL[i];
   // ── 1. GMB ──
+  prog(i,5,'⭐ Analyse Google Business (note, avis, concurrents)…');
   if(gmbAFaire(e)){wfSet(i,'gmb','run');await analyserGmb(i);}
   wfSet(i,'gmb',e.gmb&&e.gmb.trouve?'ok':'ko');
+  prog(i,20,'🤖 Recherche IA (site web, enseigne)…');
   // ── 2. IA si GMB raté ou pas de domaine ──
   if(!e.ia&&(!(e.gmb&&e.gmb.trouve)||!domaineDe(e))){
    wfSet(i,'ia','run');
@@ -1570,6 +1585,7 @@ async function pipelineFiche(i){
   }else{
    wfSet(i,'ia',e.ia&&(e.ia.site_web||e.ia.nom_commercial)?'ok':(domaineDe(e)?'ok':'—'));
   }
+  prog(i,35,'👥 Recherche des personas LinkedIn…');
   // ── 2.5 Personas (si la liste en cible et que la fiche a un domaine ou une enseigne) ──
   if(jobsCibles().length&&!e.personas_fait&&(domaineDe(e)||e.enseigne_ia)){
    wfSet(i,'pers','run');
@@ -1578,6 +1594,7 @@ async function pipelineFiche(i){
   }else{
    wfSet(i,'pers',contactsDe(e).some(c=>c.source==='linkedin')?'ok':'—');
   }
+  prog(i,50,'✉️ Recherche des emails (Dropcontact — 1 à 2 min)…');
   // ── 3. Emails Dropcontact ──
   const cs=contactsDe(e);
   let dejaEmail=cs.some(c=>c.enrich&&c.enrich.email),tente=false,trouve=dejaEmail;
@@ -1589,6 +1606,7 @@ async function pipelineFiche(i){
    }
   }
   wfSet(i,'mail',trouve?'ok':(tente?'ko':(cs.some(c=>c.nom)?'ko':'—')));
+  prog(i,70,'📱 FullEnrich (email + mobile manquants)…');
   // ── 4. FullEnrich : email manquant OU mobile manquant (jamais re-payé : fe_fait) ──
   let feGain=false,feTente=false;
   for(let j=0;j<cs.length;j++){
@@ -1610,6 +1628,7 @@ async function pipelineFiche(i){
     await enrichirKaspr(i,j);
    }
   }
+  prog(i,82,'📲 Kaspr (mobile via LinkedIn)…');
   // ── 5. Scoring + synthèse (jamais re-payé sauf ↻ manuel) ──
   if(!e.score&&(e.gmb||e.ia)){
    wfSet(i,'sc','run');
@@ -1623,11 +1642,18 @@ async function pipelineFiche(i){
 
 async function lancerFiche(i){
  const e=REAL[i];
+ if(e._busy){toast('⏳ Enrichissement déjà en cours sur cette fiche');return;}
  if(!confirm(`🚀 Enrichir uniquement « ${enseigneDe(e)||e.nom} » ?\n\nGMB → IA → Personas → Emails → FullEnrich → Mobile → Score\n(mêmes règles que le 🚀 global : jamais de re-paiement)`))return;
- toast('🚀 '+(enseigneDe(e)||e.nom)+' — pipeline en cours…');
- const r=await pipelineFiche(i);
- toast(`🏁 ${enseigneDe(e)||e.nom} — terminé (${r.ok} email(s) trouvé(s))`);
- majCoutListe();
+ e._busy=true;e._open=true;e._prog={pct:0,label:'Démarrage…'};rerender(i);
+ try{
+  const r=await pipelineFiche(i);
+  prog(i,100,'Terminé ✓');
+  toast(`🏁 ${enseigneDe(e)||e.nom} — terminé (${r.ok} email(s) trouvé(s))`);
+ }catch(err){
+  toast('⚠️ Pipeline interrompu : '+err.message+' — les étapes déjà faites sont conservées');
+ }finally{
+  e._busy=false;e._prog=null;rerender(i);persister();majCoutListe();
+ }
 }
 
 async function lancerWaterfall(){
