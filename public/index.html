@@ -218,6 +218,8 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
 .badge{font-weight:600}
 .pscore{font-size:12px;color:var(--ink-soft)}
 .pscore .pscore-v{color:var(--ink)}
+.fiche{padding:24px 28px !important;margin-bottom:18px}
+@media(max-width:700px){.fiche{padding:18px !important}}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:12px 22px;border-radius:11px;font-size:14px;font-weight:500;box-shadow:var(--shadow);transition:.25s;z-index:99;opacity:0}
 .toast.on{transform:translateX(-50%);opacity:1}
 @media(max-width:880px){.app{grid-template-columns:1fr}.side{position:static;height:auto;flex-direction:row;align-items:center;flex-wrap:wrap}.demo-pill{margin-top:0}.main{padding:24px}.fiche-grid,.api-grid,.row3,.comp-grid{grid-template-columns:1fr}.fiche-top{grid-template-columns:1fr}}
@@ -662,7 +664,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v48';
+const VERSION='v49';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
