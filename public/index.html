@@ -546,7 +546,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v28';
+const VERSION='v29';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -876,7 +876,7 @@ function gmbHtml(g){
    ${comp}
   </div>
   ${g.avis_negatif?`<h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);margin:14px 0 8px">Avis négatif récent (${g.avis_negatif.note}★ · ${g.avis_negatif.date})</h3>
-  <div class="review-box">« ${g.avis_negatif.texte} »<span class="who">Avis Google · ${g.pire_fiche.nom}</span></div>`:''}`;
+  <div class="review-box">« ${g.avis_negatif.texte} »<span class="who">Avis Google · ${g.pire_fiche.nom}${g.avis_negatif.lien?` · <a href="${g.avis_negatif.lien}" target="_blank">Voir tous les avis ↗</a>`:''}</span></div>`:''}`;
 }
 
 function contactHtml(c,i,j){
@@ -884,7 +884,7 @@ function contactHtml(c,i,j){
  return `<div style="border-top:1px dashed var(--line);padding:10px 0 4px;margin-top:10px">
   <div class="contact-line"><b>${(c.prenom+' '+c.nom).trim()}</b> — ${(en&&en.fonction)||c.fonction||'?'} <span class="badge b-gmb">${c.source}</span></div>
   ${en?`
-   ${en.email?`<div class="contact-line">✉️ <b>${en.email}</b>${en.email_qualification?` <span class="badge b-new">${en.email_qualification}</span>`:''}</div>`:'<div class="contact-line" style="color:var(--ink-soft)">✉️ Email non trouvé (Dropcontact) — repli FullEnrich à venir</div>'}
+   ${en.email?`<div class="contact-line">✉️ <b>${en.email}</b> <a class="act act-call" style="padding:4px 10px;font-size:12px" href="mailto:${en.email}" title="Écrire un email">📧</a> <button class="act act-copy" style="padding:4px 10px;font-size:12px" onclick="navigator.clipboard.writeText('${en.email}');toast('Email copié ✓')" title="Copier l'adresse">📋</button>${en.email_qualification?` <span class="badge b-new">${en.email_qualification}</span>`:''}</div>`:'<div class="contact-line" style="color:var(--ink-soft)">✉️ Email non trouvé (Dropcontact) — repli FullEnrich à venir</div>'}
    ${en.telephone?`<div class="contact-line">📱 <b>${en.telephone}</b>${telBtns(en.telephone)}</div>`:''}
    ${en.linkedin?`<div class="contact-line">💼 <a href="${en.linkedin.startsWith('http')?en.linkedin:'https://'+en.linkedin}" target="_blank">Profil LinkedIn ✓</a></div>`:''}`
   :`<button class="act act-lemlist" id="enrbtn${i}_${j}" onclick="enrichir(${i},${j})" style="margin-top:4px">✉️ Enrichir ce contact</button>`}
