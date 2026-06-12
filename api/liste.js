@@ -58,6 +58,8 @@ async function detailEntreprise(siren, apiKey) {
   } catch { return null; }
 }
 
+export const config = { maxDuration: 120 };
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
@@ -74,9 +76,9 @@ export default async function handler(req, res) {
     naf = '', dep = '',
     effectif_min = '', effectif_max = '',
     ca_min = '', ca_max = '',
-    nb = '25',
-    detail = '25' // nombre de fiches détaillées (crédits) — plafonné à 25
+    nb = '25'
   } = req.query;
+  const nbDemande = Math.min(parseInt(nb) || 25, 500); // jusqu'à 500 fiches (5 pages Pappers)
 
   if (!naf) return res.status(400).json({ erreur: "Paramètre 'naf' requis" });
 
@@ -85,19 +87,20 @@ export default async function handler(req, res) {
     api_token: apiKey,
     code_naf: naf,
     entreprise_cessee: 'false',
-    par_page: Math.min(parseInt(nb) || 25, 100).toString(),
+    par_page: Math.min(nbDemande, 100).toString(),
     precision: 'standard'
   };
   if (dep) base.departement = dep;
   if (ca_min) base.chiffre_affaires_min = ca_min;
   if (ca_max) base.chiffre_affaires_max = ca_max;
 
-  async function call(extra) {
-    const p = new URLSearchParams({ ...base, ...extra });
+  async function call(extra, page) {
+    const p = new URLSearchParams({ ...base, ...extra, ...(page ? { page: String(page) } : {}) });
     const r = await fetch('https://api.pappers.fr/v2/recherche?' + p.toString());
     const data = await r.json().catch(() => ({}));
     return { ok: r.ok, status: r.status, data };
   }
+  let filtresRetenus = null; // mémorise le niveau de filtre qui a fonctionné (pour paginer avec les mêmes)
 
   let result, filtreEffectif = 'aucun';
   const wantsEff = !!(effectif_min || effectif_max);
@@ -106,29 +109,40 @@ export default async function handler(req, res) {
       const eff = {};
       if (effectif_min) eff.effectif_min = effectif_min;
       if (effectif_max) eff.effectif_max = effectif_max;
-      result = await call(eff); filtreEffectif = 'effectif';
+      result = await call(eff); filtreEffectif = 'effectif'; filtresRetenus = eff;
       if (!result.ok || (result.data.total || 0) === 0) {
         const tr = {};
         if (effectif_min) tr.tranche_effectif_min = effectif_min;
         if (effectif_max) tr.tranche_effectif_max = effectif_max;
-        result = await call(tr); filtreEffectif = 'tranche_effectif';
+        result = await call(tr); filtreEffectif = 'tranche_effectif'; filtresRetenus = tr;
       }
       if (!result.ok || (result.data.total || 0) === 0) {
-        result = await call({}); filtreEffectif = 'aucun (effectif souvent non renseigné — filtre élargi)';
+        result = await call({}); filtreEffectif = 'aucun (effectif souvent non renseigné — filtre élargi)'; filtresRetenus = {};
       }
     } else {
-      result = await call({});
+      result = await call({}); filtresRetenus = {};
     }
 
     if (!result.ok) return res.status(result.status).json({ erreur: 'Erreur Pappers', detail: result.data });
 
-    const bruts = result.data.resultats || [];
+    let bruts = result.data.resultats || [];
+    // ── Pagination : pages suivantes (Pappers max 100/page) jusqu'à nb demandé ──
+    const totalDispo = result.data.total || bruts.length;
+    let page = 2;
+    while (bruts.length < Math.min(nbDemande, totalDispo) && page <= 5) {
+      const suite = await call(filtresRetenus || {}, page);
+      const rs = (suite.ok && suite.data.resultats) || [];
+      if (!rs.length) break;
+      bruts = bruts.concat(rs);
+      page++;
+    }
+    bruts = bruts.slice(0, nbDemande);
 
     // ── 2. Détail (dirigeants, CA, établissements) — par lots de 5 en parallèle ──
-    const nDetail = Math.min(parseInt(detail) || 25, 25, bruts.length);
+    const nDetail = bruts.length; // toutes les fiches sont détaillées (1 crédit Pappers chacune)
     const details = new Array(bruts.length).fill(null);
-    for (let i = 0; i < nDetail; i += 5) {
-      const lot = bruts.slice(i, Math.min(i + 5, nDetail));
+    for (let i = 0; i < nDetail; i += 10) {
+      const lot = bruts.slice(i, Math.min(i + 10, nDetail));
       const resultats = await Promise.all(lot.map(e => detailEntreprise(e.siren, apiKey)));
       resultats.forEach((d, j) => { details[i + j] = d; });
     }
