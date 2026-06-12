@@ -15,7 +15,7 @@ export default async function handler(req, res) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ erreur: 'ANTHROPIC_API_KEY manquante dans Vercel' });
 
-  const { nom, enseigne = '', ville = '', naf = '', siren = '', indice = '' } = req.body || {};
+  const { nom, enseigne = '', ville = '', naf = '', siren = '', indice = '', dirigeant = '' } = req.body || {};
   if (!nom) return res.status(400).json({ erreur: 'nom requis' });
 
   try {
@@ -23,14 +23,15 @@ export default async function handler(req, res) {
 
 Raison sociale : ${nom}
 ${enseigne ? `Enseigne : ${enseigne}` : ''}
+${dirigeant ? `Dirigeant : ${dirigeant} (très utile : cherche aussi "${dirigeant} ${nom}" et son LinkedIn)` : ''}
 Ville : ${ville}
 Activité (NAF ${naf}) ${siren ? `· SIREN ${siren}` : ''}
 
 ${indice ? `Indication fournie par le commercial (fiable, à utiliser dans tes recherches) : "${indice}"
-` : ''}Fais PLUSIEURS recherches web si nécessaire (ex : "${enseigne || nom} ${ville}", "${nom} site officiel", sigle + activité + département${indice ? `, "${indice} site officiel"` : ''}) et trouve :
+` : ''}Fais PLUSIEURS recherches web (4-6 recherches, c'est normal) en variant les angles : "${enseigne || nom} ${ville}", "${nom} site officiel", "${nom} pages jaunes", le sigle + activité + département, LinkedIn et Instagram de l'entreprise${dirigeant ? `, "${dirigeant} ${ville}"` : ''}${indice ? `, "${indice} site officiel"` : ''}. Les petites entreprises des DOM sont souvent mieux référencées via Pages Jaunes, Instagram ou LinkedIn que par leur propre site. Trouve :
 1. Son site web officiel (le domaine exact, vérifié dans les résultats — jamais inventé)
 2. Son nom commercial tel qu'il apparaît sur Google Maps (souvent différent de la raison sociale, ex : "PDK PRESTIGE DISTRIBUTION KARAIB" = "Centre Porsche Guadeloupe")
-3. Son numéro de téléphone public (Pages Jaunes, annuaires, site web)
+3. Son numéro de téléphone public — AUSSI IMPORTANT que le site web : cherche spécifiquement sur pagesjaunes.fr et les annuaires locaux si besoin
 4. Son adresse constatée sur le web
 
 ⚠️ RÈGLE DE COHÉRENCE ABSOLUE : le site web et le nom commercial doivent appartenir à CETTE entreprise — même activité (${naf ? 'NAF ' + naf + ', ' : ''}vérifie que l'activité du site correspond), et surtout MÊME LOCALISATION : ${ville || 'la ville indiquée'}. Les groupes ont souvent des sociétés sœurs sur d'autres îles avec des noms proches (ex : "Automobile Import Guadeloupe / A.I.G." en Guadeloupe vs "Auto Import FWI" en Martinique) — choisis IMPÉRATIVEMENT l'établissement de ${ville || 'la bonne ville'} et son nom Google Maps local. Autre erreur à NE PAS faire : "MOBILE AUTO" (concession automobile) ≠ "Flip Mobile" (magasin de téléphones) même si les noms se ressemblent. En cas de doute : null.
@@ -48,10 +49,10 @@ Si tu n'es pas sûr, mets null et confiance basse. Ne devine jamais.`;
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5',
-        max_tokens: 1024,
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1500,
         messages: [{ role: 'user', content: prompt }],
-        tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }]
+        tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 7 }]
       })
     });
 
