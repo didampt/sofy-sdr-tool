@@ -198,6 +198,13 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
   <div class="wf-foot"><button class="btn btn-primary" id="wf-fermer" disabled onclick="document.getElementById('wf-modal').style.display='none'">Fermer</button></div>
  </div>
 </div>
+<div id="info-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:910;align-items:center;justify-content:center" onclick="if(event.target===this)this.style.display='none'">
+ <div class="wf-panel" style="width:min(560px,94vw)">
+  <div class="wf-head" id="info-titre">ℹ️ Informations</div>
+  <div class="wf-body" id="info-corps" style="padding:0 24px 8px;font-size:13.5px;line-height:1.55"></div>
+  <div class="wf-foot"><button class="btn btn-primary" onclick="document.getElementById('info-modal').style.display='none'">Fermer</button></div>
+ </div>
+</div>
 <div id="login-overlay">
  <div class="login-card">
   <img src="/logo-full.png" alt="Sofy" onerror="this.style.display='none'">
@@ -546,7 +553,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v32';
+const VERSION='v33';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -918,6 +925,7 @@ function ficheReal(e,i){
       <div class="lead-meta">${contacts.length&&contacts[0].nom?e.nom+' · ':''}${e.enseigne&&e.enseigne!==e.nom?'Enseigne : '+e.enseigne+' · ':''}${e.naf} · ${e.activite||''} · ${e.ville||'—'}${e.code_postal?' ('+e.code_postal+')':''} · SIREN ${e.siren}</div>
      </div>
      <div style="display:flex;gap:6px">
+      <button class="act act-copy" title="Informations : explications IA, personas, preuves de matching" onclick="ouvrirInfo(${i})">ℹ️</button>
       <button class="act act-copy" title="Modifier la fiche (nom commercial, site web)" onclick="document.getElementById('edit${i}').style.display=document.getElementById('edit${i}').style.display==='none'?'block':'none'">✏️</button>
       <button class="act act-export" title="Exclure de l'enrichissement" onclick="exclure(${i})">🗑</button>
      </div>
@@ -1007,6 +1015,37 @@ async function reinitFiche(i){
  e.ia=null;e.enseigne_ia=null;e.site_web='';e.site_source=null;e.gmb=null;
  rerender(i);persister();
  await analyserFiche(i);
+}
+
+function ouvrirInfo(i){
+ const e=REAL[i];
+ const sec=[];
+ if(e.ia){
+  sec.push(`<h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-soft);margin:14px 0 6px">🤖 Recherche IA <span class="badge b-gmb">confiance ${e.ia.confiance||'?'}</span></h3>
+   ${e.ia.nom_commercial?`<div>Nom commercial : <b>${e.ia.nom_commercial}</b></div>`:''}
+   ${e.ia.site_web?`<div>Site web : <b>${e.ia.site_web}</b></div>`:''}
+   ${e.ia.telephone?`<div>Téléphone : <b>${e.ia.telephone}</b></div>`:''}
+   ${e.ia.adresse?`<div>Adresse : ${e.ia.adresse}</div>`:''}
+   ${e.ia.explication?`<div style="margin-top:6px;color:var(--ink-soft)">« ${e.ia.explication} »</div>`:''}`)
+ }
+ if(e.personas_info){
+  sec.push(`<h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-soft);margin:14px 0 6px">👥 Recherche de personas <span class="badge b-gmb">${e.personas_info.nb} trouvé(s) · ${e.personas_info.date}</span></h3>
+   ${e.linkedin_entreprise?`<div>Page LinkedIn : <a href="${e.linkedin_entreprise.startsWith('http')?e.linkedin_entreprise:'https://'+e.linkedin_entreprise}" target="_blank">${e.linkedin_entreprise}</a></div>`:''}
+   ${e.personas_info.explication?`<div style="margin-top:6px;color:var(--ink-soft)">« ${e.personas_info.explication} »</div>`:''}`)
+ }
+ if(e.gmb&&e.gmb.trouve){
+  const fl=(e.gmb.fiches||[]).map(f=>`<div>• ${f.nom} — ${String(f.note).replace('.',',')}★ (${f.nb_avis} avis)${f.match?` <span class="badge b-gmb">preuve : ${f.match}</span>`:''}</div>`).join('');
+  sec.push(`<h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-soft);margin:14px 0 6px">⭐ Fiches Google matchées (${e.gmb.nb_fiches})</h3>${fl}`)
+ }
+ const cs=contactsDe(e).filter(c=>c.nom);
+ if(cs.length){
+  sec.push(`<h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-soft);margin:14px 0 6px">📇 Contacts & enrichissement</h3>`+
+   cs.map(c=>{const en=c.enrich||{};return `<div>• <b>${(c.prenom+' '+c.nom).trim()}</b> (${c.source})${en.email?' · ✉️ '+en.email+(en.email_source==='fullenrich'?' (FullEnrich)':' (Dropcontact)'):' · pas d\'email'}${en.telephone?' · 📱 '+en.telephone:''}${en.fe_fait?' · FullEnrich tenté':''}</div>`}).join(''))
+ }
+ if(!sec.length)sec.push('<div style="color:var(--ink-soft);margin-top:12px">Aucune analyse lancée sur cette fiche pour l\'instant — utilise ⭐ Analyser ou 🚀.</div>');
+ document.getElementById('info-titre').textContent='ℹ️ '+(enseigneDe(e)||e.nom);
+ document.getElementById('info-corps').innerHTML=sec.join('');
+ document.getElementById('info-modal').style.display='flex';
 }
 
 function sigDe(e){return enseigneDe(e)+'|'+domaineDe(e);}
@@ -1100,6 +1139,7 @@ async function chercherPersonas(i){
   if(d.erreur){toast('Personas : '+d.erreur+(d.detail?' — '+d.detail:''));return false;}
   const p=d.resultat||{};
   e.personas_fait=true;
+  e.personas_info={explication:p.explication||'',nb:(p.personas||[]).length,date:new Date().toLocaleString('fr-FR')};
   if(p.linkedin_entreprise)e.linkedin_entreprise=p.linkedin_entreprise;
   const cs=contactsDe(e);
   let ajoutes=0;
