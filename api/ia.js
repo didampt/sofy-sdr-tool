@@ -30,9 +30,13 @@ ${indice ? `Indication fournie par le commercial (fiable, à utiliser dans tes r
 ` : ''}Fais PLUSIEURS recherches web si nécessaire (ex : "${enseigne || nom} ${ville}", "${nom} site officiel", sigle + activité + département${indice ? `, "${indice} site officiel"` : ''}) et trouve :
 1. Son site web officiel (le domaine exact, vérifié dans les résultats — jamais inventé)
 2. Son nom commercial tel qu'il apparaît sur Google Maps (souvent différent de la raison sociale, ex : "PDK PRESTIGE DISTRIBUTION KARAIB" = "Centre Porsche Guadeloupe")
+3. Son numéro de téléphone public (Pages Jaunes, annuaires, site web)
+4. Son adresse constatée sur le web
+
+⚠️ RÈGLE DE COHÉRENCE ABSOLUE : le site web et le nom commercial doivent appartenir à CETTE entreprise — même activité (${naf ? 'NAF ' + naf + ', ' : ''}vérifie que l'activité du site correspond), même ville. Exemple d'erreur à NE PAS faire : "MOBILE AUTO" (concession automobile) ≠ "Flip Mobile" (magasin de téléphones) même si les noms se ressemblent. En cas de doute sur la cohérence d'activité : null.
 
 Réponds UNIQUEMENT avec un objet JSON, sans texte autour, sans backticks :
-{"site_web": "exemple.fr ou null", "nom_commercial": "Nom Google Maps ou null", "confiance": "haute|moyenne|basse", "explication": "une phrase"}
+{"site_web": "exemple.fr ou null", "nom_commercial": "Nom Google Maps ou null", "telephone": "+590... ou null", "adresse": "adresse ou null", "confiance": "haute|moyenne|basse", "explication": "une phrase"}
 
 Si tu n'es pas sûr, mets null et confiance basse. Ne devine jamais.`;
 
