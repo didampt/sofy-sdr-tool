@@ -554,7 +554,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v36';
+const VERSION='v37';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -922,7 +922,7 @@ function contactHtml(c,i,j){
    ${en.linkedin?`<div class="contact-line">💼 <a href="${en.linkedin.startsWith('http')?en.linkedin:'https://'+en.linkedin}" target="_blank">Profil LinkedIn ✓</a></div>`:''}`
   :`<button class="act act-lemlist" id="enrbtn${i}_${j}" onclick="enrichir(${i},${j})" style="margin-top:4px">✉️ Enrichir ce contact</button>`}
   ${en&&(!en.email||!en.telephone)?`<button class="act act-copy" style="margin-top:4px" id="febtn${i}_${j}" onclick="lancerFE(${i},${j})" title="Cascade 15+ sources : email de repli + mobile">${en.fe_fait?'↻ FullEnrich (re-tenter)':'🔁 FullEnrich'}</button>`:''}
-  ${en&&!en.telephone?`<button class="act act-copy" style="margin-top:4px" onclick="lancerKaspr(${i},${j})" title="Mobile FR via le profil LinkedIn (1 crédit tél. + 1 crédit export). * = URL LinkedIn demandée au lancement">${en.kaspr_fait?'↻ Kaspr (re-tenter)':'📱 Kaspr'}${en.linkedin?'':' *'}</button>`:''}
+  ${en&&!en.telephone?`<button class="act act-copy" style="margin-top:4px" onclick="lancerKaspr(${i},${j})" title="Mobile FR via le profil LinkedIn (1 crédit tél. + 1 crédit export). * = URL LinkedIn demandée au lancement">${en.kaspr_fait?'↻ Kaspr (re-tenter)':'📱 Kaspr'}</button>`:''}
  </div>`;
 }
 
@@ -1075,7 +1075,7 @@ function ouvrirInfo(i){
  const cs=contactsDe(e).filter(c=>c.nom);
  if(cs.length){
   sec.push(`<h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-soft);margin:14px 0 6px">📇 Contacts & enrichissement</h3>`+
-   cs.map(c=>{const en=c.enrich||{};return `<div>• <b>${(c.prenom+' '+c.nom).trim()}</b> (${c.source})${en.email?' · ✉️ '+en.email+(en.email_source==='fullenrich'?' (FullEnrich)':' (Dropcontact)'):' · pas d\'email'}${en.telephone?' · 📱 '+en.telephone:''}${en.fe_fait?' · FullEnrich tenté':''}${en.kaspr_fait?' · Kaspr tenté':''}${en.kaspr_brut?'<div style="margin-top:4px;font-size:11.5px;color:var(--ink-soft);word-break:break-all">Kaspr brut : '+String(en.kaspr_brut).replace(/</g,'&lt;')+'</div>':''}</div>`}).join(''))
+   cs.map(c=>{const en=c.enrich||{};return `<div>• <b>${(c.prenom+' '+c.nom).trim()}</b> (${c.source})${en.email?' · ✉️ '+en.email+(en.email_source==='fullenrich'?' (FullEnrich)':' (Dropcontact)'):' · pas d\'email'}${en.telephone?' · 📱 '+en.telephone:''}${en.fe_fait?' · FullEnrich tenté':''}${en.kaspr_fait?' · Kaspr tenté':''}${c.linkedin_ia_info?' · 🔎 LinkedIn IA : '+c.linkedin_ia_info:''}${en.kaspr_brut?'<div style="margin-top:4px;font-size:11.5px;color:var(--ink-soft);word-break:break-all">Kaspr brut : '+String(en.kaspr_brut).replace(/</g,'&lt;')+'</div>':''}</div>`}).join(''))
  }
  if(!sec.length)sec.push('<div style="color:var(--ink-soft);margin-top:12px">Aucune analyse lancée sur cette fiche pour l\'instant — utilise ⭐ Analyser ou 🚀.</div>');
  document.getElementById('info-titre').textContent='ℹ️ '+(enseigneDe(e)||e.nom);
@@ -1158,6 +1158,30 @@ async function enrichir(i,j){
  }finally{if(verrouille){e._busy=false;rerender(i);}}
 }
 
+/* ───────── RECHERCHE DU PROFIL LINKEDIN PAR L'IA ───────── */
+async function chercherLinkedin(i,j){
+ const e=REAL[i],c=contactsDe(e)[j];
+ if(!c||!c.nom)return false;
+ try{
+  const r=await api('/api/linkedin',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({prenom:c.prenom||'',nom:c.nom||'',entreprise:enseigneDe(e)||e.nom,ville:e.ville||'',fonction:(c.enrich&&c.enrich.fonction)||c.fonction||''})});
+  let d;try{d=await r.json();}catch(_){return false;}
+  if(d.erreur){toast('Recherche LinkedIn : '+d.erreur);return false;}
+  const lk=d.resultat||{};
+  c.enrich=c.enrich||{};
+  c.linkedin_ia_fait=true;
+  if(lk.url){
+   c.enrich.linkedin=lk.url;c.enrich.linkedin_source='ia';
+   c.linkedin_ia_info=lk.explication||'';
+   persister();rerender(i);
+   return true;
+  }
+  c.linkedin_ia_info=lk.explication||'Profil introuvable';
+  persister();
+  return false;
+ }catch(_){return false;}
+}
+
 /* ───────── NIVEAU 3 : KASPR (mobiles FR via LinkedIn) ───────── */
 async function enrichirKaspr(i,j){
  const e=REAL[i],c=contactsDe(e)[j];
@@ -1188,10 +1212,22 @@ function lancerKaspr(i,j){
  const e=REAL[i],c=contactsDe(e)[j];
  if(e._busy){toast('Analyse en cours ⏳');return;}
  if(c&&(!c.enrich||!c.enrich.linkedin)){
-  const u=prompt("URL LinkedIn du contact (ex : https://www.linkedin.com/in/jean-dufour-12345)\n\nAstuce : cherche \""+((c.prenom||'')+' '+(c.nom||'')).trim()+" linkedin\" sur Google.");
-  if(!u)return;
-  if(!/linkedin\.com\/in\//i.test(u)){toast('URL invalide — elle doit contenir linkedin.com/in/…');return;}
-  c.enrich=c.enrich||{};c.enrich.linkedin=u.trim();persister();
+  e._busy=true;rerender(i);
+  (async()=>{
+   try{
+    toast('🔎 L\u2019IA cherche le profil LinkedIn de '+((c.prenom||'')+' '+(c.nom||'')).trim()+'…');
+    const trouve=await chercherLinkedin(i,j);
+    if(!trouve){
+     const u=prompt("Profil LinkedIn introuvable automatiquement.\n"+(c.linkedin_ia_info?'IA : '+c.linkedin_ia_info+'\n':'')+"\nSi tu le connais, colle l'URL (sinon Annuler) :");
+     if(u&&/linkedin\.com\/in\//i.test(u)){c.enrich=c.enrich||{};c.enrich.linkedin=u.trim();persister();}
+     else if(u){toast('URL invalide — elle doit contenir linkedin.com/in/…');return;}
+     else{toast('Pas de profil LinkedIn → pas de mobile Kaspr possible pour ce contact');return;}
+    }
+    toast('📱 Kaspr en cours…');
+    await enrichirKaspr(i,j);
+   }finally{e._busy=false;rerender(i);}
+  })();
+  return;
  }
  e._busy=true;rerender(i);
  (async()=>{try{toast('📱 Kaspr en cours…');await enrichirKaspr(i,j);}finally{e._busy=false;rerender(i);}})();
@@ -1362,7 +1398,7 @@ async function lancerWaterfall(){
  const nbGmb=REAL.filter(gmbAFaire).length;
  const nbIa=REAL.filter(e=>!e.ia&&!domaineDe(e)).length;
  const nbContacts=REAL.reduce((s,e)=>s+contactsDe(e).filter(c=>c.nom&&!c.enrich).length,0);
- if(!confirm(`🚀 Lancer l'enrichissement sur ${REAL.length} fiches ?\n\n1. GMB + domaine + ☎️ standard : ~${nbGmb} fiches\n2. IA site web/nom commercial (si GMB échoue) : jusqu'à ${nbIa} appels (~0,02 €)\n3. Emails Dropcontact : ~${nbContacts} crédits\n4. Personas (${jobsCibles().length?jobsCibles().join(', '):'aucun sélectionné'}) : IA LinkedIn (~0,05-0,15 €/fiche)\n5. FullEnrich (repli email + MOBILE) : contacts incomplets uniquement — ⚠️ un mobile coûte ~10 crédits FullEnrich\n5bis. Kaspr (mobile FR via LinkedIn) si toujours pas de mobile : 1 crédit tél. + 1 crédit export\n6. Scoring + synthèse d'appel + email perso (IA, ~0,03 €/fiche)\n\n💡 Exclus d'abord les fiches inutiles (🗑).`))return;
+ if(!confirm(`🚀 Lancer l'enrichissement sur ${REAL.length} fiches ?\n\n1. GMB + domaine + ☎️ standard : ~${nbGmb} fiches\n2. IA site web/nom commercial (si GMB échoue) : jusqu'à ${nbIa} appels (~0,02 €)\n3. Emails Dropcontact : ~${nbContacts} crédits\n4. Personas (${jobsCibles().length?jobsCibles().join(', '):'aucun sélectionné'}) : IA LinkedIn (~0,05-0,15 €/fiche)\n5. FullEnrich (repli email + MOBILE) : contacts incomplets uniquement — ⚠️ un mobile coûte ~10 crédits FullEnrich\n5bis. Mobile : IA trouve le profil LinkedIn (~0,01 €) puis Kaspr (1 crédit tél. + 1 crédit export)\n6. Scoring + synthèse d'appel + email perso (IA, ~0,03 €/fiche)\n\n💡 Exclus d'abord les fiches inutiles (🗑).`))return;
  ouvrirWfModal();
  let emailsOk=0,emailsTentes=0;
  for(let i=0;i<REAL.length;i++){
@@ -1412,10 +1448,14 @@ async function lancerWaterfall(){
    }
   }
   wfSet(i,'fe',feGain?'ok':(feTente?'ko':(cs.some(c=>c.enrich&&c.enrich.email&&c.enrich.telephone)?'ok':'—')));
-  // ── 4bis. Kaspr (mobiles FR) : LinkedIn dispo + pas de mobile, jamais re-payé auto ──
+  // ── 4bis. Mobile : IA trouve le LinkedIn si absent, puis Kaspr — jamais re-payé auto ──
   for(let j=0;j<cs.length;j++){
-   const c=cs[j],en2=c.enrich||{};
-   if(en2.linkedin&&/linkedin\.com\/in\//i.test(en2.linkedin)&&!en2.telephone&&!en2.kaspr_fait){
+   const c=cs[j];let en2=c.enrich||{};
+   if(en2.telephone||en2.kaspr_fait)continue;
+   if((!en2.linkedin)&&!c.linkedin_ia_fait&&c.nom){
+    await chercherLinkedin(i,j);en2=c.enrich||{};
+   }
+   if(en2.linkedin&&/linkedin\.com\/in\//i.test(en2.linkedin)){
     await enrichirKaspr(i,j);
    }
   }
