@@ -553,7 +553,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v33';
+const VERSION='v34';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -829,7 +829,7 @@ function showRealResults(total,c){
  document.getElementById('res-title').textContent=`${state.listeNom||'Liste'} · ${state.sdr||''}`;
  document.getElementById('res-sub').textContent=`${c.naf.join(', ')} · ${total} entreprises trouvées (Pappers) · ${c.emp} salariés · CA ${c.ca} · ${c.pays.join(' + ')}${c.ville?' / '+c.ville:''} — affichage : ${REAL.length}${state.savedId?' · Sauvegardée ✓ (#'+state.savedId+')':''}`;
  document.getElementById('kpis').style.display='flex';
- document.getElementById('sort-bar').style.display='none'; // tris réactivés quand scores & GMB seront branchés
+ document.getElementById('sort-bar').style.display='flex'; // tris actifs : signaux/scores IA, note GMB, établissements
  document.getElementById('k-total').textContent=REAL.length;
  document.getElementById('k-new').textContent='—';
  document.getElementById('k-sig').textContent='—';
@@ -953,6 +953,24 @@ function ficheReal(e,i){
     <div class="act-row"><button class="act act-export" id="gmbbtn${i}" onclick="analyserFiche(${i})" title="GMB, puis IA automatiquement si introuvable">${!e.gmb?'⭐ Analyser (GMB + IA)':'↻ Analyser'}</button><button class="act act-copy" onclick="(async()=>{if(REAL[${i}]._busy){toast('Analyse en cours ⏳');return;}REAL[${i}]._busy=true;rerender(${i});try{toast('👥 Recherche des personas (IA)…');await chercherPersonas(${i});}finally{REAL[${i}]._busy=false;rerender(${i});}})()" title="Chercher les postes ciblés de la liste (Dir Commercial, etc.) via LinkedIn public">👥 Personas</button></div>
     ${e.linkedin_entreprise?`<div class="contact-line">🏢 <a href="${e.linkedin_entreprise.startsWith('http')?e.linkedin_entreprise:'https://'+e.linkedin_entreprise}" target="_blank">Page LinkedIn entreprise ✓</a></div>`:''}
     ${gmbHtml(e.gmb)}
+    ${e.score?`
+    <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);margin:16px 0 8px">🎯 Scoring Sofy — global ${e.score.scores.global}/100</h3>
+    <div class="badges" style="margin-top:0">
+     <span class="badge ${e.score.scores.soview>=60?'b-signal':'b-gmb'}">Soview ${e.score.scores.soview}</span>
+     <span class="badge ${e.score.scores.soconnect>=60?'b-signal':'b-gmb'}">SoConnect ${e.score.scores.soconnect}</span>
+     <span class="badge ${e.score.scores.soreach>=60?'b-signal':'b-gmb'}">SoReach ${e.score.scores.soreach}</span>
+     ${(e.score.signaux||[]).map(s=>`<span class="badge b-new">🔥 ${s}</span>`).join('')}
+    </div>
+    <div class="review-box" style="background:#F4F6FF;border-color:#D9DEFF;color:var(--ink)">
+     ${e.score.synthese}
+     ${e.score.accroche?`<div style="margin-top:10px"><b>🗣 Accroche :</b> « ${e.score.accroche} »</div>`:''}
+     <span class="who" style="color:var(--ink-soft)">Synthèse d'appel IA</span>
+    </div>
+    <div class="act-row">
+     ${e.score.email?`<button class="act act-lemlist" onclick="voirEmail(${i})">✉️ Email perso</button>`:''}
+     <button class="act act-copy" onclick="lancerScore(${i})" title="Re-générer avec les données à jour">↻ Re-scorer</button>
+    </div>`:`
+    <div class="act-row"><button class="act act-call" onclick="lancerScore(${i})" title="Scores Soview/SoConnect/SoReach + synthèse d'appel + email perso">🎯 Scorer + synthèse</button></div>`}
    </div>
   </div>
  </div>`;
@@ -1121,6 +1139,54 @@ async function enrichir(i,j){
   return false;
  }
  }finally{if(verrouille){e._busy=false;rerender(i);}}
+}
+
+/* ───────── SCORING + SYNTHÈSE D'APPEL + EMAIL (IA) ───────── */
+function donneesPourScore(e){
+ const g=e.gmb&&e.gmb.trouve?{note:e.gmb.note_moyenne,total_avis:e.gmb.total_avis,nb_fiches:e.gmb.nb_fiches,
+  pire_fiche:e.gmb.pire_fiche,concurrents:e.gmb.concurrents,avis_negatif:e.gmb.avis_negatif?{note:e.gmb.avis_negatif.note,date:e.gmb.avis_negatif.date,texte:e.gmb.avis_negatif.texte}:null,
+  telephone:e.gmb.telephone}:{aucune_fiche_google:true,telephone_web:(e.ia&&e.ia.telephone)||null};
+ return {nom:e.nom,enseigne:enseigneDe(e)||null,activite:e.activite,naf:e.naf,ville:e.ville,code_postal:e.code_postal,
+  effectif:e.effectif,chiffre_affaires:e.chiffre_affaires,nb_etablissements:e.nb_etablissements,
+  site_web:domaineDe(e)||null,google_business:g,
+  contexte_ia:(e.ia&&e.ia.explication)||null,contexte_personas:(e.personas_info&&e.personas_info.explication)||null,
+  contacts:contactsDe(e).filter(c=>c.nom).map(c=>({prenom:c.prenom,nom:c.nom,fonction:(c.enrich&&c.enrich.fonction)||c.fonction,source:c.source,
+   email:(c.enrich&&c.enrich.email)||null,mobile:(c.enrich&&c.enrich.telephone)||null,linkedin:(c.enrich&&c.enrich.linkedin)||null}))};
+}
+async function scorer(i){
+ const e=REAL[i];
+ try{
+  const r=await api('/api/score',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({entreprise:donneesPourScore(e),sdr:(state.user&&state.user.nom)||state.sdr||''})});
+  let d;
+  try{d=await r.json();}catch(_){toast('Scoring : réponse invalide ('+r.status+')');return false;}
+  if(d.erreur){toast('Scoring : '+d.erreur+(d.detail?' — '+d.detail:''));return false;}
+  e.score=d.resultat||null;
+  rerender(i);persister();
+  return !!e.score;
+ }catch(err){toast('Scoring erreur réseau : '+err.message);return false;}
+}
+function lancerScore(i){
+ const e=REAL[i];
+ if(e._busy){toast('Analyse en cours ⏳');return;}
+ e._busy=true;rerender(i);
+ (async()=>{try{toast('🎯 Scoring IA en cours…');await scorer(i);}finally{e._busy=false;rerender(i);}})();
+}
+function voirEmail(i){
+ const e=REAL[i];
+ if(!e.score||!e.score.email)return;
+ const em=e.score.email,c=contactsDe(e).find(x=>x.enrich&&x.enrich.email);
+ document.getElementById('info-titre').textContent='✉️ Email — '+(enseigneDe(e)||e.nom);
+ document.getElementById('info-corps').innerHTML=`
+  <div style="margin-top:12px"><b>Objet :</b> ${em.objet}</div>
+  <div style="margin-top:10px;white-space:pre-wrap;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:14px">${em.corps}</div>
+  ${e.score.sms?`<div style="margin-top:14px"><b>💬 SMS :</b> ${e.score.sms} <span class="badge b-gmb">+ "STOP au 36111" auto</span></div>`:''}
+  <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+   <button class="act act-copy" onclick="navigator.clipboard.writeText(${JSON.stringify('Objet : ')}+${JSON.stringify(em.objet)}+'\n\n'+${JSON.stringify(em.corps)});toast('Email copié ✓')">📋 Copier l'email</button>
+   ${c?`<a class="act act-call" href="mailto:${c.enrich.email}?subject=${encodeURIComponent(em.objet)}&body=${encodeURIComponent(em.corps)}">📧 Ouvrir dans le client mail</a>`:''}
+   ${e.score.sms?`<button class="act act-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(e.score.sms)});toast('SMS copié ✓')">📋 Copier le SMS</button>`:''}
+  </div>`;
+ document.getElementById('info-modal').style.display='flex';
 }
 
 /* ───────── WAVE 2 : PERSONAS (Dir Commercial, Dir Réseau… via LinkedIn public) ───────── */
@@ -1350,7 +1416,7 @@ function setSort(s,btn){
  state.sort=s;
  document.querySelectorAll('.sort-chip').forEach(c=>c.classList.remove('sel'));
  btn.classList.add('sel');
- renderFiches();
+ if(REAL.length)trierReal();else renderFiches();
 }
 function sortedDemo(){
  const arr=[...DEMO];
