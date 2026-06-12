@@ -29,20 +29,22 @@ export default async function handler(req, res) {
 Entreprise : ${entreprise.nom}${entreprise.enseigne ? ` (enseigne : ${entreprise.enseigne})` : ''}
 ${entreprise.site ? `Site web : ${entreprise.site}` : ''}
 Ville : ${entreprise.ville || ''}
-Postes recherchés : ${jobs.join(', ')}
+Postes recherchés en priorité : ${jobs.join(', ')}
+Postes acceptés en repli (décideurs locaux, à proposer même s'ils ne correspondent pas exactement) : Directeur, Directeur Adjoint, Directeur d'exploitation, Responsable (marketing/commercial/communication/établissement), Gérant, DG, CEO, COO, Fondateur
 
 Méthode :
 1. Cherche la page LinkedIn de l'entreprise ("${entreprise.enseigne || entreprise.nom} linkedin"${entreprise.site ? `, "site:linkedin.com ${entreprise.site}"` : ''})
-2. Cherche les profils publics : "site:linkedin.com/in ${entreprise.enseigne || entreprise.nom} ${jobs[0]}" et variantes pour chaque poste
+2. Cherche les profils publics : "site:linkedin.com/in ${entreprise.enseigne || entreprise.nom} ${jobs[0]}" et variantes pour chaque poste prioritaire, puis pour les postes de repli (directeur, responsable, gérant…)
+2bis. Consulte aussi la page "people" de l'entreprise si trouvée : "linkedin.com/company/…/people"
 3. Vérifie que la personne travaille ACTUELLEMENT dans cette entreprise (pas un ancien poste)
 
 RÈGLES STRICTES :
-- Maximum 3 personnes, uniquement des trouvailles RÉELLES vérifiées dans tes résultats de recherche — n'invente JAMAIS un nom
+- Maximum 5 personnes, classées : postes prioritaires d'abord, puis décideurs de repli — uniquement des trouvailles RÉELLES vérifiées dans tes résultats de recherche, n'invente JAMAIS un nom
 - Une petite entreprise n'a souvent PERSONNE à ces postes : c'est une réponse normale et utile (liste vide)
 - Ne confonds pas avec une entreprise homonyme ou une société sœur d'une autre île
 
 Réponds UNIQUEMENT avec un objet JSON, sans texte autour, sans backticks :
-{"personas": [{"prenom": "…", "nom": "…", "fonction": "…", "linkedin": "linkedin.com/in/… ou null", "confiance": "haute|moyenne|basse"}], "linkedin_entreprise": "linkedin.com/company/… ou null", "explication": "une phrase"}`;
+{"personas": [{"prenom": "…", "nom": "…", "fonction": "…", "linkedin": "linkedin.com/in/… ou null", "confiance": "haute|moyenne|basse", "cible": true|false}], "linkedin_entreprise": "linkedin.com/company/… ou null", "explication": "une phrase"}\n("cible": true si le poste correspond aux postes prioritaires, false si décideur de repli)`;
 
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
