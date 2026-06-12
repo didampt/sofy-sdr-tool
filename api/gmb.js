@@ -49,30 +49,31 @@ function nomCorrespond(nomFiche, nomEntreprise, villeNorm) {
   // → fiable même si chaque mot pris isolément est générique
   const motsEnt = equivaloir(normaliser(nomEntreprise)).split(/[^a-z0-9]+/).filter(t => t.length >= 3);
   const phrase = motsEnt.join(' ');
-  if (phrase.length >= 8 && phrase.includes(' ') && fiche.includes(phrase)) return true;
+  if (phrase.length >= 8 && phrase.includes(' ') && fiche.includes(phrase)) return 2;
   // Séquence ordonnée : tous les mots présents DANS L'ORDRE, insertions tolérées
   // ("auto import martinique" matche "Auto Import FWI Martinique")
   if (motsEnt.length >= 3 && phrase.length >= 12) {
     const motsFiche = fiche.split(/[^a-z0-9]+/).filter(Boolean);
     let k = 0;
     for (const m of motsFiche) { if (m === motsEnt[k]) k++; if (k === motsEnt.length) break; }
-    if (k === motsEnt.length) return true;
+    if (k === motsEnt.length) return 2;
   }
   const villeTokens = new Set((villeNorm || '').split(/[^a-z0-9]+/).filter(Boolean));
   const tokens = equivaloir(normaliser(nomEntreprise)).split(/[^a-z0-9]+/)
     .filter(t => t.length >= 3 && !STOP_NOM.has(t) && !villeTokens.has(t));
   if (tokens.length) {
-    const trouves = tokens.filter(t => new RegExp('\\b' + echapper(t) + '\\b').test(fiche));
-    if (trouves.some(t => t.length >= 5)) return true;
-    if (trouves.length && trouves.length >= Math.ceil(tokens.length / 2)) return true;
+    // Préfixe autorisé pour les mots distinctifs ≥6 lettres : "autodis" matche "AUTODIStribution"
+    const trouves = tokens.filter(t => new RegExp('\\b' + echapper(t) + (t.length >= 6 ? '' : '\\b')).test(fiche));
+    if (trouves.some(t => t.length >= 5)) return 2;
+    if (trouves.length && trouves.length >= Math.ceil(tokens.length / 2)) return 1;
   }
   // Variante compacte : "a 2g" → /\ba\s*2\s*g\b/ matche "A2G" et "A 2G"
   const compact = normaliser(nomEntreprise).replace(/[^a-z0-9]/g, '');
   if (compact.length >= 3 && compact.length <= 10) {
     const rx = new RegExp('\\b' + compact.split('').map(echapper).join('\\s*') + '\\b');
-    if (rx.test(fiche)) return true;
+    if (rx.test(fiche)) return 2;
   }
-  return false;
+  return 0;
 }
 
 // Adresse : 'exacte' = numéro de rue identique + mot de rue → fiable seul.
@@ -156,7 +157,6 @@ export default async function handler(req, res) {
     const valides = candidats
       .filter(r => !r.business_status || r.business_status === 'OPERATIONAL') // exclure fermées définitivement/temporairement
       .filter(r => typeof r.rating === 'number' && r.user_ratings_total > 0)
-      .filter(r => typeCoherent(r.types, naf))
       .map(r => {
         const fa = normaliser(r.formatted_address || '');
         // Zone : ville exacte, CP exact, ou même département (3 premiers chiffres du CP : 971, 972…)
@@ -165,8 +165,11 @@ export default async function handler(req, res) {
           || (cp && (fa.includes(cp) || new RegExp('\\b' + cp.slice(0, 3) + '\\d{2}\\b').test(fa)));
         const matchNom = enseigne ? nomCorrespond(r.name, enseigne, villeNorm) : nomCorrespond(r.name, nom, villeNorm);
         const matchAdresse = adresse || cp ? adresseCorrespond(r.formatted_address || '', adresse, cp) : false;
-        return { r, matchNom, matchAdresse, enZone };
-      });
+        return { r, matchNom, matchAdresse, enZone, typeOk: typeCoherent(r.types, naf) };
+      })
+      // Activité cohérente requise, SAUF preuve de nom distinctive (ex : "AUTODIS" ⊂ "Autodistribution" —
+      // le NAF Pappers diverge parfois de la catégorie Google réelle de l'établissement)
+      .filter(c => c.typeOk || c.matchNom === 2);
 
     // Acceptés d'office : (nom OU adresse exacte) dans la zone (même département/île — JAMAIS une autre île :
     // les groupes ont des sociétés sœurs par île, chaque entité doit matcher SA fiche locale)
