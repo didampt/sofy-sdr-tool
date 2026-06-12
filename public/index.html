@@ -960,7 +960,8 @@ async function iaFiche(i,indice,force){
  if(e.ia&&!force)return false; // déjà tentée : relance uniquement explicite
  try{
   const r=await api('/api/ia',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({nom:e.nom,enseigne:enseigneDe(e),ville:e.ville||'',naf:e.naf||'',siren:e.siren,indice:indice||''})});
+   body:JSON.stringify({nom:e.nom,enseigne:enseigneDe(e),ville:e.ville||'',naf:e.naf||'',siren:e.siren,indice:indice||'',
+    dirigeant:(contactsDe(e)[0]&&contactsDe(e)[0].nom)?(contactsDe(e)[0].prenom+' '+contactsDe(e)[0].nom).trim():''})});
   const d=await r.json();
   if(d.erreur){toast('IA : '+d.erreur);return false;}
   e.ia=d.resultat||{};
