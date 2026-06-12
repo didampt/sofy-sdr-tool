@@ -189,9 +189,20 @@ export default async function handler(req, res) {
     const significatives = fiches.filter(f => f.nb_avis >= 3);
     const pire = (significatives.length ? significatives : fiches).reduce((a, b) => (a.note <= b.note ? a : b));
 
-    // ── 3. Avis négatif récent sur la pire fiche ──
-    let avisNegatif = null;
-    const det = await gPlaces(`https://maps.googleapis.com/maps/api/place/details/json?place_id=${pire.place_id}&fields=reviews&language=fr&key=${key}`);
+    // ── 3. Détails : avis négatif (pire fiche) + téléphone standard & site web (fiche principale) ──
+    let avisNegatif = null, telephone = null, siteWebGmb = null;
+    const principale = fiches[0];
+    const memePlace = principale.place_id === pire.place_id;
+    const champsPire = memePlace ? 'reviews,formatted_phone_number,website' : 'reviews';
+    const det = await gPlaces(`https://maps.googleapis.com/maps/api/place/details/json?place_id=${pire.place_id}&fields=${champsPire}&language=fr&key=${key}`);
+    if (memePlace) {
+      telephone = det.result?.formatted_phone_number || null;
+      siteWebGmb = det.result?.website || null;
+    } else {
+      const detP = await gPlaces(`https://maps.googleapis.com/maps/api/place/details/json?place_id=${principale.place_id}&fields=formatted_phone_number,website&language=fr&key=${key}`);
+      telephone = detP.result?.formatted_phone_number || null;
+      siteWebGmb = detP.result?.website || null;
+    }
     const reviews = det.result?.reviews || [];
     const negatifs = reviews.filter(r => r.rating <= 3 && (r.text || '').length > 20).sort((a, b) => (b.time || 0) - (a.time || 0));
     if (negatifs.length) {
@@ -222,6 +233,8 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       trouve: true,
+      telephone,
+      site_web: siteWebGmb,
       note_moyenne: noteMoyenne,
       total_avis: totalAvis,
       nb_fiches: fiches.length,

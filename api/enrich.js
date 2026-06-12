@@ -68,7 +68,8 @@ export default async function handler(req, res) {
           first_name: contact.prenom || '',
           last_name: contact.nom,
           company: entreprise.nom,
-          ...(entreprise.siren ? { num_siren: String(entreprise.siren) } : {})
+          ...(entreprise.siren ? { num_siren: String(entreprise.siren) } : {}),
+          ...(entreprise.site ? { website: entreprise.site } : {})
         }],
         siren: true,
         language: 'fr'
