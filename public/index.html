@@ -1,0 +1,1377 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sofy Scrap · Listes d'appel SDR</title>
+<link rel="icon" href="/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#131726; --ink-soft:#5A6072; --paper:#F6F7FB; --card:#FFFFFF;
+  --accent:#2B4BF2; --accent-soft:#EBEEFE;
+  --soview:#0FA968; --soconnect:#7C3AED; --soreach:#F2620F;
+  --line:#E5E8F1; --ok:#0FA968; --warn:#E8A013; --danger:#E5484D;
+  --r:14px; --shadow:0 1px 2px rgba(19,23,38,.05),0 8px 24px rgba(19,23,38,.06);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:var(--paper);color:var(--ink);font-size:15px;line-height:1.55}
+h1,h2,h3{font-family:'Space Grotesk',sans-serif}
+button{font-family:inherit;cursor:pointer;border:none}
+input,select,textarea{font-family:inherit;font-size:15px}
+a{color:var(--accent)}
+
+.app{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+.side{background:var(--ink);color:#fff;padding:28px 20px;display:flex;flex-direction:column;gap:6px;position:sticky;top:0;height:100vh}
+.logo{font-family:'Space Grotesk';font-weight:700;font-size:22px;letter-spacing:-.5px;margin-bottom:4px}
+.logo span{color:#8FA0FF}
+.tagline{font-size:12px;color:#9AA1B8;margin-bottom:28px}
+.nav-btn{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;color:#C6CBE0;padding:11px 12px;border-radius:10px;font-size:14px;font-weight:500;transition:.15s}
+.nav-btn:hover{background:rgba(255,255,255,.07);color:#fff}
+.nav-btn.active{background:var(--accent);color:#fff}
+.demo-pill{margin-top:auto;background:rgba(232,160,19,.15);color:#F5C766;border:1px solid rgba(232,160,19,.35);padding:8px 12px;border-radius:10px;font-size:12px;font-weight:600;text-align:center}
+.main{padding:40px 48px;max-width:1100px}
+.view{display:none}
+.view.on{display:block;animation:fade .25s ease}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
+.sub{color:var(--ink-soft);margin-bottom:32px;max-width:620px}
+.head-row{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.steps{display:flex;gap:8px;margin-bottom:28px}
+.step-dot{height:5px;flex:1;border-radius:99px;background:var(--line);transition:.3s}
+.step-dot.done{background:var(--accent)}
+.qcard{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:32px;max-width:680px}
+.qnum{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--ink-soft);margin-bottom:10px}
+.qnum b{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:8px;background:var(--accent-soft);color:var(--accent);font-family:'Space Grotesk'}
+.qcard h2{font-size:21px;margin-bottom:18px}
+.field{width:100%;padding:13px 15px;border:1.5px solid var(--line);border-radius:11px;background:#FBFBFE;transition:.15s}
+.field:focus{outline:none;border-color:var(--accent);background:#fff;box-shadow:0 0 0 4px var(--accent-soft)}
+.hint{font-size:13px;color:var(--ink-soft);margin-top:10px}
+.chips{display:flex;flex-wrap:wrap;gap:10px}
+.chip{padding:10px 16px;border-radius:99px;border:1.5px solid var(--line);background:#fff;font-size:14px;font-weight:500;color:var(--ink);transition:.15s}
+.chip:hover{border-color:var(--accent)}
+.chip.sel{background:var(--accent);border-color:var(--accent);color:#fff}
+.naf-results{margin-top:10px;border:1px solid var(--line);border-radius:11px;overflow:hidden;display:none}
+.naf-item{display:flex;justify-content:space-between;align-items:center;padding:11px 14px;background:#fff;border-bottom:1px solid var(--line);cursor:pointer;font-size:14px}
+.naf-item:last-child{border-bottom:none}
+.naf-item:hover{background:var(--accent-soft)}
+.naf-code{font-family:'Space Grotesk';font-weight:600;color:var(--accent)}
+.tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.tag{display:inline-flex;align-items:center;gap:8px;background:var(--accent-soft);color:var(--accent);padding:7px 12px;border-radius:99px;font-size:13px;font-weight:600}
+.tag button{background:none;color:inherit;font-size:15px;line-height:1}
+.wiz-foot{display:flex;justify-content:space-between;margin-top:26px;max-width:680px}
+.btn{padding:13px 26px;border-radius:11px;font-size:15px;font-weight:600;transition:.15s}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{filter:brightness(1.08);transform:translateY(-1px)}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.btn-ghost{background:none;color:var(--ink-soft)}
+.btn-ghost:hover{color:var(--ink)}
+.btn-reset{background:#fff;color:var(--ink);border:1.5px solid var(--line);padding:11px 20px;border-radius:11px;font-size:14px;font-weight:600;transition:.15s}
+.btn-reset:hover{border-color:var(--accent);color:var(--accent)}
+
+.act{display:inline-flex;align-items:center;gap:7px;padding:9px 15px;border-radius:9px;font-size:13px;font-weight:600;transition:.15s;border:1.5px solid transparent}
+.act:hover{transform:translateY(-1px)}
+.act-call{background:#0FA968;color:#fff}
+.act-sms{background:#F2620F;color:#fff}
+.act-lemlist{background:#3B82F6;color:#fff}
+.act-hubspot{background:#FF7A59;color:#fff}
+.act-copy{background:var(--ink);color:#fff}
+.act-export{background:#fff;color:var(--ink);border-color:var(--line)}
+.act-export:hover{border-color:var(--accent);color:var(--accent)}
+.act-row{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px}
+
+.res-head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:16px;flex-wrap:wrap;gap:14px}
+.kpis{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 18px;box-shadow:var(--shadow)}
+.kpi b{font-family:'Space Grotesk';font-size:20px;display:block}
+.kpi span{font-size:12px;color:var(--ink-soft)}
+.sort-bar{display:flex;gap:10px;align-items:center;margin-bottom:20px;flex-wrap:wrap}
+.sort-lbl{font-size:13px;font-weight:600;color:var(--ink-soft)}
+.sort-chip{padding:9px 16px;border-radius:99px;border:1.5px solid var(--line);background:#fff;font-size:13px;font-weight:600;transition:.15s}
+.sort-chip:hover{border-color:var(--accent)}
+.sort-chip.sel{background:var(--ink);border-color:var(--ink);color:#fff}
+.fiche{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);margin-bottom:18px;overflow:hidden}
+.fiche-top{display:grid;grid-template-columns:1fr auto;gap:18px;padding:22px 26px;cursor:pointer}
+.fiche-top:hover{background:#FBFBFE}
+.lead-name{font-family:'Space Grotesk';font-size:17px;font-weight:600}
+.lead-meta{font-size:13.5px;color:var(--ink-soft);margin-top:3px}
+.badges{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.badge{font-size:12px;font-weight:600;padding:4px 10px;border-radius:99px}
+.b-signal{background:#FDF1E4;color:#B4690E}
+.b-like{background:#E8F1FF;color:#1E5FCC}
+.b-new{background:#E7F7EF;color:#0B7A4C}
+.b-dup{background:#FDEAEA;color:#B23A3E}
+.b-gmb{background:#EEF1FF;color:#3A4FD8}
+.scores{display:flex;flex-direction:column;gap:9px;min-width:240px;justify-content:center}
+.score-row{display:grid;grid-template-columns:84px 1fr 34px;align-items:center;gap:10px;font-size:12.5px;font-weight:600}
+.bar{height:7px;border-radius:99px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:99px}
+.fiche-body{display:none;border-top:1px solid var(--line);padding:24px 26px;background:#FBFBFE}
+.fiche.open .fiche-body{display:block}
+.fiche-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.panel h3{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);margin:16px 0 8px}
+.panel h3:first-child{margin-top:0}
+.panel p,.panel li{font-size:14px}
+.email-box{background:#fff;border:1px solid var(--line);border-radius:11px;padding:16px;font-size:13.5px;white-space:pre-line;margin-top:8px}
+.contact-line{font-size:14px;display:flex;gap:8px;align-items:center;margin-bottom:5px;flex-wrap:wrap}
+.contact-line b{font-weight:600}
+.review-box{background:#FDF4F4;border:1px solid #F2CFCF;border-radius:10px;padding:12px 14px;font-size:13.5px;font-style:italic;color:#7A2E31}
+.review-box .who{display:block;font-style:normal;font-weight:600;font-size:12px;margin-top:6px;color:#9A4448}
+.gmb-vs{display:flex;gap:10px;margin-top:6px}
+.gmb-cell{flex:1;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px}
+.gmb-cell b{font-family:'Space Grotesk';font-size:17px;display:block}
+.gmb-bad b{color:var(--danger)} .gmb-comp b{color:var(--ink)}
+
+.api-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:940px}
+.api-card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:20px;box-shadow:var(--shadow)}
+.api-card h3{font-size:15px;margin-bottom:2px}
+.api-card .role{font-size:12.5px;color:var(--ink-soft);margin-bottom:12px}
+.api-input-row{display:flex;gap:8px;margin-bottom:8px}
+.api-input-row .field{flex:1;font-size:13px;padding:10px 12px}
+.eye{background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:0 12px;font-size:13px}
+.api-status{font-size:12px;font-weight:600;margin-top:4px}
+.st-ok{color:var(--ok)} .st-empty{color:var(--ink-soft)}
+.notice{max-width:940px;background:#FFF8EC;border:1px solid #F2DCA8;border-radius:12px;padding:14px 18px;font-size:13.5px;color:#7A5A12;margin-bottom:22px}
+
+.map-card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:26px;box-shadow:var(--shadow);max-width:940px;margin-bottom:22px}
+.map-card>h2{font-size:19px;margin-bottom:4px;display:flex;align-items:center;gap:10px}
+.map-card .role{font-size:13.5px;color:var(--ink-soft);margin-bottom:18px}
+.map-table{width:100%;border-collapse:collapse;margin-bottom:6px}
+.map-table th{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-soft);text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
+.map-table td{padding:7px 10px;border-bottom:1px solid var(--line);font-size:13.5px}
+.map-table td:first-child{font-weight:600;width:42%}
+.map-table .field{padding:8px 11px;font-size:13px}
+.toggle-row{display:flex;align-items:center;gap:11px;padding:10px 0;font-size:14px}
+.toggle-row input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent)}
+.map-sub{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-soft);margin:20px 0 8px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.lbl{font-size:12.5px;font-weight:600;color:var(--ink-soft);display:block;margin-bottom:5px}
+.save-bar{display:flex;justify-content:flex-end;margin-top:14px}
+.comp-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.comp-col{border:1px solid var(--line);border-radius:11px;padding:14px;background:#FBFBFE}
+.comp-col h4{font-family:'Space Grotesk';font-size:14px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.dot{width:10px;height:10px;border-radius:99px;display:inline-block}
+.comp-col textarea{width:100%;min-height:130px;border:1.5px solid var(--line);border-radius:9px;padding:10px;font-size:13px;background:#fff;resize:vertical}
+.comp-col textarea:focus{outline:none;border-color:var(--accent)}
+
+.loader{display:none;text-align:center;padding:80px 0}
+.loader.on{display:block}
+.spin{width:42px;height:42px;border:4px solid var(--line);border-top-color:var(--accent);border-radius:50%;margin:0 auto 18px;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.load-step{color:var(--ink-soft);font-size:14px}
+#wf-modal{display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:900;align-items:center;justify-content:center}
+.wf-panel{background:#fff;border-radius:16px;box-shadow:var(--shadow);width:min(620px,94vw);max-height:80vh;display:flex;flex-direction:column}
+.wf-head{padding:20px 24px 12px;font-family:'Sora';font-weight:700;font-size:17px}
+.wf-cols{display:grid;grid-template-columns:1fr 64px 64px 64px;padding:0 24px 8px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:700}
+.wf-body{overflow-y:auto;padding:0 24px;flex:1}
+.wf-row{display:grid;grid-template-columns:1fr 64px 64px 64px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:13.5px}
+.wf-cell{text-align:center}
+.wf-foot{padding:14px 24px 20px;text-align:right}
+#login-overlay{display:none;position:fixed;inset:0;background:var(--paper);z-index:999;align-items:center;justify-content:center}
+.login-card{background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:42px;width:min(420px,92vw);text-align:center}
+.login-card img{max-width:220px;margin-bottom:8px}
+.login-card h2{font-size:19px;margin:10px 0 22px;color:var(--ink-soft);font-weight:500;font-family:'Inter'}
+.login-card .field{margin-bottom:12px;text-align:left}
+.login-err{color:var(--danger);font-size:13.5px;font-weight:600;min-height:18px;margin-bottom:10px}
+.login-links{margin-top:16px;display:flex;flex-direction:column;gap:8px;font-size:13px}
+.login-links a{cursor:pointer}
+.user-badge{margin-top:auto;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.06);font-size:13px;color:#C6CBE0;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.user-badge button{background:none;color:#8FA0FF;font-size:12px;font-weight:600}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:12px 22px;border-radius:11px;font-size:14px;font-weight:500;box-shadow:var(--shadow);transition:.25s;z-index:99;opacity:0}
+.toast.on{transform:translateX(-50%);opacity:1}
+@media(max-width:880px){.app{grid-template-columns:1fr}.side{position:static;height:auto;flex-direction:row;align-items:center;flex-wrap:wrap}.demo-pill{margin-top:0}.main{padding:24px}.fiche-grid,.api-grid,.row3,.comp-grid{grid-template-columns:1fr}.fiche-top{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div id="wf-modal">
+ <div class="wf-panel">
+  <div class="wf-head" id="wf-titre">🚀 Enrichissement en cours…</div>
+  <div class="wf-cols"><span>Fiche</span><span style="text-align:center">GMB</span><span style="text-align:center">IA 🤖</span><span style="text-align:center">Email</span></div>
+  <div class="wf-body" id="wf-rows"></div>
+  <div class="wf-foot"><button class="btn btn-primary" id="wf-fermer" disabled onclick="document.getElementById('wf-modal').style.display='none'">Fermer</button></div>
+ </div>
+</div>
+<div id="login-overlay">
+ <div class="login-card">
+  <img src="/logo-full.png" alt="Sofy" onerror="this.style.display='none'">
+  <h2>Sofy Scrap — Listes d'appel SDR</h2>
+  <input class="field" id="login-email" type="email" placeholder="prenom@sofy.fr" autocomplete="username">
+  <input class="field" id="login-mdp" type="password" placeholder="Mot de passe (8 caractères min.)" autocomplete="current-password" onkeydown="if(event.key==='Enter')connexion('login')">
+  <div class="login-err" id="login-err"></div>
+  <button class="btn btn-primary" style="width:100%" onclick="connexion('login')">Se connecter</button>
+  <div class="login-links">
+   <a onclick="connexion('init')">Première connexion superadmin → définir mon mot de passe</a>
+   <a onclick="document.getElementById('login-err').textContent='Réinitialisation par email : prochaine étape. En attendant, Didier peut redéfinir ton mot de passe dans Paramètres.'">Mot de passe oublié ?</a>
+  </div>
+ </div>
+</div>
+<div class="app">
+
+  <aside class="side">
+    <div class="logo" style="display:flex;align-items:center;gap:9px"><img src="/logo-icon.png" alt="" style="width:28px;height:28px" onerror="this.style.display='none'">Sofy <span>Scrap</span></div>
+    <div class="tagline">Listes d'appel SDR</div>
+    <button class="nav-btn active" data-view="wizard" onclick="nav('wizard',this)">🎯 Nouvelle liste</button>
+    <button class="nav-btn" data-view="results" onclick="nav('results',this)">📞 Résultats</button>
+    <button class="nav-btn" data-view="history" onclick="nav('history',this);chargerHistorique()">🗂 Historique</button>
+    <button class="nav-btn" data-view="mapping" onclick="nav('mapping',this)">⚙️ Envois & mapping</button>
+    <button class="nav-btn" data-view="params" onclick="nav('params',this);chargerSdrs()">⚙️ Paramètres</button>
+    <button class="nav-btn" data-view="settings" onclick="nav('settings',this)">🔌 Connexions</button>
+    <div class="user-badge" id="user-badge" style="display:none"><span id="user-nom"></span><button onclick="deconnexion(true)">Déconnexion</button></div>
+    <div class="demo-pill">PAPPERS + GMB ✓ — enrichissement à venir</div>
+  </aside>
+
+  <main class="main">
+
+    <!-- ════ VUE 1 : WIZARD ════ -->
+    <section class="view on" id="view-wizard">
+      <div class="eyebrow">Nouvelle liste d'appel</div>
+      <div class="head-row">
+        <div>
+          <h1>Construis ta liste, <span id="sdr-name">SDR</span>.</h1>
+          <p class="sub">6 questions. La machine fait le reste : extraction, enrichissement, dédoublonnage HubSpot, scoring Soview / SoConnect / SoReach, signaux et emails prêts à envoyer.</p>
+        </div>
+        <button class="btn-reset" onclick="resetWizard()">↺ Nouvelle liste</button>
+      </div>
+
+      <div class="steps" id="steps"></div>
+
+      <div class="qcard" data-q="0">
+        <div class="qnum"><b>1</b> Secteur d'activité</div>
+        <h2>Quel secteur cibles-tu ?</h2>
+        <input class="field" id="naf-search" placeholder="Ex : automobile, coiffure, restaurant, pharmacie…" oninput="searchNaf(this.value)">
+        <div class="naf-results" id="naf-results"></div>
+        <div class="tags" id="naf-tags"></div>
+        <p class="hint">Recherche par mot-clé → codes NAF officiels (via API Pappers). Plusieurs secteurs possibles.</p>
+      </div>
+
+      <div class="qcard" data-q="1" style="display:none">
+        <div class="qnum"><b>2</b> Taille de la liste</div>
+        <h2>Combien de contacts veux-tu ?</h2>
+        <div class="chips" id="size-chips"></div>
+        <p class="hint">Recommandé : 25–50 pour une session d'appels, 100+ pour une séquence Lemlist.</p>
+      </div>
+
+      <div class="qcard" data-q="2" style="display:none">
+        <div class="qnum"><b>3</b> Taille de la société</div>
+        <h2>Quel effectif ?</h2>
+        <div class="chips" id="emp-chips"></div>
+        <p class="hint">ICP Sofy multi-sites : 20+ salariés recommandé.</p>
+      </div>
+
+      <div class="qcard" data-q="3" style="display:none">
+        <div class="qnum"><b>4</b> Chiffre d'affaires</div>
+        <h2>Quelle tranche de CA ?</h2>
+        <div class="chips" id="ca-chips"></div>
+      </div>
+
+      <div class="qcard" data-q="4" style="display:none">
+        <div class="qnum"><b>5</b> Fonction recherchée</div>
+        <h2>Qui veux-tu avoir au téléphone ?</h2>
+        <div class="chips" id="job-chips"></div>
+        <input class="field" id="job-custom" placeholder="Autre fonction… (Entrée pour ajouter)" style="margin-top:14px" onkeydown="addCustomJob(event)">
+      </div>
+
+      <div class="qcard" data-q="5" style="display:none">
+        <div class="qnum"><b>6</b> Localisation</div>
+        <h2>Où ? <span style="font-size:14px;color:var(--ink-soft);font-weight:400">(plusieurs territoires possibles)</span></h2>
+        <div class="chips" id="pays-chips"></div>
+        <input class="field" id="pays-autre" placeholder="Autre pays… (Entrée pour ajouter)" style="margin-top:16px" onkeydown="addCustomPays(event)">
+        <input class="field" id="loc-ville" placeholder="Ville ou département (optionnel)" style="margin-top:12px">
+        <p class="hint">Sélectionne un ou plusieurs territoires. Laisse la ville vide pour tout cibler.</p>
+        <h2 style="margin-top:22px;font-size:17px">Identification de la liste</h2>
+        <input class="field" id="liste-nom" placeholder="Nom de la liste (ex : Concessions auto Guadeloupe juin)" oninput="state.listeNom=this.value.trim();validate()">
+        <div class="chips" id="sdr-chips" style="margin-top:12px"></div>
+        <input class="field" id="sdr-autre" placeholder="Autre SDR… (Entrée pour ajouter)" style="margin-top:12px" onkeydown="addCustomSdr(event)">
+      </div>
+
+      <div class="loader" id="loader">
+        <div class="spin"></div>
+        <h2 style="margin-bottom:8px">Construction de la liste…</h2>
+        <p class="load-step" id="load-step">Extraction Pappers…</p>
+      </div>
+
+      <div class="wiz-foot" id="wiz-foot">
+        <button class="btn btn-ghost" id="btn-back" onclick="move(-1)">← Retour</button>
+        <button class="btn btn-primary" id="btn-next" onclick="move(1)">Continuer →</button>
+      </div>
+    </section>
+
+    <!-- ════ VUE 2 : RÉSULTATS ════ -->
+    <section class="view" id="view-results">
+      <div class="eyebrow">Liste d'appel</div>
+      <div class="res-head">
+        <div>
+          <h1 id="res-title">Aucune liste générée</h1>
+          <p class="sub" style="margin:0" id="res-sub">Lance une nouvelle liste pour voir les fiches d'appel ici.</p>
+        </div>
+        <div class="kpis" id="kpis" style="display:none">
+          <div class="kpi"><b id="k-total">0</b><span>contacts</span></div>
+          <div class="kpi"><b id="k-new">0</b><span>hors CRM ✓</span></div>
+          <div class="kpi"><b id="k-sig">0</b><span>signaux 🔥</span></div>
+          <button class="act act-call" onclick="lancerWaterfall()">🚀 Lancer l'enrichissement</button>
+          <button class="act act-export" onclick="exportCsv()">⬇️ Export Excel / CSV</button>
+          <button class="btn-reset" onclick="resetWizard();nav('wizard',document.querySelector('[data-view=wizard]'))">↺ Nouvelle liste</button>
+        </div>
+      </div>
+      <div class="sort-bar" id="sort-bar" style="display:none">
+        <span class="sort-lbl">Classer par :</span>
+        <button class="sort-chip sel" data-sort="signal" onclick="setSort('signal',this)">🔥 Signal hot</button>
+        <button class="sort-chip" data-sort="oppo" onclick="setSort('oppo',this)">🎯 Meilleure opportunité d'appel</button>
+        <button class="sort-chip" data-sort="gmb" onclick="setSort('gmb',this)">⭐ Note GMB la plus basse</button>
+        <button class="sort-chip" data-sort="etab" onclick="setSort('etab',this)">🏬 Nombre d'établissements</button>
+      </div>
+      <div id="fiches"></div>
+    </section>
+
+    <!-- ════ VUE : HISTORIQUE ════ -->
+    <section class="view" id="view-history">
+      <div class="eyebrow">Mémoire des listes</div>
+      <h1>Historique</h1>
+      <p class="sub">Toutes les listes générées, sauvegardées automatiquement. Rouvre une liste sans consommer de crédits, ou relance-la pour une mise à jour.</p>
+      <input class="field" id="hist-search" placeholder="🔍 Rechercher par nom de liste ou SDR…" style="max-width:480px;margin-bottom:20px" oninput="clearTimeout(window._ht);window._ht=setTimeout(chargerHistorique,300)">
+      <div id="hist-liste"><p style="color:var(--ink-soft)">Chargement…</p></div>
+    </section>
+
+    <!-- ════ VUE 3 : ENVOIS & MAPPING ════ -->
+    <section class="view" id="view-mapping">
+      <div class="eyebrow">Configuration des envois</div>
+      <h1>Envois & mapping</h1>
+      <p class="sub">Définit ce qui part vers Lemlist (✈️) et HubSpot (🤝), les champs cibles, et les concurrents surveillés pour les signaux LinkedIn. À l'étape backend, campagnes, pipelines et propriétaires seront chargés depuis tes comptes.</p>
+
+      <!-- CONCURRENTS -->
+      <div class="map-card">
+        <h2>👀 Concurrents surveillés — signaux LinkedIn</h2>
+        <div class="role">Un contact qui like un post d'un de ces concurrents déclenche le signal « 💙 Like post concurrent » + alerte Slack. Un concurrent par ligne, modifiable à tout moment. Surveillance via PhantomBuster.</div>
+        <div class="comp-grid">
+          <div class="comp-col">
+            <h4><span class="dot" style="background:var(--soview)"></span>Soview</h4>
+            <textarea>Partoo
+Guest Suite
+Custplace
+Trustfolio
+Skeepers
+Local Ranker
+Google Business Profile
+Digitaleo
+Solocal</textarea>
+          </div>
+          <div class="comp-col">
+            <h4><span class="dot" style="background:var(--soconnect)"></span>SoConnect</h4>
+            <textarea>Simio
+Alcméon
+GreenBureau</textarea>
+          </div>
+          <div class="comp-col">
+            <h4><span class="dot" style="background:var(--soreach)"></span>SoReach SMS / RCS</h4>
+            <textarea>SMSPartner
+SMSFactor
+Esendex
+Brevo
+Octopush
+AllMySMS
+Spot-Hit</textarea>
+          </div>
+        </div>
+        <div class="toggle-row" style="margin-top:12px"><input type="checkbox" checked id="sig-ourpost"><label for="sig-ourpost">Activer le signal « 💙 A liké notre post LinkedIn (Sofy) »</label></div>
+        <div class="toggle-row"><input type="checkbox" checked id="sig-comppost"><label for="sig-comppost">Activer le signal « 💙 A liké le post d'un concurrent » (boost du score du produit concerné)</label></div>
+        <div class="save-bar"><button class="btn btn-primary" onclick="toast('Liste de concurrents enregistrée (mode démo)')">Enregistrer</button></div>
+      </div>
+
+      <!-- LEMLIST -->
+      <div class="map-card">
+        <h2>✈️ Lemlist — envoi en séquence</h2>
+        <div class="role">Déclenché quand le SDR ne joint pas le contact. Le lead part dans la campagne choisie avec toutes ses variables de personnalisation.</div>
+
+        <div class="row3">
+          <div><span class="lbl">Campagne par défaut</span>
+            <select class="field"><option>Demander au SDR à chaque envoi</option><option>Outbound — Soview Auto</option><option>Outbound — SoConnect Beauté</option><option>Outbound — SoReach Garages</option></select>
+          </div>
+          <div><span class="lbl">Routage auto par produit dominant</span>
+            <select class="field"><option>Oui — selon le score le plus élevé</option><option>Non — toujours la campagne par défaut</option></select>
+          </div>
+          <div><span class="lbl">Tag ajouté au lead</span>
+            <input class="field" value="sofy-sdr-tool">
+          </div>
+        </div>
+
+        <div class="map-sub">Variables envoyées → personnalisation Lemlist</div>
+        <table class="map-table">
+          <tr><th>Donnée Sofy</th><th>Variable Lemlist</th></tr>
+          <tr><td>Prénom</td><td><input class="field" value="firstName"></td></tr>
+          <tr><td>Nom</td><td><input class="field" value="lastName"></td></tr>
+          <tr><td>Email</td><td><input class="field" value="email"></td></tr>
+          <tr><td>Société</td><td><input class="field" value="companyName"></td></tr>
+          <tr><td>Mobile</td><td><input class="field" value="phone"></td></tr>
+          <tr><td>LinkedIn</td><td><input class="field" value="linkedinUrl"></td></tr>
+          <tr><td>Note GMB moyenne</td><td><input class="field" value="gmb_note"></td></tr>
+          <tr><td>Pire fiche GMB</td><td><input class="field" value="gmb_pire_fiche"></td></tr>
+          <tr><td>Extrait avis négatif</td><td><input class="field" value="avis_negatif"></td></tr>
+          <tr><td>Moyenne GMB concurrents</td><td><input class="field" value="gmb_concurrents"></td></tr>
+          <tr><td>Signal détecté</td><td><input class="field" value="signal"></td></tr>
+          <tr><td>Produit dominant + score</td><td><input class="field" value="produit_score"></td></tr>
+          <tr><td>Accroche (1re ligne de l'email rédigé)</td><td><input class="field" value="accroche"></td></tr>
+        </table>
+
+        <div class="toggle-row"><input type="checkbox" checked id="lem-fullmail"><label for="lem-fullmail">Envoyer aussi l'email complet rédigé par l'IA dans la variable <b>email_perso</b> (utilisable tel quel dans la séquence)</label></div>
+        <div class="save-bar"><button class="btn btn-primary" onclick="toast('Mapping Lemlist enregistré (mode démo)')">Enregistrer</button></div>
+      </div>
+
+      <!-- HUBSPOT -->
+      <div class="map-card">
+        <h2>🤝 HubSpot — contact, note, transaction</h2>
+        <div class="role">Déclenché quand le RDV est pris. Crée/met à jour le contact, dépose la synthèse en note, et ouvre une transaction pour l'AE.</div>
+
+        <div class="map-sub">1 · Propriétés contact</div>
+        <table class="map-table">
+          <tr><th>Donnée Sofy</th><th>Propriété HubSpot</th></tr>
+          <tr><td>Email</td><td><input class="field" value="email"></td></tr>
+          <tr><td>Mobile</td><td><input class="field" value="mobilephone"></td></tr>
+          <tr><td>Fonction</td><td><input class="field" value="jobtitle"></td></tr>
+          <tr><td>LinkedIn</td><td><input class="field" value="hs_linkedin_url"></td></tr>
+          <tr><td>Site web</td><td><input class="field" value="website"></td></tr>
+          <tr><td>Code NAF</td><td><input class="field" value="code_naf (propriété custom)"></td></tr>
+          <tr><td>Nb d'établissements</td><td><input class="field" value="nb_etablissements (custom)"></td></tr>
+          <tr><td>Score Soview</td><td><input class="field" value="score_soview (custom)"></td></tr>
+          <tr><td>Score SoConnect</td><td><input class="field" value="score_soconnect (custom)"></td></tr>
+          <tr><td>Score SoReach</td><td><input class="field" value="score_soreach (custom)"></td></tr>
+          <tr><td>Note GMB / pire fiche / avis</td><td><input class="field" value="gmb_resume (custom)"></td></tr>
+        </table>
+
+        <div class="map-sub">2 · Note & tag</div>
+        <div class="toggle-row"><input type="checkbox" checked id="hs-note"><label for="hs-note">Déposer la <b>synthèse d'appel + signal</b> en note sur la fiche contact</label></div>
+        <div class="toggle-row"><input type="checkbox" checked id="hs-list"><label for="hs-list">Ajouter le contact à la liste statique :</label><input class="field" style="max-width:260px" value="Leads SDR Tool"></div>
+        <div class="toggle-row"><input type="checkbox" checked id="hs-src"><label for="hs-src">Source du contact : <b>sofy-sdr-tool</b> (propriété hs_lead_source)</label></div>
+
+        <div class="map-sub">3 · Transaction (RDV pris → AE)</div>
+        <div class="row3">
+          <div><span class="lbl">Pipeline</span>
+            <select class="field"><option>Pipeline Ventes (défaut)</option><option>Pipeline Antilles</option></select>
+          </div>
+          <div><span class="lbl">Étape de la transaction</span>
+            <select class="field"><option>RDV planifié</option><option>Découverte</option><option>Qualification</option></select>
+          </div>
+          <div><span class="lbl">Propriétaire (AE)</span>
+            <select class="field"><option>Romain (Head of Sales)</option><option>Attribution automatique round-robin</option></select>
+          </div>
+        </div>
+        <div style="margin-top:12px"><span class="lbl">Nom de la transaction (modèle)</span>
+          <input class="field" value="{Société} — {Produit dominant} — via SDR Tool">
+        </div>
+        <div class="save-bar"><button class="btn btn-primary" onclick="toast('Mapping HubSpot enregistré (mode démo)')">Enregistrer</button></div>
+      </div>
+    </section>
+
+    <!-- ════ VUE : PARAMÈTRES ════ -->
+    <section class="view" id="view-params">
+      <div class="eyebrow">Administration</div>
+      <h1>Paramètres</h1>
+      <p class="sub">Gère l'équipe SDR (les noms proposés à l'étape 6) et les limites de crédits par utilisateur. L'application des limites et le suivi des consommations arrivent avec la page Statistiques.</p>
+
+      <div class="map-card">
+        <h2>👥 SDR & utilisateurs</h2>
+        <div class="role">Limite de crédits : montant maximum de crédits consommables par mois. Vide = illimité.</div>
+        <table class="map-table" id="sdr-table">
+          <tr><th>Nom</th><th>Email</th><th>Limite crédits / mois</th><th>Actif</th><th></th></tr>
+        </table>
+        <div class="map-sub">Ajouter un SDR / utilisateur</div>
+        <div class="row3">
+          <input class="field" id="new-sdr-nom" placeholder="Prénom (ex : Sarah)">
+          <input class="field" id="new-sdr-email" placeholder="Email (ex : sarah@sofy.fr)">
+          <input class="field" id="new-sdr-limite" type="number" min="0" placeholder="Limite crédits (vide = illimité)">
+        </div>
+        <div class="save-bar"><button class="btn btn-primary" onclick="ajouterSdr()">+ Ajouter</button></div>
+      </div>
+    </section>
+
+    <!-- ════ VUE 4 : STATUT DES CONNEXIONS ════ -->
+    <section class="view" id="view-settings">
+      <div class="eyebrow">Configuration</div>
+      <h1>Statut des connexions</h1>
+      <p class="sub">Les clés API sont stockées côté serveur (Vercel) et ne transitent jamais par le navigateur. Cette page indique simplement ce qui est branché.</p>
+      <div class="notice">🔐 Pour ajouter ou modifier une clé : <b>Vercel → projet sofy-sdr-tool → Settings → Environment Variables</b>, puis redéployer (ou attendre le prochain commit). Le nom de variable attendu est indiqué sur chaque carte.</div>
+      <div class="api-grid" id="api-grid"><p style="color:var(--ink-soft)">Chargement du statut…</p></div>
+    </section>
+
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ───────── DONNÉES ───────── */
+const NAF = [
+ ["4511Z","Commerce de voitures et de véhicules automobiles légers"],
+ ["4520A","Entretien et réparation de véhicules automobiles légers"],
+ ["4520B","Entretien et réparation d'autres véhicules automobiles"],
+ ["4532Z","Commerce de détail d'équipements automobiles"],
+ ["4540Z","Commerce et réparation de motocycles"],
+ ["7711A","Location de courte durée de voitures"],
+ ["5610A","Restauration traditionnelle"],
+ ["5610C","Restauration de type rapide"],
+ ["5630Z","Débits de boissons"],
+ ["5510Z","Hôtels et hébergement similaire"],
+ ["9602A","Coiffure"],
+ ["9602B","Soins de beauté"],
+ ["4773Z","Commerce de détail de produits pharmaceutiques (pharmacies)"],
+ ["4771Z","Commerce de détail d'habillement en magasin spécialisé"],
+ ["4724Z","Commerce de détail de pain, pâtisserie et confiserie"],
+ ["6831Z","Agences immobilières"],
+ ["9313Z","Activités des centres de culture physique (salles de sport)"],
+ ["8690E","Activités des professionnels de la rééducation et pédicures"],
+ ["3212Z","Fabrication d'articles de joaillerie et bijouterie"],
+ ["4778C","Autres commerces de détail spécialisés divers"],
+ ["9603Z","Services funéraires"],
+ ["7500Z","Activités vétérinaires"]
+];
+const APIS = [
+ ["pappers","Pappers","Extraction entreprises : NAF, effectif, CA, établissements","key"],
+ ["gplaces","Google Places","Score GMB, avis, pire fiche, moyenne concurrents","key"],
+ ["fullenrich","FullEnrich","Email + mobile (waterfall niveau 1)","key"],
+ ["dropcontact","Dropcontact","Email vérifié (waterfall niveau 2)","key"],
+ ["leadmagic","LeadMagic","Email (waterfall niveau 3)","key"],
+ ["hubspot","HubSpot","Dédoublonnage CRM + contact, note, transaction AE","key"],
+ ["lemlist","Lemlist","Envoi du contact en séquence email","key+login"],
+ ["ringover","Ringover","Appel click-to-call depuis la fiche","key+login"],
+ ["sofy","Sofy (SoReach)","Envoi SMS / RCS depuis la fiche","key+login"],
+ ["slack","Slack Webhook","Alertes signaux temps réel","url"],
+ ["claude","Claude API","Scoring, synthèse cold call, emails personnalisés","key"],
+ ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
+ ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
+];
+const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
+
+/* ───────── SESSION & AUTHENTIFICATION ───────── */
+function api(url,opts={}){
+ const t=localStorage.getItem('sofy_token');
+ opts.headers=Object.assign({},opts.headers||{},t?{'Authorization':'Bearer '+t}:{});
+ return fetch(url,opts);
+}
+async function connexion(action){
+ const email=document.getElementById('login-email').value.trim();
+ const mdp=document.getElementById('login-mdp').value;
+ const err=document.getElementById('login-err');
+ err.textContent='';
+ try{
+  const r=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,email,password:mdp})});
+  const d=await r.json();
+  if(!d.ok){err.textContent=d.erreur||'Erreur';return;}
+  localStorage.setItem('sofy_token',d.token);
+  demarrerApp(d.user);
+ }catch(e){err.textContent='Erreur réseau : '+e.message;}
+}
+function deconnexion(volontaire){
+ localStorage.removeItem('sofy_token');
+ state.user=null;
+ document.getElementById('user-badge').style.display='none';
+ document.getElementById('login-overlay').style.display='flex';
+ if(volontaire)document.getElementById('login-mdp').value='';
+}
+function demarrerApp(u){
+ state.user=u;
+ document.getElementById('login-overlay').style.display='none';
+ const badge=document.getElementById('user-badge');
+ badge.style.display='flex';
+ document.getElementById('user-nom').textContent=u.nom+(u.role==='superadmin'?' 👑':'');
+ if(u.role!=='superadmin'){const b=document.querySelector('[data-view="params"]');if(b)b.style.display='none';}
+ chargerSdrChips();
+ chargerStatut();
+}
+async function verifSession(){
+ const t=localStorage.getItem('sofy_token');
+ if(t){
+  try{
+   const r=await fetch('/api/auth?action=me',{headers:{'Authorization':'Bearer '+t}});
+   const d=await r.json();
+   if(d.ok){demarrerApp(d.user);return;}
+  }catch(_){}
+ }
+ document.getElementById('login-overlay').style.display='flex';
+}
+
+/* ───────── NAV / TOAST ───────── */
+function nav(v,btn){
+ document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
+ document.getElementById('view-'+v).classList.add('on');
+ document.querySelectorAll('.nav-btn').forEach(x=>x.classList.remove('active'));
+ if(btn)btn.classList.add('active');
+ else document.querySelector(`[data-view="${v}"]`).classList.add('active');
+}
+let toastT;
+function toast(msg){
+ const t=document.getElementById('toast');
+ t.textContent=msg;t.classList.add('on');
+ clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('on'),2600);
+}
+
+/* ───────── WIZARD ───────── */
+const stepsEl=document.getElementById('steps');
+for(let i=0;i<6;i++){const d=document.createElement('div');d.className='step-dot'+(i===0?' done':'');stepsEl.appendChild(d);}
+function refreshSteps(){[...stepsEl.children].forEach((d,i)=>d.classList.toggle('done',i<=state.step));}
+
+function chips(id,opts,key,multi){
+ const el=document.getElementById(id);
+ opts.forEach(o=>{
+  const b=document.createElement('button');b.className='chip';b.textContent=o;
+  b.onclick=()=>{
+   if(multi){
+     b.classList.toggle('sel');
+     state[key]=b.classList.contains('sel')?[...state[key],o]:state[key].filter(j=>j!==o);
+   }else{
+     [...el.children].forEach(c=>c.classList.remove('sel'));b.classList.add('sel');state[key]=o;
+   }
+   validate();
+  };
+  el.appendChild(b);
+ });
+}
+chips('size-chips',["25","50","100","250","500"],'size');
+chips('emp-chips',["1–9","10–19","20–49","50–199","200–499","500+"],'emp');
+chips('ca-chips',["< 500 K€","500 K€ – 2 M€","2 – 10 M€","10 – 50 M€","50 M€ +","Indifférent"],'ca');
+chips('job-chips',["Dirigeant / PDG","Directeur Marketing","Directeur Relation Client","Directeur Expérience Client (CX)","Directeur Omnicanal / Digital","Responsable Service Client","Directeur CRM","Directeur Commercial","Responsable Communication","Directeur Réseau / Retail"],'jobs',true);
+chips('pays-chips',["Guadeloupe","Martinique","Guyane française","Réunion","France","Mayotte"],'pays',true);
+async function chargerSdrChips(){
+ try{
+  const r=await api('/api/sdrs');
+  const d=await r.json();
+  const el=document.getElementById('sdr-chips');
+  el.innerHTML='';
+  (d.sdrs||[]).filter(s=>s.actif).forEach(s=>{
+   const b=document.createElement('button');b.className='chip';b.textContent=s.nom;
+   b.onclick=()=>{[...el.children].forEach(c=>c.classList.remove('sel'));b.classList.add('sel');state.sdr=s.nom;validate();};
+   if(state.user&&s.nom===state.user.nom){b.classList.add('sel');state.sdr=s.nom;}
+   el.appendChild(b);
+  });
+  validate();
+ }catch(_){chips('sdr-chips',["Alicia","Franck","Romain","Manon"],'sdr');}
+}
+function addCustomSdr(e){
+ if(e.key!=='Enter'||!e.target.value.trim())return;
+ const o=e.target.value.trim();e.target.value='';
+ const b=document.createElement('button');b.className='chip sel custom-chip';b.textContent=o;
+ b.onclick=()=>{[...document.getElementById('sdr-chips').children].forEach(c=>c.classList.remove('sel'));b.classList.add('sel');state.sdr=o;validate();};
+ document.getElementById('sdr-chips').appendChild(b);
+ [...document.getElementById('sdr-chips').children].forEach(c=>c.classList.remove('sel'));b.classList.add('sel');
+ state.sdr=o;validate();
+}
+
+function addCustomJob(e){
+ if(e.key!=='Enter'||!e.target.value.trim())return;
+ const o=e.target.value.trim();e.target.value='';
+ const b=document.createElement('button');b.className='chip sel custom-chip';b.textContent=o;
+ b.onclick=()=>{b.classList.toggle('sel');state.jobs=b.classList.contains('sel')?[...state.jobs,o]:state.jobs.filter(j=>j!==o);validate();};
+ document.getElementById('job-chips').appendChild(b);
+ state.jobs.push(o);validate();
+}
+function addCustomPays(e){
+ if(e.key!=='Enter'||!e.target.value.trim())return;
+ const o=e.target.value.trim();e.target.value='';
+ const b=document.createElement('button');b.className='chip sel custom-chip';b.textContent=o;
+ b.onclick=()=>{b.classList.toggle('sel');state.pays=b.classList.contains('sel')?[...state.pays,o]:state.pays.filter(j=>j!==o);validate();};
+ document.getElementById('pays-chips').appendChild(b);
+ state.pays.push(o);validate();
+}
+
+function searchNaf(q){
+ const box=document.getElementById('naf-results');
+ q=q.trim().toLowerCase();
+ if(q.length<2){box.style.display='none';return;}
+ const hits=NAF.filter(([c,l])=>l.toLowerCase().includes(q)||c.toLowerCase().includes(q)).slice(0,6);
+ box.innerHTML=hits.length?hits.map(([c,l])=>`<div class="naf-item" onclick="pickNaf('${c}')"><span>${l}</span><span class="naf-code">${c}</span></div>`).join(''):'<div class="naf-item">Aucun résultat — l\'API Pappers couvrira tous les codes NAF</div>';
+ box.style.display='block';
+}
+function pickNaf(code){
+ if(!state.naf.includes(code))state.naf.push(code);
+ document.getElementById('naf-search').value='';
+ document.getElementById('naf-results').style.display='none';
+ renderNafTags();validate();
+}
+function renderNafTags(){
+ document.getElementById('naf-tags').innerHTML=state.naf.map(c=>{
+  const l=NAF.find(n=>n[0]===c)[1];
+  return `<span class="tag">${c} · ${l.length>34?l.slice(0,34)+'…':l}<button onclick="rmNaf('${c}')">×</button></span>`;
+ }).join('');
+}
+function rmNaf(c){state.naf=state.naf.filter(x=>x!==c);renderNafTags();validate();}
+
+function validate(){
+ const ok=[state.naf.length>0,!!state.size,!!state.emp,!!state.ca,state.jobs.length>0,state.pays.length>0&&!!state.listeNom&&!!state.sdr][state.step];
+ document.getElementById('btn-next').disabled=!ok;
+}
+function move(dir){
+ const cards=document.querySelectorAll('.qcard');
+ if(dir===1&&state.step===5){launch();return;}
+ cards[state.step].style.display='none';
+ state.step=Math.max(0,Math.min(5,state.step+dir));
+ cards[state.step].style.display='block';
+ document.getElementById('btn-back').style.visibility=state.step===0?'hidden':'visible';
+ document.getElementById('btn-next').textContent=state.step===5?'🚀 Générer la liste':'Continuer →';
+ refreshSteps();validate();
+}
+
+/* ───────── RESET ───────── */
+function resetWizard(){
+ state.naf=[];state.size=null;state.emp=null;state.ca=null;state.jobs=[];state.pays=[];state.step=0;state.sdr=null;state.listeNom='';state.savedId=null;
+ document.getElementById('liste-nom').value='';
+ document.querySelectorAll('.chip.sel').forEach(c=>c.classList.remove('sel'));
+ document.querySelectorAll('.custom-chip').forEach(c=>c.remove());
+ document.getElementById('naf-search').value='';
+ document.getElementById('loc-ville').value='';
+ document.getElementById('naf-results').style.display='none';
+ renderNafTags();
+ document.querySelectorAll('.qcard').forEach((c,i)=>c.style.display=i===0?'block':'none');
+ document.getElementById('loader').classList.remove('on');
+ document.getElementById('wiz-foot').style.display='flex';
+ document.getElementById('btn-back').style.visibility='hidden';
+ document.getElementById('btn-next').textContent='Continuer →';
+ refreshSteps();validate();
+ toast('Nouveau brief — c\'est reparti');
+}
+
+/* ───────── GÉNÉRATION RÉELLE via /api/pappers ───────── */
+const DEP_MAP={"Guadeloupe":"971","Martinique":"972","Guyane française":"973","Réunion":"974","Mayotte":"976"};
+const EFF_MAP={"1–9":["1","9"],"10–19":["10","19"],"20–49":["20","49"],"50–199":["50","199"],"200–499":["200","499"],"500+":["500",""]};
+const CA_MAP={"< 500 K€":["","500000"],"500 K€ – 2 M€":["500000","2000000"],"2 – 10 M€":["2000000","10000000"],"10 – 50 M€":["10000000","50000000"],"50 M€ +":["50000000",""],"Indifférent":["",""]};
+let REAL=[];
+
+function criteresActuels(){
+ return {naf:state.naf,size:state.size,emp:state.emp,ca:state.ca,jobs:state.jobs,pays:state.pays,
+         ville:document.getElementById('loc-ville').value.trim()};
+}
+
+async function launch(crit,skipCheck){
+ const c=crit||criteresActuels();
+ // Anti-doublon : cette cible a-t-elle déjà été lancée ?
+ if(!skipCheck){
+  try{
+   const r=await api('/api/listes?criteres='+encodeURIComponent(JSON.stringify(c)));
+   const d=await r.json();
+   if(d.existantes&&d.existantes.length){
+    const e=d.existantes[0];
+    const date=new Date(e.created_at).toLocaleDateString('fr-FR');
+    if(!confirm(`⚠️ Cette cible a déjà été lancée le ${date} par ${e.sdr} (liste « ${e.nom} »).\n\nRelancer pour une mise à jour ? (consommera de nouveaux crédits)\n\nAstuce : tu peux rouvrir la liste existante gratuitement depuis l'onglet Historique.`)){
+     return;
+    }
+   }
+  }catch(_){/* base pas encore prête : on continue */}
+ }
+ document.querySelectorAll('.qcard')[5].style.display='none';
+ document.getElementById('wiz-foot').style.display='none';
+ document.getElementById('loader').classList.add('on');
+ document.getElementById('load-step').textContent='Extraction Pappers en cours… (vraies données)';
+
+ // Mapping des réponses du wizard → paramètres API
+ const p=new URLSearchParams();
+ p.set('naf',c.naf.join(','));
+ // France sélectionnée = pas de filtre département (tout le pays). Sinon, codes DOM.
+ if(!c.pays.includes('France')){
+   const deps=c.pays.map(x=>DEP_MAP[x]).filter(Boolean);
+   if(deps.length)p.set('dep',deps.join(','));
+ }
+ const eff=EFF_MAP[c.emp]||["",""];
+ if(eff[0])p.set('effectif_min',eff[0]);
+ if(eff[1])p.set('effectif_max',eff[1]);
+ const ca=CA_MAP[c.ca]||["",""];
+ if(ca[0])p.set('ca_min',ca[0]);
+ if(ca[1])p.set('ca_max',ca[1]);
+ p.set('nb',Math.min(parseInt(c.size)||25,100)); // Pappers : max 100/page (pagination à l'étape suivante)
+ p.set('detail','25'); // fiches détaillées (dirigeants, CA, établissements) — plafonné pour maîtriser les crédits
+
+ try{
+  const r=await api('/api/liste?'+p.toString());
+  const data=await r.json();
+  if(!r.ok||data.erreur){
+   document.getElementById('loader').classList.remove('on');
+   document.getElementById('wiz-foot').style.display='flex';
+   document.querySelectorAll('.qcard')[5].style.display='block';
+   toast('Erreur API : '+(data.erreur||r.status)+' — réessaie ou préviens Didier');
+   console.error(data);
+   return;
+  }
+  REAL=data.entreprises||[];
+  // Sauvegarde automatique en base
+  state.savedId=null;
+  try{
+   const save=await api('/api/listes',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({nom:state.listeNom||'Liste sans nom',sdr:state.sdr||'?',criteres:c,entreprises:REAL,credits_estimes:data.credits_estimes||0})});
+   const sd=await save.json();
+   if(sd.ok)state.savedId=sd.id;
+  }catch(_){/* sauvegarde non bloquante */}
+  showRealResults(data.total,c);
+ }catch(err){
+  document.getElementById('loader').classList.remove('on');
+  document.getElementById('wiz-foot').style.display='flex';
+  document.querySelectorAll('.qcard')[5].style.display='block';
+  toast('Erreur réseau : '+err.message);
+ }
+}
+
+function showRealResults(total,c){
+ c=c||criteresActuels();
+ document.getElementById('loader').classList.remove('on');
+ nav('results');
+ document.getElementById('res-title').textContent=`${state.listeNom||'Liste'} · ${state.sdr||''}`;
+ document.getElementById('res-sub').textContent=`${c.naf.join(', ')} · ${total} entreprises trouvées (Pappers) · ${c.emp} salariés · CA ${c.ca} · ${c.pays.join(' + ')}${c.ville?' / '+c.ville:''} — affichage : ${REAL.length}${state.savedId?' · Sauvegardée ✓ (#'+state.savedId+')':''}`;
+ document.getElementById('kpis').style.display='flex';
+ document.getElementById('sort-bar').style.display='none'; // tris réactivés quand scores & GMB seront branchés
+ document.getElementById('k-total').textContent=REAL.length;
+ document.getElementById('k-new').textContent='—';
+ document.getElementById('k-sig').textContent='—';
+ document.getElementById('fiches').innerHTML=REAL.length?REAL.map((e,i)=>ficheReal(e,i)).join(''):'<p style="color:var(--ink-soft)">Aucune entreprise ne correspond à ces critères. Élargis les filtres (effectif ou CA).</p>';
+}
+
+function persister(){
+ if(state.savedId){
+  api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({id:state.savedId,entreprises:REAL})}).catch(()=>{});
+ }
+}
+
+/* Structure multi-contacts : chaque entreprise porte contacts[] (prête pour la Wave 2 LinkedIn) */
+function contactsDe(e){
+ if(!e.contacts){
+  e.contacts=[];
+  if(e.dirigeant)e.contacts.push({prenom:e.dirigeant.prenom,nom:e.dirigeant.nom,fonction:e.dirigeant.fonction||'Dirigeant',source:'pappers',enrich:e.enrich||null});
+  if(e.enrich&&!e.dirigeant)e.contacts.push({prenom:'',nom:e.nom,fonction:'',source:'pappers',enrich:e.enrich});
+ }
+ return e.contacts;
+}
+function domaineDe(e){
+ return e.site_web||(e.gmb&&e.gmb.site_web)||(e.enrich&&e.enrich.site_web)||'';
+}
+function enseigneDe(e){
+ return e.enseigne_ia||e.enseigne||'';
+}
+
+function telNorm(t){return (t||'').replace(/[\s.\-()]/g,'');}
+function estMobile(t){
+ const n=telNorm(t).replace(/^\+33/,'0').replace(/^\+590/,'0').replace(/^\+596/,'0').replace(/^\+262/,'0');
+ return /^0[67]/.test(n)||/^069[01]/.test(n)||/^069[67]/.test(n)||/^069[23]/.test(n);
+}
+function telBtns(t){
+ const n=telNorm(t);
+ let h=` <a class="act act-call" style="padding:4px 10px;font-size:12px" href="tel:${n}" title="Appeler avec Ringover">📞</a>`;
+ if(estMobile(t))h+=` <a class="act act-lemlist" style="padding:4px 10px;font-size:12px" href="sms:${n}" title="Envoyer un SMS">💬</a>`;
+ return h;
+}
+
+function gmbHtml(g){
+ if(!g)return '';
+ if(!g.trouve)return `<p class="hint" style="margin-top:14px">Aucune fiche Google trouvée — angle Soview : « vous n'êtes pas visible sur Google Maps ».</p>`;
+ const comp=g.concurrents?`<div class="gmb-cell gmb-comp"><b>${String(g.concurrents.note_moyenne).replace('.',',')} ★</b>Moyenne ${g.concurrents.secteur} (${g.concurrents.zone}, ${g.concurrents.nb_analyses} analysés)</div>`:'';
+ const ecart=g.concurrents?Math.round((g.concurrents.note_moyenne-g.note_moyenne)*10)/10:null;
+ return `
+  <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);margin:16px 0 8px">Google Business — ${String(g.note_moyenne).replace('.',',')} ★ (${(g.total_avis||0).toLocaleString('fr-FR')} avis · ${g.nb_fiches} fiche${g.nb_fiches>1?'s':''})${ecart>0?` · <span style="color:var(--danger)">${String(ecart).replace('.',',')} pt sous les concurrents</span>`:''}</h3>
+  ${g.telephone?`<div class="contact-line" style="margin-bottom:8px">☎️ Standard : <b>${g.telephone}</b>${telBtns(g.telephone)} <span class="badge b-gmb">source GMB</span></div>`:''}
+  <div class="gmb-vs">
+   <div class="gmb-cell gmb-bad"><b>${String(g.pire_fiche.note).replace('.',',')} ★ (${g.pire_fiche.nb_avis} avis)</b>Pire fiche : <a href="${g.pire_fiche.lien}" target="_blank">${g.pire_fiche.nom}</a></div>
+   ${comp}
+  </div>
+  ${g.avis_negatif?`<h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);margin:14px 0 8px">Avis négatif récent (${g.avis_negatif.note}★ · ${g.avis_negatif.date})</h3>
+  <div class="review-box">« ${g.avis_negatif.texte} »<span class="who">Avis Google · ${g.pire_fiche.nom}</span></div>`:''}`;
+}
+
+function contactHtml(c,i,j){
+ const en=c.enrich;
+ return `<div style="border-top:1px dashed var(--line);padding:10px 0 4px;margin-top:10px">
+  <div class="contact-line"><b>${(c.prenom+' '+c.nom).trim()}</b> — ${(en&&en.fonction)||c.fonction||'?'} <span class="badge b-gmb">${c.source}</span></div>
+  ${en?`
+   ${en.email?`<div class="contact-line">✉️ <b>${en.email}</b>${en.email_qualification?` <span class="badge b-new">${en.email_qualification}</span>`:''}</div>`:'<div class="contact-line" style="color:var(--ink-soft)">✉️ Email non trouvé (Dropcontact) — repli FullEnrich à venir</div>'}
+   ${en.telephone?`<div class="contact-line">📱 <b>${en.telephone}</b>${telBtns(en.telephone)}</div>`:''}
+   ${en.linkedin?`<div class="contact-line">💼 <a href="${en.linkedin.startsWith('http')?en.linkedin:'https://'+en.linkedin}" target="_blank">Profil LinkedIn ✓</a></div>`:''}`
+  :`<button class="act act-lemlist" id="enrbtn${i}_${j}" onclick="enrichir(${i},${j})" style="margin-top:4px">✉️ Enrichir ce contact</button>`}
+ </div>`;
+}
+
+function ficheReal(e,i){
+ const ca=e.chiffre_affaires?Number(e.chiffre_affaires).toLocaleString('fr-FR')+' €':null;
+ const contacts=contactsDe(e);
+ const siteWeb=domaineDe(e);
+ const titre=contacts.length&&contacts[0].nom?`${contacts[0].prenom} ${contacts[0].nom} — ${(contacts[0].enrich&&contacts[0].enrich.fonction)||contacts[0].fonction||'Dirigeant'}`:e.nom;
+ const aEmail=contacts.some(c=>c.enrich&&c.enrich.email);
+ return `<div class="fiche" id="fr${i}">
+  <div class="fiche-top" style="grid-template-columns:1fr">
+   <div>
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+     <div>
+      <div class="lead-name">${titre}</div>
+      <div class="lead-meta">${contacts.length&&contacts[0].nom?e.nom+' · ':''}${e.enseigne&&e.enseigne!==e.nom?'Enseigne : '+e.enseigne+' · ':''}${e.naf} · ${e.activite||''} · ${e.ville||'—'}${e.code_postal?' ('+e.code_postal+')':''} · SIREN ${e.siren}</div>
+     </div>
+     <div style="display:flex;gap:6px">
+      <button class="act act-copy" title="Modifier la fiche (nom commercial, site web)" onclick="document.getElementById('edit${i}').style.display=document.getElementById('edit${i}').style.display==='none'?'block':'none'">✏️</button>
+      <button class="act act-export" title="Exclure de l'enrichissement" onclick="exclure(${i})">🗑</button>
+     </div>
+    </div>
+    <div class="badges">
+     ${e.effectif?`<span class="badge b-gmb">👥 ${e.effectif}</span>`:''}
+     ${ca?`<span class="badge b-new">CA ${ca}</span>`:''}
+     ${e.nb_etablissements?`<span class="badge b-gmb">🏬 ${e.nb_etablissements} établissement${e.nb_etablissements>1?'s':''}</span>`:''}
+     ${aEmail?'<span class="badge b-new">✉️ Email trouvé ✓</span>':(e.detail_charge?'<span class="badge b-signal">À enrichir</span>':'<span class="badge b-dup">Détail non chargé (au-delà de 25)</span>')}
+     ${siteWeb?`<span class="badge b-new"><a href="${siteWeb.startsWith('http')?siteWeb:'https://'+siteWeb}" target="_blank" style="color:inherit">🌐 ${siteWeb.replace(/^https?:\/\/(www\.)?/,'').split('/')[0]}</a></span>`:''}
+    </div>
+    <div id="edit${i}" style="display:none;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:12px">
+     <div class="map-sub" style="margin-top:0">✏️ Corriger la fiche (le SDR connaît son terrain mieux que les bases)</div>
+     <div class="row3" style="grid-template-columns:1fr 1fr auto">
+      <input class="field" id="edit-ens${i}" placeholder="Nom commercial / Google Maps (ex : Centre Porsche Guadeloupe)" value="${(e.enseigne_ia||e.enseigne||'').replace(/"/g,'&quot;')}">
+      <input class="field" id="edit-site${i}" placeholder="Site web (ex : porsche-guadeloupe.fr)" value="${(e.site_web||'').replace(/"/g,'&quot;')}">
+      <button class="btn btn-primary" onclick="majFiche(${i})">💾 Enregistrer + relancer GMB</button>
+     </div>
+    </div>
+    ${e.ia?`<div class="contact-line" style="margin-top:8px" title="${(e.ia.explication||'').replace(/"/g,'&quot;')}">🤖 IA : ${e.ia.nom_commercial||e.ia.site_web?`${e.ia.nom_commercial||''}${e.ia.site_web?' · '+e.ia.site_web:''}`:'rien de fiable trouvé'} <span class="badge b-gmb">confiance ${e.ia.confiance||'?'}</span></div>`:''}
+    ${contacts.map((c,j)=>contactHtml(c,i,j)).join('')}
+    <div class="act-row">${!e.gmb?`<button class="act act-export" id="gmbbtn${i}" onclick="analyserGmb(${i})">⭐ Analyser GMB</button>`:`<button class="act act-export" id="gmbbtn${i}" onclick="analyserGmb(${i})" title="Re-analyser (nouvelles données : ☎️ + site web)">↻ GMB</button>`}<button class="act act-copy" onclick="(async()=>{toast('🤖 IA en cours…');if(await iaFiche(${i},'',true)){REAL[${i}].gmb=null;await analyserGmb(${i});}})()" title="Relancer la recherche IA (site web + nom commercial)">🤖 IA</button></div>
+    ${gmbHtml(e.gmb)}
+   </div>
+  </div>
+ </div>`;
+}
+function rerender(i){
+ const el=document.getElementById('fr'+i);
+ if(el)el.outerHTML=ficheReal(REAL[i],i);
+}
+async function majFiche(i){
+ const e=REAL[i];
+ const ens=document.getElementById('edit-ens'+i).value.trim();
+ let site=document.getElementById('edit-site'+i).value.trim().replace(/^https?:\/\//,'').replace(/^www\./,'').split('/')[0];
+ let indice='';
+ if(site&&(!site.includes('.')||site.includes(' '))){
+  indice=site;site=''; // "porsche guadeloupe" n'est pas un domaine → indice pour l'IA
+  toast('« '+indice+' » n\'est pas un domaine → je le transmets à l\'IA pour trouver le vrai site…');
+ }
+ if(ens)e.enseigne_ia=ens;
+ if(site)e.site_web=site;
+ e.gmb=null; // re-match avec les nouvelles infos
+ rerender(i);persister();
+ if(indice){
+  await iaFiche(i,indice,true);
+ }
+ toast('Relance GMB : '+(enseigneDe(e)||e.nom));
+ await analyserGmb(i);
+}
+
+/* ───────── IA : trouve site web + nom commercial (équivalent Claygent) ───────── */
+async function iaFiche(i,indice,force){
+ const e=REAL[i];
+ if(e.ia&&!force)return false;
+ try{
+  const r=await api('/api/ia',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({nom:e.nom,enseigne:enseigneDe(e),ville:e.ville||'',naf:e.naf||'',siren:e.siren,indice:indice||''})});
+  const d=await r.json();
+  if(d.erreur){toast('IA : '+d.erreur);return false;}
+  e.ia=d.resultat||{};
+  let modifie=false;
+  if(e.ia.site_web&&!e.site_web){e.site_web=e.ia.site_web;modifie=true;}
+  if(e.ia.nom_commercial&&e.ia.confiance!=='basse'){e.enseigne_ia=e.ia.nom_commercial;modifie=true;}
+  rerender(i);persister();
+  if(force&&!modifie)toast('IA : rien de fiable trouvé — '+(e.ia.explication||''));
+  return modifie;
+ }catch(err){toast('IA erreur réseau : '+err.message);return false;}
+}
+
+function exclure(i){
+ const e=REAL[i];
+ if(!confirm(`Exclure « ${e.nom} » de la liste ? (ne sera pas enrichie, n'apparaîtra plus)`))return;
+ REAL.splice(i,1);
+ document.getElementById('fiches').innerHTML=REAL.map((x,k)=>ficheReal(x,k)).join('');
+ document.getElementById('k-total').textContent=REAL.length;
+ persister();
+ toast('Fiche exclue — filtre d\'abord, enrichis ensuite 👍');
+}
+
+/* ───────── ENRICHISSEMENT (Dropcontact niveau 1) ───────── */
+async function enrichir(i,j){
+ const e=REAL[i];
+ const c=contactsDe(e)[j||0];
+ if(!c||!c.nom){toast('Pas de contact identifié sur cette fiche');return false;}
+ const btn=document.getElementById(`enrbtn${i}_${j||0}`);
+ if(btn){btn.disabled=true;btn.textContent='⏳ Dropcontact… (15-45 s)';}
+ try{
+  const r=await api('/api/enrich',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({contact:{prenom:c.prenom,nom:c.nom},
+    entreprise:{nom:e.enseigne||e.nom,siren:e.siren,site:domaineDe(e)}})});
+  let d=await r.json();
+  let essais=0;
+  while(d.pending&&d.request_id&&essais<5){
+   if(btn)btn.textContent='⏳ Toujours en cours…';
+   await new Promise(x=>setTimeout(x,8000));
+   const r2=await api('/api/enrich?request_id='+encodeURIComponent(d.request_id));
+   d=await r2.json();essais++;
+  }
+  if(d.erreur){toast('Erreur : '+d.erreur);if(btn){btn.disabled=false;btn.textContent='✉️ Enrichir ce contact';}return false;}
+  if(d.pending){toast('Dropcontact met du temps — réessaie dans une minute');if(btn){btn.disabled=false;btn.textContent='✉️ Réessayer';}return false;}
+  c.enrich=d.resultat||{};
+  c.enrich.avec_domaine=!!domaineDe(e);
+  if(j===0||j===undefined)e.enrich=c.enrich; // compat anciennes listes
+  rerender(i);persister();
+  return !!(c.enrich&&c.enrich.email);
+ }catch(err){
+  toast('Erreur réseau : '+err.message);
+  if(btn){btn.disabled=false;btn.textContent='✉️ Enrichir ce contact';}
+  return false;
+ }
+}
+
+/* ───────── ANALYSE GMB ───────── */
+async function analyserGmb(i){
+ const e=REAL[i];
+ const btn=document.getElementById('gmbbtn'+i);
+ if(btn){btn.disabled=true;btn.textContent='⏳ Analyse…';}
+ try{
+  const p=new URLSearchParams({nom:e.nom,ville:e.ville||'',naf:e.naf||'',enseigne:enseigneDe(e),adresse:e.adresse||'',cp:e.code_postal||'',site:domaineDe(e)});
+  const r=await api('/api/gmb?'+p.toString());
+  const g=await r.json();
+  if(!r.ok||g.erreur){toast('Erreur GMB : '+(g.erreur||r.status));if(btn){btn.disabled=false;btn.textContent='⭐ Analyser GMB';}return false;}
+  e.gmb=g;
+  rerender(i);persister();
+  return true;
+ }catch(err){
+  toast('Erreur réseau : '+err.message);
+  if(btn){btn.disabled=false;btn.textContent='⭐ Analyser GMB';}
+  return false;
+ }
+}
+
+/* ───────── 🚀 WATERFALL ORCHESTRÉ ───────── */
+function ouvrirWfModal(){
+ document.getElementById('wf-rows').innerHTML=REAL.map((e,i)=>
+  `<div class="wf-row" id="wfr${i}"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${enseigneDe(e)||e.nom}</span><span class="wf-cell" id="wf${i}-gmb">—</span><span class="wf-cell" id="wf${i}-ia">—</span><span class="wf-cell" id="wf${i}-mail">—</span></div>`).join('');
+ document.getElementById('wf-titre').textContent='🚀 Enrichissement en cours…';
+ document.getElementById('wf-fermer').disabled=true;
+ document.getElementById('wf-modal').style.display='flex';
+}
+function wfSet(i,col,etat){
+ const el=document.getElementById(`wf${i}-${col}`);if(!el)return;
+ el.textContent=etat==='ok'?'✅':etat==='ko'?'❌':etat==='run'?'⏳':'—';
+}
+
+async function lancerWaterfall(){
+ if(!REAL.length){toast('Aucune fiche');return;}
+ const gmbAFaire=e=>!e.gmb||(e.gmb.trouve&&e.gmb.telephone===undefined);
+ const contactAFaire=(e,c)=>c.nom&&(!c.enrich||(!c.enrich.email&&!c.enrich.avec_domaine&&!!domaineDe(e)));
+ const nbGmb=REAL.filter(gmbAFaire).length;
+ const nbIa=REAL.filter(e=>!e.ia&&!domaineDe(e)).length;
+ const nbContacts=REAL.reduce((s,e)=>s+contactsDe(e).filter(c=>c.nom&&!c.enrich).length,0);
+ if(!confirm(`🚀 Lancer l'enrichissement sur ${REAL.length} fiches ?\n\n1. GMB + domaine + ☎️ standard : ~${nbGmb} fiches\n2. IA site web/nom commercial (si GMB échoue) : jusqu'à ${nbIa} appels (~0,02 €)\n3. Emails Dropcontact : ~${nbContacts} crédits\n\n💡 Exclus d'abord les fiches inutiles (🗑).`))return;
+ ouvrirWfModal();
+ let emailsOk=0,emailsTentes=0;
+ for(let i=0;i<REAL.length;i++){
+  const e=REAL[i];
+  // ── 1. GMB ──
+  if(gmbAFaire(e)){wfSet(i,'gmb','run');await analyserGmb(i);}
+  wfSet(i,'gmb',e.gmb&&e.gmb.trouve?'ok':'ko');
+  // ── 2. IA si GMB raté ou pas de domaine ──
+  if(!e.ia&&(!(e.gmb&&e.gmb.trouve)||!domaineDe(e))){
+   wfSet(i,'ia','run');
+   const modifie=await iaFiche(i);
+   if(modifie){
+    e.gmb=null;wfSet(i,'gmb','run');
+    await analyserGmb(i);
+    wfSet(i,'gmb',e.gmb&&e.gmb.trouve?'ok':'ko');
+   }
+   wfSet(i,'ia',(e.ia&&(e.ia.site_web||e.ia.nom_commercial))?'ok':'ko');
+  }else{
+   wfSet(i,'ia',e.ia&&(e.ia.site_web||e.ia.nom_commercial)?'ok':(domaineDe(e)?'ok':'—'));
+  }
+  // ── 3. Emails Dropcontact ──
+  const cs=contactsDe(e);
+  let dejaEmail=cs.some(c=>c.enrich&&c.enrich.email),tente=false,trouve=dejaEmail;
+  for(let j=0;j<cs.length;j++){
+   if(contactAFaire(e,cs[j])){
+    tente=true;emailsTentes++;
+    wfSet(i,'mail','run');
+    if(await enrichir(i,j)){trouve=true;emailsOk++;}
+   }
+  }
+  wfSet(i,'mail',trouve?'ok':(tente?'ko':(cs.some(c=>c.nom)?'ko':'—')));
+ }
+ document.getElementById('wf-titre').textContent=`🏁 Enrichissement terminé — ${emailsOk}/${emailsTentes} nouveaux emails`;
+ document.getElementById('wf-fermer').disabled=false;
+ persister();
+}
+
+/* ───────── DÉMO (conservée pour référence design) ───────── */
+
+const DEMO=[
+ {name:"Karim Benhada",job:"Directeur Marketing",co:"Groupe AutoSud",meta:"4511Z · 12 établissements · 38 salariés · CA 9,4 M€ · Marseille",
+  site:"https://www.autosud.fr",linkedin:"https://www.linkedin.com/in/karim-benhada-autosud",
+  gmb:"3,6 ★ (1 240 avis cumulés)",gmbNum:3.6,nbEtab:12,
+  worstGmb:{name:"AutoSud Vitrolles",note:"2,9 ★ (87 avis)",link:"https://maps.google.com/?cid=demo1"},
+  negReview:{txt:"« Délai d'attente inadmissible pour la restitution du véhicule, personne ne répond au téléphone. Je ne reviendrai pas. »",who:"Avis Google · AutoSud Vitrolles · il y a 12 jours · 1★"},
+  compAvg:"4,2 ★ — moyenne des concessions auto (Marseille)",
+  mobile:"+33 6 12 45 78 90",email:"k.benhada@autosud.fr",dup:false,
+  signal:"🔥 Changement de poste il y a 2 mois (ex-Dir. Marketing chez un concurrent de vos clients)",signalHot:true,
+  sv:88,sc:62,sr:74,
+  synth:"12 concessions avec une note GMB moyenne de 3,6 — 0,6 point sous la moyenne secteur locale (4,2). La pire fiche (Vitrolles, 2,9★) plombe le réseau. Nouveau dans le poste : cherche des quick wins visibles. Angle d'attaque : Soview pour remonter la note réseau + plaques NFC en point de vente. SoReach en rebond pour les relances après essai véhicule.",
+  mail:"Objet : 3,6★ sur 12 concessions — ça se rattrape vite\n\nBonjour Karim,\n\nFélicitations pour votre prise de poste chez AutoSud. En regardant vos 12 fiches Google, la note moyenne est à 3,6 — votre site de Vitrolles est même à 2,9, alors que la moyenne des concessions marseillaises est à 4,2.\n\nChez Sofy, on aide des réseaux comme le vôtre à reprendre la main : collecte d'avis via NFC en concession + réponses centralisées. Nos clients gagnent en moyenne +0,5★ en 4 mois.\n\n15 min cette semaine pour vous montrer vos fiches vues de l'extérieur ?\n\nBien à vous,"},
+ {name:"Sophie Lemaire",job:"Directrice Relation Client",co:"Réseau Beauté Caraïbes",meta:"9602B · 8 établissements · 64 salariés · CA 4,1 M€ · Pointe-à-Pitre",
+  site:"https://www.reseaubeautecaraibes.gp",linkedin:"https://www.linkedin.com/in/sophie-lemaire-rbc",
+  gmb:"4,1 ★ (860 avis cumulés)",gmbNum:4.1,nbEtab:8,
+  worstGmb:{name:"RBC Institut Basse-Terre",note:"3,4 ★ (96 avis)",link:"https://maps.google.com/?cid=demo2"},
+  negReview:{txt:"« Impossible d'avoir une réponse sur Instagram pour décaler mon rendez-vous, j'ai dû me déplacer pour rien. »",who:"Avis Google · RBC Basse-Terre · il y a 5 jours · 2★"},
+  compAvg:"4,3 ★ — moyenne des instituts de beauté (Guadeloupe)",
+  mobile:"+590 690 33 21 08",email:"s.lemaire@rbc.gp",dup:false,
+  signal:"🔥 A visité la page tarifs de sofy.fr hier (RB2B)",signalHot:true,
+  sv:58,sc:91,sr:69,
+  synth:"Signal chaud : visite de la page tarifs hier → warm call prioritaire. 8 instituts, forte volumétrie de questions clients (RDV, dispo, prix) sur WhatsApp et Instagram — l'avis négatif récent le confirme noir sur blanc. Angle : SoConnect + Budy pour absorber les demandes hors horaires. Mentionner la proximité Guadeloupe (crédibilité locale Sofy).",
+  mail:"Objet : Vous étiez sur sofy.fr hier — bien vu 👀\n\nBonjour Sophie,\n\nVous avez jeté un œil à nos tarifs — alors autant être direct : un avis Google d'il y a 5 jours sur votre institut de Basse-Terre dit qu'une cliente n'a pas eu de réponse sur Instagram pour décaler son RDV.\n\nBudy, notre agent IA, répond à vos clientes 24/7 (RDV, prix, dispo) sur WhatsApp, Insta et Messenger, et passe la main à vos équipes quand il faut. Installé en 48h.\n\nUn appel de 10 min demain pour voir si ça colle à votre organisation ?\n\nBien à vous,"},
+ {name:"Marc Delvaux",job:"Dirigeant",co:"Garages Delvaux & Fils",meta:"4520A · 5 établissements · 27 salariés · CA 3,2 M€ · Lyon",
+  site:"https://www.garagesdelvaux.fr",linkedin:"https://www.linkedin.com/in/marc-delvaux-garages",
+  gmb:"4,4 ★ (410 avis)",gmbNum:4.4,nbEtab:5,
+  worstGmb:{name:"Garage Delvaux Vénissieux",note:"3,9 ★ (62 avis)",link:"https://maps.google.com/?cid=demo3"},
+  negReview:{txt:"« Bon travail mais aucun rappel pour ma révision, j'ai dépassé la date de 4 mois sans m'en rendre compte. »",who:"Avis Google · Delvaux Vénissieux · il y a 3 semaines · 3★"},
+  compAvg:"4,3 ★ — moyenne des garages (Lyon)",
+  mobile:"+33 6 81 02 33 47",email:"m.delvaux@garagesdelvaux.fr",dup:true,
+  signal:"💙 A liké un post LinkedIn de Brevo il y a 4 jours (concurrent SoReach → score SoReach boosté)",signalHot:false,
+  sv:46,sc:38,sr:82,
+  synth:"⚠️ Déjà dans HubSpot (contact créé il y a 7 mois par Alicia, statut : sans réponse). Like récent sur un post Brevo → il s'intéresse activement au SMS marketing : timing idéal pour SoReach. Un avis client récent réclame littéralement des rappels de révision. Reprendre le fil plutôt qu'un cold call sec.",
+  mail:"Objet : Vos rappels de révision en automatique\n\nBonjour Marc,\n\nOn avait échangé avec votre équipe il y a quelques mois — je reviens avec un angle concret : un de vos clients écrivait il y a 3 semaines sur Google qu'il avait dépassé sa date de révision de 4 mois faute de rappel.\n\nAvec SoReach, vos 5 garages envoient des rappels SMS automatiques. Résultat moyen chez nos clients garages : +18 % de passages atelier.\n\nJe vous montre en 10 minutes ?\n\nBien à vous,"},
+ {name:"Nadia Verneuil",job:"Responsable Communication",co:"Hôtels Alizés Caraïbes",meta:"5510Z · 4 établissements · 92 salariés · CA 11,8 M€ · Le Gosier",
+  site:"https://www.hotels-alizes.gp",linkedin:"https://www.linkedin.com/in/nadia-verneuil-alizes",
+  gmb:"4,0 ★ (2 130 avis cumulés)",gmbNum:4.0,nbEtab:4,
+  worstGmb:{name:"Alizés Beach Resort Sainte-Anne",note:"3,7 ★ (640 avis)",link:"https://maps.google.com/?cid=demo4"},
+  negReview:{txt:"« Séjour correct mais aucune réponse à mon message avant l'arrivée pour un lit bébé, on a dû tout régler sur place. »",who:"Avis Google · Alizés Sainte-Anne · il y a 8 jours · 3★"},
+  compAvg:"4,2 ★ — moyenne des hôtels 3-4★ (Guadeloupe)",
+  mobile:"+590 690 88 14 52",email:"n.verneuil@hotels-alizes.gp",dup:false,
+  signal:"💙 A liké notre dernier post LinkedIn Sofy il y a 2 jours",signalHot:true,
+  sv:71,sc:84,sr:66,
+  synth:"Signal chaud : elle a liké notre post LinkedIn il y a 2 jours → elle nous connaît, warm call naturel (« j'ai vu que notre post vous a parlé »). 4 hôtels, 2 130 avis à gérer + des demandes clients pré-séjour qui se perdent (cf. avis récent). Double angle : SoConnect + Budy pour les demandes 24/7, Soview pour homogénéiser les notes entre établissements.",
+  mail:"Objet : Merci pour le like 😉 — et une idée pour vos 4 hôtels\n\nBonjour Nadia,\n\nJ'ai vu que notre dernier post LinkedIn vous a parlé — alors je me permets.\n\nUn avis Google d'il y a 8 jours sur votre resort de Sainte-Anne mentionne un message client resté sans réponse avant l'arrivée. Avec 4 hôtels, c'est impossible à suivre à la main.\n\nBudy, notre agent IA, répond à vos clients 24/7 (lit bébé, horaires, navette…) sur WhatsApp et Messenger, et transmet à la réception quand il faut.\n\n10 minutes cette semaine pour vous montrer comment ça marche ?\n\nBien à vous,"}
+];
+
+/* ───────── TRI ───────── */
+function setSort(s,btn){
+ state.sort=s;
+ document.querySelectorAll('.sort-chip').forEach(c=>c.classList.remove('sel'));
+ btn.classList.add('sel');
+ renderFiches();
+}
+function sortedDemo(){
+ const arr=[...DEMO];
+ if(state.sort==='signal') arr.sort((a,b)=>(b.signalHot?2:b.signal?1:0)-(a.signalHot?2:a.signal?1:0)||Math.max(b.sv,b.sc,b.sr)-Math.max(a.sv,a.sc,a.sr));
+ if(state.sort==='oppo') arr.sort((a,b)=>Math.max(b.sv,b.sc,b.sr)-Math.max(a.sv,a.sc,a.sr));
+ if(state.sort==='gmb') arr.sort((a,b)=>a.gmbNum-b.gmbNum);
+ if(state.sort==='etab') arr.sort((a,b)=>b.nbEtab-a.nbEtab);
+ return arr;
+}
+function renderFiches(){
+ document.getElementById('fiches').innerHTML=sortedDemo().map((d,i)=>fiche(d,i)).join('');
+}
+
+function showResults(){
+ document.getElementById('loader').classList.remove('on');
+ nav('results');
+ document.getElementById('res-title').textContent=`Liste · ${state.naf.join(', ')}`;
+ const ville=document.getElementById('loc-ville').value;
+ document.getElementById('res-sub').textContent=`${state.size} contacts demandés · ${state.emp} salariés · CA ${state.ca} · ${state.jobs.join(', ')} · ${state.pays.join(' + ')}${ville?' / '+ville:''} — aperçu démo : 4 fiches`;
+ document.getElementById('kpis').style.display='flex';
+ document.getElementById('sort-bar').style.display='flex';
+ document.getElementById('k-total').textContent=state.size;
+ document.getElementById('k-new').textContent=DEMO.filter(d=>!d.dup).length;
+ document.getElementById('k-sig').textContent=DEMO.filter(d=>d.signal).length;
+ renderFiches();
+}
+
+function fiche(d,i){
+ const bar=(v,c)=>`<div class="score-row"><span>${c[0]}</span><div class="bar"><i style="width:${v}%;background:${c[1]}"></i></div><span>${v}</span></div>`;
+ const isLike=d.signal&&d.signal.startsWith('💙');
+ return `<div class="fiche" id="f${i}">
+  <div class="fiche-top" onclick="document.getElementById('f${i}').classList.toggle('open')">
+   <div>
+    <div class="lead-name">${d.name} — ${d.job}</div>
+    <div class="lead-meta">${d.co} · ${d.meta}</div>
+    <div class="badges">
+     <span class="badge b-gmb">GMB ${d.gmb}</span>
+     ${d.dup?'<span class="badge b-dup">Déjà dans HubSpot</span>':'<span class="badge b-new">Nouveau ✓</span>'}
+     ${d.signal?(isLike?'<span class="badge b-like">💙 Like LinkedIn</span>':'<span class="badge b-signal">🔥 Signal hot</span>'):''}
+    </div>
+   </div>
+   <div class="scores">
+    ${bar(d.sv,["Soview","var(--soview)"])}
+    ${bar(d.sc,["SoConnect","var(--soconnect)"])}
+    ${bar(d.sr,["SoReach","var(--soreach)"])}
+   </div>
+  </div>
+  <div class="fiche-body">
+   <div class="fiche-grid">
+    <div class="panel">
+     <h3>Contact</h3>
+     <div class="contact-line">📱 <b>${d.mobile}</b></div>
+     <div class="contact-line">✉️ <b>${d.email}</b></div>
+     <div class="contact-line">🌐 <a href="${d.site}" target="_blank">${d.site.replace('https://www.','')}</a></div>
+     <div class="contact-line">💼 <a href="${d.linkedin}" target="_blank">Profil LinkedIn vérifié ✓</a></div>
+     <div class="act-row">
+      <button class="act act-call" onclick="event.stopPropagation();demoAct('Appel Ringover vers ${d.mobile}')">📞 Appeler (Ringover)</button>
+      <button class="act act-sms" onclick="event.stopPropagation();demoAct('SMS / RCS via Sofy vers ${d.mobile}')">💬 SMS / RCS (Sofy)</button>
+     </div>
+
+     <h3>Google Business</h3>
+     <div class="gmb-vs">
+      <div class="gmb-cell gmb-bad"><b>${d.worstGmb.note}</b>Pire fiche : <a href="${d.worstGmb.link}" target="_blank">${d.worstGmb.name}</a></div>
+      <div class="gmb-cell gmb-comp"><b>${d.compAvg.split(' — ')[0]}</b>${d.compAvg.split(' — ')[1]}</div>
+     </div>
+     <h3>Avis négatif récent</h3>
+     <div class="review-box">${d.negReview.txt}<span class="who">${d.negReview.who}</span></div>
+
+     ${d.signal?`<h3>Signal</h3><p>${d.signal}<br><span style="font-size:12.5px;color:var(--ink-soft)">→ Alerte envoyée sur Slack #signaux-sdr</span></p>`:''}
+     <h3>Synthèse pour l'appel</h3>
+     <p>${d.synth}</p>
+    </div>
+    <div class="panel">
+     <h3>Email personnalisé prêt à envoyer</h3>
+     <div class="email-box" id="mail${i}">${d.mail}</div>
+     <div class="act-row">
+      <button class="act act-copy" onclick="navigator.clipboard.writeText(document.getElementById('mail${i}').textContent);this.textContent='Copié ✓';setTimeout(()=>this.textContent='Copier l\\'email',1500)">Copier l'email</button>
+      <button class="act act-lemlist" onclick="demoAct('${d.name} ajouté à la séquence Lemlist (selon mapping ⚙️)')">✈️ Envoyer via Lemlist</button>
+      <button class="act act-hubspot" onclick="demoAct('Contact + note + transaction AE créés dans HubSpot pour ${d.co}')">🤝 RDV pris → HubSpot</button>
+     </div>
+    </div>
+   </div>
+  </div>
+ </div>`;
+}
+function demoAct(msg){toast('Mode démo · '+msg+' — actif à l\'étape backend');}
+
+/* ───────── EXPORT CSV / EXCEL ───────── */
+function exportCsv(){
+ let head,rows;
+ if(REAL.length){
+  head=["Dirigeant","Fonction","Email","Mobile","Tél standard (GMB)","LinkedIn","Société","SIREN","NAF","Activité","Ville","Code postal","Effectif","Chiffre d'affaires","Nb établissements","Site web","Note GMB","Total avis","Pire fiche GMB","Moyenne concurrents","Avis négatif récent"];
+  rows=REAL.map(e=>{
+   const g=e.gmb||{};
+   const en=(e.contacts&&e.contacts[0]&&e.contacts[0].enrich)||e.enrich||{};
+   const telStd=(e.gmb&&e.gmb.telephone)||"";
+   return [(e.dirigeant?e.dirigeant.prenom+' '+e.dirigeant.nom:""),en.fonction||(e.dirigeant?e.dirigeant.fonction:""),en.email||"",en.telephone||"",telStd,en.linkedin||"",e.nom,e.siren,e.naf,e.activite||"",e.ville||"",e.code_postal||"",e.effectif||"",e.chiffre_affaires||"",e.nb_etablissements||"",en.site_web||e.site_web||"",
+    g.note_moyenne||"",g.total_avis||"",g.pire_fiche?`${g.pire_fiche.nom} ${g.pire_fiche.note}★`:"",g.concurrents?g.concurrents.note_moyenne+"★":"",g.avis_negatif?g.avis_negatif.texte:""];
+  });
+ }else{
+  head=["Nom","Fonction","Société","Mobile","Email","LinkedIn","Site web","GMB moyenne","Pire fiche GMB","Moyenne concurrents","Score Soview","Score SoConnect","Score SoReach","Statut CRM","Signal"];
+  rows=sortedDemo().map(d=>[d.name,d.job,d.co,d.mobile,d.email,d.linkedin,d.site,d.gmb,`${d.worstGmb.name} ${d.worstGmb.note}`,d.compAvg,d.sv,d.sc,d.sr,d.dup?"Déjà dans HubSpot":"Nouveau",d.signal||""]);
+ }
+ const csv="\uFEFF"+[head,...rows].map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(";")).join("\r\n");
+ const a=document.createElement('a');
+ a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+ a.download='sofy-liste-appel.csv';a.click();
+ toast('Export téléchargé — s\'ouvre directement dans Excel');
+}
+
+/* ───────── PARAMÈTRES : GESTION SDR ───────── */
+async function chargerSdrs(){
+ const t=document.getElementById('sdr-table');
+ try{
+  const r=await api('/api/sdrs');
+  const d=await r.json();
+  if(d.erreur){t.innerHTML='<tr><td colspan="6">'+d.erreur+'</td></tr>';return;}
+  t.innerHTML='<tr><th>Nom</th><th>Email</th><th>Limite crédits / mois</th><th>Mot de passe</th><th>Actif</th><th></th></tr>'+
+   (d.sdrs||[]).map(s=>`<tr>
+    <td><input class="field" value="${s.nom}" id="sn${s.id}"></td>
+    <td><input class="field" value="${s.email||''}" placeholder="email@sofy.fr" id="se${s.id}"></td>
+    <td><input class="field" type="number" min="0" value="${s.limite_credits??''}" placeholder="Illimité" id="sl${s.id}"></td>
+    <td><input class="field" type="password" placeholder="${s.mdp_defini?'Défini ✓ (remplacer)':'À définir'}" id="sp${s.id}"></td>
+    <td style="text-align:center"><input type="checkbox" ${s.actif?'checked':''} id="sa${s.id}" style="width:18px;height:18px;accent-color:var(--accent)"></td>
+    <td style="white-space:nowrap">
+     <button class="act act-copy" onclick="majSdr(${s.id})">💾</button>
+     <button class="act act-export" onclick="supprSdr(${s.id},'${s.nom.replace(/'/g,"\\'")}')">🗑</button>
+    </td>
+   </tr>`).join('');
+ }catch(e){t.innerHTML='<tr><td colspan="6">Erreur : '+e.message+'</td></tr>';}
+}
+async function ajouterSdr(){
+ const nom=document.getElementById('new-sdr-nom').value.trim();
+ const email=document.getElementById('new-sdr-email').value.trim();
+ const limite=document.getElementById('new-sdr-limite').value;
+ if(!nom){toast('Le prénom est requis');return;}
+ const r=await api('/api/sdrs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nom,email,limite_credits:limite===''?null:limite})});
+ const d=await r.json();
+ if(d.erreur){toast(d.erreur);return;}
+ document.getElementById('new-sdr-nom').value='';document.getElementById('new-sdr-email').value='';document.getElementById('new-sdr-limite').value='';
+ toast(nom+' ajouté ✓');chargerSdrs();chargerSdrChips();
+}
+async function majSdr(id){
+ const limite=document.getElementById('sl'+id).value;
+ const r=await api('/api/sdrs',{method:'PUT',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({id,nom:document.getElementById('sn'+id).value,email:document.getElementById('se'+id).value,
+   limite_credits:limite===''?null:limite,actif:document.getElementById('sa'+id).checked,
+   password:document.getElementById('sp'+id).value||undefined})});
+ const d=await r.json();
+ if(d.erreur){toast(d.erreur);return;}
+ toast('Enregistré ✓');chargerSdrs();chargerSdrChips();
+}
+async function supprSdr(id,nom){
+ if(!confirm('Supprimer '+nom+' ? (ses listes restent dans l\'historique)'))return;
+ await api('/api/sdrs?id='+id,{method:'DELETE'});
+ toast(nom+' supprimé');chargerSdrs();chargerSdrChips();
+}
+
+/* ───────── HISTORIQUE DES LISTES ───────── */
+async function chargerHistorique(){
+ const zone=document.getElementById('hist-liste');
+ const q=document.getElementById('hist-search').value.trim();
+ try{
+  const r=await api('/api/listes'+(q?'?q='+encodeURIComponent(q):''));
+  const d=await r.json();
+  if(d.erreur){zone.innerHTML='<p style="color:var(--ink-soft)">'+d.erreur+'</p>';return;}
+  if(!d.listes||!d.listes.length){zone.innerHTML='<p style="color:var(--ink-soft)">Aucune liste'+(q?' pour « '+q+' »':' pour l\'instant — génère ta première liste !')+'</p>';return;}
+  zone.innerHTML=d.listes.map(l=>{
+   const date=new Date(l.created_at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+   const cr=l.criteres||{};
+   return `<div class="fiche"><div class="fiche-top" style="grid-template-columns:1fr auto;align-items:center">
+    <div>
+     <div class="lead-name">${l.nom}</div>
+     <div class="lead-meta">SDR : <b>${l.sdr}</b> · ${date} · ${l.total} entreprises · ${(cr.naf||[]).join(', ')} · ${(cr.pays||[]).join(' + ')} · ~${l.credits_estimes||0} crédits Pappers</div>
+    </div>
+    <div class="act-row" style="margin:0">
+     <button class="act act-copy" onclick="ouvrirListe(${l.id})">📂 Ouvrir (gratuit)</button>
+     <button class="act act-export" onclick="majListe(${l.id})">↻ Mettre à jour</button>
+    </div>
+   </div></div>`;
+  }).join('');
+ }catch(e){zone.innerHTML='<p style="color:var(--ink-soft)">Erreur : '+e.message+'</p>';}
+}
+async function ouvrirListe(id){
+ try{
+  const r=await api('/api/listes?id='+id);
+  const l=await r.json();
+  if(l.erreur){toast(l.erreur);return;}
+  REAL=l.entreprises||[];
+  state.savedId=l.id;state.listeNom=l.nom;state.sdr=l.sdr;
+  showRealResults(l.total,l.criteres);
+  document.getElementById('res-sub').textContent+=' · Rouverte depuis l\'historique (0 crédit)';
+ }catch(e){toast('Erreur : '+e.message);}
+}
+async function majListe(id){
+ try{
+  const r=await api('/api/listes?id='+id);
+  const l=await r.json();
+  if(l.erreur){toast(l.erreur);return;}
+  if(!confirm(`Relancer « ${l.nom} » avec les mêmes critères ?\nNouvelle extraction Pappers = nouveaux crédits consommés.`))return;
+  state.listeNom=l.nom+' (maj)';state.sdr=l.sdr;
+  nav('wizard');
+  launch(l.criteres,true);
+ }catch(e){toast('Erreur : '+e.message);}
+}
+
+/* ───────── STATUT DES CONNEXIONS (clés côté serveur, jamais exposées) ───────── */
+async function chargerStatut(){
+ const grid=document.getElementById('api-grid');
+ try{
+  const r=await api('/api/status');
+  const data=await r.json();
+  grid.innerHTML=(data.outils||[]).map(o=>`
+   <div class="api-card">
+    <h3>${o.configuree?'🟢':'⚪'} ${o.nom}</h3>
+    <div class="role">${o.role}</div>
+    <div class="api-status ${o.configuree?'st-ok':'st-empty'}">${o.configuree?'Clé configurée côté serveur ✓':'Non configurée — variable attendue : '+o.variable}</div>
+   </div>`).join('');
+ }catch(e){
+  grid.innerHTML='<p style="color:var(--ink-soft)">Impossible de charger le statut ('+e.message+').</p>';
+ }
+}
+verifSession();
+
+validate();
+document.getElementById('btn-back').style.visibility='hidden';
+</script>
+</body>
+</html>
