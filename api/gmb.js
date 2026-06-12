@@ -39,15 +39,18 @@ const STOP_NOM = new Set(['auto','autos','automobile','automobiles','garage','ga
 
 // Nom en mots entiers + variante compacte ("A 2G" matche "A2G").
 // Seuls les mots DISTINCTIFS comptent (hors génériques, géographie et ville de l'entreprise).
+function equivaloir(s) {
+  return s.replace(/\bautomobiles?\b/g, 'auto').replace(/\bautos\b/g, 'auto');
+}
 function nomCorrespond(nomFiche, nomEntreprise, villeNorm) {
   if (!nomEntreprise) return false;
-  const fiche = normaliser(nomFiche);
+  const fiche = equivaloir(normaliser(nomFiche));
   // Phrase complète : "autos premium martinique" ⊂ "autos premium martinique - land rover"
   // → fiable même si chaque mot pris isolément est générique
-  const phrase = normaliser(nomEntreprise).split(/[^a-z0-9]+/).filter(Boolean).join(' ');
+  const phrase = equivaloir(normaliser(nomEntreprise)).split(/[^a-z0-9]+/).filter(Boolean).join(' ');
   if (phrase.length >= 8 && phrase.includes(' ') && fiche.includes(phrase)) return true;
   const villeTokens = new Set((villeNorm || '').split(/[^a-z0-9]+/).filter(Boolean));
-  const tokens = normaliser(nomEntreprise).split(/[^a-z0-9]+/)
+  const tokens = equivaloir(normaliser(nomEntreprise)).split(/[^a-z0-9]+/)
     .filter(t => t.length >= 3 && !STOP_NOM.has(t) && !villeTokens.has(t));
   if (tokens.length) {
     const trouves = tokens.filter(t => new RegExp('\\b' + echapper(t) + '\\b').test(fiche));
@@ -113,7 +116,7 @@ export default async function handler(req, res) {
   const key = process.env.GOOGLE_PLACES_API_KEY;
   if (!key) return res.status(500).json({ erreur: 'GOOGLE_PLACES_API_KEY manquante dans Vercel' });
 
-  const { nom = '', enseigne = '', ville = '', naf = '', adresse = '', cp = '', site = '' } = req.query;
+  const { nom = '', enseigne = '', ville = '', naf = '', adresse = '', cp = '', site = '', ens_forte = '' } = req.query;
   if (!nom) return res.status(400).json({ erreur: "Paramètre 'nom' requis" });
 
   const prefixeNaf = (naf || '').slice(0, 5);
@@ -123,6 +126,7 @@ export default async function handler(req, res) {
     // ── 1. Pool de candidats : recherches nom/enseigne + recherche par catégorie locale ──
     const requetes = [];
     if (enseigne) requetes.push(`${enseigne} ${ville}`.trim());
+    if (enseigne && ens_forte === '1') requetes.push(enseigne); // multi-îles : aussi sans la ville
     requetes.push(`${nom} ${ville}`.trim());
     if (motCle && ville) requetes.push(`${motCle} ${ville}`); // sert aussi pour les concurrents
 
@@ -145,25 +149,30 @@ export default async function handler(req, res) {
       .filter(r => !r.business_status || r.business_status === 'OPERATIONAL') // exclure fermées définitivement/temporairement
       .filter(r => typeof r.rating === 'number' && r.user_ratings_total > 0)
       .filter(r => typeCoherent(r.types, naf))
-      .filter(r => { // la fiche doit être dans la ville ou le code postal de l'entreprise
-        if (!villeNorm && !cp) return true;
-        const fa = normaliser(r.formatted_address || '');
-        return (villeNorm && fa.includes(villeNorm)) || (cp && fa.includes(cp));
-      })
       .map(r => {
+        const fa = normaliser(r.formatted_address || '');
+        // Zone : ville exacte, CP exact, ou même département (3 premiers chiffres du CP : 971, 972…)
+        const enZone = (!villeNorm && !cp)
+          || (villeNorm && fa.includes(villeNorm))
+          || (cp && (fa.includes(cp) || new RegExp('\\b' + cp.slice(0, 3) + '\\d{2}\\b').test(fa)));
         const matchNom = enseigne ? nomCorrespond(r.name, enseigne, villeNorm) : nomCorrespond(r.name, nom, villeNorm);
         const matchAdresse = adresse || cp ? adresseCorrespond(r.formatted_address || '', adresse, cp) : false;
-        return { r, matchNom, matchAdresse };
+        return { r, matchNom, matchAdresse, enZone };
       });
 
-    // Acceptés d'office : nom OU adresse exacte (numéro de rue identique)
-    let retenus = valides.filter(c => c.matchNom || c.matchAdresse === 'exacte');
+    // Acceptés d'office : (nom OU adresse exacte) dans la zone.
+    // HORS zone (autre île/département — enseignes multi-sites type "Autos Import FWI") :
+    // uniquement si le nom matche ET que l'enseigne vient d'une source forte (IA ou correction SDR).
+    let retenus = valides.filter(c =>
+      (c.enZone && (c.matchNom || c.matchAdresse === 'exacte')) ||
+      (!c.enZone && c.matchNom && ens_forte === '1')
+    );
 
     // Candidats de la ville sans match nom : confirmation par le DOMAINE du site web (max 4 vérifications)
     // (le filtre ville/CP en amont garantit déjà la géographie — un domaine identique est la preuve la plus forte)
     if (site) {
       const domaineSofy = domaine(site);
-      const aVerifier = valides.filter(c => !c.matchNom && !retenus.includes(c))
+      const aVerifier = valides.filter(c => !c.matchNom && !retenus.includes(c) && c.enZone)
         .sort((a, b) => b.r.user_ratings_total - a.r.user_ratings_total).slice(0, 4);
       for (const c of aVerifier) {
         if (!domaineSofy) break;
