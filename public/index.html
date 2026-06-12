@@ -918,6 +918,7 @@ function ficheReal(e,i){
       <input class="field" id="edit-site${i}" placeholder="Site web (ex : porsche-guadeloupe.fr)" value="${(e.site_web||'').replace(/"/g,'&quot;')}">
       <button class="btn btn-primary" onclick="majFiche(${i})">💾 Enregistrer + relancer GMB</button>
      </div>
+     <div style="margin-top:8px;text-align:right"><button class="act act-export" onclick="reinitFiche(${i})" title="Efface IA, site web, enseigne corrigée et GMB, puis relance l'analyse complète">♻️ Réinitialiser la fiche + re-analyser</button></div>
     </div>
     ${e.ia?`<div class="contact-line" style="margin-top:8px" title="${(e.ia.explication||'').replace(/"/g,'&quot;')}">🤖 IA : ${e.ia.nom_commercial||e.ia.site_web?`${e.ia.nom_commercial||''}${e.ia.site_web?' · '+e.ia.site_web:''}`:'rien de fiable trouvé'} <span class="badge b-gmb">confiance ${e.ia.confiance||'?'}</span></div>`:''}
     ${(!(e.gmb&&e.gmb.telephone))&&e.ia&&e.ia.telephone?`<div class="contact-line">☎️ Standard : <b>${e.ia.telephone}</b>${telBtns(e.ia.telephone)} <span class="badge b-signal">trouvé sur le web (IA) — pas de fiche GMB</span></div>`:''}
@@ -943,7 +944,7 @@ async function majFiche(i){
   toast('« '+indice+' » n\'est pas un domaine → je le transmets à l\'IA pour trouver le vrai site…');
  }
  if(ens)e.enseigne_ia=ens;
- if(site)e.site_web=site;
+ if(site){e.site_web=site;e.site_source='sdr';}
  e.gmb=null; // re-match avec les nouvelles infos
  rerender(i);persister();
  if(indice){
@@ -964,12 +965,24 @@ async function iaFiche(i,indice,force){
   if(d.erreur){toast('IA : '+d.erreur);return false;}
   e.ia=d.resultat||{};
   let modifie=false;
-  if(e.ia.site_web&&!e.site_web){e.site_web=e.ia.site_web;modifie=true;}
-  if(e.ia.nom_commercial&&e.ia.confiance!=='basse'){e.enseigne_ia=e.ia.nom_commercial;modifie=true;}
+  if(e.ia.site_web&&(!e.site_web||e.site_source!=='sdr')){
+   if(e.site_web!==e.ia.site_web)modifie=true;
+   e.site_web=e.ia.site_web;e.site_source='ia';
+  }
+  if(!e.ia.site_web&&e.site_source==='ia'){e.site_web='';modifie=true;} // l'IA se rétracte : on efface son ancienne erreur
+  if(e.ia.nom_commercial&&e.ia.confiance!=='basse'){if(e.enseigne_ia!==e.ia.nom_commercial)modifie=true;e.enseigne_ia=e.ia.nom_commercial;}
   rerender(i);persister();
   if(force&&!modifie)toast('IA : rien de fiable trouvé — '+(e.ia.explication||''));
   return modifie;
  }catch(err){toast('IA erreur réseau : '+err.message);return false;}
+}
+
+async function reinitFiche(i){
+ const e=REAL[i];
+ if(!confirm('Réinitialiser '+(e.nom)+' ?\n(efface : résultat IA, site web, enseigne corrigée, analyse GMB — puis re-analyse complète)'))return;
+ e.ia=null;e.enseigne_ia=null;e.site_web='';e.site_source=null;e.gmb=null;
+ rerender(i);persister();
+ await analyserFiche(i);
 }
 
 function sigDe(e){return enseigneDe(e)+'|'+domaineDe(e);}
