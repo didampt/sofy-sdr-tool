@@ -920,6 +920,8 @@ function ficheReal(e,i){
      </div>
     </div>
     ${e.ia?`<div class="contact-line" style="margin-top:8px" title="${(e.ia.explication||'').replace(/"/g,'&quot;')}">🤖 IA : ${e.ia.nom_commercial||e.ia.site_web?`${e.ia.nom_commercial||''}${e.ia.site_web?' · '+e.ia.site_web:''}`:'rien de fiable trouvé'} <span class="badge b-gmb">confiance ${e.ia.confiance||'?'}</span></div>`:''}
+    ${(!(e.gmb&&e.gmb.telephone))&&e.ia&&e.ia.telephone?`<div class="contact-line">☎️ Standard : <b>${e.ia.telephone}</b>${telBtns(e.ia.telephone)} <span class="badge b-signal">trouvé sur le web (IA) — pas de fiche GMB</span></div>`:''}
+    ${(!(e.gmb&&e.gmb.trouve))&&e.ia&&e.ia.adresse?`<div class="contact-line" style="color:var(--ink-soft)">📍 ${e.ia.adresse} <span class="badge b-gmb">source web</span></div>`:''}
     ${contacts.map((c,j)=>contactHtml(c,i,j)).join('')}
     <div class="act-row"><button class="act act-export" id="gmbbtn${i}" onclick="analyserFiche(${i})" title="GMB, puis IA automatiquement si introuvable">${!e.gmb?'⭐ Analyser (GMB + IA)':'↻ Analyser'}</button></div>
     ${gmbHtml(e.gmb)}
@@ -1036,7 +1038,7 @@ async function analyserGmb(i){
  const btn=document.getElementById('gmbbtn'+i);
  if(btn){btn.disabled=true;btn.textContent='⏳ Analyse…';}
  try{
-  const p=new URLSearchParams({nom:e.nom,ville:e.ville||'',naf:e.naf||'',enseigne:enseigneDe(e),adresse:e.adresse||'',cp:e.code_postal||'',site:domaineDe(e)});
+  const p=new URLSearchParams({nom:e.nom,ville:e.ville||'',naf:e.naf||'',enseigne:enseigneDe(e),adresse:e.adresse||'',cp:e.code_postal||'',site:domaineDe(e),ens_forte:e.enseigne_ia?'1':''});
   const r=await api('/api/gmb?'+p.toString());
   const g=await r.json();
   if(!r.ok||g.erreur){toast('Erreur GMB : '+(g.erreur||r.status));if(btn){btn.disabled=false;btn.textContent='⭐ Analyser GMB';}return false;}
@@ -1259,7 +1261,7 @@ function exportCsv(){
   rows=REAL.map(e=>{
    const g=e.gmb||{};
    const en=(e.contacts&&e.contacts[0]&&e.contacts[0].enrich)||e.enrich||{};
-   const telStd=(e.gmb&&e.gmb.telephone)||"";
+   const telStd=(e.gmb&&e.gmb.telephone)||(e.ia&&e.ia.telephone)||"";
    return [(e.dirigeant?e.dirigeant.prenom+' '+e.dirigeant.nom:""),en.fonction||(e.dirigeant?e.dirigeant.fonction:""),en.email||"",en.telephone||"",telStd,en.linkedin||"",e.nom,e.siren,e.naf,e.activite||"",e.ville||"",e.code_postal||"",e.effectif||"",e.chiffre_affaires||"",e.nb_etablissements||"",en.site_web||e.site_web||"",
     g.note_moyenne||"",g.total_avis||"",g.pire_fiche?`${g.pire_fiche.nom} ${g.pire_fiche.note}★`:"",g.concurrents?g.concurrents.note_moyenne+"★":"",g.avis_negatif?g.avis_negatif.texte:""];
   });
