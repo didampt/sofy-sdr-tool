@@ -26,7 +26,7 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'GET') {
-      if (user.role !== 'superadmin') return res.status(403).json({ erreur: 'Réservé au superadmin' });
+      if (!['superadmin','admin'].includes(user.role)) return res.status(403).json({ erreur: 'Réservé au superadmin' });
 
       // Par SDR — mois en cours
       const parSdr = await sql`
@@ -68,7 +68,7 @@ export default async function handler(req, res) {
 
     // ── Modification d'un tarif ──
     if (req.method === 'PUT') {
-      if (user.role !== 'superadmin') return res.status(403).json({ erreur: 'Réservé au superadmin' });
+      if (!['superadmin','admin'].includes(user.role)) return res.status(403).json({ erreur: 'Réservé au superadmin' });
       const { api, prix } = req.body || {};
       if (!api || prix === undefined || isNaN(Number(prix))) return res.status(400).json({ erreur: 'api et prix requis' });
       await sql`INSERT INTO tarifs (api, prix) VALUES (${api}, ${Number(prix)})

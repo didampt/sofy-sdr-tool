@@ -17,7 +17,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ config: out });
     }
     if (req.method === 'PUT') {
-      if (user.role !== 'superadmin') return res.status(403).json({ erreur: 'Réservé au superadmin' });
+      if (!['superadmin','admin'].includes(user.role)) return res.status(403).json({ erreur: 'Réservé au superadmin' });
       const { cle, valeur } = req.body || {};
       if (!cle || valeur === undefined) return res.status(400).json({ erreur: 'cle et valeur requis' });
       await sql`INSERT INTO config (cle, valeur) VALUES (${cle}, ${JSON.stringify(valeur)})

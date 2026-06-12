@@ -35,11 +35,16 @@ export default async function handler(req, res) {
   if (!to) return res.status(400).json({ erreur: 'to requis' });
 
   try {
-    const rows = await sql`SELECT valeur FROM config WHERE cle = 'ringover'`;
-    const cfg = rows.length ? rows[0].valeur : {};
-    const ligne = cfg[user.email] || cfg[(user.email || '').split('@')[0]] || cfg[user.nom] || cfg.defaut;
+    let ligne = null;
+    const u = await sql`SELECT ringover_numero FROM sdrs WHERE LOWER(email) = LOWER(${user.email || ''}) LIMIT 1`;
+    if (u.length && u[0].ringover_numero) ligne = u[0].ringover_numero;
     if (!ligne) {
-      return res.status(400).json({ erreur: `Aucune ligne Ringover configurée pour ${user.email} — Paramètres → carte ☎️ Ringover` });
+      const rows = await sql`SELECT valeur FROM config WHERE cle = 'ringover'`;
+      const cfg = rows.length ? rows[0].valeur : {};
+      ligne = cfg[user.email] || cfg[(user.email || '').split('@')[0]] || cfg[user.nom] || cfg.defaut;
+    }
+    if (!ligne) {
+      return res.status(400).json({ erreur: `Aucune ligne Ringover pour ${user.email} — Paramètres → 👥 utilisateurs → colonne Ringover` });
     }
 
     const r = await fetch('https://public-api.ringover.com/v2/callbacks', {

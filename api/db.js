@@ -79,6 +79,7 @@ export async function ensureSchema() {
   )`;
   await sql`CREATE TABLE IF NOT EXISTS veille_etat (cle TEXT PRIMARY KEY, deja_vus JSONB DEFAULT '[]', maj TIMESTAMPTZ DEFAULT NOW())`;
   await sql`CREATE TABLE IF NOT EXISTS config (cle TEXT PRIMARY KEY, valeur JSONB NOT NULL DEFAULT '{}')`;
+  await sql`ALTER TABLE sdrs ADD COLUMN IF NOT EXISTS ringover_numero TEXT`;
   await sql`INSERT INTO tarifs (api, prix) VALUES ('soreach', 0.07) ON CONFLICT (api) DO NOTHING`;
   ready = true;
 }
