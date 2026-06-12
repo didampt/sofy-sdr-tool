@@ -126,7 +126,6 @@ export default async function handler(req, res) {
     // ── 1. Pool de candidats : recherches nom/enseigne + recherche par catégorie locale ──
     const requetes = [];
     if (enseigne) requetes.push(`${enseigne} ${ville}`.trim());
-    if (enseigne && ens_forte === '1') requetes.push(enseigne); // multi-îles : aussi sans la ville
     requetes.push(`${nom} ${ville}`.trim());
     if (motCle && ville) requetes.push(`${motCle} ${ville}`); // sert aussi pour les concurrents
 
@@ -160,13 +159,9 @@ export default async function handler(req, res) {
         return { r, matchNom, matchAdresse, enZone };
       });
 
-    // Acceptés d'office : (nom OU adresse exacte) dans la zone.
-    // HORS zone (autre île/département — enseignes multi-sites type "Autos Import FWI") :
-    // uniquement si le nom matche ET que l'enseigne vient d'une source forte (IA ou correction SDR).
-    let retenus = valides.filter(c =>
-      (c.enZone && (c.matchNom || c.matchAdresse === 'exacte')) ||
-      (!c.enZone && c.matchNom && ens_forte === '1')
-    );
+    // Acceptés d'office : (nom OU adresse exacte) dans la zone (même département/île — JAMAIS une autre île :
+    // les groupes ont des sociétés sœurs par île, chaque entité doit matcher SA fiche locale)
+    let retenus = valides.filter(c => c.enZone && (c.matchNom || c.matchAdresse === 'exacte'));
 
     // Candidats de la ville sans match nom : confirmation par le DOMAINE du site web (max 4 vérifications)
     // (le filtre ville/CP en amont garantit déjà la géographie — un domaine identique est la preuve la plus forte)

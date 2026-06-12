@@ -33,7 +33,7 @@ ${indice ? `Indication fournie par le commercial (fiable, à utiliser dans tes r
 3. Son numéro de téléphone public (Pages Jaunes, annuaires, site web)
 4. Son adresse constatée sur le web
 
-⚠️ RÈGLE DE COHÉRENCE ABSOLUE : le site web et le nom commercial doivent appartenir à CETTE entreprise — même activité (${naf ? 'NAF ' + naf + ', ' : ''}vérifie que l'activité du site correspond), même ville. Exemple d'erreur à NE PAS faire : "MOBILE AUTO" (concession automobile) ≠ "Flip Mobile" (magasin de téléphones) même si les noms se ressemblent. En cas de doute sur la cohérence d'activité : null.
+⚠️ RÈGLE DE COHÉRENCE ABSOLUE : le site web et le nom commercial doivent appartenir à CETTE entreprise — même activité (${naf ? 'NAF ' + naf + ', ' : ''}vérifie que l'activité du site correspond), et surtout MÊME LOCALISATION : ${ville || 'la ville indiquée'}. Les groupes ont souvent des sociétés sœurs sur d'autres îles avec des noms proches (ex : "Automobile Import Guadeloupe / A.I.G." en Guadeloupe vs "Auto Import FWI" en Martinique) — choisis IMPÉRATIVEMENT l'établissement de ${ville || 'la bonne ville'} et son nom Google Maps local. Autre erreur à NE PAS faire : "MOBILE AUTO" (concession automobile) ≠ "Flip Mobile" (magasin de téléphones) même si les noms se ressemblent. En cas de doute : null.
 
 Réponds UNIQUEMENT avec un objet JSON, sans texte autour, sans backticks :
 {"site_web": "exemple.fr ou null", "nom_commercial": "Nom Google Maps ou null", "telephone": "+590... ou null", "adresse": "adresse ou null", "confiance": "haute|moyenne|basse", "explication": "une phrase"}
