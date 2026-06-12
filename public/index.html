@@ -575,7 +575,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v38';
+const VERSION='v39';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -988,7 +988,7 @@ function ficheReal(e,i){
     ${(!(e.gmb&&e.gmb.telephone))&&e.ia&&e.ia.telephone?`<div class="contact-line">☎️ Standard : <b>${e.ia.telephone}</b>${telBtns(e.ia.telephone)} <span class="badge b-signal">trouvé sur le web (IA) — pas de fiche GMB</span></div>`:''}
     ${(!(e.gmb&&e.gmb.trouve))&&e.ia&&e.ia.adresse?`<div class="contact-line" style="color:var(--ink-soft)">📍 ${e.ia.adresse} <span class="badge b-gmb">source web</span></div>`:''}
     ${contacts.map((c,j)=>contactHtml(c,i,j)).join('')}
-    <div class="act-row"><button class="act act-export" id="gmbbtn${i}" onclick="analyserFiche(${i})" title="GMB, puis IA automatiquement si introuvable">${!e.gmb?'⭐ Analyser (GMB + IA)':'↻ Analyser'}</button><button class="act act-copy" onclick="(async()=>{if(REAL[${i}]._busy){toast('Analyse en cours ⏳');return;}REAL[${i}]._busy=true;rerender(${i});try{toast('👥 Recherche des personas (IA)…');await chercherPersonas(${i});}finally{REAL[${i}]._busy=false;rerender(${i});}})()" title="Chercher les postes ciblés de la liste (Dir Commercial, etc.) via LinkedIn public">👥 Personas</button></div>
+    <div class="act-row"><button class="act act-call" onclick="lancerFiche(${i})" title="Pipeline complet sur cette fiche uniquement">🚀 Fiche</button><button class="act act-export" id="gmbbtn${i}" onclick="analyserFiche(${i})" title="GMB, puis IA automatiquement si introuvable">${!e.gmb?'⭐ Analyser (GMB + IA)':'↻ Analyser'}</button><button class="act act-copy" onclick="(async()=>{if(REAL[${i}]._busy){toast('Analyse en cours ⏳');return;}REAL[${i}]._busy=true;rerender(${i});try{toast('👥 Recherche des personas (IA)…');await chercherPersonas(${i});}finally{REAL[${i}]._busy=false;rerender(${i});}})()" title="Chercher les postes ciblés de la liste (Dir Commercial, etc.) via LinkedIn public">👥 Personas</button></div>
     ${e.linkedin_entreprise?`<div class="contact-line">🏢 <a href="${e.linkedin_entreprise.startsWith('http')?e.linkedin_entreprise:'https://'+e.linkedin_entreprise}" target="_blank">Page LinkedIn entreprise ✓</a></div>`:''}
     ${gmbHtml(e.gmb)}
     ${e.score?`
@@ -1412,17 +1412,8 @@ function wfSet(i,col,etat){
  el.textContent=etat==='ok'?'✅':etat==='ko'?'❌':etat==='run'?'⏳':'—';
 }
 
-async function lancerWaterfall(){
- if(!REAL.length){toast('Aucune fiche');return;}
- const gmbAFaire=e=>!e.gmb||(e.gmb.trouve&&e.gmb.telephone===undefined)||(!e.gmb.trouve&&sigDe(e)!=='|'&&(e.gmb._sig||'')!==sigDe(e));
- const contactAFaire=(e,c)=>c.nom&&(!c.enrich||(!c.enrich.email&&!c.enrich.avec_domaine&&!!domaineDe(e)));
- const nbGmb=REAL.filter(gmbAFaire).length;
- const nbIa=REAL.filter(e=>!e.ia&&!domaineDe(e)).length;
- const nbContacts=REAL.reduce((s,e)=>s+contactsDe(e).filter(c=>c.nom&&!c.enrich).length,0);
- if(!confirm(`🚀 Lancer l'enrichissement sur ${REAL.length} fiches ?\n\n1. GMB + domaine + ☎️ standard : ~${nbGmb} fiches\n2. IA site web/nom commercial (si GMB échoue) : jusqu'à ${nbIa} appels (~0,02 €)\n3. Emails Dropcontact : ~${nbContacts} crédits\n4. Personas (${jobsCibles().length?jobsCibles().join(', '):'aucun sélectionné'}) : IA LinkedIn (~0,05-0,15 €/fiche)\n5. FullEnrich (repli email + MOBILE) : contacts incomplets uniquement — ⚠️ un mobile coûte ~10 crédits FullEnrich\n5bis. Mobile : IA trouve le profil LinkedIn (~0,01 €) puis Kaspr (1 crédit tél. + 1 crédit export)\n6. Scoring + synthèse d'appel + email perso (IA, ~0,03 €/fiche)\n\n💡 Exclus d'abord les fiches inutiles (🗑).`))return;
- ouvrirWfModal();
- let emailsOk=0,emailsTentes=0;
- for(let i=0;i<REAL.length;i++){
+async function pipelineFiche(i){
+ let tentes=0,ok=0;
   const e=REAL[i];
   // ── 1. GMB ──
   if(gmbAFaire(e)){wfSet(i,'gmb','run');await analyserGmb(i);}
@@ -1453,9 +1444,9 @@ async function lancerWaterfall(){
   let dejaEmail=cs.some(c=>c.enrich&&c.enrich.email),tente=false,trouve=dejaEmail;
   for(let j=0;j<cs.length;j++){
    if(contactAFaire(e,cs[j])){
-    tente=true;emailsTentes++;
+    tente=true;tentes++;
     wfSet(i,'mail','run');
-    if(await enrichir(i,j)){trouve=true;emailsOk++;}
+    if(await enrichir(i,j)){trouve=true;ok++;}
    }
   }
   wfSet(i,'mail',trouve?'ok':(tente?'ko':(cs.some(c=>c.nom)?'ko':'—')));
@@ -1487,6 +1478,32 @@ async function lancerWaterfall(){
   }else{
    wfSet(i,'sc',e.score?'ok':'—');
   }
+
+ return {tentes,ok};
+}
+
+async function lancerFiche(i){
+ const e=REAL[i];
+ if(!confirm(`🚀 Enrichir uniquement « ${enseigneDe(e)||e.nom} » ?\n\nGMB → IA → Personas → Emails → FullEnrich → Mobile → Score\n(mêmes règles que le 🚀 global : jamais de re-paiement)`))return;
+ toast('🚀 '+(enseigneDe(e)||e.nom)+' — pipeline en cours…');
+ const r=await pipelineFiche(i);
+ toast(`🏁 ${enseigneDe(e)||e.nom} — terminé (${r.ok} email(s) trouvé(s))`);
+ majCoutListe();
+}
+
+async function lancerWaterfall(){
+ if(!REAL.length){toast('Aucune fiche');return;}
+ const gmbAFaire=e=>!e.gmb||(e.gmb.trouve&&e.gmb.telephone===undefined)||(!e.gmb.trouve&&sigDe(e)!=='|'&&(e.gmb._sig||'')!==sigDe(e));
+ const contactAFaire=(e,c)=>c.nom&&(!c.enrich||(!c.enrich.email&&!c.enrich.avec_domaine&&!!domaineDe(e)));
+ const nbGmb=REAL.filter(gmbAFaire).length;
+ const nbIa=REAL.filter(e=>!e.ia&&!domaineDe(e)).length;
+ const nbContacts=REAL.reduce((s,e)=>s+contactsDe(e).filter(c=>c.nom&&!c.enrich).length,0);
+ if(!confirm(`🚀 Lancer l'enrichissement sur ${REAL.length} fiches ?\n\n1. GMB + domaine + ☎️ standard : ~${nbGmb} fiches\n2. IA site web/nom commercial (si GMB échoue) : jusqu'à ${nbIa} appels (~0,02 €)\n3. Emails Dropcontact : ~${nbContacts} crédits\n4. Personas (${jobsCibles().length?jobsCibles().join(', '):'aucun sélectionné'}) : IA LinkedIn (~0,05-0,15 €/fiche)\n5. FullEnrich (repli email + MOBILE) : contacts incomplets uniquement — ⚠️ un mobile coûte ~10 crédits FullEnrich\n5bis. Mobile : IA trouve le profil LinkedIn (~0,01 €) puis Kaspr (1 crédit tél. + 1 crédit export)\n6. Scoring + synthèse d'appel + email perso (IA, ~0,03 €/fiche)\n\n💡 Exclus d'abord les fiches inutiles (🗑).`))return;
+ ouvrirWfModal();
+ let emailsOk=0,emailsTentes=0;
+ for(let i=0;i<REAL.length;i++){
+  const r=await pipelineFiche(i);
+  emailsTentes+=r.tentes;emailsOk+=r.ok;
  }
  document.getElementById('wf-titre').textContent=`🏁 Enrichissement terminé — ${emailsOk}/${emailsTentes} nouveaux emails`;
  document.getElementById('wf-fermer').disabled=false;
