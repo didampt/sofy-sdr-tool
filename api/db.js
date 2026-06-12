@@ -62,6 +62,22 @@ export async function ensureSchema() {
       ('ia_claude', 0.02), ('fullenrich', 0.25), ('leadmagic', 0.05), ('kaspr', 0.20)`;
   }
   await sql`CREATE TABLE IF NOT EXISTS etats_api (api TEXT PRIMARY KEY, solde NUMERIC, maj TIMESTAMPTZ DEFAULT NOW())`;
+  await sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS veille BOOLEAN DEFAULT FALSE`;
+  await sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS veille_fin TIMESTAMPTZ DEFAULT NULL`;
+  await sql`CREATE TABLE IF NOT EXISTS signaux (
+    id SERIAL PRIMARY KEY,
+    liste_id INTEGER,
+    entreprise_nom TEXT,
+    contact_nom TEXT,
+    linkedin TEXT,
+    type TEXT,
+    source TEXT,
+    detail TEXT,
+    sdr TEXT,
+    vu BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`;
+  await sql`CREATE TABLE IF NOT EXISTS veille_etat (cle TEXT PRIMARY KEY, deja_vus JSONB DEFAULT '[]', maj TIMESTAMPTZ DEFAULT NOW())`;
   ready = true;
 }
 

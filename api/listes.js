@@ -54,10 +54,10 @@ export default async function handler(req, res) {
 
       const recherche = (q || '').trim();
       const rows = recherche
-        ? await sql`SELECT id, nom, sdr, total, credits_estimes, criteres, created_at FROM listes
+        ? await sql`SELECT id, nom, sdr, total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                     WHERE nom ILIKE ${'%' + recherche + '%'} OR sdr ILIKE ${'%' + recherche + '%'}
                     ORDER BY created_at DESC LIMIT 50`
-        : await sql`SELECT id, nom, sdr, total, credits_estimes, criteres, created_at FROM listes
+        : await sql`SELECT id, nom, sdr, total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                     ORDER BY created_at DESC LIMIT 50`;
       return res.status(200).json({ listes: rows });
     }
@@ -83,9 +83,16 @@ export default async function handler(req, res) {
 
     // ── Mise à jour des entreprises (analyses GMB, enrichissements futurs) ──
     if (req.method === 'PUT') {
-      const { id, entreprises } = req.body || {};
-      if (!id || !Array.isArray(entreprises)) return res.status(400).json({ erreur: 'id et entreprises requis' });
-      await sql`UPDATE listes SET entreprises = ${JSON.stringify(entreprises)} WHERE id = ${parseInt(id)}`;
+      const { id, entreprises, veille, veille_jours } = req.body || {};
+      if (!id) return res.status(400).json({ erreur: 'id requis' });
+      if (Array.isArray(entreprises)) {
+        await sql`UPDATE listes SET entreprises = ${JSON.stringify(entreprises)} WHERE id = ${parseInt(id)}`;
+      }
+      if (veille !== undefined) {
+        const fin = veille ? new Date(Date.now() + (parseInt(veille_jours) || 60) * 24 * 3600 * 1000) : null;
+        await sql`UPDATE listes SET veille = ${!!veille}, veille_fin = ${fin} WHERE id = ${parseInt(id)}`;
+        return res.status(200).json({ ok: true, veille: !!veille, veille_fin: fin });
+      }
       return res.status(200).json({ ok: true });
     }
 
