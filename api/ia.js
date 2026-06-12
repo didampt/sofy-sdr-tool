@@ -30,7 +30,7 @@ Activité (NAF ${naf}) ${siren ? `· SIREN ${siren}` : ''}
 ${indice ? `Indication fournie par le commercial (fiable, à utiliser dans tes recherches) : "${indice}"
 ` : ''}Fais PLUSIEURS recherches web (4-6 recherches, c'est normal) en variant les angles : "${enseigne || nom} ${ville}", "${nom} site officiel", "${nom} pages jaunes", le sigle + activité + département, LinkedIn et Instagram de l'entreprise${dirigeant ? `, "${dirigeant} ${ville}"` : ''}${indice ? `, "${indice} site officiel"` : ''}. Les petites entreprises des DOM sont souvent mieux référencées via Pages Jaunes, Instagram ou LinkedIn que par leur propre site. Trouve :
 1. Son site web officiel (le domaine exact, vérifié dans les résultats — jamais inventé)
-2. Son nom commercial tel qu'il apparaît sur Google Maps (souvent différent de la raison sociale, ex : "PDK PRESTIGE DISTRIBUTION KARAIB" = "Centre Porsche Guadeloupe"). ⚠️ Une adresse "C/O X" ou "Chez X" signifie que l'entreprise est HÉBERGÉE chez X — X n'est PAS son nom commercial. Cherche l'enseigne réelle (Instagram/Facebook/LinkedIn de l'entreprise sont de bons indices, ex : un compte @marque.fwi révèle l'enseigne)
+2. Son nom commercial tel qu'il apparaît sur Google Maps (souvent différent de la raison sociale, ex : "PDK PRESTIGE DISTRIBUTION KARAIB" = "Centre Porsche Guadeloupe"). ⚠️ Une adresse "C/O X" ou "Chez X" signifie que l'entreprise est HÉBERGÉE chez X — X n'est PAS son nom commercial. Cherche l'enseigne réelle : les comptes Instagram/Facebook/LinkedIn de l'entreprise sont les meilleurs indices — le nom du compte EST souvent l'enseigne (ex : un compte @autosimport.fwi ⇒ enseigne "Autos Import FWI", à reporter en nom_commercial avec confiance moyenne minimum)
 3. Son numéro de téléphone public — AUSSI IMPORTANT que le site web : cherche "${nom} téléphone", "${enseigne || nom} ${ville} téléphone", consulte pagesjaunes.fr et les annuaires. Si un résultat mentionne une page Pages Jaunes ou annuaire, OUVRE cette page avec l'outil de lecture pour en extraire le numéro (format 0590/0596/0696/0690…)
 4. Son adresse constatée sur le web
 
@@ -57,11 +57,18 @@ IMPORTANT — équilibre : un résultat avec confiance "moyenne" vaut mieux qu'a
       })
     });
 
-    let r = await appeler([
-      { type: 'web_search_20250305', name: 'web_search', max_uses: 5 },
-      { type: 'web_fetch_20250910', name: 'web_fetch', max_uses: 3 }
-    ]);
+    const outilsComplets = [
+      { type: 'web_search_20250305', name: 'web_search', max_uses: 4 },
+      { type: 'web_fetch_20250910', name: 'web_fetch', max_uses: 2, max_content_tokens: 6000 }
+    ];
+    let r = await appeler(outilsComplets);
     let data = await r.json();
+    if (r.status === 429) {
+      // Limite de débit : on attend 30 s puis on retente une fois
+      await new Promise(x => setTimeout(x, 30000));
+      r = await appeler(outilsComplets);
+      data = await r.json();
+    }
     if (!r.ok && /web_fetch|beta/i.test(JSON.stringify(data.error || ''))) {
       // Repli : recherche seule si l'outil de lecture n'est pas disponible sur ce compte
       r = await appeler([{ type: 'web_search_20250305', name: 'web_search', max_uses: 6 }]);
