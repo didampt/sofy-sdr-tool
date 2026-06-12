@@ -162,6 +162,9 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
 .spin{width:42px;height:42px;border:4px solid var(--line);border-top-color:var(--accent);border-radius:50%;margin:0 auto 18px;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .load-step{color:var(--ink-soft);font-size:14px}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:rot .8s linear infinite;vertical-align:-2px}
+@keyframes rot{to{transform:rotate(360deg)}}
+.fiche-busy{opacity:.65;pointer-events:none}
 #wf-modal{display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:900;align-items:center;justify-content:center}
 .wf-panel{background:#fff;border-radius:16px;box-shadow:var(--shadow);width:min(620px,94vw);max-height:80vh;display:flex;flex-direction:column}
 .wf-head{padding:20px 24px 12px;font-family:'Sora';font-weight:700;font-size:17px}
@@ -825,7 +828,7 @@ function showRealResults(total,c){
 function persister(){
  if(state.savedId){
   api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({id:state.savedId,entreprises:REAL})}).catch(()=>{});
+   body:JSON.stringify({id:state.savedId,entreprises:REAL},(k,v)=>k==='_busy'?undefined:v)}).catch(()=>{});
  }
 }
 
@@ -891,7 +894,8 @@ function ficheReal(e,i){
  const siteWeb=domaineDe(e);
  const titre=contacts.length&&contacts[0].nom?`${contacts[0].prenom} ${contacts[0].nom} — ${(contacts[0].enrich&&contacts[0].enrich.fonction)||contacts[0].fonction||'Dirigeant'}`:e.nom;
  const aEmail=contacts.some(c=>c.enrich&&c.enrich.email);
- return `<div class="fiche" id="fr${i}">
+ return `<div class="fiche${e._busy?' fiche-busy':''}" id="fr${i}">
+  ${e._busy?`<div style="display:flex;align-items:center;gap:8px;color:var(--accent);font-weight:600;font-size:13px;margin-bottom:10px"><span class="spin"></span> Enrichissement en cours… (boutons verrouillés)</div>`:''}
   <div class="fiche-top" style="grid-template-columns:1fr">
    <div>
     <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
@@ -936,6 +940,7 @@ function rerender(i){
 }
 async function majFiche(i){
  const e=REAL[i];
+ if(e._busy){toast('Analyse en cours — patience ⏳');return;}
  const ens=document.getElementById('edit-ens'+i).value.trim();
  let site=document.getElementById('edit-site'+i).value.trim().replace(/^https?:\/\//,'').replace(/^www\./,'').split('/')[0];
  let indice='';
@@ -982,6 +987,7 @@ async function iaFiche(i,indice,force){
 
 async function reinitFiche(i){
  const e=REAL[i];
+ if(e._busy){toast('Analyse en cours — patience ⏳');return;}
  if(!confirm('Réinitialiser '+(e.nom)+' ?\n(efface : résultat IA, site web, enseigne corrigée, analyse GMB — puis re-analyse complète)'))return;
  e.ia=null;e.enseigne_ia=null;e.site_web='';e.site_source=null;e.gmb=null;
  rerender(i);persister();
@@ -990,9 +996,17 @@ async function reinitFiche(i){
 
 function sigDe(e){return enseigneDe(e)+'|'+domaineDe(e);}
 
+function verrou(e,i){
+ if(e._busy){toast('Analyse déjà en cours sur cette fiche — patience ⏳');return true;}
+ e._busy=true;rerender(i);return false;
+}
+function deverrou(e,i){e._busy=false;rerender(i);}
+
 /* Analyse unifiée : GMB → si échec/pas de domaine → IA → re-GMB. UN SEUL clic pour le SDR. */
 async function analyserFiche(i){
  const e=REAL[i];
+ if(verrou(e,i))return;
+ try{
  await analyserGmb(i);
  if(!(e.gmb&&e.gmb.trouve)||!domaineDe(e)){
   toast('GMB introuvable → 🤖 IA cherche sur le web…');
@@ -1005,6 +1019,7 @@ async function analyserFiche(i){
    toast('🤖 IA : '+(e.ia.explication||'rien de fiable trouvé'));
   }
  }
+ }finally{deverrou(e,i);}
 }
 
 function exclure(i){
@@ -1022,6 +1037,9 @@ async function enrichir(i,j){
  const e=REAL[i];
  const c=contactsDe(e)[j||0];
  if(!c||!c.nom){toast('Pas de contact identifié sur cette fiche');return false;}
+ const verrouille=!e._busy; // si appelé seul (bouton), on pose le verrou ; sinon (waterfall) il est déjà posé
+ if(verrouille){e._busy=true;rerender(i);}
+ try{
  const btn=document.getElementById(`enrbtn${i}_${j||0}`);
  if(btn){btn.disabled=true;btn.textContent='⏳ Dropcontact… (15-45 s)';}
  try{
@@ -1048,6 +1066,7 @@ async function enrichir(i,j){
   if(btn){btn.disabled=false;btn.textContent='✉️ Enrichir ce contact';}
   return false;
  }
+ }finally{if(verrouille){e._busy=false;rerender(i);}}
 }
 
 /* ───────── ANALYSE GMB ───────── */
