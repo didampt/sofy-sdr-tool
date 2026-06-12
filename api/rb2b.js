@@ -34,10 +34,16 @@ async function envoyerSlack(texte) {
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  if (req.method !== 'POST') return res.status(405).json({ erreur: 'POST uniquement (webhook RB2B)' });
-  if (!process.env.RB2B_WEBHOOK_SECRET || req.query.secret !== process.env.RB2B_WEBHOOK_SECRET) {
-    return res.status(401).json({ erreur: 'Secret invalide' });
+  const secretServeur = (process.env.RB2B_WEBHOOK_SECRET || '').trim();
+  const secretRecu = (req.query.secret || '').trim();
+  if (!secretServeur) {
+    // Diagnostic explicite : la variable n'est pas visible par la fonction (pas créée, mauvais environnement, ou pas redéployé)
+    return res.status(401).json({ erreur: 'RB2B_WEBHOOK_SECRET absente côté serveur — vérifier la variable Vercel (environnement Production coché) puis Redeploy' });
   }
+  if (secretRecu !== secretServeur) {
+    return res.status(401).json({ erreur: 'Secret différent de celui du serveur', indice: `reçu ${secretRecu.length} caractères, attendu ${secretServeur.length}` });
+  }
+  if (req.method !== 'POST') return res.status(405).json({ erreur: 'POST uniquement (webhook RB2B) — secret OK ✓' });
   if (!sql) return res.status(500).json({ erreur: 'Base non configurée' });
   await ensureSchema();
 
