@@ -47,8 +47,17 @@ function nomCorrespond(nomFiche, nomEntreprise, villeNorm) {
   const fiche = equivaloir(normaliser(nomFiche));
   // Phrase complète : "autos premium martinique" ⊂ "autos premium martinique - land rover"
   // → fiable même si chaque mot pris isolément est générique
-  const phrase = equivaloir(normaliser(nomEntreprise)).split(/[^a-z0-9]+/).filter(Boolean).join(' ');
+  const motsEnt = equivaloir(normaliser(nomEntreprise)).split(/[^a-z0-9]+/).filter(t => t.length >= 3);
+  const phrase = motsEnt.join(' ');
   if (phrase.length >= 8 && phrase.includes(' ') && fiche.includes(phrase)) return true;
+  // Séquence ordonnée : tous les mots présents DANS L'ORDRE, insertions tolérées
+  // ("auto import martinique" matche "Auto Import FWI Martinique")
+  if (motsEnt.length >= 3 && phrase.length >= 12) {
+    const motsFiche = fiche.split(/[^a-z0-9]+/).filter(Boolean);
+    let k = 0;
+    for (const m of motsFiche) { if (m === motsEnt[k]) k++; if (k === motsEnt.length) break; }
+    if (k === motsEnt.length) return true;
+  }
   const villeTokens = new Set((villeNorm || '').split(/[^a-z0-9]+/).filter(Boolean));
   const tokens = equivaloir(normaliser(nomEntreprise)).split(/[^a-z0-9]+/)
     .filter(t => t.length >= 3 && !STOP_NOM.has(t) && !villeTokens.has(t));
