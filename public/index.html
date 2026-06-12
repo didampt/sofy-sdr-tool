@@ -580,7 +580,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v41';
+const VERSION='v42';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -778,6 +778,12 @@ const EFF_MAP={"1–9":["1","9"],"10–19":["10","19"],"20–49":["20","49"],"50
 const CA_MAP={"< 500 K€":["","500000"],"500 K€ – 2 M€":["500000","2000000"],"2 – 10 M€":["2000000","10000000"],"10 – 50 M€":["10000000","50000000"],"50 M€ +":["50000000",""],"Indifférent":["",""]};
 let REAL=[];
 
+function confirmerCoutListe(taille){
+ const n=parseInt(taille)||25;
+ if(n<=25)return true;
+ return confirm(`📋 Liste de ${n} fiches demandée.\n\n💳 Extraction Pappers : ~${n+Math.ceil(n/100)} crédits (1 crédit/fiche détaillée : dirigeant, CA, établissements).\n\nL'enrichissement (GMB, emails, mobiles) reste à la demande, fiche par fiche ou via 🚀.\n\nConfirmer l'extraction ?`);
+}
+
 function criteresActuels(){
  return {naf:state.naf,size:state.size,emp:state.emp,ca:state.ca,jobs:state.jobs,pays:state.pays,
          ville:document.getElementById('loc-ville').value.trim()};
@@ -799,6 +805,7 @@ async function launch(crit,skipCheck){
    }
   }catch(_){/* base pas encore prête : on continue */}
  }
+ if(!confirmerCoutListe(c.size))return;
  document.querySelectorAll('.qcard')[5].style.display='none';
  document.getElementById('wiz-foot').style.display='none';
  document.getElementById('loader').classList.add('on');
@@ -818,7 +825,7 @@ async function launch(crit,skipCheck){
  const ca=CA_MAP[c.ca]||["",""];
  if(ca[0])p.set('ca_min',ca[0]);
  if(ca[1])p.set('ca_max',ca[1]);
- p.set('nb',Math.min(parseInt(c.size)||25,100)); // Pappers : max 100/page (pagination à l'étape suivante)
+ p.set('nb',Math.min(parseInt(c.size)||25,500)); // pagination Pappers gérée côté serveur (5 pages max)
  p.set('detail','25'); // fiches détaillées (dirigeants, CA, établissements) — plafonné pour maîtriser les crédits
 
  try{
@@ -981,7 +988,7 @@ function ficheReal(e,i){
      ${e.effectif?`<span class="badge b-gmb">👥 ${e.effectif}</span>`:''}
      ${ca?`<span class="badge b-new">CA ${ca}</span>`:''}
      ${e.nb_etablissements?`<span class="badge b-gmb">🏬 ${e.nb_etablissements} établissement${e.nb_etablissements>1?'s':''}</span>`:''}
-     ${aEmail?'<span class="badge b-new">✉️ Email trouvé ✓</span>':(e.detail_charge?'<span class="badge b-signal">À enrichir</span>':'<span class="badge b-dup">Détail non chargé (au-delà de 25)</span>')}
+     ${aEmail?'<span class="badge b-new">✉️ Email trouvé ✓</span>':(e.detail_charge?'<span class="badge b-signal">À enrichir</span>':'<span class="badge b-dup">Détail non chargé</span>')}
      ${siteWeb?`<span class="badge b-new"><a href="${siteWeb.startsWith('http')?siteWeb:'https://'+siteWeb}" target="_blank" style="color:inherit">🌐 ${siteWeb.replace(/^https?:\/\/(www\.)?/,'').split('/')[0]}</a></span>`:''}
     </div>
     <div id="edit${i}" style="display:none;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:12px">
