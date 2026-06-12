@@ -210,7 +210,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
   <div class="wf-head">💬 SMS SoReach — <span id="sms-dest"></span></div>
   <div style="padding:0 24px">
    <textarea class="field" id="sms-texte" rows="5" style="width:100%;resize:vertical" oninput="document.getElementById('sms-count').textContent=this.value.length"></textarea>
-   <div class="hint" style="margin-top:6px"><span id="sms-count">0</span> caractères · expéditeur « Sofy » · « STOP au 36111 » ajouté si absent · 1 crédit SoReach</div>
+   <div class="hint" style="margin-top:6px"><span id="sms-count">0</span> caractères · expéditeur « Sofy » · mention STOP ajoutée automatiquement (36789 DOM · 36229 métropole) · 1 crédit SoReach</div>
   </div>
   <div class="wf-foot">
    <button class="btn" style="background:var(--paper)" onclick="document.getElementById('sms-modal').style.display='none'">Annuler</button>
@@ -244,7 +244,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
     <button class="nav-btn" data-view="mapping" onclick="nav('mapping',this);chargerEnvois()">⚙️ Envois & mapping</button>
     <button class="nav-btn" data-view="stats" onclick="nav('stats',this);chargerStats()">📊 Statistiques</button>
     <button class="nav-btn" data-view="params" onclick="nav('params',this);chargerSdrs();chargerTarifs()">⚙️ Paramètres</button>
-    <button class="nav-btn" data-view="settings" onclick="nav('settings',this)">🔌 Connexions</button>
+    <button class="nav-btn" data-view="settings" onclick="nav('settings',this);chargerHotleads()">🔌 Connexions</button>
     <div class="user-badge" id="user-badge" style="display:none"><span id="user-nom"></span><button onclick="deconnexion(true)">Déconnexion</button></div>
     <div class="demo-pill">PAPPERS + GMB + IA ✓</div>
     <div style="text-align:center;font-size:11px;color:#6B7390;margin-top:8px">Sofy Scrap <span id="ver-side"></span></div>
@@ -558,6 +558,16 @@ Spot-Hit</textarea>
       <div class="map-card">
         <h2>💶 Tarifs unitaires des API</h2>
         <div class="role">Prix d'une unité de chaque API (1 fiche Pappers, 1 appel Google, 1 enrichissement…). Sert au calcul des coûts et des limites mensuelles par SDR. Ajuste-les selon tes contrats réels.</div>
+      <div class="map-card" style="margin-top:16px">
+        <h2>🔥 Hot Leads automatiques</h2>
+        <div class="role">Visiteurs de sofy.fr (RB2B) et profils LinkedIn réactifs (posts concurrents, followers) ajoutés automatiquement à la liste « 🔥 Hot Leads (auto) » — hors clients HubSpot et employés des concurrents — avec alerte Slack.</div>
+        <div class="row3" style="margin-top:10px">
+          <div class="toggle-row" style="margin:0"><input type="checkbox" id="cfg-hl-actif" checked><label for="cfg-hl-actif">Collecte automatique active</label></div>
+          <input class="field" id="cfg-hl-sdr" placeholder="SDR de la liste (ex : alicia)">
+          <div class="toggle-row" style="margin:0"><input type="checkbox" id="cfg-hl-hub" checked><label for="cfg-hl-hub">Exclure les clients HubSpot</label></div>
+        </div>
+        <div class="save-bar"><button class="btn btn-primary" onclick="sauverHotleads()">💾 Enregistrer</button></div>
+      </div>
         <table class="map-table" id="tarifs-table"></table>
       </div>
 </section>
@@ -616,7 +626,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v43';
+const VERSION='v44';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -876,6 +886,7 @@ async function launch(crit,skipCheck){
    return;
   }
   REAL=data.entreprises||[];
+  if(data.doublons_inter_listes>0)setTimeout(()=>toast(`♻️ ${data.doublons_inter_listes} entreprise(s) écartée(s) — déjà extraite(s) dans : ${(data.listes_doublons||[]).join(', ')}`),800);
   // Sauvegarde automatique en base
   state.savedId=null;
   try{
@@ -1671,6 +1682,21 @@ async function chargerEnvois(){
   document.getElementById('cfg-hub-stage').value=hub.stage||'';
   document.getElementById('cfg-hub-owner').value=hub.owner||'';
  }catch(_){}
+}
+async function chargerHotleads(){
+ try{
+  const r=await api('/api/config');const d=await r.json();
+  const h=(d.config&&d.config.hotleads)||{};
+  const a=document.getElementById('cfg-hl-actif');
+  if(a){a.checked=h.actif!==false;document.getElementById('cfg-hl-sdr').value=h.sdr||'';document.getElementById('cfg-hl-hub').checked=h.exclure_hubspot!==false;}
+ }catch(_){}
+}
+async function sauverHotleads(){
+ const v={actif:document.getElementById('cfg-hl-actif').checked,
+  sdr:document.getElementById('cfg-hl-sdr').value.trim()||'didier',
+  exclure_hubspot:document.getElementById('cfg-hl-hub').checked};
+ const r=await api('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({cle:'hotleads',valeur:v})});
+ const d=await r.json();toast(d.ok?'🔥 Hot Leads configurés ✓':(d.erreur||'Erreur'));
 }
 async function sauverEnvois(){
  const lem={camp_soview:document.getElementById('cfg-lem-soview').value.trim(),
