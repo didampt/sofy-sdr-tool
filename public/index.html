@@ -183,11 +183,15 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
 .login-links a{cursor:pointer}
 .user-badge{margin-top:auto;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.06);font-size:13px;color:#C6CBE0;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .user-badge button{background:none;color:#8FA0FF;font-size:12px;font-weight:600}
-.prog-wrap{margin:4px 0 12px;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
-.prog-top{display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:700;margin-bottom:8px}
-.prog-label{color:var(--accent);display:flex;align-items:center;gap:8px}
-.prog-bar{height:10px;background:var(--line);border-radius:99px;overflow:hidden}
-.prog-bar span{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#3B82F6,#16A34A);transition:width .5s}
+.prog-wrap{margin:4px 0 14px;background:linear-gradient(135deg,#F0F4FF,#F6FFF9);border:1px solid #D9E2FF;border-radius:14px;padding:14px 18px}
+.prog-top{display:flex;justify-content:space-between;align-items:center;font-size:13.5px;font-weight:700;margin-bottom:9px;gap:12px}
+.prog-label{color:#1D4ED8;display:flex;align-items:center;gap:9px;min-width:0}
+.prog-label>span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prog-pct{font-size:15px;font-weight:800;color:#16A34A;flex-shrink:0}
+.prog-bar{height:12px;background:#E3E8F4;border-radius:99px;overflow:hidden;position:relative}
+.prog-bar span{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#3B82F6,#16A34A);transition:width .6s;position:relative;overflow:hidden}
+.prog-bar span::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.45),transparent);animation:shine 1.4s infinite}
+@keyframes shine{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
 .fiche-busy .act,.fiche-busy .btn-cta{pointer-events:none;opacity:.45}
 .fiche-head{display:flex;gap:18px;align-items:flex-start;cursor:pointer}
 .pscores{min-width:225px;display:flex;flex-direction:column;gap:7px;padding-top:4px;flex-shrink:0}
@@ -206,6 +210,14 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
 .email-box{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;font-size:13.5px;line-height:1.6}
 .map-table input.field,.map-table select.field{min-width:120px;width:100%;padding:9px 10px}
 .map-table td{vertical-align:middle}
+.fiche{transition:box-shadow .2s,transform .1s}
+.fiche:hover{box-shadow:0 4px 18px rgba(20,30,70,.08)}
+.fiche-head:hover .lead-name{color:var(--accent)}
+.lead-meta{margin-top:3px}
+.badges{margin-top:9px}
+.badge{font-weight:600}
+.pscore{font-size:12px;color:var(--ink-soft)}
+.pscore .pscore-v{color:var(--ink)}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:12px 22px;border-radius:11px;font-size:14px;font-weight:500;box-shadow:var(--shadow);transition:.25s;z-index:99;opacity:0}
 .toast.on{transform:translateX(-50%);opacity:1}
 @media(max-width:880px){.app{grid-template-columns:1fr}.side{position:static;height:auto;flex-direction:row;align-items:center;flex-wrap:wrap}.demo-pill{margin-top:0}.main{padding:24px}.fiche-grid,.api-grid,.row3,.comp-grid{grid-template-columns:1fr}.fiche-top{grid-template-columns:1fr}}
@@ -650,7 +662,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v47';
+const VERSION='v48';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -953,8 +965,8 @@ function showRealResults(total,c){
  document.getElementById('kpis').style.display='flex';
  document.getElementById('sort-bar').style.display='flex'; // tris actifs : signaux/scores IA, note GMB, établissements
  document.getElementById('k-total').textContent=REAL.length;
- document.getElementById('k-new').textContent='—';
- document.getElementById('k-sig').textContent='—';
+ document.getElementById('k-new').textContent=REAL.filter(e=>!e.deja_hubspot).length;
+ document.getElementById('k-sig').textContent=REAL.filter(e=>e.signal_hot).length||'0';
  document.getElementById('fiches').innerHTML=REAL.length?REAL.map((e,i)=>ficheReal(e,i)).join(''):'<p style="color:var(--ink-soft)">Aucune entreprise ne correspond à ces critères. Élargis les filtres (effectif ou CA).</p>';
 }
 
@@ -1075,11 +1087,11 @@ function ficheReal(e,i){
  const tel=premierTel(e);
  const open=!!(e._open||e._busy);
  return `<div class="fiche${e._busy?' fiche-busy':''}" id="fr${i}">
-  ${e._busy?`<div class="prog-wrap"><div class="prog-top"><span class="prog-label"><span class="spin"></span> <span id="progl${i}">${(e._prog&&e._prog.label)||'Démarrage…'}</span></span><span id="progp${i}">${(e._prog&&e._prog.pct)||0} %</span></div><div class="prog-bar"><span id="progb${i}" style="width:${(e._prog&&e._prog.pct)||0}%"></span></div></div>`:''}
+  ${e._busy?`<div class="prog-wrap"><div class="prog-top"><span class="prog-label"><span class="spin"></span> <span id="progl${i}">${(e._prog&&e._prog.label)||'Démarrage…'}</span></span><span class="prog-pct" id="progp${i}">${(e._prog&&e._prog.pct)||0} %</span></div><div class="prog-bar"><span id="progb${i}" style="width:${(e._prog&&e._prog.pct)||0}%"></span></div></div>`:''}
   <div class="fiche-head" onclick="toggleFiche(${i})" title="Cliquer pour ${open?'replier':'déployer'} la fiche">
    <div style="flex:1;min-width:0">
     <div class="lead-name">${titre}</div>
-    <div class="lead-meta">${contacts.length&&contacts[0].nom?e.nom+' · ':''}${e.enseigne&&e.enseigne!==e.nom?'Enseigne : '+e.enseigne+' · ':''}${e.naf}${e.nb_etablissements?' · '+e.nb_etablissements+' établissement'+(e.nb_etablissements>1?'s':''):''}${e.effectif?' · '+e.effectif+' salariés':''}${ca?' · CA '+ca:''} · ${e.ville||'—'}</div>
+    <div class="lead-meta">${contacts.length&&contacts[0].nom?e.nom+' · ':''}${e.enseigne&&e.enseigne!==e.nom?'Enseigne : '+e.enseigne+' · ':''}${e.naf}${e.nb_etablissements?' · '+e.nb_etablissements+' établissement'+(e.nb_etablissements>1?'s':''):''}${e.effectif?' · '+String(e.effectif).replace(/ salariés?$/i,'')+' salariés':''}${ca?' · CA '+ca:''} · ${e.ville||'—'}</div>
     <div class="badges">
      ${e.gmb&&e.gmb.trouve?`<span class="badge b-gmb">GMB ${String(e.gmb.note_moyenne).replace('.',',')} ★ (${e.gmb.total_avis} avis)</span>`:''}
      ${e.signal_hot?'<span class="badge b-signal">🔥 Signal détecté</span>':''}
@@ -1160,9 +1172,14 @@ function ficheReal(e,i){
   </div>
  </div>`;
 }
+function majKpisReal(){
+ const kn=document.getElementById('k-new'),ks=document.getElementById('k-sig');
+ if(kn&&REAL.length){kn.textContent=REAL.filter(e=>!e.deja_hubspot).length;ks.textContent=REAL.filter(e=>e.signal_hot).length||'0';}
+}
 function rerender(i){
  const el=document.getElementById('fr'+i);
  if(el)el.outerHTML=ficheReal(REAL[i],i);
+ majKpisReal();
 }
 async function majFiche(i){
  const e=REAL[i];
@@ -1568,10 +1585,10 @@ async function pipelineFiche(i){
  let tentes=0,ok=0;
   const e=REAL[i];
   // ── 1. GMB ──
-  prog(i,5,'⭐ Analyse Google Business (note, avis, concurrents)…');
+  prog(i,5,'Étape 1/7 · ⭐ Analyse Google Business (note, avis, concurrents)…');
   if(gmbAFaire(e)){wfSet(i,'gmb','run');await analyserGmb(i);}
   wfSet(i,'gmb',e.gmb&&e.gmb.trouve?'ok':'ko');
-  prog(i,20,'🤖 Recherche IA (site web, enseigne)…');
+  prog(i,20,'Étape 2/7 · 🤖 Recherche IA (site web, enseigne)…');
   // ── 2. IA si GMB raté ou pas de domaine ──
   if(!e.ia&&(!(e.gmb&&e.gmb.trouve)||!domaineDe(e))){
    wfSet(i,'ia','run');
@@ -1585,7 +1602,7 @@ async function pipelineFiche(i){
   }else{
    wfSet(i,'ia',e.ia&&(e.ia.site_web||e.ia.nom_commercial)?'ok':(domaineDe(e)?'ok':'—'));
   }
-  prog(i,35,'👥 Recherche des personas LinkedIn…');
+  prog(i,35,'Étape 3/7 · 👥 Recherche des personas LinkedIn…');
   // ── 2.5 Personas (si la liste en cible et que la fiche a un domaine ou une enseigne) ──
   if(jobsCibles().length&&!e.personas_fait&&(domaineDe(e)||e.enseigne_ia)){
    wfSet(i,'pers','run');
@@ -1594,7 +1611,7 @@ async function pipelineFiche(i){
   }else{
    wfSet(i,'pers',contactsDe(e).some(c=>c.source==='linkedin')?'ok':'—');
   }
-  prog(i,50,'✉️ Recherche des emails (Dropcontact — 1 à 2 min)…');
+  prog(i,50,'Étape 4/7 · ✉️ Recherche des emails (Dropcontact — 1 à 2 min, patience)…');
   // ── 3. Emails Dropcontact ──
   const cs=contactsDe(e);
   let dejaEmail=cs.some(c=>c.enrich&&c.enrich.email),tente=false,trouve=dejaEmail;
@@ -1606,7 +1623,7 @@ async function pipelineFiche(i){
    }
   }
   wfSet(i,'mail',trouve?'ok':(tente?'ko':(cs.some(c=>c.nom)?'ko':'—')));
-  prog(i,70,'📱 FullEnrich (email + mobile manquants)…');
+  prog(i,70,'Étape 5/7 · 📱 FullEnrich (email + mobile manquants)…');
   // ── 4. FullEnrich : email manquant OU mobile manquant (jamais re-payé : fe_fait) ──
   let feGain=false,feTente=false;
   for(let j=0;j<cs.length;j++){
@@ -1628,7 +1645,7 @@ async function pipelineFiche(i){
     await enrichirKaspr(i,j);
    }
   }
-  prog(i,82,'📲 Kaspr (mobile via LinkedIn)…');
+  prog(i,82,'Étape 6/7 · 📲 Kaspr (mobile via LinkedIn)…');
   // ── 5. Scoring + synthèse (jamais re-payé sauf ↻ manuel) ──
   if(!e.score&&(e.gmb||e.ia)){
    wfSet(i,'sc','run');
@@ -1656,10 +1673,11 @@ async function lancerFiche(i){
  }
 }
 
+function gmbAFaire(e){return !e.gmb||(e.gmb.trouve&&e.gmb.telephone===undefined)||(!e.gmb.trouve&&sigDe(e)!=='|'&&(e.gmb._sig||'')!==sigDe(e));}
+function contactAFaire(e,c){return !!(c.nom&&(!c.enrich||(!c.enrich.email&&!c.enrich.avec_domaine&&!!domaineDe(e))));}
+
 async function lancerWaterfall(){
  if(!REAL.length){toast('Aucune fiche');return;}
- const gmbAFaire=e=>!e.gmb||(e.gmb.trouve&&e.gmb.telephone===undefined)||(!e.gmb.trouve&&sigDe(e)!=='|'&&(e.gmb._sig||'')!==sigDe(e));
- const contactAFaire=(e,c)=>c.nom&&(!c.enrich||(!c.enrich.email&&!c.enrich.avec_domaine&&!!domaineDe(e)));
  const nbGmb=REAL.filter(gmbAFaire).length;
  const nbIa=REAL.filter(e=>!e.ia&&!domaineDe(e)).length;
  const nbContacts=REAL.reduce((s,e)=>s+contactsDe(e).filter(c=>c.nom&&!c.enrich).length,0);
