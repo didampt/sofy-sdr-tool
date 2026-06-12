@@ -231,7 +231,8 @@ export default async function handler(req, res) {
       avisNegatif = {
         texte: a.text.length > 220 ? a.text.slice(0, 220) + '…' : a.text,
         note: a.rating,
-        date: a.relative_time_description || ''
+        date: a.relative_time_description || '',
+        lien: `https://search.google.com/local/reviews?placeid=${pire.place_id}`
       };
     }
 
