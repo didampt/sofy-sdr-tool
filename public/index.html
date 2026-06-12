@@ -541,6 +541,7 @@ const NAF = [
 const APIS = [
  ["pappers","Pappers","Extraction entreprises : NAF, effectif, CA, établissements","key"],
  ["gplaces","Google Places","Score GMB, avis, pire fiche, moyenne concurrents","key"],
+ ["kaspr","Kaspr","Mobile FR via LinkedIn (waterfall niveau 3)","key"],
  ["fullenrich","FullEnrich","Email + mobile (waterfall niveau 1)","key"],
  ["dropcontact","Dropcontact","Email vérifié (waterfall niveau 2)","key"],
  ["leadmagic","LeadMagic","Email (waterfall niveau 3)","key"],
@@ -553,7 +554,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v35';
+const VERSION='v36';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -921,7 +922,7 @@ function contactHtml(c,i,j){
    ${en.linkedin?`<div class="contact-line">💼 <a href="${en.linkedin.startsWith('http')?en.linkedin:'https://'+en.linkedin}" target="_blank">Profil LinkedIn ✓</a></div>`:''}`
   :`<button class="act act-lemlist" id="enrbtn${i}_${j}" onclick="enrichir(${i},${j})" style="margin-top:4px">✉️ Enrichir ce contact</button>`}
   ${en&&(!en.email||!en.telephone)?`<button class="act act-copy" style="margin-top:4px" id="febtn${i}_${j}" onclick="lancerFE(${i},${j})" title="Cascade 15+ sources : email de repli + mobile">${en.fe_fait?'↻ FullEnrich (re-tenter)':'🔁 FullEnrich'}</button>`:''}
-  ${en&&en.linkedin&&!en.telephone?`<button class="act act-copy" style="margin-top:4px" onclick="lancerKaspr(${i},${j})" title="Mobile FR via le profil LinkedIn (1 crédit tél. + 1 crédit export)">${en.kaspr_fait?'↻ Kaspr (re-tenter)':'📱 Kaspr'}</button>`:''}
+  ${en&&!en.telephone?`<button class="act act-copy" style="margin-top:4px" onclick="lancerKaspr(${i},${j})" title="Mobile FR via le profil LinkedIn (1 crédit tél. + 1 crédit export). * = URL LinkedIn demandée au lancement">${en.kaspr_fait?'↻ Kaspr (re-tenter)':'📱 Kaspr'}${en.linkedin?'':' *'}</button>`:''}
  </div>`;
 }
 
@@ -1184,8 +1185,14 @@ async function enrichirKaspr(i,j){
  }catch(err){toast('Kaspr erreur réseau : '+err.message);return false;}
 }
 function lancerKaspr(i,j){
- const e=REAL[i];
+ const e=REAL[i],c=contactsDe(e)[j];
  if(e._busy){toast('Analyse en cours ⏳');return;}
+ if(c&&(!c.enrich||!c.enrich.linkedin)){
+  const u=prompt("URL LinkedIn du contact (ex : https://www.linkedin.com/in/jean-dufour-12345)\n\nAstuce : cherche \""+((c.prenom||'')+' '+(c.nom||'')).trim()+" linkedin\" sur Google.");
+  if(!u)return;
+  if(!/linkedin\.com\/in\//i.test(u)){toast('URL invalide — elle doit contenir linkedin.com/in/…');return;}
+  c.enrich=c.enrich||{};c.enrich.linkedin=u.trim();persister();
+ }
  e._busy=true;rerender(i);
  (async()=>{try{toast('📱 Kaspr en cours…');await enrichirKaspr(i,j);}finally{e._busy=false;rerender(i);}})();
 }
