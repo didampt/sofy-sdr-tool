@@ -244,7 +244,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
     <button class="nav-btn" data-view="mapping" onclick="nav('mapping',this);chargerEnvois()">⚙️ Envois & mapping</button>
     <button class="nav-btn" data-view="stats" onclick="nav('stats',this);chargerStats()">📊 Statistiques</button>
     <button class="nav-btn" data-view="params" onclick="nav('params',this);chargerSdrs();chargerTarifs()">⚙️ Paramètres</button>
-    <button class="nav-btn" data-view="settings" onclick="nav('settings',this);chargerHotleads()">🔌 Connexions</button>
+    <button class="nav-btn" data-view="settings" onclick="nav('settings',this);chargerHotleads();chargerRingover()">🔌 Connexions</button>
     <div class="user-badge" id="user-badge" style="display:none"><span id="user-nom"></span><button onclick="deconnexion(true)">Déconnexion</button></div>
     <div class="demo-pill">PAPPERS + GMB + IA ✓</div>
     <div style="text-align:center;font-size:11px;color:#6B7390;margin-top:8px">Sofy Scrap <span id="ver-side"></span></div>
@@ -568,6 +568,16 @@ Spot-Hit</textarea>
         </div>
         <div class="save-bar"><button class="btn btn-primary" onclick="sauverHotleads()">💾 Enregistrer</button></div>
       </div>
+      <div class="map-card" style="margin-top:16px">
+        <h2>☎️ Ringover — click-to-call</h2>
+        <div class="role">Un clic sur 📞 fait sonner le poste Ringover du SDR, puis appelle le prospect. Une ligne par SDR (format international : +590690…, +336…).</div>
+        <div class="row3" style="margin-top:10px">
+          <input class="field" id="cfg-ring-alicia" placeholder="Ligne d'Alicia (+590…)">
+          <input class="field" id="cfg-ring-franck" placeholder="Ligne de Franck (+590…)">
+          <input class="field" id="cfg-ring-defaut" placeholder="Ligne par défaut (autres comptes)">
+        </div>
+        <div class="save-bar"><button class="btn btn-primary" onclick="sauverRingover()">💾 Enregistrer</button></div>
+      </div>
         <table class="map-table" id="tarifs-table"></table>
       </div>
 </section>
@@ -626,7 +636,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v44';
+const VERSION='v45';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -971,9 +981,20 @@ function estMobile(t){
  const n=telNorm(t).replace(/^\+33/,'0').replace(/^\+590/,'0').replace(/^\+596/,'0').replace(/^\+262/,'0');
  return /^0[67]/.test(n)||/^069[01]/.test(n)||/^069[67]/.test(n)||/^069[23]/.test(n);
 }
+let RINGOVER_OK=null; // mémo : lignes configurées ?
+async function appeler(num,ev){
+ if(ev)ev.preventDefault();
+ if(RINGOVER_OK===false){location.href='tel:'+telNorm(num);return;}
+ const r=await api('/api/ringover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:num})});
+ const d=await r.json().catch(()=>({}));
+ if(d.ok){toast('☎️ '+d.detail);return;}
+ RINGOVER_OK=false; // pas configuré → repli tel: pour toute la session
+ toast((d.erreur||'Ringover indisponible')+' — appel via le téléphone');
+ setTimeout(()=>location.href='tel:'+telNorm(num),900);
+}
 function telBtns(t){
  const n=telNorm(t);
- let h=` <a class="act act-call" style="padding:4px 10px;font-size:12px" href="tel:${n}" title="Appeler avec Ringover">📞</a>`;
+ let h=` <a class="act act-call" style="padding:4px 10px;font-size:12px" href="tel:${n}" onclick="appeler('${n}',event)" title="Appeler avec Ringover (clic) — repli téléphone">📞</a>`;
  if(estMobile(t))h+=` <a class="act act-lemlist" style="padding:4px 10px;font-size:12px" href="sms:${n}" title="Envoyer un SMS">💬</a>`;
  return h;
 }
@@ -1690,6 +1711,22 @@ async function chargerHotleads(){
   const a=document.getElementById('cfg-hl-actif');
   if(a){a.checked=h.actif!==false;document.getElementById('cfg-hl-sdr').value=h.sdr||'';document.getElementById('cfg-hl-hub').checked=h.exclure_hubspot!==false;}
  }catch(_){}
+}
+async function chargerRingover(){
+ try{
+  const r=await api('/api/config');const d=await r.json();
+  const c=(d.config&&d.config.ringover)||{};
+  const a=document.getElementById('cfg-ring-alicia');
+  if(a){a.value=c.alicia||'';document.getElementById('cfg-ring-franck').value=c.franck||'';document.getElementById('cfg-ring-defaut').value=c.defaut||'';}
+ }catch(_){}
+}
+async function sauverRingover(){
+ const v={alicia:document.getElementById('cfg-ring-alicia').value.trim(),
+  franck:document.getElementById('cfg-ring-franck').value.trim(),
+  defaut:document.getElementById('cfg-ring-defaut').value.trim()};
+ const r=await api('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({cle:'ringover',valeur:v})});
+ const d=await r.json();toast(d.ok?'☎️ Lignes Ringover enregistrées ✓':(d.erreur||'Erreur'));
+ if(d.ok)RINGOVER_OK=null;
 }
 async function sauverHotleads(){
  const v={actif:document.getElementById('cfg-hl-actif').checked,
