@@ -230,6 +230,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
 <div id="wf-modal">
  <div class="wf-panel">
   <div class="wf-head" id="wf-titre">🚀 Enrichissement en cours…</div>
+  <div style="padding:0 24px 10px"><div class="prog-bar"><span id="wfg-bar" style="width:0%"></span></div><div style="display:flex;justify-content:space-between;font-size:12.5px;font-weight:700;margin-top:6px"><span id="wfg-label" style="color:#1D4ED8">Démarrage…</span><span id="wfg-pct" class="prog-pct">0 %</span></div></div>
   <div class="wf-cols"><span>Fiche</span><span style="text-align:center">GMB</span><span style="text-align:center">IA 🤖</span><span style="text-align:center">👥</span><span style="text-align:center">Email</span><span style="text-align:center">📱 FE</span><span style="text-align:center">🎯</span></div>
   <div class="wf-body" id="wf-rows"></div>
   <div class="wf-foot"><button class="btn btn-primary" id="wf-fermer" disabled onclick="document.getElementById('wf-modal').style.display='none'">Fermer</button></div>
@@ -576,7 +577,7 @@ Spot-Hit</textarea>
       <div class="map-card">
         <h2>👥 SDR & utilisateurs</h2>
         <div class="role">Limite de crédits : montant maximum de crédits consommables par mois. Vide = illimité.</div>
-        <div style="overflow-x:auto"><table class="map-table" id="sdr-table" style="min-width:980px">
+        <div style="overflow-x:auto"><table class="map-table" id="sdr-table" style="min-width:1280px">
           <tr><th>Nom</th><th>Email</th><th>☎️ Ringover</th><th>Rôle</th><th>Limite € / mois</th><th>Mot de passe</th><th>Actif</th><th></th></tr>
         </table></div>
         <div class="map-sub">Ajouter un SDR / utilisateur</div>
@@ -664,7 +665,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v49';
+const VERSION='v50';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1687,10 +1688,20 @@ async function lancerWaterfall(){
  ouvrirWfModal();
  let emailsOk=0,emailsTentes=0;
  for(let i=0;i<REAL.length;i++){
+  const lbl=document.getElementById('wfg-label');if(lbl)lbl.textContent=(enseigneDe(REAL[i])||REAL[i].nom)+' · fiche '+(i+1)+'/'+REAL.length;
   const r=await pipelineFiche(i);
   emailsTentes+=r.tentes;emailsOk+=r.ok;
+  const p=Math.round((i+1)/REAL.length*100),b=document.getElementById('wfg-bar');
+  if(b){b.style.width=p+'%';document.getElementById('wfg-pct').textContent=p+' %';}
  }
  document.getElementById('wf-titre').textContent=`🏁 Enrichissement terminé — ${emailsOk}/${emailsTentes} nouveaux emails`;
+ // Rapport au SDR (Slack + email si Resend configuré)
+ try{
+  const nbE=REAL.reduce((a,e)=>a+contactsDe(e).filter(c=>c.enrich&&c.enrich.email).length,0);
+  const nbT=REAL.reduce((a,e)=>a+contactsDe(e).filter(c=>c.enrich&&c.enrich.telephone).length,0);
+  const nbG=REAL.filter(e=>e.gmb&&e.gmb.trouve).length;
+  api('/api/rapport',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({liste_id:state.savedId,nom:'Liste #'+(state.savedId||''),total:REAL.length,emails:nbE,tels:nbT,gmb:nbG})}).catch(()=>{});
+ }catch(_){}
  document.getElementById('wf-fermer').disabled=false;
  majCoutListe();
  persister();
@@ -1763,12 +1774,14 @@ async function envoyerHubspot(i){
 let SMS_CTX=null;
 function ouvrirSms(i){
  const e=REAL[i];
- const c=contactsDe(e).find(x=>x.enrich&&x.enrich.telephone&&estMobile(x.enrich.telephone));
- const mobile=(c&&c.enrich.telephone)||(e.gmb&&e.gmb.telephone&&estMobile(e.gmb.telephone)?e.gmb.telephone:null);
- if(!mobile){toast('Aucun mobile sur cette fiche (FullEnrich/Kaspr d\'abord)');return;}
- SMS_CTX={i,mobile};
- const qui=c?`${c.prenom} ${c.nom}`:(e.enseigne_ia||e.enseigne||e.nom);
- document.getElementById('sms-dest').textContent=`${qui} · ${mobile}`;
+ const dispo=[];
+ contactsDe(e).forEach(x=>{if(x.enrich&&x.enrich.telephone&&estMobile(x.enrich.telephone))dispo.push({nom:`${x.prenom||''} ${x.nom||''}`.trim()||'Contact',prenom:x.prenom||'',mobile:x.enrich.telephone});});
+ if(e.gmb&&e.gmb.telephone&&estMobile(e.gmb.telephone))dispo.push({nom:'Standard (GMB)',prenom:'',mobile:e.gmb.telephone});
+ if(!dispo.length){toast('Aucun mobile sur cette fiche (FullEnrich/Kaspr d\'abord)');return;}
+ SMS_CTX={i,dispo};
+ const c={prenom:dispo[0].prenom};
+ const qui='choisir ci-dessous';
+ document.getElementById('sms-dest').innerHTML='<div style="margin-top:8px">'+SMS_CTX.dispo.map((d,k)=>`<label style="display:inline-flex;align-items:center;gap:6px;margin-right:14px;font-size:13px;font-weight:600;cursor:pointer"><input type="checkbox" class="sms-chk" value="${k}" ${k===0?'checked':''} style="accent-color:var(--accent);width:16px;height:16px">${d.nom} · ${d.mobile}</label>`).join('')+'</div>';
  const defaut=(e.score&&e.score.sms)||`Bonjour${c?' '+c.prenom:''}, ${state.user?state.user.nom:'l\'équipe'} de Sofy. ${e.gmb&&e.gmb.trouve?`Vu votre note Google (${String(e.gmb.note_moyenne).replace('.',',')}★) — on aide les pros à reprendre la main sur leurs avis.`:'On aide les pros à être plus visibles sur Google.'} Dispo 10 min cette semaine ?`;
  const ta=document.getElementById('sms-texte');
  ta.value=defaut;
@@ -1779,10 +1792,18 @@ async function envoyerSms(){
  if(!SMS_CTX)return;
  const message=document.getElementById('sms-texte').value.trim();
  if(!message){toast('Message vide');return;}
- const r=await api('/api/sms',{method:'POST',headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({to:SMS_CTX.mobile,message,liste_id:state.savedId})});
- const d=await r.json();
- if(!d.ok){toast('SMS : '+(d.erreur||'')+(d.detail?' — '+d.detail:''));return;}
+ const choisis=[...document.querySelectorAll('.sms-chk:checked')].map(x=>SMS_CTX.dispo[+x.value]);
+ if(!choisis.length){toast('Choisis au moins un destinataire');return;}
+ if(choisis.length>1&&!confirm(`Envoyer à ${choisis.length} destinataires ? (${choisis.length} crédits SoReach)`))return;
+ let okN=0,err='';
+ for(const dest of choisis){
+  const r=await api('/api/sms',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({to:dest.mobile,message,liste_id:state.savedId})});
+  const dd=await r.json();
+  if(dd.ok)okN++;else err=(dd.erreur||'')+(dd.detail?' — '+dd.detail:'');
+ }
+ if(!okN){toast('SMS : '+err);return;}
+ toast(`💬 ${okN}/${choisis.length} SMS envoyé(s) ✓`);const d={ok:true};
  document.getElementById('sms-modal').style.display='none';
  REAL[SMS_CTX.i].sms_envoye=true;rerender(SMS_CTX.i);persister();majCoutListe();
  toast('💬 SMS envoyé via SoReach ✓');
@@ -2043,6 +2064,8 @@ async function majSdr(id){
  const r=await api('/api/sdrs',{method:'PUT',headers:{'Content-Type':'application/json'},
   body:JSON.stringify({id,nom:document.getElementById('sn'+id).value,email:document.getElementById('se'+id).value,
    limite_credits:limite===''?null:limite,actif:document.getElementById('sa'+id).checked,
+   ringover_numero:(document.getElementById('sr'+id)||{}).value,
+   role:(document.getElementById('sg'+id)||{}).value,
    password:document.getElementById('sp'+id).value||undefined})});
  const d=await r.json();
  if(d.erreur){toast(d.erreur);return;}
