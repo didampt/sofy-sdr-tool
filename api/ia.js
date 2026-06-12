@@ -4,7 +4,7 @@
 
 import { verifierToken } from './db.js';
 
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 120 };
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -39,7 +39,7 @@ ${indice ? `Indication fournie par le commercial (fiable, à utiliser dans tes r
 Réponds UNIQUEMENT avec un objet JSON, sans texte autour, sans backticks :
 {"site_web": "exemple.fr ou null", "nom_commercial": "Nom Google Maps ou null", "telephone": "+590... ou null", "adresse": "adresse ou null", "confiance": "haute|moyenne|basse", "explication": "une phrase"}
 
-Si tu n'es pas sûr, mets null et confiance basse. Ne devine jamais.`;
+IMPORTANT — équilibre : un résultat avec confiance "moyenne" vaut mieux qu'aucun résultat. Mets null UNIQUEMENT si tes recherches ne donnent rien de cohérent. Un téléphone ou une adresse trouvés sur Pages Jaunes ou un annuaire sont fiables même sans site web : renseigne-les. Le "null par prudence" doit rester l'exception, réservé aux cas d'attribution douteuse (mauvaise île, mauvaise activité). Ne devine jamais un domaine.`;
 
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -52,7 +52,7 @@ Si tu n'es pas sûr, mets null et confiance basse. Ne devine jamais.`;
         model: 'claude-sonnet-4-6',
         max_tokens: 1500,
         messages: [{ role: 'user', content: prompt }],
-        tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 7 }]
+        tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 6 }]
       })
     });
 
