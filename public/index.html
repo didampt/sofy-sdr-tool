@@ -206,6 +206,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
   <input class="field" id="login-mdp" type="password" placeholder="Mot de passe (8 caractères min.)" autocomplete="current-password" onkeydown="if(event.key==='Enter')connexion('login')">
   <div class="login-err" id="login-err"></div>
   <button class="btn btn-primary" style="width:100%" onclick="connexion('login')">Se connecter</button>
+  <div style="font-size:11px;color:var(--ink-soft);margin-top:4px">Sofy Scrap <span id="ver-login"></span></div>
   <div class="login-links">
    <a onclick="connexion('init')">Première connexion superadmin → définir mon mot de passe</a>
    <a onclick="document.getElementById('login-err').textContent='Réinitialisation par email : prochaine étape. En attendant, Didier peut redéfinir ton mot de passe dans Paramètres.'">Mot de passe oublié ?</a>
@@ -224,7 +225,8 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
     <button class="nav-btn" data-view="params" onclick="nav('params',this);chargerSdrs()">⚙️ Paramètres</button>
     <button class="nav-btn" data-view="settings" onclick="nav('settings',this)">🔌 Connexions</button>
     <div class="user-badge" id="user-badge" style="display:none"><span id="user-nom"></span><button onclick="deconnexion(true)">Déconnexion</button></div>
-    <div class="demo-pill">PAPPERS + GMB ✓ — enrichissement à venir</div>
+    <div class="demo-pill">PAPPERS + GMB + IA ✓</div>
+    <div style="text-align:center;font-size:11px;color:#6B7390;margin-top:8px">Sofy Scrap <span id="ver-side"></span></div>
   </aside>
 
   <main class="main">
@@ -544,6 +546,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
+const VERSION='v28';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1425,6 +1428,9 @@ async function chargerStatut(){
   grid.innerHTML='<p style="color:var(--ink-soft)">Impossible de charger le statut ('+e.message+').</p>';
  }
 }
+document.getElementById('ver-side').textContent=VERSION;
+document.getElementById('ver-login').textContent=VERSION;
+document.title='Sofy Scrap '+VERSION+" · Listes d'appel SDR";
 verifSession();
 
 validate();
