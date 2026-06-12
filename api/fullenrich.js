@@ -3,7 +3,7 @@
 // GET  ?enrichment_id=…                              → re-vérifie un enrichissement en attente
 // Récupère : email (si Dropcontact a échoué) + numéro de MOBILE (la spécialité de FullEnrich).
 
-import { verifierToken } from './db.js';
+import { verifierToken, loggerConso, limiteAtteinte } from './db.js';
 
 export const config = { maxDuration: 120 };
 
@@ -55,7 +55,10 @@ async function recupererResultat(enrichmentId, apiKey) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
-  if (!verifierToken(req)) return res.status(401).json({ erreur: 'Connexion requise' });
+  const user = verifierToken(req);
+  if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
+  const lim = await limiteAtteinte(user);
+  if (lim) return res.status(403).json({ erreur: `Limite mensuelle atteinte : ${lim.conso} € / ${lim.limite} €` });
 
   const apiKey = process.env.FULLENRICH_API_KEY;
   if (!apiKey) return res.status(500).json({ erreur: 'FULLENRICH_API_KEY manquante dans Vercel' });
@@ -97,6 +100,7 @@ export default async function handler(req, res) {
       if (!soumission.ok || !enrichmentId) {
         return res.status(502).json({ erreur: 'FullEnrich (soumission)', detail: sub.message || sub.error || JSON.stringify(sub).slice(0, 200) });
       }
+      await loggerConso(user, 'fullenrich', 1, req.body?.liste_id);
 
       // FullEnrich cascade 15+ sources : jusqu'à ~100 s d'attente ici, puis le front reprend
       for (let i = 0; i < 14; i++) {

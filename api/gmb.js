@@ -104,7 +104,9 @@ function typeCoherent(typesFiche, naf) {
   return forts.length === 0;
 }
 
+let NB_APPELS = 0;
 async function gPlaces(url) {
+  NB_APPELS++;
   const r = await fetch(url);
   return r.json().catch(() => ({}));
 }
@@ -120,8 +122,12 @@ async function textSearch(q, key) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
-  const { verifierToken } = await import('./db.js');
-  if (!verifierToken(req)) return res.status(401).json({ erreur: 'Connexion requise' });
+  const { verifierToken, loggerConso, limiteAtteinte } = await import('./db.js');
+  const user = verifierToken(req);
+  if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
+  NB_APPELS = 0;
+  const lim = await limiteAtteinte(user);
+  if (lim) return res.status(403).json({ erreur: `Limite mensuelle atteinte : ${lim.conso} € / ${lim.limite} € — vois avec Didier` });
 
   const key = process.env.GOOGLE_PLACES_API_KEY;
   if (!key) return res.status(500).json({ erreur: 'GOOGLE_PLACES_API_KEY manquante dans Vercel' });
@@ -202,6 +208,7 @@ export default async function handler(req, res) {
     }));
 
     if (!fiches.length) {
+      await loggerConso(user, 'google_places', NB_APPELS, req.query.liste_id);
       return res.status(200).json({ trouve: false, message: 'Aucune fiche Google trouvée pour cette entreprise' });
     }
 
@@ -253,6 +260,7 @@ export default async function handler(req, res) {
       };
     }
 
+    await loggerConso(user, 'google_places', NB_APPELS, req.query.liste_id);
     return res.status(200).json({
       trouve: true,
       telephone,

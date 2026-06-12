@@ -4,7 +4,7 @@
 // Coût : 1 crédit téléphone si mobile trouvé + 1 crédit export par appel réussi.
 // Mode défensif : si la forme de réponse varie, on renvoie aussi le brut pour ajuster le mapping.
 
-import { verifierToken } from './db.js';
+import { verifierToken, loggerConso, limiteAtteinte } from './db.js';
 
 export const config = { maxDuration: 30 };
 
@@ -17,7 +17,10 @@ function extraireIdLinkedin(url) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
-  if (!verifierToken(req)) return res.status(401).json({ erreur: 'Connexion requise' });
+  const user = verifierToken(req);
+  if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
+  const lim = await limiteAtteinte(user);
+  if (lim) return res.status(403).json({ erreur: `Limite mensuelle atteinte : ${lim.conso} € / ${lim.limite} €` });
   if (req.method !== 'POST') return res.status(405).json({ erreur: 'Méthode non autorisée' });
 
   const apiKey = process.env.KASPR_API_KEY;
@@ -28,6 +31,7 @@ export default async function handler(req, res) {
   if (!idLinkedin) return res.status(400).json({ erreur: 'URL LinkedIn invalide ou absente' });
 
   try {
+    await loggerConso(user, 'kaspr', 1, req.body?.liste_id);
     const r = await fetch('https://api.developers.kaspr.io/profile/linkedin', {
       method: 'POST',
       headers: {

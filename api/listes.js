@@ -30,7 +30,8 @@ export default async function handler(req, res) {
     return res.status(500).json({ erreur: 'Base de données non configurée — créer la base Neon dans Vercel (Storage) puis redéployer' });
   }
   await ensureSchema();
-  if (!verifierToken(req)) return res.status(401).json({ erreur: 'Connexion requise' });
+  const user = verifierToken(req);
+  if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
 
   try {
     // ── Lecture ──
@@ -71,6 +72,12 @@ export default async function handler(req, res) {
       const rows = await sql`INSERT INTO listes (nom, sdr, criteres, criteres_hash, entreprises, total, credits_estimes)
         VALUES (${nom}, ${sdr}, ${JSON.stringify(criteres)}, ${h}, ${JSON.stringify(entreprises)}, ${entreprises.length}, ${credits_estimes || 0})
         RETURNING id, created_at`;
+      // Rattache les crédits Pappers consommés à l'instant (extraction avant sauvegarde) à cette liste
+      try {
+        await sql`UPDATE consommations SET liste_id = ${rows[0].id}
+                  WHERE sdr = ${user.nom} AND liste_id IS NULL AND api = 'pappers'
+                    AND created_at > NOW() - INTERVAL '10 minutes'`;
+      } catch (_) {}
       return res.status(200).json({ ok: true, id: rows[0].id, created_at: rows[0].created_at });
     }
 

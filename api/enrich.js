@@ -3,7 +3,7 @@
 // GET  ?request_id=…                                  → re-vérifie un enrichissement en attente
 // Récupère : email pro vérifié, profil LinkedIn, fonction (classification IA), site web, téléphone.
 
-import { verifierToken } from './db.js';
+import { verifierToken, loggerConso, limiteAtteinte, majSoldeApi } from './db.js';
 
 export const config = { maxDuration: 60 };
 
@@ -40,7 +40,8 @@ async function recupererResultat(requestId, apiKey) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
-  if (!verifierToken(req)) return res.status(401).json({ erreur: 'Connexion requise' });
+  const user = verifierToken(req);
+  if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
 
   const apiKey = process.env.DROPCONTACT_API_KEY;
   if (!apiKey) return res.status(500).json({ erreur: 'DROPCONTACT_API_KEY manquante dans Vercel' });
@@ -53,6 +54,7 @@ export default async function handler(req, res) {
       const etat = await recupererResultat(request_id, apiKey);
       if (etat.erreur) return res.status(502).json({ erreur: 'Dropcontact : ' + etat.erreur });
       if (!etat.pret) return res.status(200).json({ pending: true, request_id });
+      if (etat.credits != null) await majSoldeApi('dropcontact', etat.credits);
       return res.status(200).json({ ok: true, ...etat });
     }
 
@@ -75,6 +77,8 @@ export default async function handler(req, res) {
         language: 'fr'
       };
 
+      const lim = await limiteAtteinte(user);
+      if (lim) return res.status(403).json({ erreur: `Limite mensuelle atteinte : ${lim.conso} € / ${lim.limite} €` });
       const soumission = await fetch('https://api.dropcontact.com/v1/enrich/all', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Access-Token': apiKey },
@@ -85,12 +89,13 @@ export default async function handler(req, res) {
         return res.status(502).json({ erreur: 'Dropcontact (soumission)', detail: sub.error || sub.reason || JSON.stringify(sub) });
       }
 
+      await loggerConso(user, 'dropcontact', 1, req.body?.liste_id);
       // Attente du résultat : jusqu'à ~38 secondes (Dropcontact prend 15-45s)
       for (let i = 0; i < 8; i++) {
         await attendre(i === 0 ? 8000 : 4500);
         const etat = await recupererResultat(sub.request_id, apiKey);
         if (etat.erreur) return res.status(502).json({ erreur: 'Dropcontact : ' + etat.erreur });
-        if (etat.pret) return res.status(200).json({ ok: true, ...etat });
+        if (etat.pret) { if (etat.credits != null) await majSoldeApi('dropcontact', etat.credits); return res.status(200).json({ ok: true, ...etat }); }
       }
       // Pas encore prêt : le front re-vérifiera avec request_id
       return res.status(200).json({ pending: true, request_id: sub.request_id });

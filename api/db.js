@@ -44,6 +44,24 @@ export async function ensureSchema() {
   } else {
     await sql`UPDATE sdrs SET role = 'superadmin' WHERE email = 'didier@sofy.fr'`;
   }
+  await sql`CREATE TABLE IF NOT EXISTS consommations (
+    id SERIAL PRIMARY KEY,
+    sdr TEXT NOT NULL,
+    api TEXT NOT NULL,
+    quantite NUMERIC NOT NULL DEFAULT 1,
+    liste_id INTEGER DEFAULT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_conso_sdr ON consommations(sdr, created_at)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_conso_liste ON consommations(liste_id)`;
+  await sql`CREATE TABLE IF NOT EXISTS tarifs (api TEXT PRIMARY KEY, prix NUMERIC NOT NULL)`;
+  const t = await sql`SELECT COUNT(*)::int AS c FROM tarifs`;
+  if (t[0].c === 0) {
+    await sql`INSERT INTO tarifs (api, prix) VALUES
+      ('pappers', 0.05), ('google_places', 0.02), ('dropcontact', 0.10),
+      ('ia_claude', 0.02), ('fullenrich', 0.25), ('leadmagic', 0.05), ('kaspr', 0.20)`;
+  }
+  await sql`CREATE TABLE IF NOT EXISTS etats_api (api TEXT PRIMARY KEY, solde NUMERIC, maj TIMESTAMPTZ DEFAULT NOW())`;
   ready = true;
 }
 
@@ -71,4 +89,36 @@ export function verifierToken(req) {
     if (u.exp < Date.now()) return null;
     return u;
   } catch { return null; }
+}
+
+// ── Suivi des consommations + limites mensuelles ──
+export async function loggerConso(user, api, quantite, listeId) {
+  if (!sql || !quantite) return;
+  try {
+    await sql`INSERT INTO consommations (sdr, api, quantite, liste_id)
+      VALUES (${user?.nom || '?'}, ${api}, ${quantite}, ${listeId ? parseInt(listeId) : null})`;
+  } catch (_) {}
+}
+export async function majSoldeApi(api, solde) {
+  if (!sql || solde === null || solde === undefined) return;
+  try {
+    await sql`INSERT INTO etats_api (api, solde, maj) VALUES (${api}, ${solde}, NOW())
+      ON CONFLICT (api) DO UPDATE SET solde = ${solde}, maj = NOW()`;
+  } catch (_) {}
+}
+// Renvoie {conso, limite} si la limite mensuelle (€) du SDR est atteinte, sinon null
+export async function limiteAtteinte(user) {
+  if (!sql || !user) return null;
+  try {
+    const rows = await sql`
+      SELECT s.limite_credits AS lim,
+             COALESCE((SELECT SUM(c.quantite * COALESCE(t.prix, 0))
+                       FROM consommations c LEFT JOIN tarifs t ON t.api = c.api
+                       WHERE c.sdr = s.nom
+                         AND date_trunc('month', c.created_at) = date_trunc('month', NOW())), 0) AS conso
+      FROM sdrs s WHERE s.id = ${user.id}`;
+    if (!rows.length || rows[0].lim === null) return null;
+    const conso = Number(rows[0].conso), limite = Number(rows[0].lim);
+    return conso >= limite ? { conso: Math.round(conso * 100) / 100, limite } : null;
+  } catch (_) { return null; }
 }

@@ -61,8 +61,11 @@ async function detailEntreprise(siren, apiKey) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
-  const { verifierToken } = await import('./db.js');
-  if (!verifierToken(req)) return res.status(401).json({ erreur: 'Connexion requise' });
+  const { verifierToken, loggerConso, limiteAtteinte } = await import('./db.js');
+  const user = verifierToken(req);
+  if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
+  const lim = await limiteAtteinte(user);
+  if (lim) return res.status(403).json({ erreur: `Limite mensuelle atteinte : ${lim.conso} € / ${lim.limite} € — vois avec Didier` });
 
   const apiKey = process.env.PAPPERS_API_KEY;
   if (!apiKey) return res.status(500).json({ erreur: 'PAPPERS_API_KEY manquante dans Vercel' });
@@ -158,6 +161,7 @@ export default async function handler(req, res) {
       return true;
     }).map(({ _cessee, _proc, ...e }) => e);
 
+    await loggerConso(user, 'pappers', nDetail + 1, req.query.liste_id);
     return res.status(200).json({
       total: result.data.total || entreprises.length,
       filtre_effectif: filtreEffectif,

@@ -2,14 +2,17 @@
 // POST {nom, enseigne, ville, naf, siren} → {site_web, nom_commercial, confiance}
 // Utilisé quand le matching GMB échoue ou qu'aucun domaine n'est connu (ex : PDK → Centre Porsche Guadeloupe)
 
-import { verifierToken } from './db.js';
+import { verifierToken, loggerConso, limiteAtteinte } from './db.js';
 
 export const config = { maxDuration: 120 };
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
-  if (!verifierToken(req)) return res.status(401).json({ erreur: 'Connexion requise' });
+  const user = verifierToken(req);
+  if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
+  const lim = await limiteAtteinte(user);
+  if (lim) return res.status(403).json({ erreur: `Limite mensuelle atteinte : ${lim.conso} € / ${lim.limite} €` });
   if (req.method !== 'POST') return res.status(405).json({ erreur: 'Méthode non autorisée' });
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -79,6 +82,7 @@ IMPORTANT — équilibre : un résultat avec confiance "moyenne" vaut mieux qu'a
     }
 
     // Le dernier bloc texte contient la réponse
+    await loggerConso(user, 'ia_claude', 1, (req.body && req.body.liste_id) || req.query.liste_id);
     const textes = (data.content || []).filter(b => b.type === 'text').map(b => b.text);
     const brut = (textes[textes.length - 1] || '').replace(/```json|```/g, '').trim();
     const debut = brut.indexOf('{');
