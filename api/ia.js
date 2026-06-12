@@ -15,7 +15,7 @@ export default async function handler(req, res) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ erreur: 'ANTHROPIC_API_KEY manquante dans Vercel' });
 
-  const { nom, enseigne = '', ville = '', naf = '', siren = '' } = req.body || {};
+  const { nom, enseigne = '', ville = '', naf = '', siren = '', indice = '' } = req.body || {};
   if (!nom) return res.status(400).json({ erreur: 'nom requis' });
 
   try {
@@ -26,8 +26,9 @@ ${enseigne ? `Enseigne : ${enseigne}` : ''}
 Ville : ${ville}
 Activité (NAF ${naf}) ${siren ? `· SIREN ${siren}` : ''}
 
-Recherche sur le web et trouve :
-1. Son site web officiel (le domaine exact)
+${indice ? `Indication fournie par le commercial (fiable, à utiliser dans tes recherches) : "${indice}"
+` : ''}Fais PLUSIEURS recherches web si nécessaire (ex : "${enseigne || nom} ${ville}", "${nom} site officiel", sigle + activité + département${indice ? `, "${indice} site officiel"` : ''}) et trouve :
+1. Son site web officiel (le domaine exact, vérifié dans les résultats — jamais inventé)
 2. Son nom commercial tel qu'il apparaît sur Google Maps (souvent différent de la raison sociale, ex : "PDK PRESTIGE DISTRIBUTION KARAIB" = "Centre Porsche Guadeloupe")
 
 Réponds UNIQUEMENT avec un objet JSON, sans texte autour, sans backticks :
@@ -46,7 +47,7 @@ Si tu n'es pas sûr, mets null et confiance basse. Ne devine jamais.`;
         model: 'claude-haiku-4-5',
         max_tokens: 1024,
         messages: [{ role: 'user', content: prompt }],
-        tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }]
+        tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }]
       })
     });
 

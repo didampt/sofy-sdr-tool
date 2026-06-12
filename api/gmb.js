@@ -42,6 +42,10 @@ const STOP_NOM = new Set(['auto','autos','automobile','automobiles','garage','ga
 function nomCorrespond(nomFiche, nomEntreprise, villeNorm) {
   if (!nomEntreprise) return false;
   const fiche = normaliser(nomFiche);
+  // Phrase complète : "autos premium martinique" ⊂ "autos premium martinique - land rover"
+  // → fiable même si chaque mot pris isolément est générique
+  const phrase = normaliser(nomEntreprise).split(/[^a-z0-9]+/).filter(Boolean).join(' ');
+  if (phrase.length >= 8 && phrase.includes(' ') && fiche.includes(phrase)) return true;
   const villeTokens = new Set((villeNorm || '').split(/[^a-z0-9]+/).filter(Boolean));
   const tokens = normaliser(nomEntreprise).split(/[^a-z0-9]+/)
     .filter(t => t.length >= 3 && !STOP_NOM.has(t) && !villeTokens.has(t));
@@ -155,11 +159,12 @@ export default async function handler(req, res) {
     // Acceptés d'office : nom OU adresse exacte (numéro de rue identique)
     let retenus = valides.filter(c => c.matchNom || c.matchAdresse === 'exacte');
 
-    // Candidats "même zone" sans nom : confirmation par le DOMAINE du site web (max 3 vérifications)
+    // Candidats de la ville sans match nom : confirmation par le DOMAINE du site web (max 4 vérifications)
+    // (le filtre ville/CP en amont garantit déjà la géographie — un domaine identique est la preuve la plus forte)
     if (site) {
       const domaineSofy = domaine(site);
-      const aVerifier = valides.filter(c => !c.matchNom && c.matchAdresse === 'zone')
-        .sort((a, b) => b.r.user_ratings_total - a.r.user_ratings_total).slice(0, 3);
+      const aVerifier = valides.filter(c => !c.matchNom && !retenus.includes(c))
+        .sort((a, b) => b.r.user_ratings_total - a.r.user_ratings_total).slice(0, 4);
       for (const c of aVerifier) {
         if (!domaineSofy) break;
         const d = await gPlaces(`https://maps.googleapis.com/maps/api/place/details/json?place_id=${c.r.place_id}&fields=website&language=fr&key=${key}`);
