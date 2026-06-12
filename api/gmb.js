@@ -26,7 +26,7 @@ const TYPES_ATTENDUS = {
   '93.13': ['gym','health'],
   '47.24': ['bakery','food','store']
 };
-const TYPES_FORTS = ['car_dealer','car_repair','car_rental','car_wash','restaurant','meal_takeaway','meal_delivery','bakery','bar','cafe','night_club','pharmacy','hair_care','beauty_salon','spa','lodging','real_estate_agency','gym','clothing_store','jewelry_store','veterinary_care','funeral_home'];
+const TYPES_FORTS = ['car_dealer','car_repair','car_rental','car_wash','restaurant','meal_takeaway','meal_delivery','bakery','bar','cafe','night_club','pharmacy','hair_care','beauty_salon','spa','lodging','real_estate_agency','gym','clothing_store','jewelry_store','veterinary_care','funeral_home','electronics_store','furniture_store','hardware_store','supermarket','grocery_or_supermarket','shoe_store','book_store','pet_store','florist','bank','insurance_agency','travel_agency','dentist','doctor','school','laundry','movie_theater'];
 
 function normaliser(s) {
   return (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -35,7 +35,7 @@ function echapper(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, ''); }
 
 // Mots interdits comme preuve de matching : génériques du secteur + géographie
 // ("AUTO FIRST" ne doit pas matcher "FIRST OCCASIONS", ni "Martinique Automobiles" matcher "AUTOMOBILE IMPORT MARTINIQUE")
-const STOP_NOM = new Set(['auto','autos','automobile','automobiles','garage','garages','occasion','occasions','motor','motors','distribution','service','services','import','imports','export','societe','groupe','group','centre','center','car','cars','vehicules','vehicule','location','agence','magasin','boutique','salon','institut','hotel','restaurant','pizzeria','pharmacie','immobilier','martinique','guadeloupe','guyane','reunion','mayotte','antilles','caraibes','caraibe','karaib','caribbean','france','french','prestige','premium','general','generale']);
+const STOP_NOM = new Set(['auto','autos','automobile','automobiles','garage','garages','occasion','occasions','motor','motors','distribution','service','services','import','imports','export','societe','groupe','group','centre','center','car','cars','vehicules','vehicule','location','agence','magasin','boutique','salon','institut','hotel','restaurant','pizzeria','pharmacie','immobilier','martinique','guadeloupe','guyane','reunion','mayotte','antilles','caraibes','caraibe','karaib','caribbean','france','french','prestige','premium','general','generale','mobile','mobiles','phone','telephone','telephonie','store','shop','market','express']);
 
 // Nom en mots entiers + variante compacte ("A 2G" matche "A2G").
 // Seuls les mots DISTINCTIFS comptent (hors génériques, géographie et ville de l'entreprise).
