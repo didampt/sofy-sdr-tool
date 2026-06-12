@@ -546,7 +546,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v31';
+const VERSION='v32';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -845,8 +845,17 @@ function contactsDe(e){
  }
  return e.contacts;
 }
+function valideDomaine(s){
+ return !!s&&s.includes('.')&&!/\s/.test(s.trim());
+}
 function domaineDe(e){
- return e.site_web||(e.gmb&&e.gmb.site_web)||(e.enrich&&e.enrich.site_web)||'';
+ // Auto-réparation : purge un site invalide (ex : "porsche guadeloupe" saisi avant la validation),
+ // adopte le site IA s'il est valide
+ if(e.site_web&&!valideDomaine(e.site_web)){e.site_web='';e.site_source=null;}
+ if(!e.site_web&&e.ia&&valideDomaine(e.ia.site_web)){e.site_web=e.ia.site_web;e.site_source='ia';}
+ const cands=[e.site_web,(e.gmb&&e.gmb.site_web),(e.enrich&&e.enrich.site_web)];
+ for(const c of cands){if(valideDomaine(c))return c;}
+ return '';
 }
 function enseigneDe(e){
  return e.enseigne_ia||e.enseigne||'';
@@ -889,7 +898,7 @@ function contactHtml(c,i,j){
    ${en.telephone?`<div class="contact-line">📱 <b>${en.telephone}</b>${telBtns(en.telephone)}${en.tel_source==='fullenrich'?' <span class="badge b-gmb">FullEnrich</span>':''}</div>`:''}
    ${en.linkedin?`<div class="contact-line">💼 <a href="${en.linkedin.startsWith('http')?en.linkedin:'https://'+en.linkedin}" target="_blank">Profil LinkedIn ✓</a></div>`:''}`
   :`<button class="act act-lemlist" id="enrbtn${i}_${j}" onclick="enrichir(${i},${j})" style="margin-top:4px">✉️ Enrichir ce contact</button>`}
-  ${en&&!en.fe_fait&&(!en.email||!en.telephone)?`<button class="act act-copy" style="margin-top:4px" onclick="(async()=>{toast('🔁 FullEnrich en cours (jusqu\u00e0 2 min)…');await enrichirFE(${i},${j});})()" title="Cascade 15+ sources : email de repli + mobile">🔁 FullEnrich</button>`:''}
+  ${en&&(!en.email||!en.telephone)?`<button class="act act-copy" style="margin-top:4px" id="febtn${i}_${j}" onclick="lancerFE(${i},${j})" title="Cascade 15+ sources : email de repli + mobile">${en.fe_fait?'↻ FullEnrich (re-tenter)':'🔁 FullEnrich'}</button>`:''}
  </div>`;
 }
 
@@ -1110,6 +1119,16 @@ async function chercherPersonas(i){
 }
 
 /* ───────── NIVEAU 2 : FULLENRICH (emails de repli + MOBILES) ───────── */
+async function lancerFE(i,j){
+ const e=REAL[i];
+ if(e._busy){toast('Analyse en cours sur cette fiche ⏳');return;}
+ e._busy=true;rerender(i);
+ try{
+  toast('🔁 FullEnrich en cours (jusqu\u00e0 2 min)…');
+  await enrichirFE(i,j);
+ }finally{e._busy=false;rerender(i);}
+}
+
 async function enrichirFE(i,j){
  const e=REAL[i];
  const c=contactsDe(e)[j||0];
