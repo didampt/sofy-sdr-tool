@@ -229,7 +229,8 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
     <button class="nav-btn" data-view="results" onclick="nav('results',this)">📞 Résultats</button>
     <button class="nav-btn" data-view="history" onclick="nav('history',this);chargerHistorique()">🗂 Historique</button>
     <button class="nav-btn" data-view="mapping" onclick="nav('mapping',this)">⚙️ Envois & mapping</button>
-    <button class="nav-btn" data-view="params" onclick="nav('params',this);chargerSdrs()">⚙️ Paramètres</button>
+    <button class="nav-btn" data-view="stats" onclick="nav('stats',this);chargerStats()">📊 Statistiques</button>
+    <button class="nav-btn" data-view="params" onclick="nav('params',this);chargerSdrs();chargerTarifs()">⚙️ Paramètres</button>
     <button class="nav-btn" data-view="settings" onclick="nav('settings',this)">🔌 Connexions</button>
     <div class="user-badge" id="user-badge" style="display:none"><span id="user-nom"></span><button onclick="deconnexion(true)">Déconnexion</button></div>
     <div class="demo-pill">PAPPERS + GMB + IA ✓</div>
@@ -478,6 +479,22 @@ Spot-Hit</textarea>
     </section>
 
     <!-- ════ VUE : PARAMÈTRES ════ -->
+    <section class="view" id="view-stats">
+      <div class="eyebrow">Pilotage</div>
+      <h1>Statistiques</h1>
+      <p class="sub">Consommations du mois par SDR, coût et taux de réussite par liste. Les tarifs unitaires se règlent dans ⚙️ Paramètres.</p>
+      <div class="map-card">
+        <h2>👥 Consommation du mois par SDR</h2>
+        <div class="role">Coût calculé : quantité × tarif unitaire de chaque API. Limite mensuelle appliquée automatiquement (blocage à l'atteinte).</div>
+        <table class="map-table" id="stats-sdr"><tr><th>SDR</th><th>Détail API</th><th>Coût du mois</th><th>Limite</th></tr></table>
+      </div>
+      <div class="map-card">
+        <h2>📋 Par liste (30 dernières)</h2>
+        <div class="role">% emails = contacts avec email trouvé / contacts identifiés. Coût par contact enrichi = coût liste ÷ emails trouvés.</div>
+        <table class="map-table" id="stats-listes"><tr><th>Liste</th><th>SDR</th><th>Fiches</th><th>Emails</th><th>% emails</th><th>Coût</th><th>€ / contact enrichi</th></tr></table>
+      </div>
+    </section>
+
     <section class="view" id="view-params">
       <div class="eyebrow">Administration</div>
       <h1>Paramètres</h1>
@@ -487,19 +504,23 @@ Spot-Hit</textarea>
         <h2>👥 SDR & utilisateurs</h2>
         <div class="role">Limite de crédits : montant maximum de crédits consommables par mois. Vide = illimité.</div>
         <table class="map-table" id="sdr-table">
-          <tr><th>Nom</th><th>Email</th><th>Limite crédits / mois</th><th>Actif</th><th></th></tr>
+          <tr><th>Nom</th><th>Email</th><th>Limite € / mois</th><th>Actif</th><th></th></tr>
         </table>
         <div class="map-sub">Ajouter un SDR / utilisateur</div>
         <div class="row3">
           <input class="field" id="new-sdr-nom" placeholder="Prénom (ex : Sarah)">
           <input class="field" id="new-sdr-email" placeholder="Email (ex : sarah@sofy.fr)">
-          <input class="field" id="new-sdr-limite" type="number" min="0" placeholder="Limite crédits (vide = illimité)">
+          <input class="field" id="new-sdr-limite" type="number" min="0" placeholder="Limite € / mois (vide = illimité)">
         </div>
         <div class="save-bar"><button class="btn btn-primary" onclick="ajouterSdr()">+ Ajouter</button></div>
       </div>
-    </section>
+          <div class="map-card">
+        <h2>💶 Tarifs unitaires des API</h2>
+        <div class="role">Prix d'une unité de chaque API (1 fiche Pappers, 1 appel Google, 1 enrichissement…). Sert au calcul des coûts et des limites mensuelles par SDR. Ajuste-les selon tes contrats réels.</div>
+        <table class="map-table" id="tarifs-table"></table>
+      </div>
+</section>
 
-    <!-- ════ VUE 4 : STATUT DES CONNEXIONS ════ -->
     <section class="view" id="view-settings">
       <div class="eyebrow">Configuration</div>
       <h1>Statut des connexions</h1>
@@ -554,7 +575,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v37';
+const VERSION='v38';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -589,7 +610,7 @@ function demarrerApp(u){
  const badge=document.getElementById('user-badge');
  badge.style.display='flex';
  document.getElementById('user-nom').textContent=u.nom+(u.role==='superadmin'?' 👑':'');
- if(u.role!=='superadmin'){const b=document.querySelector('[data-view="params"]');if(b)b.style.display='none';}
+ if(u.role!=='superadmin'){['params','stats'].forEach(v=>{const b=document.querySelector(`[data-view="${v}"]`);if(b)b.style.display='none';});}
  chargerSdrChips();
  chargerStatut();
 }
@@ -1023,7 +1044,7 @@ async function iaFiche(i,indice,force){
  if(e.ia&&!force)return false; // déjà tentée : relance uniquement explicite
  try{
   const r=await api('/api/ia',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({nom:e.nom,enseigne:enseigneDe(e),ville:e.ville||'',naf:e.naf||'',siren:e.siren,indice:indice||'',
+   body:JSON.stringify({liste_id:state.savedId,nom:e.nom,enseigne:enseigneDe(e),ville:e.ville||'',naf:e.naf||'',siren:e.siren,indice:indice||'',
     dirigeant:(contactsDe(e)[0]&&contactsDe(e)[0].nom)?(contactsDe(e)[0].prenom+' '+contactsDe(e)[0].nom).trim():''})});
   if(!r.ok&&r.status===504){toast('IA : délai dépassé (504) — réessaie, ou la fiche est introuvable');return false;}
   let d;
@@ -1133,7 +1154,7 @@ async function enrichir(i,j){
  if(btn){btn.disabled=true;btn.textContent='⏳ Dropcontact… (15-45 s)';}
  try{
   const r=await api('/api/enrich',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({contact:{prenom:c.prenom,nom:c.nom},
+   body:JSON.stringify({liste_id:state.savedId,contact:{prenom:c.prenom,nom:c.nom},
     entreprise:{nom:e.enseigne||e.nom,siren:e.siren,site:domaineDe(e)}})});
   let d=await r.json();
   let essais=0;
@@ -1190,7 +1211,7 @@ async function enrichirKaspr(i,j){
  if(!lk||!/linkedin\.com\/in\//i.test(lk)){toast('Kaspr : URL LinkedIn requise (introuvable sur ce contact)');return false;}
  try{
   const r=await api('/api/kaspr',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({linkedin:lk,prenom:c.prenom||'',nom:c.nom||''})});
+   body:JSON.stringify({liste_id:state.savedId,linkedin:lk,prenom:c.prenom||'',nom:c.nom||''})});
   let d;try{d=await r.json();}catch(_){toast('Kaspr : réponse invalide ('+r.status+')');return false;}
   if(d.erreur){toast('Kaspr : '+d.erreur+(d.detail?' — '+d.detail:''));return false;}
   const k=d.resultat||{};
@@ -1291,7 +1312,7 @@ async function chercherPersonas(i){
  if(!jobs.length){toast('Aucun persona sélectionné dans les critères de cette liste (hors Dirigeant/PDG)');return false;}
  try{
   const r=await api('/api/personas',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({entreprise:{nom:e.nom,enseigne:enseigneDe(e),site:domaineDe(e),ville:e.ville||''},jobs})});
+   body:JSON.stringify({liste_id:state.savedId,entreprise:{nom:e.nom,enseigne:enseigneDe(e),site:domaineDe(e),ville:e.ville||''},jobs})});
   let d;
   try{d=await r.json();}catch(_){toast('Personas : réponse invalide ('+r.status+')');return false;}
   if(d.erreur){toast('Personas : '+d.erreur+(d.detail?' — '+d.detail:''));return false;}
@@ -1333,7 +1354,7 @@ async function enrichirFE(i,j){
  if(!c||!c.nom||!c.enrich)return false;
  try{
   const r=await api('/api/fullenrich',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({contact:{prenom:c.prenom,nom:c.nom},entreprise:{nom:e.enseigne_ia||e.enseigne||e.nom,site:domaineDe(e)}})});
+   body:JSON.stringify({liste_id:state.savedId,contact:{prenom:c.prenom,nom:c.nom},entreprise:{nom:e.enseigne_ia||e.enseigne||e.nom,site:domaineDe(e)}})});
   let d;
   try{d=await r.json();}catch(_){toast('FullEnrich : réponse invalide ('+r.status+')');return false;}
   let essais=0;
@@ -1363,7 +1384,7 @@ async function analyserGmb(i){
  const btn=document.getElementById('gmbbtn'+i);
  if(btn){btn.disabled=true;btn.textContent='⏳ Analyse…';}
  try{
-  const p=new URLSearchParams({nom:e.nom,ville:e.ville||'',naf:e.naf||'',enseigne:enseigneDe(e),adresse:e.adresse||'',cp:e.code_postal||'',site:domaineDe(e),ens_forte:e.enseigne_ia?'1':''});
+  const p=new URLSearchParams({liste_id:state.savedId||'',nom:e.nom,ville:e.ville||'',naf:e.naf||'',enseigne:enseigneDe(e),adresse:e.adresse||'',cp:e.code_postal||'',site:domaineDe(e),ens_forte:e.enseigne_ia?'1':''});
   const r=await api('/api/gmb?'+p.toString());
   const g=await r.json();
   if(!r.ok||g.erreur){toast('Erreur GMB : '+(g.erreur||r.status));if(btn){btn.disabled=false;btn.textContent='⭐ Analyser GMB';}return false;}
@@ -1469,6 +1490,7 @@ async function lancerWaterfall(){
  }
  document.getElementById('wf-titre').textContent=`🏁 Enrichissement terminé — ${emailsOk}/${emailsTentes} nouveaux emails`;
  document.getElementById('wf-fermer').disabled=false;
+ majCoutListe();
  persister();
 }
 
@@ -1644,7 +1666,7 @@ async function chargerSdrs(){
   const r=await api('/api/sdrs');
   const d=await r.json();
   if(d.erreur){t.innerHTML='<tr><td colspan="6">'+d.erreur+'</td></tr>';return;}
-  t.innerHTML='<tr><th>Nom</th><th>Email</th><th>Limite crédits / mois</th><th>Mot de passe</th><th>Actif</th><th></th></tr>'+
+  t.innerHTML='<tr><th>Nom</th><th>Email</th><th>Limite € / mois</th><th>Mot de passe</th><th>Actif</th><th></th></tr>'+
    (d.sdrs||[]).map(s=>`<tr>
     <td><input class="field" value="${s.nom}" id="sn${s.id}"></td>
     <td><input class="field" value="${s.email||''}" placeholder="email@sofy.fr" id="se${s.id}"></td>
@@ -1719,6 +1741,7 @@ async function ouvrirListe(id){
   state.savedId=l.id;state.listeNom=l.nom;state.sdr=l.sdr;
   showRealResults(l.total,l.criteres);
   document.getElementById('res-sub').textContent+=' · Rouverte depuis l\'historique (0 crédit)';
+  majCoutListe();
  }catch(e){toast('Erreur : '+e.message);}
 }
 async function majListe(id){
@@ -1734,17 +1757,91 @@ async function majListe(id){
 }
 
 /* ───────── STATUT DES CONNEXIONS (clés côté serveur, jamais exposées) ───────── */
+/* ───────── STATISTIQUES & TARIFS ───────── */
+async function chargerStats(){
+ try{
+  const r=await api('/api/stats');
+  const d=await r.json();
+  const ts=document.getElementById('stats-sdr');
+  if(d.erreur){ts.innerHTML='<tr><td colspan="4">'+d.erreur+'</td></tr>';return;}
+  const limites={};(d.limites||[]).forEach(l=>limites[l.nom]=l.limite_credits);
+  const parSdr={};
+  (d.par_sdr||[]).forEach(x=>{
+   parSdr[x.sdr]=parSdr[x.sdr]||{cout:0,detail:[]};
+   parSdr[x.sdr].cout+=Number(x.cout);
+   parSdr[x.sdr].detail.push(`${x.api} : ${Math.round(Number(x.quantite))} (${Number(x.cout).toFixed(2)} €)`);
+  });
+  const noms=Object.keys(parSdr).sort((a,b)=>parSdr[b].cout-parSdr[a].cout);
+  ts.innerHTML='<tr><th>SDR</th><th>Détail API</th><th>Coût du mois</th><th>Limite</th></tr>'+
+   (noms.length?noms.map(n=>{
+    const lim=limites[n];
+    const pct=lim?Math.round(100*parSdr[n].cout/Number(lim)):null;
+    return `<tr><td><b>${n}</b></td><td style="font-size:12.5px">${parSdr[n].detail.join('<br>')}</td>
+     <td><b>${parSdr[n].cout.toFixed(2)} €</b></td>
+     <td>${lim?`${Number(lim).toFixed(0)} € <span class="badge ${pct>=100?'b-signal':pct>=80?'b-dup':'b-gmb'}">${pct}%</span>`:'Illimité'}</td></tr>`;
+   }).join(''):'<tr><td colspan="4" style="color:var(--ink-soft)">Aucune consommation ce mois-ci</td></tr>');
+  const tl=document.getElementById('stats-listes');
+  tl.innerHTML='<tr><th>Liste</th><th>SDR</th><th>Fiches</th><th>Emails</th><th>% emails</th><th>Coût</th><th>€ / contact enrichi</th></tr>'+
+   (d.par_liste||[]).map(l=>`<tr>
+    <td><b>${l.nom}</b><br><span style="font-size:11.5px;color:var(--ink-soft)">${new Date(l.created_at).toLocaleDateString('fr-FR')}</span></td>
+    <td>${l.sdr}</td><td>${l.total}</td><td>${l.emails}/${l.contacts}</td>
+    <td><span class="badge ${l.pct_emails>=60?'b-new':l.pct_emails>=30?'b-gmb':'b-dup'}">${l.pct_emails}%</span></td>
+    <td><b>${l.cout.toFixed(2)} €</b></td>
+    <td>${l.cout_par_contact_enrichi!==null?l.cout_par_contact_enrichi.toFixed(2)+' €':'—'}</td></tr>`).join('');
+ }catch(e){toast('Stats : '+e.message);}
+}
+async function chargerTarifs(){
+ const t=document.getElementById('tarifs-table');
+ if(!t)return;
+ try{
+  const r=await api('/api/stats');
+  const d=await r.json();
+  if(d.erreur){t.innerHTML='<tr><td colspan="3">'+d.erreur+'</td></tr>';return;}
+  t.innerHTML='<tr><th>API</th><th>Prix unitaire (€)</th><th></th></tr>'+
+   (d.tarifs||[]).map(x=>`<tr><td><b>${x.api}</b></td>
+    <td><input class="field" type="number" step="0.001" min="0" value="${Number(x.prix)}" id="tarif-${x.api}" style="max-width:140px"></td>
+    <td><button class="act act-copy" onclick="majTarif('${x.api}')">💾</button></td></tr>`).join('');
+ }catch(e){t.innerHTML='<tr><td colspan="3">Erreur : '+e.message+'</td></tr>';}
+}
+async function majTarif(apiNom){
+ const prix=document.getElementById('tarif-'+apiNom).value;
+ const r=await api('/api/stats',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({api:apiNom,prix})});
+ const d=await r.json();
+ toast(d.ok?'Tarif '+apiNom+' enregistré ✓':(d.erreur||'Erreur'));
+}
+async function majCoutListe(){
+ if(!state.savedId)return;
+ try{
+  const r=await api('/api/stats?liste_id='+state.savedId);
+  const d=await r.json();
+  if(d.cout_total===undefined)return;
+  let el=document.getElementById('cout-liste');
+  if(!el){el=document.createElement('span');el.id='cout-liste';el.style.fontWeight='700';document.getElementById('res-sub').appendChild(el);}
+  el.textContent=` · 💳 ${Number(d.cout_total).toFixed(2)} € consommés`;
+ }catch(_){}
+}
+
 async function chargerStatut(){
  const grid=document.getElementById('api-grid');
  try{
   const r=await api('/api/status');
   const data=await r.json();
-  grid.innerHTML=(data.outils||[]).map(o=>`
+  const SEUILS={pappers:300,dropcontact:100,fullenrich:50,kaspr:50};
+  const soldes=data.soldes||{};
+  grid.innerHTML=(data.outils||[]).map(o=>{
+   const solde=soldes[o.id];
+   let ligneSolde='';
+   if(solde!==undefined&&solde!==null){
+    const alerte=SEUILS[o.id]&&Number(solde)<SEUILS[o.id];
+    ligneSolde=`<div class="api-status ${alerte?'st-empty':'st-ok'}" style="margin-top:6px">${alerte?'🔴':'💳'} Solde : <b>${Number(solde).toLocaleString('fr-FR')}</b> crédits${alerte?' — ⚠️ pense à recharger !':''}</div>`;
+   }
+   return `
    <div class="api-card">
     <h3>${o.configuree?'🟢':'⚪'} ${o.nom}</h3>
     <div class="role">${o.role}</div>
     <div class="api-status ${o.configuree?'st-ok':'st-empty'}">${o.configuree?'Clé configurée côté serveur ✓':'Non configurée — variable attendue : '+o.variable}</div>
-   </div>`).join('');
+    ${ligneSolde}
+   </div>`;}).join('');
  }catch(e){
   grid.innerHTML='<p style="color:var(--ink-soft)">Impossible de charger le statut ('+e.message+').</p>';
  }
