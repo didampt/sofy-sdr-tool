@@ -78,6 +78,8 @@ export async function ensureSchema() {
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`;
   await sql`CREATE TABLE IF NOT EXISTS veille_etat (cle TEXT PRIMARY KEY, deja_vus JSONB DEFAULT '[]', maj TIMESTAMPTZ DEFAULT NOW())`;
+  await sql`CREATE TABLE IF NOT EXISTS config (cle TEXT PRIMARY KEY, valeur JSONB NOT NULL DEFAULT '{}')`;
+  await sql`INSERT INTO tarifs (api, prix) VALUES ('soreach', 0.07) ON CONFLICT (api) DO NOTHING`;
   ready = true;
 }
 
