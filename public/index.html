@@ -962,8 +962,10 @@ async function iaFiche(i,indice,force){
   const r=await api('/api/ia',{method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({nom:e.nom,enseigne:enseigneDe(e),ville:e.ville||'',naf:e.naf||'',siren:e.siren,indice:indice||'',
     dirigeant:(contactsDe(e)[0]&&contactsDe(e)[0].nom)?(contactsDe(e)[0].prenom+' '+contactsDe(e)[0].nom).trim():''})});
-  const d=await r.json();
-  if(d.erreur){toast('IA : '+d.erreur);return false;}
+  if(!r.ok&&r.status===504){toast('IA : délai dépassé (504) — réessaie, ou la fiche est introuvable');return false;}
+  let d;
+  try{d=await r.json();}catch(_){toast('IA : réponse invalide ('+r.status+') — probablement un timeout, réessaie');return false;}
+  if(d.erreur){toast('IA : '+d.erreur+(d.detail?' — '+d.detail:''));return false;}
   e.ia=d.resultat||{};
   let modifie=false;
   if(e.ia.site_web&&(!e.site_web||e.site_source!=='sdr')){
@@ -999,6 +1001,8 @@ async function analyserFiche(i){
    e.gmb=null;
    toast('IA a trouvé → re-match GMB : '+(enseigneDe(e)||e.nom));
    await analyserGmb(i);
+  }else if(e.ia){
+   toast('🤖 IA : '+(e.ia.explication||'rien de fiable trouvé'));
   }
  }
 }
