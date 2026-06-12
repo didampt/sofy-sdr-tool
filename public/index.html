@@ -168,9 +168,9 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
 #wf-modal{display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:900;align-items:center;justify-content:center}
 .wf-panel{background:#fff;border-radius:16px;box-shadow:var(--shadow);width:min(620px,94vw);max-height:80vh;display:flex;flex-direction:column}
 .wf-head{padding:20px 24px 12px;font-family:'Sora';font-weight:700;font-size:17px}
-.wf-cols{display:grid;grid-template-columns:1fr 64px 64px 64px;padding:0 24px 8px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:700}
+.wf-cols{display:grid;grid-template-columns:1fr 56px 56px 56px 56px;padding:0 24px 8px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:700}
 .wf-body{overflow-y:auto;padding:0 24px;flex:1}
-.wf-row{display:grid;grid-template-columns:1fr 64px 64px 64px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:13.5px}
+.wf-row{display:grid;grid-template-columns:1fr 56px 56px 56px 56px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:13.5px}
 .wf-cell{text-align:center}
 .wf-foot{padding:14px 24px 20px;text-align:right}
 #login-overlay{display:none;position:fixed;inset:0;background:var(--paper);z-index:999;align-items:center;justify-content:center}
@@ -193,7 +193,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
 <div id="wf-modal">
  <div class="wf-panel">
   <div class="wf-head" id="wf-titre">🚀 Enrichissement en cours…</div>
-  <div class="wf-cols"><span>Fiche</span><span style="text-align:center">GMB</span><span style="text-align:center">IA 🤖</span><span style="text-align:center">Email</span></div>
+  <div class="wf-cols"><span>Fiche</span><span style="text-align:center">GMB</span><span style="text-align:center">IA 🤖</span><span style="text-align:center">Email</span><span style="text-align:center">📱 FE</span></div>
   <div class="wf-body" id="wf-rows"></div>
   <div class="wf-foot"><button class="btn btn-primary" id="wf-fermer" disabled onclick="document.getElementById('wf-modal').style.display='none'">Fermer</button></div>
  </div>
@@ -546,7 +546,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v29';
+const VERSION='v30';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -885,9 +885,10 @@ function contactHtml(c,i,j){
   <div class="contact-line"><b>${(c.prenom+' '+c.nom).trim()}</b> — ${(en&&en.fonction)||c.fonction||'?'} <span class="badge b-gmb">${c.source}</span></div>
   ${en?`
    ${en.email?`<div class="contact-line">✉️ <b>${en.email}</b> <a class="act act-call" style="padding:4px 10px;font-size:12px" href="mailto:${en.email}" title="Écrire un email">📧</a> <button class="act act-copy" style="padding:4px 10px;font-size:12px" onclick="navigator.clipboard.writeText('${en.email}');toast('Email copié ✓')" title="Copier l'adresse">📋</button>${en.email_qualification?` <span class="badge b-new">${en.email_qualification}</span>`:''}</div>`:'<div class="contact-line" style="color:var(--ink-soft)">✉️ Email non trouvé (Dropcontact) — repli FullEnrich à venir</div>'}
-   ${en.telephone?`<div class="contact-line">📱 <b>${en.telephone}</b>${telBtns(en.telephone)}</div>`:''}
+   ${en.telephone?`<div class="contact-line">📱 <b>${en.telephone}</b>${telBtns(en.telephone)}${en.tel_source==='fullenrich'?' <span class="badge b-gmb">FullEnrich</span>':''}</div>`:''}
    ${en.linkedin?`<div class="contact-line">💼 <a href="${en.linkedin.startsWith('http')?en.linkedin:'https://'+en.linkedin}" target="_blank">Profil LinkedIn ✓</a></div>`:''}`
   :`<button class="act act-lemlist" id="enrbtn${i}_${j}" onclick="enrichir(${i},${j})" style="margin-top:4px">✉️ Enrichir ce contact</button>`}
+  ${en&&!en.fe_fait&&(!en.email||!en.telephone)?`<button class="act act-copy" style="margin-top:4px" onclick="(async()=>{toast('🔁 FullEnrich en cours (jusqu\u00e0 2 min)…');await enrichirFE(${i},${j});})()" title="Cascade 15+ sources : email de repli + mobile">🔁 FullEnrich</button>`:''}
  </div>`;
 }
 
@@ -1072,6 +1073,37 @@ async function enrichir(i,j){
  }finally{if(verrouille){e._busy=false;rerender(i);}}
 }
 
+/* ───────── NIVEAU 2 : FULLENRICH (emails de repli + MOBILES) ───────── */
+async function enrichirFE(i,j){
+ const e=REAL[i];
+ const c=contactsDe(e)[j||0];
+ if(!c||!c.nom||!c.enrich)return false;
+ try{
+  const r=await api('/api/fullenrich',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({contact:{prenom:c.prenom,nom:c.nom},entreprise:{nom:e.enseigne_ia||e.enseigne||e.nom,site:domaineDe(e)}})});
+  let d;
+  try{d=await r.json();}catch(_){toast('FullEnrich : réponse invalide ('+r.status+')');return false;}
+  let essais=0;
+  while(d.pending&&d.enrichment_id&&essais<8){
+   await new Promise(x=>setTimeout(x,10000));
+   const r2=await api('/api/fullenrich?enrichment_id='+encodeURIComponent(d.enrichment_id));
+   try{d=await r2.json();}catch(_){break;}
+   essais++;
+  }
+  if(d.erreur){toast('FullEnrich : '+d.erreur+(d.detail?' — '+d.detail:''));c.enrich.fe_fait=true;persister();return false;}
+  if(d.pending){toast('FullEnrich met du temps — relance le 🚀 dans quelques minutes');return false;}
+  const fe=d.resultat||{};
+  c.enrich.fe_fait=true;
+  let gain=false;
+  if(fe.email&&!c.enrich.email){c.enrich.email=fe.email;c.enrich.email_qualification=fe.email_statut||'fullenrich';c.enrich.email_source='fullenrich';gain=true;}
+  if(fe.telephone&&!c.enrich.telephone){c.enrich.telephone=fe.telephone;c.enrich.tel_source='fullenrich';gain=true;}
+  if(fe.linkedin&&!c.enrich.linkedin){c.enrich.linkedin=fe.linkedin;gain=true;}
+  if(j===0||j===undefined)e.enrich=c.enrich;
+  rerender(i);persister();
+  return gain;
+ }catch(err){toast('FullEnrich erreur réseau : '+err.message);return false;}
+}
+
 /* ───────── ANALYSE GMB ───────── */
 async function analyserGmb(i){
  const e=REAL[i];
@@ -1096,7 +1128,7 @@ async function analyserGmb(i){
 /* ───────── 🚀 WATERFALL ORCHESTRÉ ───────── */
 function ouvrirWfModal(){
  document.getElementById('wf-rows').innerHTML=REAL.map((e,i)=>
-  `<div class="wf-row" id="wfr${i}"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${enseigneDe(e)||e.nom}</span><span class="wf-cell" id="wf${i}-gmb">—</span><span class="wf-cell" id="wf${i}-ia">—</span><span class="wf-cell" id="wf${i}-mail">—</span></div>`).join('');
+  `<div class="wf-row" id="wfr${i}"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${enseigneDe(e)||e.nom}</span><span class="wf-cell" id="wf${i}-gmb">—</span><span class="wf-cell" id="wf${i}-ia">—</span><span class="wf-cell" id="wf${i}-mail">—</span><span class="wf-cell" id="wf${i}-fe">—</span></div>`).join('');
  document.getElementById('wf-titre').textContent='🚀 Enrichissement en cours…';
  document.getElementById('wf-fermer').disabled=true;
  document.getElementById('wf-modal').style.display='flex';
@@ -1113,7 +1145,7 @@ async function lancerWaterfall(){
  const nbGmb=REAL.filter(gmbAFaire).length;
  const nbIa=REAL.filter(e=>!e.ia&&!domaineDe(e)).length;
  const nbContacts=REAL.reduce((s,e)=>s+contactsDe(e).filter(c=>c.nom&&!c.enrich).length,0);
- if(!confirm(`🚀 Lancer l'enrichissement sur ${REAL.length} fiches ?\n\n1. GMB + domaine + ☎️ standard : ~${nbGmb} fiches\n2. IA site web/nom commercial (si GMB échoue) : jusqu'à ${nbIa} appels (~0,02 €)\n3. Emails Dropcontact : ~${nbContacts} crédits\n\n💡 Exclus d'abord les fiches inutiles (🗑).`))return;
+ if(!confirm(`🚀 Lancer l'enrichissement sur ${REAL.length} fiches ?\n\n1. GMB + domaine + ☎️ standard : ~${nbGmb} fiches\n2. IA site web/nom commercial (si GMB échoue) : jusqu'à ${nbIa} appels (~0,02 €)\n3. Emails Dropcontact : ~${nbContacts} crédits\n4. FullEnrich (repli email + MOBILE) : contacts incomplets uniquement — ⚠️ un mobile coûte ~10 crédits FullEnrich\n\n💡 Exclus d'abord les fiches inutiles (🗑).`))return;
  ouvrirWfModal();
  let emailsOk=0,emailsTentes=0;
  for(let i=0;i<REAL.length;i++){
@@ -1145,6 +1177,16 @@ async function lancerWaterfall(){
    }
   }
   wfSet(i,'mail',trouve?'ok':(tente?'ko':(cs.some(c=>c.nom)?'ko':'—')));
+  // ── 4. FullEnrich : email manquant OU mobile manquant (jamais re-payé : fe_fait) ──
+  let feGain=false,feTente=false;
+  for(let j=0;j<cs.length;j++){
+   const c=cs[j];
+   if(c.nom&&c.enrich&&!c.enrich.fe_fait&&(!c.enrich.email||!c.enrich.telephone)){
+    feTente=true;wfSet(i,'fe','run');
+    if(await enrichirFE(i,j))feGain=true;
+   }
+  }
+  wfSet(i,'fe',feGain?'ok':(feTente?'ko':(cs.some(c=>c.enrich&&c.enrich.email&&c.enrich.telephone)?'ok':'—')));
  }
  document.getElementById('wf-titre').textContent=`🏁 Enrichissement terminé — ${emailsOk}/${emailsTentes} nouveaux emails`;
  document.getElementById('wf-fermer').disabled=false;
