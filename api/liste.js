@@ -63,7 +63,7 @@ export const config = { maxDuration: 120 };
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
-  const { verifierToken, loggerConso, limiteAtteinte } = await import('./db.js');
+  const { verifierToken, loggerConso, limiteAtteinte, sql, ensureSchema } = await import('./db.js');
   const user = verifierToken(req);
   if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
   const lim = await limiteAtteinte(user);
@@ -138,6 +138,27 @@ export default async function handler(req, res) {
     }
     bruts = bruts.slice(0, nbDemande);
 
+    // ── Dédoublonnage inter-listes : exclure les SIREN déjà extraits par un SDR (économise les crédits détail) ──
+    let doublonsInterListes = 0;
+    const listesTouchees = new Set();
+    if (sql) {
+      try {
+        await ensureSchema();
+        const existantes = await sql`SELECT nom, sdr, entreprises FROM listes WHERE criteres->>'auto' IS NULL`;
+        const sirensConnus = new Map(); // siren → "liste (sdr)"
+        for (const l of existantes) {
+          for (const e of (l.entreprises || [])) {
+            if (e.siren) sirensConnus.set(String(e.siren), `${l.nom} (${l.sdr})`);
+          }
+        }
+        bruts = bruts.filter(e => {
+          const ou = sirensConnus.get(String(e.siren));
+          if (ou) { doublonsInterListes++; listesTouchees.add(ou); return false; }
+          return true;
+        });
+      } catch (_) {}
+    }
+
     // ── 2. Détail (dirigeants, CA, établissements) — par lots de 5 en parallèle ──
     const nDetail = bruts.length; // toutes les fiches sont détaillées (1 crédit Pappers chacune)
     const details = new Array(bruts.length).fill(null);
@@ -181,6 +202,8 @@ export default async function handler(req, res) {
       filtre_effectif: filtreEffectif,
       fiches_detaillees: nDetail,
       exclues_cessees_ou_liquidation: exclues,
+      doublons_inter_listes: doublonsInterListes,
+      listes_doublons: [...listesTouchees].slice(0, 5),
       credits_estimes: nDetail + 1,
       entreprises
     });

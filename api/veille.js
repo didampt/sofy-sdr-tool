@@ -12,7 +12,7 @@
 // (table veille_etat) → les NOUVEAUX likers sont croisés avec les contacts des listes en veille
 // (match par URL LinkedIn) → signal 🔥 sur la fiche + ligne dans la table signaux + alerte Slack.
 
-import { sql, ensureSchema, verifierToken } from './db.js';
+import { sql, ensureSchema, verifierToken , ajouterHotLead } from './db.js';
 
 export const config = { maxDuration: 120 };
 
@@ -148,9 +148,31 @@ export default async function handler(req, res) {
       if (premierPassage) continue; // 1er passage = référence, pas d'alertes (sinon spam)
 
       // Croisement avec les contacts en veille
+      // Config Hot Leads (une fois par agent)
+      const cfgRowsHL = await sql`SELECT valeur FROM config WHERE cle = 'hotleads'`;
+      const cfgHL = cfgRowsHL.length ? cfgRowsHL[0].valeur : {};
+      const CONCURRENTS = ['partoo', 'brevo', 'guest suite', 'guestsuite', 'simio'];
+
       for (const p of nouveaux) {
         const m = (p.url && index.get(p.url)) || (p.nomNorm && indexNoms.get(p.nomNorm));
-        if (!m) continue;
+        if (!m) {
+          // ── Non matché → Hot Lead auto (sauf employés des concurrents et premier passage) ──
+          if (premierPassage || cfgHL.actif === false || !p.nom) continue;
+          const occ = (p.occupation || '').toLowerCase();
+          if (CONCURRENTS.some(c => occ.includes(c))) continue; // employé d'un concurrent ≠ lead
+          const concurrent = p.post && p.post.includes('/posts/') ? p.post.split('/posts/')[1].split('_')[0] : '';
+          const r2 = await ajouterHotLead({
+            nom_complet: p.nom, email: null, entreprise: '',
+            linkedin_brut: p.brut || null, fonction: p.occupation || '',
+            source: nomAgent, type: 'linkedin',
+            detail: `${p.nom} ${p.reaction ? 'a réagi (' + p.reaction + ')' : 'a interagi'}${concurrent ? ' sur ' + concurrent : ''}`
+          }, cfgHL);
+          if (r2.ajoute) {
+            resume.hotleads = (resume.hotleads || 0) + 1;
+            await envoyerSlack(`🔥 *Nouveau Hot Lead* (LinkedIn) — ${p.nom}${p.occupation ? ' · ' + p.occupation.slice(0, 70) : ''}\n${concurrent ? 'A réagi sur un post *' + concurrent + '*' : nomAgent}\n→ ajouté à « 🔥 Hot Leads (auto) »`);
+          }
+          continue;
+        }
         resume.matches++;
         const quoi = p.reaction ? `a réagi (${p.reaction})` : 'a interagi';
         const surQuoi = p.post ? ` sur ${p.post.includes('/posts/') ? p.post.split('/posts/')[1].split('_')[0] : 'un post'}` : '';

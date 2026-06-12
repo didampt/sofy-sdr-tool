@@ -125,6 +125,71 @@ export async function majSoldeApi(api, solde) {
   } catch (_) {}
 }
 // Renvoie {conso, limite} si la limite mensuelle (€) du SDR est atteinte, sinon null
+// ── Hot Leads automatiques (visiteurs site, likers concurrents, followers) ──
+export async function listeHotLeads(cfgSdr) {
+  const rows = await sql`SELECT id, entreprises FROM listes WHERE criteres->>'auto' = 'hotleads' LIMIT 1`;
+  if (rows.length) return rows[0];
+  const crea = await sql`INSERT INTO listes (nom, sdr, criteres, entreprises, veille)
+    VALUES ('🔥 Hot Leads (auto)', ${cfgSdr || 'didier'}, ${JSON.stringify({ auto: 'hotleads' })}, '[]', TRUE)
+    RETURNING id, entreprises`;
+  return crea[0];
+}
+
+// true si le contact existe dans HubSpot comme CLIENT (lifecyclestage customer) → à exclure des hot leads
+export async function estClientHubspot(email, domaine) {
+  const token = process.env.HUBSPOT_API_KEY;
+  if (!token || (!email && !domaine)) return false;
+  try {
+    const filtres = email
+      ? [{ propertyName: 'email', operator: 'EQ', value: email }]
+      : [{ propertyName: 'email', operator: 'CONTAINS_TOKEN', value: '@' + domaine }];
+    const r = await fetch('https://api.hubapi.com/crm/v3/objects/contacts/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ filterGroups: [{ filters: filtres }], properties: ['lifecyclestage'], limit: 1 })
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || !data.total) return false;
+    const stage = (data.results[0].properties || {}).lifecyclestage || '';
+    return ['customer', 'evangelist'].includes(stage);
+  } catch (_) { return false; }
+}
+
+// Ajoute un profil à la liste Hot Leads (dédup interne par email/linkedin/nom+entreprise)
+export async function ajouterHotLead(profil, cfg) {
+  const hl = await listeHotLeads(cfg && cfg.sdr);
+  const ents = hl.entreprises || [];
+  const cle = p => (p.email || '') + '|' + (p.linkedin || '') + '|' + (p.nom_complet || '') + (p.entreprise || '');
+  const connus = new Set(ents.map(e => cle({
+    email: e.contacts && e.contacts[0] && e.contacts[0].enrich && e.contacts[0].enrich.email,
+    linkedin: e.contacts && e.contacts[0] && e.contacts[0].enrich && e.contacts[0].enrich.linkedin,
+    nom_complet: e.contacts && e.contacts[0] ? `${e.contacts[0].prenom || ''} ${e.contacts[0].nom || ''}`.trim() : '',
+    entreprise: e.nom
+  })));
+  if (connus.has(cle(profil))) return { ajoute: false, raison: 'déjà présent' };
+  if ((cfg && cfg.exclure_hubspot) !== false) {
+    const dom = profil.email && !profil.email.match(/@(gmail|outlook|hotmail|yahoo|orange|wanadoo|free|sfr|laposte|icloud|live)\./) ? profil.email.split('@')[1] : profil.domaine;
+    if (await estClientHubspot(profil.email, dom)) return { ajoute: false, raison: 'client HubSpot' };
+  }
+  const morceaux = (profil.nom_complet || '').split(' ');
+  ents.unshift({
+    nom: profil.entreprise || profil.nom_complet || 'Inconnu',
+    enseigne: profil.entreprise || null, siren: null,
+    site_web: profil.domaine ? 'https://' + profil.domaine : null,
+    source_hotlead: profil.source, date_hotlead: new Date().toISOString(),
+    signal_hot: true,
+    signal: { type: profil.type, source: profil.source, detail: profil.detail, date: new Date().toISOString() },
+    contacts: profil.nom_complet ? [{
+      prenom: morceaux[0] || '', nom: morceaux.slice(1).join(' ') || '',
+      fonction: profil.fonction || '', source: profil.source,
+      enrich: { email: profil.email || null, linkedin: profil.linkedin_brut || null, telephone: null },
+      signal: { type: profil.type, source: profil.source, detail: profil.detail, date: new Date().toISOString() }
+    }] : []
+  });
+  await sql`UPDATE listes SET entreprises = ${JSON.stringify(ents.slice(0, 300))} WHERE id = ${hl.id}`;
+  return { ajoute: true, liste_id: hl.id };
+}
+
 export async function limiteAtteinte(user) {
   if (!sql || !user) return null;
   try {

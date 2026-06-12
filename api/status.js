@@ -14,7 +14,7 @@ const OUTILS = [
   { id: 'slack',       nom: 'Slack Webhook',    env: 'SLACK_WEBHOOK_URL',      role: 'Alertes signaux' },
   { id: 'claude',      nom: 'Claude API',       env: 'ANTHROPIC_API_KEY',      role: 'Scoring, synthèses, emails perso' },
   { id: 'phantom',     nom: 'PhantomBuster',    env: 'PHANTOMBUSTER_API_KEY',  role: 'Signaux LinkedIn' },
-  { id: 'rb2b',        nom: 'RB2B',             env: 'RB2B_API_KEY',           role: 'Visiteurs du site sofy.fr' }
+  { id: 'rb2b',        nom: 'RB2B',             env: 'RB2B_WEBHOOK_SECRET',    role: 'Visiteurs du site sofy.fr (webhook temps réel)' }
 ];
 
 function chercherNombre(obj, motifs) {

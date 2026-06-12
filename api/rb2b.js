@@ -5,7 +5,7 @@
 // Sécurité : l'URL du webhook contient un secret → https://…/api/rb2b?secret=RB2B_WEBHOOK_SECRET
 // Variables Vercel : RB2B_WEBHOOK_SECRET (longue chaîne aléatoire), SLACK_WEBHOOK_URL
 
-import { sql, ensureSchema } from './db.js';
+import { sql, ensureSchema, ajouterHotLead } from './db.js';
 
 export const config = { maxDuration: 30 };
 
@@ -111,7 +111,35 @@ export default async function handler(req, res) {
       }
     }
 
-    return res.status(200).json({ ok: true, recus: visiteurs.length, matches });
+    // ── Visiteurs NON matchés → liste 🔥 Hot Leads (auto), sauf clients HubSpot ──
+    let hotleads = 0;
+    const cfgRows = await sql`SELECT valeur FROM config WHERE cle = 'hotleads'`;
+    const cfgHL = cfgRows.length ? cfgRows[0].valeur : {};
+    if (cfgHL.actif !== false) {
+      for (const vBrut of visiteurs) {
+        const v = {};
+        for (const [k, val] of Object.entries(vBrut || {})) v[k.toLowerCase().replace(/[^a-z]/g, '')] = val;
+        const nomC = `${v.firstname || ''} ${v.lastname || ''}`.trim() || v.fullname || v.name || '';
+        const email = (v.email || v.businessemail || '').toLowerCase() || null;
+        const ent = v.companyname || v.company || '';
+        if (!nomC && !email && !ent) continue;
+        const r2 = await ajouterHotLead({
+          nom_complet: nomC, email,
+          entreprise: ent,
+          domaine: domaineDe(v.companydomain || v.website || v.companywebsite || ''),
+          linkedin_brut: v.linkedinurl || v.linkedin || null,
+          fonction: v.title || v.jobtitle || '',
+          source: 'RB2B', type: 'visite_site',
+          detail: `${nomC || 'Un visiteur'}${ent ? ' (' + ent + ')' : ''} a visité ${v.page || v.url || 'sofy.fr'}`
+        }, cfgHL);
+        if (r2.ajoute) {
+          hotleads++;
+          await envoyerSlack(`🔥 *Nouveau Hot Lead* (visite sofy.fr) — ${nomC || ent}${v.title ? ' · ' + v.title : ''}${ent ? ' · ' + ent : ''}\n→ ajouté à la liste « 🔥 Hot Leads (auto) »`);
+        }
+      }
+    }
+
+    return res.status(200).json({ ok: true, recus: visiteurs.length, matches, hotleads });
   } catch (err) {
     return res.status(500).json({ erreur: 'Erreur RB2B', detail: err.message });
   }

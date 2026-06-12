@@ -1,7 +1,8 @@
 // /api/sms.js — Envoi du SMS de prospection via l'API Sofy (SoReach)
 // POST {to, message, liste_id}
 // Variables Vercel : SOFY_API_KEY + SOFY_SMS_ENDPOINT (URL de l'endpoint d'envoi SoReach)
-// ⚠️ L'expéditeur et la mention STOP sont imposés : "Sofy" + " STOP au 36111" (conformité)
+// ⚠️ Expéditeur "Sofy" imposé + mention STOP selon la destination :
+//    DOM (+590 Gpe, +596 Mtq, +594 Guyane, +262 Réunion/Mayotte) → STOP au 36789 · Métropole → STOP au 36229
 
 import { verifierToken, loggerConso, limiteAtteinte } from './db.js';
 
@@ -23,7 +24,12 @@ export default async function handler(req, res) {
   let { to, message = '', liste_id } = req.body || {};
   to = String(to || '').replace(/[\s.\-()]/g, '');
   if (!to || !message.trim()) return res.status(400).json({ erreur: 'to et message requis' });
-  if (!/STOP/i.test(message)) message = message.trim() + ' STOP au 36111';
+
+  // Numéro STOP selon la destination
+  const estDom = /^(\+|00)?(590|596|594|262)/.test(to.replace(/^0(69\d)/, '590$1'))
+    || /^0(690|691|696|697|694|692|693)/.test(to);
+  const stop = estDom ? 'STOP au 36789' : 'STOP au 36229';
+  message = message.replace(/\s*STOP au \d{5}\.?\s*$/i, '').trim() + ' ' + stop;
 
   try {
     const r = await fetch(endpoint, {
