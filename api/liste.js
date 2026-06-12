@@ -61,6 +61,9 @@ async function detailEntreprise(siren, apiKey) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
+  const { verifierToken } = await import('./db.js');
+  if (!verifierToken(req)) return res.status(401).json({ erreur: 'Connexion requise' });
+
   const apiKey = process.env.PAPPERS_API_KEY;
   if (!apiKey) return res.status(500).json({ erreur: 'PAPPERS_API_KEY manquante dans Vercel' });
 

@@ -6,7 +6,7 @@
 // PUT  {id, entreprises} → mettre à jour les entreprises (ex: après analyses GMB)
 
 import { createHash } from 'crypto';
-import { sql, ensureSchema } from './db.js';
+import { sql, ensureSchema, verifierToken } from './db.js';
 
 function hashCriteres(criteres) {
   // Hash stable : on ne garde que les critères de ciblage (pas le nom de liste ni le SDR)
@@ -30,6 +30,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ erreur: 'Base de données non configurée — créer la base Neon dans Vercel (Storage) puis redéployer' });
   }
   await ensureSchema();
+  if (!verifierToken(req)) return res.status(401).json({ erreur: 'Connexion requise' });
 
   try {
     // ── Lecture ──

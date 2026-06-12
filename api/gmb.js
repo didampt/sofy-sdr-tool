@@ -103,6 +103,9 @@ async function textSearch(q, key) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
+  const { verifierToken } = await import('./db.js');
+  if (!verifierToken(req)) return res.status(401).json({ erreur: 'Connexion requise' });
+
   const key = process.env.GOOGLE_PLACES_API_KEY;
   if (!key) return res.status(500).json({ erreur: 'GOOGLE_PLACES_API_KEY manquante dans Vercel' });
 
