@@ -205,6 +205,19 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
   <div class="wf-foot"><button class="btn btn-primary" onclick="document.getElementById('info-modal').style.display='none'">Fermer</button></div>
  </div>
 </div>
+<div id="sms-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:901;align-items:center;justify-content:center">
+ <div class="wf-panel" style="width:min(540px,94vw)">
+  <div class="wf-head">💬 SMS SoReach — <span id="sms-dest"></span></div>
+  <div style="padding:0 24px">
+   <textarea class="field" id="sms-texte" rows="5" style="width:100%;resize:vertical" oninput="document.getElementById('sms-count').textContent=this.value.length"></textarea>
+   <div class="hint" style="margin-top:6px"><span id="sms-count">0</span> caractères · expéditeur « Sofy » · « STOP au 36111 » ajouté si absent · 1 crédit SoReach</div>
+  </div>
+  <div class="wf-foot">
+   <button class="btn" style="background:var(--paper)" onclick="document.getElementById('sms-modal').style.display='none'">Annuler</button>
+   <button class="btn btn-primary" onclick="envoyerSms()">📤 Envoyer</button>
+  </div>
+ </div>
+</div>
 <div id="login-overlay">
  <div class="login-card">
   <img src="/logo-full.png" alt="Sofy" onerror="this.style.display='none'">
@@ -228,7 +241,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
     <button class="nav-btn active" data-view="wizard" onclick="nav('wizard',this)">🎯 Nouvelle liste</button>
     <button class="nav-btn" data-view="results" onclick="nav('results',this)">📞 Résultats</button>
     <button class="nav-btn" data-view="history" onclick="nav('history',this);chargerHistorique()">🗂 Historique</button>
-    <button class="nav-btn" data-view="mapping" onclick="nav('mapping',this)">⚙️ Envois & mapping</button>
+    <button class="nav-btn" data-view="mapping" onclick="nav('mapping',this);chargerEnvois()">⚙️ Envois & mapping</button>
     <button class="nav-btn" data-view="stats" onclick="nav('stats',this);chargerStats()">📊 Statistiques</button>
     <button class="nav-btn" data-view="params" onclick="nav('params',this);chargerSdrs();chargerTarifs()">⚙️ Paramètres</button>
     <button class="nav-btn" data-view="settings" onclick="nav('settings',this)">🔌 Connexions</button>
@@ -395,6 +408,29 @@ Spot-Hit</textarea>
       </div>
 
       <!-- LEMLIST -->
+      <div class="map-card" style="border:2px solid var(--accent)">
+        <h2>⚡ Connexion réelle des envois</h2>
+        <div class="role">Les seuls champs nécessaires au fonctionnement des boutons ✈️ / 🤝 / 💬 des fiches. Le reste de la page documente les variables envoyées.</div>
+        <div class="map-sub">Lemlist — IDs de campagnes (Lemlist → ouvre la campagne → l'ID est dans l'URL, commence par "cam_")</div>
+        <div class="row3">
+          <input class="field" id="cfg-lem-soview" placeholder="Campagne Soview (cam_…)">
+          <input class="field" id="cfg-lem-soconnect" placeholder="Campagne SoConnect (cam_…)">
+          <input class="field" id="cfg-lem-soreach" placeholder="Campagne SoReach (cam_…)">
+        </div>
+        <div class="row3" style="margin-top:10px">
+          <input class="field" id="cfg-lem-defaut" placeholder="Campagne par défaut (si pas de score)">
+          <div class="toggle-row" style="margin:0"><input type="checkbox" id="cfg-lem-routage" checked><label for="cfg-lem-routage">Routage auto par produit dominant</label></div>
+          <span></span>
+        </div>
+        <div class="map-sub">HubSpot — transaction (Paramètres HubSpot → Objets → Transactions → Pipelines : les IDs y sont affichés)</div>
+        <div class="row3">
+          <input class="field" id="cfg-hub-pipeline" placeholder="Pipeline (ex : default)">
+          <input class="field" id="cfg-hub-stage" placeholder="Étape (ex : appointmentscheduled)">
+          <input class="field" id="cfg-hub-owner" placeholder="Owner ID de l'AE (optionnel)">
+        </div>
+        <div class="save-bar"><button class="btn btn-primary" onclick="sauverEnvois()">💾 Enregistrer</button></div>
+      </div>
+
       <div class="map-card">
         <h2>✈️ Lemlist — envoi en séquence</h2>
         <div class="role">Déclenché quand le SDR ne joint pas le contact. Le lead part dans la campagne choisie avec toutes ses variables de personnalisation.</div>
@@ -580,7 +616,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v42';
+const VERSION='v43';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -985,6 +1021,7 @@ function ficheReal(e,i){
     </div>
     <div class="badges">
      ${e.signal_hot?'<span class="badge b-signal">🔥 SIGNAL</span>':''}
+     ${e.lemlist_envoye?'<span class="badge b-new">✈️ Lemlist ✓</span>':''}${e.hubspot_envoye?'<span class="badge b-new">🤝 HubSpot ✓</span>':''}${e.sms_envoye?'<span class="badge b-new">💬 SMS ✓</span>':''}
      ${e.effectif?`<span class="badge b-gmb">👥 ${e.effectif}</span>`:''}
      ${ca?`<span class="badge b-new">CA ${ca}</span>`:''}
      ${e.nb_etablissements?`<span class="badge b-gmb">🏬 ${e.nb_etablissements} établissement${e.nb_etablissements>1?'s':''}</span>`:''}
@@ -1004,7 +1041,7 @@ function ficheReal(e,i){
     ${(!(e.gmb&&e.gmb.telephone))&&e.ia&&e.ia.telephone?`<div class="contact-line">☎️ Standard : <b>${e.ia.telephone}</b>${telBtns(e.ia.telephone)} <span class="badge b-signal">trouvé sur le web (IA) — pas de fiche GMB</span></div>`:''}
     ${(!(e.gmb&&e.gmb.trouve))&&e.ia&&e.ia.adresse?`<div class="contact-line" style="color:var(--ink-soft)">📍 ${e.ia.adresse} <span class="badge b-gmb">source web</span></div>`:''}
     ${contacts.map((c,j)=>contactHtml(c,i,j)).join('')}
-    <div class="act-row"><button class="act act-call" onclick="lancerFiche(${i})" title="Pipeline complet sur cette fiche uniquement">🚀 Fiche</button><button class="act act-export" id="gmbbtn${i}" onclick="analyserFiche(${i})" title="GMB, puis IA automatiquement si introuvable">${!e.gmb?'⭐ Analyser (GMB + IA)':'↻ Analyser'}</button><button class="act act-copy" onclick="(async()=>{if(REAL[${i}]._busy){toast('Analyse en cours ⏳');return;}REAL[${i}]._busy=true;rerender(${i});try{toast('👥 Recherche des personas (IA)…');await chercherPersonas(${i});}finally{REAL[${i}]._busy=false;rerender(${i});}})()" title="Chercher les postes ciblés de la liste (Dir Commercial, etc.) via LinkedIn public">👥 Personas</button></div>
+    <div class="act-row"><button class="act act-call" onclick="lancerFiche(${i})" title="Pipeline complet sur cette fiche uniquement">🚀 Fiche</button><button class="act act-export" id="gmbbtn${i}" onclick="analyserFiche(${i})" title="GMB, puis IA automatiquement si introuvable">${!e.gmb?'⭐ Analyser (GMB + IA)':'↻ Analyser'}</button><button class="act act-copy" onclick="(async()=>{if(REAL[${i}]._busy){toast('Analyse en cours ⏳');return;}REAL[${i}]._busy=true;rerender(${i});try{toast('👥 Recherche des personas (IA)…');await chercherPersonas(${i});}finally{REAL[${i}]._busy=false;rerender(${i});}})()" title="Chercher les postes ciblés de la liste (Dir Commercial, etc.) via LinkedIn public">👥 Personas</button><button class="act act-lemlist" onclick="envoyerLemlist(${i})" title="Pas de décroché : envoyer en séquence email (campagne selon produit dominant)">✈️ Lemlist</button><button class="act act-hubspot" onclick="envoyerHubspot(${i})" title="RDV pris : contact + synthèse en note + transaction pour l'AE">🤝 RDV → HubSpot</button><button class="act act-call" onclick="ouvrirSms(${i})" title="SMS SoReach (texte IA modifiable)">💬 SMS</button></div>
     ${e.linkedin_entreprise?`<div class="contact-line">🏢 <a href="${e.linkedin_entreprise.startsWith('http')?e.linkedin_entreprise:'https://'+e.linkedin_entreprise}" target="_blank">Page LinkedIn entreprise ✓</a></div>`:''}
     ${gmbHtml(e.gmb)}
     ${e.score?`
@@ -1525,6 +1562,129 @@ async function lancerWaterfall(){
  document.getElementById('wf-fermer').disabled=false;
  majCoutListe();
  persister();
+}
+
+/* ───────── ENVOIS : LEMLIST / HUBSPOT / SMS ───────── */
+function produitDominant(e){
+ if(!e.score||!e.score.scores)return null;
+ const s=e.score.scores;
+ const max=Math.max(s.soview||0,s.soconnect||0,s.soreach||0);
+ if(max<=0)return null;
+ return max===(s.soview||0)?'soview':max===(s.soconnect||0)?'soconnect':'soreach';
+}
+function varsLemlist(e,c){
+ const g=e.gmb||{},sc=e.score||{},prod=produitDominant(e);
+ return {
+  companyName:e.enseigne_ia||e.enseigne||e.nom,
+  phone:(c.enrich&&c.enrich.telephone)||g.telephone||'',
+  linkedinUrl:(c.enrich&&c.enrich.linkedin)||'',
+  gmb_note:g.trouve?String(g.note_moyenne):'',
+  gmb_pire_fiche:g.trouve&&g.pire_fiche?`${g.pire_fiche.nom} (${g.pire_fiche.note}★)`:'',
+  avis_negatif:g.avis_negatif?g.avis_negatif.texte.slice(0,180):'',
+  gmb_concurrents:g.concurrents?String(g.concurrents.note_moyenne):'',
+  signal:(c.signal&&c.signal.detail)||(e.signal&&e.signal.detail)||'',
+  produit_score:prod?`${prod} ${sc.scores[prod]}`:'',
+  accroche:sc.accroche||'',
+  objet_perso:sc.email?sc.email.objet:'',
+  email_perso:sc.email?sc.email.corps:''
+ };
+}
+async function envoyerLemlist(i){
+ const e=REAL[i];
+ const c=contactsDe(e).find(x=>x.enrich&&x.enrich.email);
+ if(!c){toast('Aucun email sur cette fiche — lance 🚀 Fiche d\'abord');return;}
+ const prod=produitDominant(e);
+ if(!confirm(`✈️ Envoyer ${c.prenom} ${c.nom} (${c.enrich.email}) en séquence Lemlist ?\nCampagne : ${prod?prod.toUpperCase()+' (produit dominant)':'par défaut'}`))return;
+ const r=await api('/api/lemlist',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({liste_id:state.savedId,produit:prod,contact:{email:c.enrich.email,prenom:c.prenom,nom:c.nom},variables:varsLemlist(e,c)})});
+ const d=await r.json();
+ if(!d.ok){toast('Lemlist : '+(d.erreur||'')+(d.detail?' — '+d.detail:''));return;}
+ e.lemlist_envoye=true;rerender(i);persister();
+ toast('✈️ '+c.prenom+' '+c.nom+' → séquence '+(prod||'défaut')+' ✓');
+}
+async function envoyerHubspot(i){
+ const e=REAL[i];
+ const c=contactsDe(e).find(x=>x.enrich&&x.enrich.email)||contactsDe(e)[0];
+ if(!c||!c.nom){toast('Aucun contact identifié sur cette fiche');return;}
+ const ent=e.enseigne_ia||e.enseigne||e.nom;
+ const prod=produitDominant(e);
+ if(!confirm(`🤝 RDV pris avec ${c.prenom} ${c.nom} (${ent}) ?\n→ Contact + synthèse en note + transaction HubSpot pour l'AE.`))return;
+ const g=e.gmb||{},sc=e.score||{};
+ const note=[
+  sc.synthese?'📋 SYNTHÈSE : '+sc.synthese:'',
+  (sc.signaux&&sc.signaux.length)?'🔥 SIGNAUX : '+sc.signaux.join(' · '):'',
+  g.trouve?`⭐ GMB : ${g.note_moyenne}★ (${g.total_avis} avis) · pire fiche ${g.pire_fiche.nom} ${g.pire_fiche.note}★`:'',
+  'Source : Sofy Scrap · SDR '+(state.user?state.user.nom:'')+' · '+new Date().toLocaleDateString('fr-FR')
+ ].filter(Boolean).join('\n\n');
+ const r=await api('/api/hubspot',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({
+   contact:{email:c.enrich&&c.enrich.email,prenom:c.prenom,nom:c.nom,mobile:c.enrich&&c.enrich.telephone,fonction:(c.enrich&&c.enrich.fonction)||c.fonction,linkedin:c.enrich&&c.enrich.linkedin},
+   entreprise:{nom:ent,site:domaineDe(e)},
+   note,
+   deal:{nom:`${ent} — ${prod?prod.toUpperCase():'Sofy'} — via Sofy Scrap`,produit:prod}
+  })});
+ const d=await r.json();
+ if(!d.ok){toast('HubSpot : '+(d.erreur||'')+(d.detail?' — '+d.detail:''));return;}
+ e.hubspot_envoye=true;rerender(i);persister();
+ toast('🤝 '+(d.dejaPresent?'Contact mis à jour':'Contact créé')+(d.dealId?' + transaction ✓':'')+(d.avertissement?' ⚠️ '+d.avertissement:''));
+}
+let SMS_CTX=null;
+function ouvrirSms(i){
+ const e=REAL[i];
+ const c=contactsDe(e).find(x=>x.enrich&&x.enrich.telephone&&estMobile(x.enrich.telephone));
+ const mobile=(c&&c.enrich.telephone)||(e.gmb&&e.gmb.telephone&&estMobile(e.gmb.telephone)?e.gmb.telephone:null);
+ if(!mobile){toast('Aucun mobile sur cette fiche (FullEnrich/Kaspr d\'abord)');return;}
+ SMS_CTX={i,mobile};
+ const qui=c?`${c.prenom} ${c.nom}`:(e.enseigne_ia||e.enseigne||e.nom);
+ document.getElementById('sms-dest').textContent=`${qui} · ${mobile}`;
+ const defaut=(e.score&&e.score.sms)||`Bonjour${c?' '+c.prenom:''}, ${state.user?state.user.nom:'l\'équipe'} de Sofy. ${e.gmb&&e.gmb.trouve?`Vu votre note Google (${String(e.gmb.note_moyenne).replace('.',',')}★) — on aide les pros à reprendre la main sur leurs avis.`:'On aide les pros à être plus visibles sur Google.'} Dispo 10 min cette semaine ?`;
+ const ta=document.getElementById('sms-texte');
+ ta.value=defaut;
+ document.getElementById('sms-count').textContent=ta.value.length;
+ document.getElementById('sms-modal').style.display='flex';
+}
+async function envoyerSms(){
+ if(!SMS_CTX)return;
+ const message=document.getElementById('sms-texte').value.trim();
+ if(!message){toast('Message vide');return;}
+ const r=await api('/api/sms',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({to:SMS_CTX.mobile,message,liste_id:state.savedId})});
+ const d=await r.json();
+ if(!d.ok){toast('SMS : '+(d.erreur||'')+(d.detail?' — '+d.detail:''));return;}
+ document.getElementById('sms-modal').style.display='none';
+ REAL[SMS_CTX.i].sms_envoye=true;rerender(SMS_CTX.i);persister();majCoutListe();
+ toast('💬 SMS envoyé via SoReach ✓');
+}
+
+/* ───────── CONFIG ENVOIS ───────── */
+async function chargerEnvois(){
+ try{
+  const r=await api('/api/config');
+  const d=await r.json();
+  const lem=(d.config&&d.config.lemlist)||{},hub=(d.config&&d.config.hubspot)||{};
+  document.getElementById('cfg-lem-soview').value=lem.camp_soview||'';
+  document.getElementById('cfg-lem-soconnect').value=lem.camp_soconnect||'';
+  document.getElementById('cfg-lem-soreach').value=lem.camp_soreach||'';
+  document.getElementById('cfg-lem-defaut').value=lem.camp_defaut||'';
+  document.getElementById('cfg-lem-routage').checked=lem.routage!==false;
+  document.getElementById('cfg-hub-pipeline').value=hub.pipeline||'';
+  document.getElementById('cfg-hub-stage').value=hub.stage||'';
+  document.getElementById('cfg-hub-owner').value=hub.owner||'';
+ }catch(_){}
+}
+async function sauverEnvois(){
+ const lem={camp_soview:document.getElementById('cfg-lem-soview').value.trim(),
+  camp_soconnect:document.getElementById('cfg-lem-soconnect').value.trim(),
+  camp_soreach:document.getElementById('cfg-lem-soreach').value.trim(),
+  camp_defaut:document.getElementById('cfg-lem-defaut').value.trim(),
+  routage:document.getElementById('cfg-lem-routage').checked};
+ const hub={pipeline:document.getElementById('cfg-hub-pipeline').value.trim(),
+  stage:document.getElementById('cfg-hub-stage').value.trim(),
+  owner:document.getElementById('cfg-hub-owner').value.trim()};
+ const r1=await api('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({cle:'lemlist',valeur:lem})});
+ const r2=await api('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({cle:'hubspot',valeur:hub})});
+ const d1=await r1.json(),d2=await r2.json();
+ toast(d1.ok&&d2.ok?'⚡ Connexion réelle enregistrée ✓':(d1.erreur||d2.erreur||'Erreur'));
 }
 
 /* ───────── DÉMO (conservée pour référence design) ───────── */
