@@ -10,7 +10,7 @@ const OUTILS = [
   { id: 'hubspot',     nom: 'HubSpot',          env: 'HUBSPOT_API_KEY',        role: 'Dédoublonnage CRM + transaction AE' },
   { id: 'lemlist',     nom: 'Lemlist',          env: 'LEMLIST_API_KEY',        role: 'Envoi en séquence email' },
   { id: 'ringover',    nom: 'Ringover',         env: 'RINGOVER_API_KEY',       role: 'Appel click-to-call' },
-  { id: 'sofy',        nom: 'Sofy (SoReach)',   env: 'SOFY_API_KEY',           role: 'Envoi SMS / RCS' },
+  { id: 'sofy',        nom: 'Sofy (SoReach)',   env: 'SOFY_API_KEY_ID',        env2: 'SOFY_API_KEY_SECRET', role: 'Envoi SMS via api.sofy.fr' },
   { id: 'slack',       nom: 'Slack Webhook',    env: 'SLACK_WEBHOOK_URL',      role: 'Alertes signaux' },
   { id: 'claude',      nom: 'Claude API',       env: 'ANTHROPIC_API_KEY',      role: 'Scoring, synthèses, emails perso' },
   { id: 'phantom',     nom: 'PhantomBuster',    env: 'PHANTOMBUSTER_API_KEY',  role: 'Signaux LinkedIn' },
@@ -41,7 +41,8 @@ export default async function handler(req, res) {
     nom: o.nom,
     role: o.role,
     variable: o.env,
-    configuree: !!(process.env[o.env] && process.env[o.env].trim())
+    variable_2: o.env2 || undefined,
+    configuree: !!(process.env[o.env] && process.env[o.env].trim()) && (!o.env2 || !!(process.env[o.env2] && process.env[o.env2].trim()))
   }));
 
   // ── Soldes ──
