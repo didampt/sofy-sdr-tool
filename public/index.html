@@ -233,7 +233,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
   <div style="padding:0 24px 10px"><div class="prog-bar"><span id="wfg-bar" style="width:0%"></span></div><div style="display:flex;justify-content:space-between;font-size:12.5px;font-weight:700;margin-top:6px"><span id="wfg-label" style="color:#1D4ED8">Démarrage…</span><span id="wfg-pct" class="prog-pct">0 %</span></div></div>
   <div class="wf-cols"><span>Fiche</span><span style="text-align:center">GMB</span><span style="text-align:center">IA 🤖</span><span style="text-align:center">👥</span><span style="text-align:center">Email</span><span style="text-align:center">📱 FE</span><span style="text-align:center">🎯</span></div>
   <div class="wf-body" id="wf-rows"></div>
-  <div class="wf-foot"><button class="btn btn-primary" id="wf-fermer" disabled onclick="document.getElementById('wf-modal').style.display='none'">Fermer</button></div>
+  <div class="wf-foot"><button class="btn" id="wf-stop" style="background:#FEE2E2;color:#B91C1C;font-weight:700" onclick="WF_STOP=true;this.disabled=true;this.textContent='⏹ Arrêt après la fiche en cours…'">⏹ Stop</button><button class="btn btn-primary" id="wf-fermer" disabled onclick="document.getElementById('wf-modal').style.display='none'">Fermer</button></div>
  </div>
 </div>
 <div id="info-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:910;align-items:center;justify-content:center" onclick="if(event.target===this)this.style.display='none'">
@@ -665,7 +665,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v50';
+const VERSION='v51';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1686,15 +1686,19 @@ async function lancerWaterfall(){
  const nbContacts=REAL.reduce((s,e)=>s+contactsDe(e).filter(c=>c.nom&&!c.enrich).length,0);
  if(!confirm(`🚀 Lancer l'enrichissement sur ${REAL.length} fiches ?\n\n1. GMB + domaine + ☎️ standard : ~${nbGmb} fiches\n2. IA site web/nom commercial (si GMB échoue) : jusqu'à ${nbIa} appels (~0,02 €)\n3. Emails Dropcontact : ~${nbContacts} crédits\n4. Personas (${jobsCibles().length?jobsCibles().join(', '):'aucun sélectionné'}) : IA LinkedIn (~0,05-0,15 €/fiche)\n5. FullEnrich (repli email + MOBILE) : contacts incomplets uniquement — ⚠️ un mobile coûte ~10 crédits FullEnrich\n5bis. Mobile : IA trouve le profil LinkedIn (~0,01 €) puis Kaspr (1 crédit tél. + 1 crédit export)\n6. Scoring + synthèse d'appel + email perso (IA, ~0,03 €/fiche)\n\n💡 Exclus d'abord les fiches inutiles (🗑).`))return;
  ouvrirWfModal();
- let emailsOk=0,emailsTentes=0;
+ WF_STOP=false;
+ const btnStop=document.getElementById('wf-stop');if(btnStop){btnStop.disabled=false;btnStop.textContent='⏹ Stop';}
+ let emailsOk=0,emailsTentes=0,arrete=false;
  for(let i=0;i<REAL.length;i++){
+  if(WF_STOP){arrete=true;break;}
   const lbl=document.getElementById('wfg-label');if(lbl)lbl.textContent=(enseigneDe(REAL[i])||REAL[i].nom)+' · fiche '+(i+1)+'/'+REAL.length;
   const r=await pipelineFiche(i);
   emailsTentes+=r.tentes;emailsOk+=r.ok;
   const p=Math.round((i+1)/REAL.length*100),b=document.getElementById('wfg-bar');
   if(b){b.style.width=p+'%';document.getElementById('wfg-pct').textContent=p+' %';}
  }
- document.getElementById('wf-titre').textContent=`🏁 Enrichissement terminé — ${emailsOk}/${emailsTentes} nouveaux emails`;
+ document.getElementById('wf-titre').textContent=arrete?`⏹ Enrichissement arrêté — ${emailsOk} email(s) trouvés (les fiches faites sont conservées)`:`🏁 Enrichissement terminé — ${emailsOk}/${emailsTentes} nouveaux emails`;
+ if(document.getElementById('wf-stop'))document.getElementById('wf-stop').disabled=true;
  // Rapport au SDR (Slack + email si Resend configuré)
  try{
   const nbE=REAL.reduce((a,e)=>a+contactsDe(e).filter(c=>c.enrich&&c.enrich.email).length,0);
@@ -1771,7 +1775,7 @@ async function envoyerHubspot(i){
  e.hubspot_envoye=true;rerender(i);persister();
  toast('🤝 '+(d.dejaPresent?'Contact mis à jour':'Contact créé')+(d.dealId?' + transaction ✓':'')+(d.avertissement?' ⚠️ '+d.avertissement:''));
 }
-let SMS_CTX=null;
+let SMS_CTX=null;let WF_STOP=false;
 function ouvrirSms(i){
  const e=REAL[i];
  const dispo=[];
