@@ -35,14 +35,21 @@ Analyse et produis :
    - SoReach ↑ si : activité avec relances clients (entretiens, révisions auto, rendez-vous), base clients probable (ancienneté, volume d'avis), multi-établissements
 2. **Score global** = potentiel commercial d'ensemble (pondère aussi taille/CA)
 
-⚡ SIGNAL CHAUD (si présent dans les données) : si l'entreprise a un champ "signal" de source "RB2B" (= elle a visité sofy.fr) ou un signal LinkedIn, c'est un prospect TIÈDE À CHAUD, pas une approche à froid. Dans ce cas :
-   - Monte le score global (un visiteur du site est bien plus intéressé qu'un nom tiré de Pappers)
-   - Surtout, REGARDE les pages visitées ("pages_visitees") pour orienter le produit dominant :
-     • page contenant "so-reach" / "sms" / "rcs" → booste fortement **SoReach** (il s'intéresse aux campagnes SMS)
-     • page contenant "so-view" / "avis" → booste fortement **Soview**
-     • page contenant "so-connect" / "budy" / "messaging" → booste fortement **SoConnect**
-     • page "demo" / "tarifs" / "pricing" → intention d'achat forte, monte le score global
-   - L'accroche, la synthèse et l'email DOIVENT mentionner subtilement ce signal ("j'ai vu que vous vous intéressiez à…", "suite à votre visite sur notre page X") — c'est un warm call, le SDR a un prétexte naturel. Reste élégant, ne dis pas "notre logiciel espion vous a tracké".
+⚡⚡ RÈGLE PRIORITAIRE — INTENTION DÉCLARÉE PAR LA PAGE VISITÉE (si champ "signal" de source "RB2B" ou "pages_visitees" présent) :
+Le prospect a visité sofy.fr. La/les page(s) visitée(s) révèlent SON intérêt explicite — c'est le signal le PLUS FORT, il PRIME sur ton analyse des données GMB/Pappers. Le produit correspondant à la page DOIT avoir le score le plus élevé et être l'angle de TOUT (synthèse, accroche, email, SMS).
+
+Cartographie page → produit dominant (regarde "pages_visitees", la page la plus spécifique gagne ; ignore "/" générique pour choisir) :
+ • "/so-reach-sms"  → **SoReach (SMS)** est LE produit. SoReach doit être le score le plus haut. Angle = campagnes SMS marketing. NE PARLE PAS de Google My Business / fiche Google en premier, même si la fiche GMB est mauvaise — il est venu pour le SMS.
+ • "/so-reach-rcs"  → **SoReach (RCS)** est LE produit. Score SoReach le plus haut. Angle = messagerie RCS enrichie (logo, images, boutons). Mentionne RCS spécifiquement, pas juste SMS.
+ • "/so-view" ou "/avis" → **Soview** est LE produit. Score Soview le plus haut. Angle = fiche Google My Business, avis, visibilité locale.
+ • "/so-connect" ou "/budy" ou "/messaging" → **SoConnect** est LE produit. Score SoConnect le plus haut. Angle = messagerie professionnelle unifiée + agent IA conversationnel Budy (répond aux clients 24/7).
+ • UNIQUEMENT "/" ou "/demo" ou "/tarifs" (pas de page produit précise) → pas d'intention produit claire : là tu peux utiliser ton analyse GMB/Pappers classique pour choisir l'angle, et "/demo"/"/tarifs" = forte intention d'achat → monte le score global.
+
+Conséquences OBLIGATOIRES quand une page produit précise est visitée :
+   - Le score du produit visité = le plus élevé des trois (ex : visite /so-reach-sms → soreach > soview ET soreach > soconnect, même si la fiche GMB est nulle).
+   - Monte le score global (un visiteur est bien plus chaud qu'un nom froid de Pappers).
+   - Synthèse, accroche, objet d'email, corps d'email ET SMS sont CENTRÉS sur le produit de la page. Exemple visite /so-reach-sms : l'email parle de campagnes SMS pour fidéliser/relancer leurs clients, PAS de leur fiche Google.
+   - Mentionne le signal avec élégance ("j'ai vu que les campagnes SMS vous intéressaient", "suite à votre passage sur notre page SMS") — warm call, prétexte naturel. Ne dis JAMAIS "notre outil vous a tracké".
 3. **Signaux** : liste courte des éléments concrets exploitables (max 4), formulés pour un SDR
 4. **Synthèse d'appel** (4-6 phrases) : qui appeler, contexte de l'entreprise, LE point de douleur n°1 avec les chiffres exacts (note, avis, concurrents), et l'angle d'attaque produit recommandé
 5. **Accroche d'appel** : LA première phrase que le SDR peut dire après bonjour (naturelle, factuelle, pas commerciale agressive)
