@@ -241,6 +241,16 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
 </style>
 </head>
 <body>
+<div id="confirm-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:1200;align-items:center;justify-content:center;padding:20px">
+ <div style="background:#fff;border-radius:18px;max-width:440px;width:100%;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+  <div id="cm-titre" style="font-family:'Space Grotesk';font-size:18px;font-weight:600;margin-bottom:10px"></div>
+  <div id="cm-corps" style="font-size:14px;color:var(--ink-soft);line-height:1.55;white-space:pre-line;margin-bottom:20px"></div>
+  <div style="display:flex;gap:10px;justify-content:flex-end">
+   <button id="cm-annuler" class="btn" style="background:#F1F5F9;color:var(--ink);font-weight:600">Annuler</button>
+   <button id="cm-ok" class="btn btn-primary" style="font-weight:700">🚀 Lancer</button>
+  </div>
+ </div>
+</div>
 <div id="wf-modal">
  <div class="wf-panel">
   <div class="wf-head" id="wf-titre">🚀 Enrichissement en cours…</div>
@@ -680,7 +690,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v66';
+const VERSION='v67';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -2188,6 +2198,19 @@ async function basculerVeille(id,activer){
 }
 
 function cleSignal(e){return ((e.signal&&e.signal.date)?e.signal.date:'')+(e.nom||'');}
+function confirmSofy(titre,corps,labelOk){
+ return new Promise(resolve=>{
+  const m=document.getElementById('confirm-modal');
+  document.getElementById('cm-titre').textContent=titre;
+  document.getElementById('cm-corps').textContent=corps;
+  document.getElementById('cm-ok').textContent=labelOk||'🚀 Lancer';
+  m.style.display='flex';
+  const ok=document.getElementById('cm-ok'),an=document.getElementById('cm-annuler');
+  const fermer=v=>{m.style.display='none';ok.onclick=null;an.onclick=null;resolve(v);};
+  ok.onclick=()=>fermer(true);
+  an.onclick=()=>fermer(false);
+ });
+}
 async function enrichirHotLeads(indices){
  // Réutilise le modal de progression global + pipelineFiche (déjà testés)
  document.getElementById('wf-modal').style.display='flex';
@@ -2223,6 +2246,16 @@ async function enrichirHotLeads(indices){
  document.getElementById('wf-fermer').disabled=false;
  if(document.getElementById('wf-stop'))document.getElementById('wf-stop').disabled=true;
  persister();majCoutListe();
+ // Si UNE seule fiche a été enrichie (cas lien Slack) → ferme le modal et ouvre/scroll la fiche
+ if(indices.length===1){
+  const idx=indices[0];
+  setTimeout(()=>{
+   document.getElementById('wf-modal').style.display='none';
+   const row=document.getElementById('f'+idx);
+   if(row){row.scrollIntoView({behavior:'smooth',block:'center'});row.style.transition='box-shadow .4s';row.style.boxShadow='0 0 0 3px var(--accent)';setTimeout(()=>row.style.boxShadow='',2800);}
+   toast('✅ '+(enseigneDe(REAL[idx])||REAL[idx].nom)+' enrichi — fiche prête');
+  },900);
+ }
 }
 async function ouvrirListe(id,cibleFiche){
  try{
@@ -2246,7 +2279,11 @@ async function ouvrirListe(id,cibleFiche){
     if(row){row.scrollIntoView({behavior:'smooth',block:'center'});row.style.transition='box-shadow .4s';row.style.boxShadow='0 0 0 3px var(--accent)';setTimeout(()=>row.style.boxShadow='',2500);}
     if(e.a_enrichir&&!e.score&&!verrouRecent(e)){
      // Validation manuelle avant d'enrichir (évite de brûler des crédits sur un visiteur hors cible)
-     setTimeout(()=>{if(confirm(`🔥 Lancer l'enrichissement de « ${enseigneDe(e)||e.nom} » ?\n\nSecteur : ${e.secteur_rb2b||'?'} · ${e.ville||''} ${e.region||''}\nPages visitées : ${((e.pages_visitees&&e.pages_visitees.length)?e.pages_visitees.join(', '):'sofy.fr')}\n\n💡 Annule si ce visiteur est hors cible (site international, etc.) pour économiser des crédits.`)){enrichirHotLeads([idx]);}else{toast('Enrichissement annulé — aucun crédit consommé');}},700);
+     setTimeout(async()=>{
+      const pagesTxt=(e.pages_visitees&&e.pages_visitees.length)?e.pages_visitees.join(', '):'sofy.fr';
+      const ok=await confirmSofy(`🔥 Enrichir « ${enseigneDe(e)||e.nom} » ?`,`Secteur : ${e.secteur_rb2b||'?'} · ${e.ville||''} ${e.region||''}\nPages visitées : ${pagesTxt}\n\n💡 Annule si ce visiteur est hors cible (site international, etc.) pour économiser des crédits.`,'🚀 Lancer l\'enrichissement');
+      if(ok){enrichirHotLeads([idx]);}else{toast('Enrichissement annulé — aucun crédit consommé');}
+     },700);
     }else if(e.score){toast(`✅ ${enseigneDe(e)||e.nom} est déjà enrichi`);}
     else if(verrouRecent(e)){toast(`🔒 ${e.enrichi_par} enrichit déjà cette fiche`);}
    }else{toast('Fiche introuvable dans la liste (peut-être déjà traitée)');}
