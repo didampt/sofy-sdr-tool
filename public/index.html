@@ -693,7 +693,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v71';
+const VERSION='v72';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1150,7 +1150,8 @@ function ficheReal(e,i){
  const ca=e.chiffre_affaires?Number(e.chiffre_affaires).toLocaleString('fr-FR')+' €':null;
  const contacts=contactsDe(e);
  const siteWeb=domaineDe(e);
- const titre=contacts.length&&contacts[0].nom?`${contacts[0].prenom} ${contacts[0].nom} — ${(contacts[0].enrich&&contacts[0].enrich.fonction)||contacts[0].fonction||'Dirigeant'}`:e.nom;
+ const estHL=e.source_hotlead==='RB2B'||(e.signal&&e.signal.source==='RB2B');
+ const titre=(!estHL&&contacts.length&&contacts[0].nom)?`${contacts[0].prenom} ${contacts[0].nom} — ${(contacts[0].enrich&&contacts[0].enrich.fonction)||contacts[0].fonction||'Dirigeant'}`:(enseigneDe(e)||e.nom);
  const aEmail=contacts.some(c=>c.enrich&&c.enrich.email);
  const s=e.score&&e.score.scores;
  const tel=premierTel(e);
@@ -1160,7 +1161,7 @@ function ficheReal(e,i){
   <div class="fiche-head" onclick="toggleFiche(${i})" title="Cliquer pour ${open?'replier':'déployer'} la fiche">
    <div style="flex:1;min-width:0">
     <div class="lead-name">${titre}</div>
-    <div class="lead-meta">${contacts.length&&contacts[0].nom?e.nom+' · ':''}${e.enseigne&&e.enseigne!==e.nom?'Enseigne : '+e.enseigne+' · ':''}${e.naf}${e.nb_etablissements?' · '+e.nb_etablissements+' établissement'+(e.nb_etablissements>1?'s':''):''}${e.effectif?' · '+String(e.effectif).replace(/ salariés?$/i,'')+' salariés':''}${ca?' · CA '+ca:''} · ${e.ville||'—'}</div>
+    <div class="lead-meta">${(!estHL&&contacts.length&&contacts[0].nom)?e.nom+' · ':''}${e.enseigne&&e.enseigne!==e.nom?'Enseigne : '+e.enseigne+' · ':''}${e.naf}${e.nb_etablissements?' · '+e.nb_etablissements+' établissement'+(e.nb_etablissements>1?'s':''):''}${e.effectif?' · '+String(e.effectif).replace(/ salariés?$/i,'')+' salariés':''}${ca?' · CA '+ca:''} · ${e.ville||'—'}</div>
     <div class="badges">
      ${e.gmb&&e.gmb.trouve?`<span class="badge b-gmb">GMB ${String(e.gmb.note_moyenne).replace('.',',')} ★ (${e.gmb.total_avis} avis)</span>`:''}
      ${e.signal_hot?'<span class="badge b-signal">🔥 Signal détecté</span>':''}
