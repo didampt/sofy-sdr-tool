@@ -220,6 +220,11 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
 .pscore .pscore-v{color:var(--ink)}
 .fiche{padding:24px 28px !important;margin-bottom:18px}
 @media(max-width:700px){.fiche{padding:18px !important}}
+.visit-box{margin:0 0 14px;background:linear-gradient(135deg,#FFF1F0,#FFF7ED);border:1px solid #FECACA;border-radius:14px;padding:14px 16px}
+.visit-box .vb-title{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#B91C1C;font-weight:800;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.visit-pages{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+.visit-pages span{background:#fff;border:1px solid #FECACA;border-radius:8px;padding:3px 9px;font-size:12px;font-weight:600;color:#B91C1C}
+.visit-meta{font-size:12.5px;color:var(--ink-soft);margin-top:4px}
 .note-box{margin-top:16px;background:#FFFCF5;border:1px solid #FAE6B8;border-radius:14px;padding:14px 16px}
 .note-box .col-title{margin-top:0}
 .note-tags{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
@@ -675,7 +680,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v57';
+const VERSION='v58';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1149,6 +1154,18 @@ function ficheReal(e,i){
     <div style="margin-top:8px;text-align:right"><button class="act act-export" onclick="reinitFiche(${i})">♻️ Réinitialiser la fiche + re-analyser</button></div>
    </div>
    ${e.ia?`<div class="contact-line" style="margin-top:8px" title="${(e.ia.explication||'').replace(/"/g,'&quot;')}">🤖 IA : ${e.ia.nom_commercial||e.ia.site_web?`${e.ia.nom_commercial||''}${e.ia.site_web?' · '+e.ia.site_web:''}`:'rien de fiable trouvé'} <span class="badge b-gmb">confiance ${e.ia.confiance||'?'}</span></div>`:''}
+   ${e.source_hotlead==='RB2B'||(e.signal&&e.signal.source==='RB2B')?(()=>{
+     const pv=(e.pages_visitees&&e.pages_visitees.length)?e.pages_visitees:((e.signal&&e.signal.pages)||[]);
+     const prod=pv.find(p=>/so-?reach/i.test(p))?'SoReach':pv.find(p=>/so-?view|avis/i.test(p))?'Soview':pv.find(p=>/so-?connect|budy/i.test(p))?'SoConnect':null;
+     const dv=e.date_visite||(e.signal&&e.signal.date);
+     return `<div class="visit-box">
+      <div class="vb-title">🔥 Signal de visite — sofy.fr</div>
+      <div style="font-size:13.5px"><b>${e.nom}</b> a visité votre site${dv?` le ${new Date(dv).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}`:''}</div>
+      ${pv.length?`<div class="visit-pages">${pv.map(p=>`<span>👀 ${p}</span>`).join('')}</div>`:''}
+      ${prod?`<div style="font-size:13px;font-weight:700;color:#B91C1C;margin-top:4px">→ Intérêt probable : ${prod}</div>`:''}
+      <div class="visit-meta">${[e.secteur_rb2b,e.effectif&&e.effectif+' salariés',e.chiffre_affaires_estime,[e.ville,e.region].filter(Boolean).join(' ')].filter(Boolean).join(' · ')}${e.linkedin_entreprise?` · <a href="${e.linkedin_entreprise}" target="_blank" onclick="event.stopPropagation()">Page LinkedIn société ↗</a>`:''}</div>
+     </div>`;
+    })():''}
    <div class="fiche-cols">
     <div>
      <div class="col-title">Contact</div>
