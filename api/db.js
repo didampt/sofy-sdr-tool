@@ -173,18 +173,29 @@ export async function ajouterHotLead(profil, cfg) {
     if (await estClientHubspot(profil.email, dom)) return { ajoute: false, raison: 'client HubSpot' };
   }
   const morceaux = (profil.nom_complet || '').split(' ');
+  const maintenant = new Date().toISOString();
   ents.unshift({
     nom: profil.entreprise || profil.nom_complet || 'Inconnu',
     enseigne: profil.entreprise || null, siren: null,
-    site_web: profil.domaine ? 'https://' + profil.domaine : null,
-    source_hotlead: profil.source, date_hotlead: new Date().toISOString(),
+    site_web: profil.domaine ? (profil.domaine.startsWith('http') ? profil.domaine : 'https://' + profil.domaine) : null,
+    // ── Données RB2B conservées (servent à l'enrichissement auto + contexte SDR) ──
+    linkedin_entreprise: profil.linkedin_societe || null,
+    effectif: profil.effectif || null,
+    chiffre_affaires_estime: profil.ca_estime || null,
+    secteur_rb2b: profil.industrie || null,
+    ville: profil.ville || null,
+    region: profil.region || null,
+    pages_visitees: profil.pages_visitees || [],   // ex : ['/so-reach-sms', '/demo'] → signal produit
+    nb_visites: profil.nb_visites || null,
+    date_visite: profil.date_visite || maintenant,
+    source_hotlead: profil.source, date_hotlead: maintenant,
     signal_hot: true,
-    signal: { type: profil.type, source: profil.source, detail: profil.detail, date: new Date().toISOString() },
+    signal: { type: profil.type, source: profil.source, detail: profil.detail, date: maintenant, pages: profil.pages_visitees || [] },
     contacts: profil.nom_complet ? [{
       prenom: morceaux[0] || '', nom: morceaux.slice(1).join(' ') || '',
       fonction: profil.fonction || '', source: profil.source,
       enrich: { email: profil.email || null, linkedin: profil.linkedin_brut || null, telephone: null },
-      signal: { type: profil.type, source: profil.source, detail: profil.detail, date: new Date().toISOString() }
+      signal: { type: profil.type, source: profil.source, detail: profil.detail, date: maintenant }
     }] : []
   });
   await sql`UPDATE listes SET entreprises = ${JSON.stringify(ents.slice(0, 300))} WHERE id = ${hl.id}`;

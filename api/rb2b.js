@@ -123,18 +123,40 @@ export default async function handler(req, res) {
         const email = (v.email || v.businessemail || '').toLowerCase() || null;
         const ent = v.companyname || v.company || '';
         if (!nomC && !email && !ent) continue;
+        // ── Pages visitées (RecentPageUrls = JSON ou liste) → signal produit ──
+        let pages = [];
+        const rawPages = v.recentpageurls || v.recentpages || v.pageurls || v.page || v.url || '';
+        try {
+          if (Array.isArray(rawPages)) pages = rawPages;
+          else if (typeof rawPages === 'string' && rawPages.trim().startsWith('[')) pages = JSON.parse(rawPages);
+          else if (rawPages) pages = [rawPages];
+        } catch (_) { if (rawPages) pages = [String(rawPages)]; }
+        pages = pages.map(p => String(p).replace(/^https?:\/\/(www\.)?sofy\.fr/i, '').trim() || '/').filter(Boolean);
+        const pagesTxt = pages.length ? pages.join(', ') : 'sofy.fr';
+
         const r2 = await ajouterHotLead({
           nom_complet: nomC, email,
           entreprise: ent,
           domaine: domaineDe(v.companydomain || v.website || v.companywebsite || ''),
           linkedin_brut: v.linkedinurl || v.linkedin || null,
+          // Pour ProfileType=Company, LinkedInUrl EST l'URL de la page société
+          linkedin_societe: (v.profiletype === 'Company' || v.profiletype === 'company') ? (v.linkedinurl || v.linkedin || null) : (v.companylinkedinurl || null),
           fonction: v.title || v.jobtitle || '',
+          effectif: v.estimatedemployeecount || v.employeecount || null,
+          ca_estime: v.estimaterevenue || v.estimatedrevenue || v.revenue || null,
+          industrie: v.industry || null,
+          ville: v.city || null,
+          region: v.state || null,
+          pages_visitees: pages,
+          nb_visites: v.recentpagecount || v.alltimepageviews || null,
+          date_visite: v.lastseenat || v.firstseenat || null,
           source: 'RB2B', type: 'visite_site',
-          detail: `${nomC || 'Un visiteur'}${ent ? ' (' + ent + ')' : ''} a visité ${v.page || v.url || 'sofy.fr'}`
+          detail: `${nomC || ent || 'Un visiteur'} a visité ${pagesTxt}`
         }, cfgHL);
         if (r2.ajoute) {
           hotleads++;
-          await envoyerSlack(`🔥 *Nouveau Hot Lead* (visite sofy.fr) — ${nomC || ent}${v.title ? ' · ' + v.title : ''}${ent ? ' · ' + ent : ''}\n→ ajouté à la liste « 🔥 Hot Leads (auto) »`);
+          const prod = pages.find(p => /so-?reach/i.test(p)) ? 'SoReach' : pages.find(p => /so-?view|avis/i.test(p)) ? 'Soview' : pages.find(p => /so-?connect|budy|messaging/i.test(p)) ? 'SoConnect' : null;
+          await envoyerSlack(`🔥 *Nouveau Hot Lead* (visite sofy.fr) — ${ent || nomC}${v.title ? ' · ' + v.title : ''}${v.industry ? ' · ' + v.industry : ''}\n👀 Pages : ${pagesTxt}${prod ? ` → intérêt probable *${prod}*` : ''}\n→ ajouté à « 🔥 Hot Leads (auto) » (enrichissement auto en cours)`);
         }
       }
     }
