@@ -693,7 +693,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v73';
+const VERSION='v74';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1651,7 +1651,8 @@ async function analyserGmb(i){
  const btn=document.getElementById('gmbbtn'+i);
  if(btn){btn.disabled=true;btn.textContent='⏳ Analyse…';}
  try{
-  const p=new URLSearchParams({liste_id:state.savedId||'',nom:e.nom,ville:e.ville||'',naf:e.naf||'',enseigne:enseigneDe(e),adresse:e.adresse||'',cp:e.code_postal||'',site:domaineDe(e),ens_forte:e.enseigne_ia?'1':''});
+  const estHL=e.source_hotlead==='RB2B'||(e.signal&&e.signal.source==='RB2B');
+  const p=new URLSearchParams({liste_id:state.savedId||'',nom:e.nom,ville:e.ville||'',naf:e.naf||'',enseigne:enseigneDe(e),adresse:e.adresse||'',cp:e.code_postal||'',site:domaineDe(e),ens_forte:e.enseigne_ia?'1':'',hotlead:estHL?'1':''});
   const r=await api('/api/gmb?'+p.toString());
   const g=await r.json();
   if(!r.ok||g.erreur){toast('Erreur GMB : '+(g.erreur||r.status));if(btn){btn.disabled=false;btn.textContent='⭐ Analyser GMB';}return false;}
