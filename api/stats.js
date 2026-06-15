@@ -43,21 +43,30 @@ export default async function handler(req, res) {
                          WHERE c.liste_id = l.id), 0)::float AS cout
         FROM listes l ORDER BY l.created_at DESC LIMIT 30`;
       const parListe = listes.map(l => {
-        let contacts = 0, emails = 0, mobiles = 0;
+        let contacts = 0, emails = 0, mobiles = 0, telGmb = 0, enrichis = 0, fichesAvecGmbTel = 0;
+        const estMobileNum = t => /^(\+?(33)?\s?0?[67]|\+?(590|596|594|262)|0(690|691|696|697|694|692|693))/.test(String(t || '').replace(/[\s.\-()]/g, ''));
         for (const e of (l.entreprises || [])) {
           const cs = e.contacts || (e.dirigeant ? [{ enrich: e.enrich }] : []);
+          if (e.gmb && e.gmb.telephone) { telGmb++; if (estMobileNum(e.gmb.telephone)) {} }
           for (const c of cs) {
             contacts++;
-            if (c.enrich && c.enrich.email) emails++;
-            if (c.enrich && (c.enrich.mobile || c.enrich.telephone)) mobiles++;
+            const en = c.enrich || {};
+            const aEmail = !!en.email;
+            const aMobile = !!(en.mobile || (en.telephone && estMobileNum(en.telephone)));
+            if (aEmail) emails++;
+            if (aMobile) mobiles++;
+            if (aEmail || aMobile || (c.enrich && c.enrich.telephone)) enrichis++;
           }
         }
         return {
           id: l.id, nom: l.nom, sdr: l.sdr, total: l.total, created_at: l.created_at,
           cout: Math.round(Number(l.cout) * 100) / 100,
-          contacts, emails, mobiles,
+          contacts, emails, mobiles, tel_gmb: telGmb, enrichis,
           pct_emails: contacts ? Math.round(100 * emails / contacts) : 0,
-          cout_par_contact_enrichi: emails ? Math.round(100 * Number(l.cout) / emails) / 100 : null
+          pct_mobiles: contacts ? Math.round(100 * mobiles / contacts) : 0,
+          pct_tel_gmb: l.total ? Math.round(100 * telGmb / l.total) : 0,
+          pct_enrichi: contacts ? Math.round(100 * enrichis / contacts) : 0,
+          cout_par_contact_enrichi: enrichis ? Math.round(100 * Number(l.cout) / enrichis) / 100 : null
         };
       });
 
