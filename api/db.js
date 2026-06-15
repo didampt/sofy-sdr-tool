@@ -160,14 +160,12 @@ export async function estClientHubspot(email, domaine) {
 export async function ajouterHotLead(profil, cfg) {
   const hl = await listeHotLeads(cfg && cfg.sdr);
   const ents = hl.entreprises || [];
-  const cle = p => (p.email || '') + '|' + (p.linkedin || '') + '|' + (p.nom_complet || '') + (p.entreprise || '');
-  const connus = new Set(ents.map(e => cle({
-    email: e.contacts && e.contacts[0] && e.contacts[0].enrich && e.contacts[0].enrich.email,
-    linkedin: e.contacts && e.contacts[0] && e.contacts[0].enrich && e.contacts[0].enrich.linkedin,
-    nom_complet: e.contacts && e.contacts[0] ? `${e.contacts[0].prenom || ''} ${e.contacts[0].nom || ''}`.trim() : '',
-    entreprise: e.nom
-  })));
-  if (connus.has(cle(profil))) return { ajoute: false, raison: 'déjà présent' };
+  // Clé STABLE = domaine, LinkedIn société ou nom d'entreprise. (Le contact change après enrichissement → ne pas s'en servir.)
+  const norm = v => (v || '').toString().toLowerCase().replace(/^https?:\/\//,'').replace(/^www\./,'').replace(/\/$/,'').trim();
+  const cleStable = p => norm(p.domaine) || norm(p.linkedin_societe) || norm(p.entreprise);
+  const connus = new Set(ents.map(e => norm(e.site_web) || norm(e.linkedin_entreprise) || norm(e.nom)));
+  const cleP = cleStable(profil);
+  if (cleP && connus.has(cleP)) return { ajoute: false, raison: 'déjà présent' };
   if ((cfg && cfg.exclure_hubspot) !== false) {
     const dom = profil.email && !profil.email.match(/@(gmail|outlook|hotmail|yahoo|orange|wanadoo|free|sfr|laposte|icloud|live)\./) ? profil.email.split('@')[1] : profil.domaine;
     if (await estClientHubspot(profil.email, dom)) return { ajoute: false, raison: 'client HubSpot' };
