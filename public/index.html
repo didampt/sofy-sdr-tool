@@ -168,9 +168,9 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
 #wf-modal{display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:900;align-items:center;justify-content:center}
 .wf-panel{background:#fff;border-radius:16px;box-shadow:var(--shadow);width:min(620px,94vw);max-height:80vh;display:flex;flex-direction:column}
 .wf-head{padding:20px 24px 12px;font-family:'Sora';font-weight:700;font-size:17px}
-.wf-cols{display:grid;grid-template-columns:1fr 44px 44px 44px 44px 44px 44px;padding:0 24px 8px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:700}
+.wf-cols{display:grid;grid-template-columns:1fr 44px 44px 44px 44px 44px 44px 44px;padding:0 24px 8px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:700}
 .wf-body{overflow-y:auto;padding:0 24px;flex:1}
-.wf-row{display:grid;grid-template-columns:1fr 44px 44px 44px 44px 44px 44px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:13.5px}
+.wf-row{display:grid;grid-template-columns:1fr 44px 44px 44px 44px 44px 44px 44px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:13.5px}
 .wf-cell{text-align:center}
 .wf-foot{padding:14px 24px 20px;text-align:right}
 #login-overlay{display:none;position:fixed;inset:0;background:var(--paper);z-index:999;align-items:center;justify-content:center}
@@ -231,7 +231,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
  <div class="wf-panel">
   <div class="wf-head" id="wf-titre">🚀 Enrichissement en cours…</div>
   <div style="padding:0 24px 10px"><div class="prog-bar"><span id="wfg-bar" style="width:0%"></span></div><div style="display:flex;justify-content:space-between;font-size:12.5px;font-weight:700;margin-top:6px"><span id="wfg-label" style="color:#1D4ED8">Démarrage…</span><span id="wfg-pct" class="prog-pct">0 %</span></div></div>
-  <div class="wf-cols"><span>Fiche</span><span style="text-align:center">GMB</span><span style="text-align:center">IA 🤖</span><span style="text-align:center">👥</span><span style="text-align:center">Email</span><span style="text-align:center">📱 FE</span><span style="text-align:center">🎯</span></div>
+  <div class="wf-cols"><span>Fiche</span><span style="text-align:center">GMB</span><span style="text-align:center">IA 🤖</span><span style="text-align:center">👥</span><span style="text-align:center">Email</span><span style="text-align:center">📱 FE</span><span style="text-align:center">📲 Kaspr</span><span style="text-align:center">🎯</span></div>
   <div class="wf-body" id="wf-rows"></div>
   <div class="wf-foot"><button class="btn" id="wf-stop" style="background:#FEE2E2;color:#B91C1C;font-weight:700" onclick="WF_STOP=true;this.disabled=true;this.textContent='⏹ Arrêt après la fiche en cours…'">⏹ Stop</button><button class="btn btn-primary" id="wf-fermer" disabled onclick="document.getElementById('wf-modal').style.display='none'">Fermer</button></div>
  </div>
@@ -665,7 +665,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v52';
+const VERSION='v53';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1569,7 +1569,7 @@ async function analyserGmb(i){
 /* ───────── 🚀 WATERFALL ORCHESTRÉ ───────── */
 function ouvrirWfModal(){
  document.getElementById('wf-rows').innerHTML=REAL.map((e,i)=>
-  `<div class="wf-row" id="wfr${i}"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${enseigneDe(e)||e.nom}</span><span class="wf-cell" id="wf${i}-gmb">—</span><span class="wf-cell" id="wf${i}-ia">—</span><span class="wf-cell" id="wf${i}-pers">—</span><span class="wf-cell" id="wf${i}-mail">—</span><span class="wf-cell" id="wf${i}-fe">—</span><span class="wf-cell" id="wf${i}-sc">—</span></div>`).join('');
+  `<div class="wf-row" id="wfr${i}"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${enseigneDe(e)||e.nom}</span><span class="wf-cell" id="wf${i}-gmb">—</span><span class="wf-cell" id="wf${i}-ia">—</span><span class="wf-cell" id="wf${i}-pers">—</span><span class="wf-cell" id="wf${i}-mail">—</span><span class="wf-cell" id="wf${i}-fe">—</span><span class="wf-cell" id="wf${i}-kaspr">—</span><span class="wf-cell" id="wf${i}-sc">—</span></div>`).join('');
  document.getElementById('wf-titre').textContent='🚀 Enrichissement en cours…';
  document.getElementById('wf-fermer').disabled=true;
  document.getElementById('wf-modal').style.display='flex';
@@ -1638,6 +1638,8 @@ async function pipelineFiche(i){
   }
   wfSet(i,'fe',feGain?'ok':(feTente?'ko':(cs.some(c=>c.enrich&&c.enrich.email&&c.enrich.telephone)?'ok':'—')));
   // ── 4bis. Mobile : IA trouve le LinkedIn si absent, puis Kaspr — jamais re-payé auto ──
+  prog(i,82,'Étape 6/7 · 📲 Kaspr (mobile via LinkedIn)…');
+  let kasprTente=false,kasprGain=false;
   for(let j=0;j<cs.length;j++){
    const c=cs[j];let en2=c.enrich||{};
    if(en2.telephone||en2.kaspr_fait)continue;
@@ -1645,10 +1647,11 @@ async function pipelineFiche(i){
     await chercherLinkedin(i,j);en2=c.enrich||{};
    }
    if(en2.linkedin&&/linkedin\.com\/in\//i.test(en2.linkedin)){
-    await enrichirKaspr(i,j);
+    kasprTente=true;wfSet(i,'kaspr','run');
+    if(await enrichirKaspr(i,j))kasprGain=true;
    }
   }
-  prog(i,82,'Étape 6/7 · 📲 Kaspr (mobile via LinkedIn)…');
+  wfSet(i,'kaspr',kasprGain?'ok':(kasprTente?'ko':(cs.some(c=>c.enrich&&c.enrich.telephone)?'ok':'—')));
   // ── 5. Scoring + synthèse (jamais re-payé sauf ↻ manuel) ──
   if(!e.score&&(e.gmb||e.ia)){
    wfSet(i,'sc','run');
