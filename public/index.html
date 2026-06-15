@@ -694,7 +694,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v79';
+const VERSION='v80';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1196,6 +1196,7 @@ function ficheReal(e,i){
      ${e.signal_hot?'<span class="badge b-signal">🔥 Signal détecté</span>':''}
      ${e.enrichi_par?(e.score?`<span class="badge b-new">✅ Enrichi par ${e.enrichi_par}</span>`:(e.enrich_lock_ts&&(Date.now()-e.enrich_lock_ts<5*60*1000)?`<span class="badge b-gmb">🔄 En cours par ${e.enrichi_par}</span>`:'')):''}
      ${aEmail?'<span class="badge b-new">Nouveau ✓</span>':(e.detail_charge?'<span class="badge b-signal">À enrichir</span>':'<span class="badge b-dup">Détail non chargé</span>')}
+     ${e.deja_hubspot?'<span class="badge b-dup" title="Un contact de cette fiche existe déjà dans HubSpot">🔶 Déjà dans HubSpot</span>':''}
      ${e.lemlist_envoye?'<span class="badge b-new">✈️ Lemlist ✓</span>':''}${e.hubspot_envoye?'<span class="badge b-new">🤝 HubSpot ✓</span>':''}${e.sms_envoye?'<span class="badge b-new">💬 SMS ✓</span>':''}
      ${siteWeb?`<span class="badge b-new"><a href="${siteWeb.startsWith('http')?siteWeb:'https://'+siteWeb}" target="_blank" onclick="event.stopPropagation()" style="color:inherit">🌐 ${siteWeb.replace(/^https?:\/\/(www\.)?/,'').split('/')[0]}</a></span>`:''}
     </div>
@@ -1912,7 +1913,29 @@ async function lancerWaterfall(nouvellesSeulement){
  majCoutListe();
  persister();
  majBtnNouvelles();
+ verifierHubspot();
 }
+
+// Après enrichissement : marque les contacts déjà présents dans HubSpot (sur email)
+async function verifierHubspot(){
+ const emails=[];
+ REAL.forEach(e=>contactsDe(e).forEach(c=>{const em=c.enrich&&c.enrich.email;if(em)emails.push(em);}));
+ if(!emails.length)return;
+ try{
+  const r=await api('/api/hubspot-check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({emails})});
+  const d=await r.json();
+  const connus=d.connus||{};
+  if(!Object.keys(connus).length)return;
+  let n=0;
+  REAL.forEach(e=>{
+   let fiche=false;
+   contactsDe(e).forEach(c=>{const em=c.enrich&&c.enrich.email;if(em&&connus[em]){c.deja_hubspot=connus[em];fiche=true;}});
+   if(fiche){e.deja_hubspot=true;n++;}
+  });
+  if(n){rerender_all();persister();toast('⚠️ '+n+' fiche'+(n>1?'s':'')+' déjà dans HubSpot (marquée'+(n>1?'s':'')+')');}
+ }catch(_){}
+}
+function rerender_all(){const c=document.getElementById('fiches');if(c)c.innerHTML=REAL.map((x,k)=>ficheReal(x,k)).join('');}
 
 /* ───────── ENVOIS : LEMLIST / HUBSPOT / SMS ───────── */
 function produitDominant(e){
