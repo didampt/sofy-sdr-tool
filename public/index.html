@@ -694,7 +694,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v78';
+const VERSION='v79';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1272,12 +1272,12 @@ function ficheReal(e,i){
       <button class="btn-cta btn-cta-blue" onclick="envoyerLemlist(${i})">✈️ Envoyer via Lemlist</button>
      </div>
      <div class="cta-row" style="margin-top:0">
-      <button class="btn-cta btn-cta-coral" onclick="envoyerHubspot(${i})">🤝 RDV pris → HubSpot</button>
+      <button class="btn-cta btn-cta-coral" onclick="prendreRdv(${i})">🤝 RDV pris — réserver pour un AE</button>
      </div>`:`
      <div class="hint" style="margin-bottom:10px">Lance 🎯 Scorer (ou 🚀 Fiche) pour générer la synthèse d'appel et l'email personnalisé.</div>
      <div class="cta-row">
       <button class="btn-cta btn-cta-blue" onclick="envoyerLemlist(${i})">✈️ Envoyer via Lemlist</button>
-      <button class="btn-cta btn-cta-coral" onclick="envoyerHubspot(${i})">🤝 RDV pris → HubSpot</button>
+      <button class="btn-cta btn-cta-coral" onclick="prendreRdv(${i})">🤝 RDV pris — réserver pour un AE</button>
      </div>`}
     </div>
    </div>
@@ -1951,6 +1951,28 @@ async function envoyerLemlist(i){
  if(!d.ok){toast('Lemlist : '+(d.erreur||'')+(d.detail?' — '+d.detail:''));return;}
  e.lemlist_envoye=true;rerender(i);persister();
  toast('✈️ '+c.prenom+' '+c.nom+' → séquence '+(prod||'défaut')+' ✓');
+}
+function prendreRdv(i){
+ const e=REAL[i];
+ const c=contactsDe(e).find(x=>x.enrich&&x.enrich.email)||contactsDe(e).find(x=>x.nom)||contactsDe(e)[0]||{};
+ const ent=e.enseigne_ia||e.enseigne||e.nom||'';
+ const en=c.enrich||{};
+ // Préremplissage du lien round-robin AE (champs connus)
+ const base='https://go.sofy.fr/meetings/mbouly/demo-sdr';
+ const params=new URLSearchParams();
+ if(c.prenom)params.set('firstname',c.prenom);
+ if(c.nom)params.set('lastname',c.nom);
+ if(en.email)params.set('email',en.email);
+ if(ent)params.set('company',ent);
+ const tel=en.telephone||(e.gmb&&e.gmb.telephone)||'';
+ if(tel)params.set('phone',tel);
+ const url=base+(params.toString()?'?'+params.toString():'');
+ window.open(url,'_blank');
+ // Marque la fiche comme RDV pris (badge + tag pour les stats terrain)
+ e.hubspot_envoye=true;
+ e.tags_sdr=(e.tags_sdr||[]).includes('🤝 RDV pris')?e.tags_sdr:[...(e.tags_sdr||[]),'🤝 RDV pris'];
+ rerender(i);persister();
+ toast('📅 Page de réservation ouverte'+(c.prenom?' pour '+c.prenom:'')+' — champs préremplis');
 }
 async function envoyerHubspot(i){
  const e=REAL[i];
