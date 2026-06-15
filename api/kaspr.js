@@ -36,8 +36,8 @@ export default async function handler(req, res) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'apiKey': apiKey,
-        'accept-version': 'v2'
+        'Authorization': `Bearer ${apiKey}`,
+        'accept-version': 'v2.0'
       },
       body: JSON.stringify({
         id: idLinkedin,
