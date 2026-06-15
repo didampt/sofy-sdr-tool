@@ -694,7 +694,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v75';
+const VERSION='v76';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1824,7 +1824,7 @@ async function lancerWaterfall(nouvellesSeulement){
   const nbE=REAL.reduce((a,e)=>a+contactsDe(e).filter(c=>c.enrich&&c.enrich.email).length,0);
   const nbT=REAL.reduce((a,e)=>a+contactsDe(e).filter(c=>c.enrich&&c.enrich.telephone).length,0);
   const nbG=REAL.filter(e=>e.gmb&&e.gmb.trouve).length;
-  api('/api/rapport',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({liste_id:state.savedId,nom:'Liste #'+(state.savedId||''),total:REAL.length,emails:nbE,tels:nbT,gmb:nbG})}).catch(()=>{});
+  api('/api/rapport',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({liste_id:state.savedId,nom:(state.listeNom||'Liste')+(state.savedId?' (#'+state.savedId+')':''),total:REAL.length,emails:nbE,tels:nbT,gmb:nbG})}).catch(()=>{});
  }catch(_){}
  document.getElementById('wf-fermer').disabled=false;
  majCoutListe();
