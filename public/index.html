@@ -693,7 +693,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v70';
+const VERSION='v71';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1018,6 +1018,7 @@ function showRealResults(total,c){
   ?`🔥 Liste automatique des Hot Leads · ${REAL.length} fiche(s)${state.savedId?' · #'+state.savedId:''}`
   :`${_naf}${_naf?' · ':''}${total} entreprises trouvées (Pappers) · ${c.emp||''} salariés · CA ${c.ca||'—'}${_pays?' · '+_pays:''}${c.ville?' / '+c.ville:''} — affichage : ${REAL.length}${state.savedId?' · Sauvegardée ✓ (#'+state.savedId+')':''}`;
  document.getElementById('kpis').style.display='flex';
+ const sw2=document.getElementById('search-wrap');if(sw2){sw2.style.display='block';const sf2=document.getElementById('search-fiches');if(sf2)sf2.value='';}
  document.getElementById('sort-bar').style.display='flex'; // tris actifs : signaux/scores IA, note GMB, établissements
  document.getElementById('k-total').textContent=REAL.length;
  document.getElementById('k-new').textContent=REAL.filter(e=>!e.deja_hubspot).length;
