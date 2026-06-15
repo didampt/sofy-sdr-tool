@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sofy Scrap · Listes d'appel SDR</title>
-<link rel="icon" href="/favicon.png">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20width%3D%22100%22%20height%3D%22100%22%20rx%3D%2224%22%20fill%3D%22%232B4BF2%22/%3E%3Cpath%20d%3D%22M54%2016c2%2014-10%2016-10%2028%200%205%203%208%203%208-6-1-9-6-9-6-3%204-4%209-4%2013%200%2012%209%2021%2022%2021s22-9%2022-22c0-16-13-22-16-38-3%206-2%2012-2%2012-4-5-3-13%201-19-4%202-7%205-9%209%200-3%201-7%202-9-1%201-3%203-4%205%201-3%202-5%203-6-2%201-4%202-6%204%204-9%2011-13%2014-13z%22%20fill%3D%22%23fff%22/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -694,7 +694,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v77';
+const VERSION='v78';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1189,7 +1189,7 @@ function ficheReal(e,i){
   ${e._busy?`<div class="prog-wrap"><div class="prog-top"><span class="prog-label"><span class="spin"></span> <span id="progl${i}">${(e._prog&&e._prog.label)||'Démarrage…'}</span></span><span class="prog-pct" id="progp${i}">${(e._prog&&e._prog.pct)||0} %</span></div><div class="prog-bar"><span id="progb${i}" style="width:${(e._prog&&e._prog.pct)||0}%"></span></div></div>`:''}
   <div class="fiche-head" onclick="toggleFiche(${i})" title="Cliquer pour ${open?'replier':'déployer'} la fiche">
    <div style="flex:1;min-width:0">
-    <div class="lead-name">${titre} <span onclick="event.stopPropagation();ouvrirEdition(${i})" title="Corriger cette fiche" style="cursor:pointer;font-size:14px;opacity:.5;font-weight:normal">✏️</span></div>
+    <div class="lead-name">${estHL?'🔥 ':''}${titre} <span onclick="event.stopPropagation();ouvrirEdition(${i})" title="Corriger cette fiche" style="cursor:pointer;font-size:14px;opacity:.5;font-weight:normal">✏️</span></div>
     <div class="lead-meta">${(!estHL&&contacts.length&&contacts[0].nom)?e.nom+' · ':''}${e.enseigne&&e.enseigne!==e.nom?'Enseigne : '+e.enseigne+' · ':''}${e.naf}${e.nb_etablissements?' · '+e.nb_etablissements+' établissement'+(e.nb_etablissements>1?'s':''):''}${e.effectif?' · '+String(e.effectif).replace(/ salariés?$/i,'')+' salariés':''}${ca?' · CA '+ca:''} · ${e.ville||'—'}</div>
     <div class="badges">
      ${e.gmb&&e.gmb.trouve?`<span class="badge b-gmb">GMB ${String(e.gmb.note_moyenne).replace('.',',')} ★ (${e.gmb.total_avis} avis)</span>`:''}
