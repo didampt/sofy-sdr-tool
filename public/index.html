@@ -690,7 +690,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v67';
+const VERSION='v68';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -2248,13 +2248,16 @@ async function enrichirHotLeads(indices){
  persister();majCoutListe();
  // Si UNE seule fiche a été enrichie (cas lien Slack) → ferme le modal et ouvre/scroll la fiche
  if(indices.length===1){
-  const idx=indices[0];
+  const cleCible=cleSignal(REAL[indices[0]]);   // clé stable (l'index peut bouger si la liste se re-trie)
+  const nomCible=enseigneDe(REAL[indices[0]])||REAL[indices[0]].nom;
+  document.getElementById('wf-modal').style.display='none';
+  trierReal();   // re-render complet de la liste avec la fiche enrichie à jour
   setTimeout(()=>{
-   document.getElementById('wf-modal').style.display='none';
-   const row=document.getElementById('f'+idx);
-   if(row){row.scrollIntoView({behavior:'smooth',block:'center'});row.style.transition='box-shadow .4s';row.style.boxShadow='0 0 0 3px var(--accent)';setTimeout(()=>row.style.boxShadow='',2800);}
-   toast('✅ '+(enseigneDe(REAL[idx])||REAL[idx].nom)+' enrichi — fiche prête');
-  },900);
+   const idx=REAL.findIndex(e=>cleSignal(e)===cleCible);   // retrouver la VRAIE position après re-tri
+   const row=idx>=0?document.getElementById('f'+idx):null;
+   if(row){row.scrollIntoView({behavior:'smooth',block:'center'});row.style.transition='box-shadow .4s';row.style.boxShadow='0 0 0 4px var(--accent)';setTimeout(()=>row.style.boxShadow='',3000);}
+   toast('✅ '+nomCible+' enrichi — fiche ouverte');
+  },500);
  }
 }
 async function ouvrirListe(id,cibleFiche){
