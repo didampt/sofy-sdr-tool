@@ -73,6 +73,10 @@ function nomCorrespond(nomFiche, nomEntreprise, villeNorm) {
     const rx = new RegExp('\\b' + compact.split('').map(echapper).join('\\s*') + '\\b');
     if (rx.test(fiche)) return 2;
   }
+  // Compact-à-compact : "girodmedical" (collé, RB2B) vs "Girod Medical" (espacé, Google).
+  // On compare les deux noms sans aucun séparateur — fiable pour les noms distinctifs ≥7 lettres.
+  const ficheCompact = normaliser(nomFiche).replace(/[^a-z0-9]/g, '');
+  if (compact.length >= 7 && ficheCompact.length >= 7 && (ficheCompact.includes(compact) || compact.includes(ficheCompact))) return 2;
   return 0;
 }
 
@@ -132,7 +136,8 @@ export default async function handler(req, res) {
   const key = process.env.GOOGLE_PLACES_API_KEY;
   if (!key) return res.status(500).json({ erreur: 'GOOGLE_PLACES_API_KEY manquante dans Vercel' });
 
-  const { nom = '', enseigne = '', ville = '', naf = '', adresse = '', cp = '', site = '', ens_forte = '' } = req.query;
+  const { nom = '', enseigne = '', ville = '', naf = '', adresse = '', cp = '', site = '', ens_forte = '', hotlead = '' } = req.query;
+    const estHotLead = hotlead === '1';
   if (!nom) return res.status(400).json({ erreur: "Paramètre 'nom' requis" });
 
   const prefixeNaf = (naf || '').slice(0, 5);
@@ -180,13 +185,21 @@ export default async function handler(req, res) {
     // Acceptés d'office : (nom OU adresse exacte) dans la zone (même département/île — JAMAIS une autre île :
     // les groupes ont des sociétés sœurs par île, chaque entité doit matcher SA fiche locale)
     let retenus = valides.filter(c => c.enZone && (c.matchNom || c.matchAdresse === 'exacte'));
+    // Hot Lead : un match nom distinctif (===2) est accepté même hors zone (adresse RB2B peu fiable)
+    if (estHotLead) {
+      for (const c of valides) {
+        if (c.matchNom === 2 && !retenus.includes(c)) retenus.push(c);
+      }
+    }
 
     // Candidats de la ville sans match nom : confirmation par le DOMAINE du site web (max 4 vérifications)
     // (le filtre ville/CP en amont garantit déjà la géographie — un domaine identique est la preuve la plus forte)
     if (site) {
       const domaineSofy = domaine(site);
-      const aVerifier = valides.filter(c => !c.matchNom && !retenus.includes(c) && c.enZone)
-        .sort((a, b) => b.r.user_ratings_total - a.r.user_ratings_total).slice(0, 4);
+      // Hot Lead : l'adresse RB2B (siège déclaré) diffère souvent de l'établissement réel sur Google.
+      // → on vérifie le domaine sur TOUS les candidats valides, même hors zone géo (le domaine est une preuve forte).
+      const aVerifier = valides.filter(c => !c.matchNom && !retenus.includes(c) && (estHotLead || c.enZone))
+        .sort((a, b) => b.r.user_ratings_total - a.r.user_ratings_total).slice(0, estHotLead ? 6 : 4);
       for (const c of aVerifier) {
         if (!domaineSofy) break;
         const d = await gPlaces(`https://maps.googleapis.com/maps/api/place/details/json?place_id=${c.r.place_id}&fields=website&language=fr&key=${key}`);
