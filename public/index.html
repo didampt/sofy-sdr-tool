@@ -680,7 +680,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v64';
+const VERSION='v65';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -2244,12 +2244,10 @@ async function ouvrirListe(id,cibleFiche){
     else if(verrouRecent(e)){toast(`🔒 ${e.enrichi_par} enrichit déjà cette fiche`);}
    }else{toast('Fiche introuvable dans la liste (peut-être déjà traitée)');}
   }else{
-   // Ouverture manuelle : enrichir toutes les fiches en attente
-   const aFaire=REAL.map((e,i)=>({e,i})).filter(x=>x.e.a_enrichir&&!x.e.score&&!verrouRecent(x.e));
-   if(aFaire.length){
-    toast(`🔥 ${aFaire.length} Hot Lead(s) à enrichir — lancement automatique…`);
-    setTimeout(()=>enrichirHotLeads(aFaire.map(x=>x.i)),600);
-   }
+   // Ouverture manuelle (Historique) : PAS d'enrichissement auto.
+   // Le SDR choisit : 🚀 Lancer l'enrichissement (global) ou 🚀 par fiche — comme une liste normale.
+   const aFaire=REAL.filter(e=>e.a_enrichir&&!e.score&&!verrouRecent(e)).length;
+   if(aFaire)toast(`🔥 ${aFaire} Hot Lead(s) en attente — tri d'abord les visiteurs hors cible, puis 🚀 Lancer l'enrichissement`);
   }
  }catch(e){toast('Erreur : '+e.message);}
 }
