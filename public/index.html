@@ -680,7 +680,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v63';
+const VERSION='v64';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -2238,8 +2238,8 @@ async function ouvrirListe(id,cibleFiche){
     const row=document.getElementById('f'+idx);
     if(row){row.scrollIntoView({behavior:'smooth',block:'center'});row.style.transition='box-shadow .4s';row.style.boxShadow='0 0 0 3px var(--accent)';setTimeout(()=>row.style.boxShadow='',2500);}
     if(e.a_enrichir&&!e.score&&!verrouRecent(e)){
-     toast(`🔥 Enrichissement de ${enseigneDe(e)||e.nom}…`);
-     setTimeout(()=>enrichirHotLeads([idx]),600);
+     // Validation manuelle avant d'enrichir (évite de brûler des crédits sur un visiteur hors cible)
+     setTimeout(()=>{if(confirm(`🔥 Lancer l'enrichissement de « ${enseigneDe(e)||e.nom} » ?\n\nSecteur : ${e.secteur_rb2b||'?'} · ${e.ville||''} ${e.region||''}\nPages visitées : ${((e.pages_visitees&&e.pages_visitees.length)?e.pages_visitees.join(', '):'sofy.fr')}\n\n💡 Annule si ce visiteur est hors cible (site international, etc.) pour économiser des crédits.`)){enrichirHotLeads([idx]);}else{toast('Enrichissement annulé — aucun crédit consommé');}},700);
     }else if(e.score){toast(`✅ ${enseigneDe(e)||e.nom} est déjà enrichi`);}
     else if(verrouRecent(e)){toast(`🔒 ${e.enrichi_par} enrichit déjà cette fiche`);}
    }else{toast('Fiche introuvable dans la liste (peut-être déjà traitée)');}
