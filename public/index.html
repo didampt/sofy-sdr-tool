@@ -680,7 +680,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v65';
+const VERSION='v66';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1484,9 +1484,16 @@ function donneesPourScore(e){
  const g=e.gmb&&e.gmb.trouve?{note:e.gmb.note_moyenne,total_avis:e.gmb.total_avis,nb_fiches:e.gmb.nb_fiches,
   pire_fiche:e.gmb.pire_fiche,concurrents:e.gmb.concurrents,avis_negatif:e.gmb.avis_negatif?{note:e.gmb.avis_negatif.note,date:e.gmb.avis_negatif.date,texte:e.gmb.avis_negatif.texte}:null,
   telephone:e.gmb.telephone}:{aucune_fiche_google:true,telephone_web:(e.ia&&e.ia.telephone)||null};
+ // Signal RB2B (visite sofy.fr) — PRIORITAIRE pour orienter le produit selon la page visitée
+ const pages=(e.pages_visitees&&e.pages_visitees.length)?e.pages_visitees:((e.signal&&e.signal.pages)||[]);
+ const sig=(e.source_hotlead==='RB2B'||(e.signal&&e.signal.source==='RB2B'))?{
+  source:'RB2B',type:'visite_site',date:e.date_visite||(e.signal&&e.signal.date)||null,
+  pages_visitees:pages,secteur:e.secteur_rb2b||null
+ }:(e.signal||null);
  return {nom:e.nom,enseigne:enseigneDe(e)||null,activite:e.activite,naf:e.naf,ville:e.ville,code_postal:e.code_postal,
   effectif:e.effectif,chiffre_affaires:e.chiffre_affaires,nb_etablissements:e.nb_etablissements,
   site_web:domaineDe(e)||null,google_business:g,
+  signal:sig,pages_visitees:pages,
   contexte_ia:(e.ia&&e.ia.explication)||null,contexte_personas:(e.personas_info&&e.personas_info.explication)||null,
   contacts:contactsDe(e).filter(c=>c.nom).map(c=>({prenom:c.prenom,nom:c.nom,fonction:(c.enrich&&c.enrich.fonction)||c.fonction,source:c.source,
    email:(c.enrich&&c.enrich.email)||null,mobile:(c.enrich&&c.enrich.telephone)||null,linkedin:(c.enrich&&c.enrich.linkedin)||null}))};
