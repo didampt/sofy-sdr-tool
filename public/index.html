@@ -665,7 +665,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v51';
+const VERSION='v52';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1263,7 +1263,7 @@ function ouvrirInfo(i){
  const cs=contactsDe(e).filter(c=>c.nom);
  if(cs.length){
   sec.push(`<h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-soft);margin:14px 0 6px">📇 Contacts & enrichissement</h3>`+
-   cs.map(c=>{const en=c.enrich||{};return `<div>• <b>${(c.prenom+' '+c.nom).trim()}</b> (${c.source})${en.email?' · ✉️ '+en.email+(en.email_source==='fullenrich'?' (FullEnrich)':' (Dropcontact)'):' · pas d\'email'}${en.telephone?' · 📱 '+en.telephone:''}${en.fe_fait?' · FullEnrich tenté':''}${en.kaspr_fait?' · Kaspr tenté':''}${c.linkedin_ia_info?' · 🔎 LinkedIn IA : '+c.linkedin_ia_info:''}${en.kaspr_brut?'<div style="margin-top:4px;font-size:11.5px;color:var(--ink-soft);word-break:break-all">Kaspr brut : '+String(en.kaspr_brut).replace(/</g,'&lt;')+'</div>':''}</div>`}).join(''))
+   cs.map(c=>{const en=c.enrich||{};return `<div>• <b>${(c.prenom+' '+c.nom).trim()}</b> (${c.source})${en.email?' · ✉️ '+en.email+(en.email_source==='fullenrich'?' (FullEnrich)':' (Dropcontact)'):' · pas d\'email'}${en.telephone?' · 📱 '+en.telephone:''}${en.fe_fait?' · FullEnrich tenté':''}${en.kaspr_fait?' · Kaspr tenté':''}${c.linkedin_ia_info?' · 🔎 LinkedIn IA : '+c.linkedin_ia_info:''}</div>`}).join(''))
  }
  if(!sec.length)sec.push('<div style="color:var(--ink-soft);margin-top:12px">Aucune analyse lancée sur cette fiche pour l\'instant — utilise ⭐ Analyser ou 🚀.</div>');
  document.getElementById('info-titre').textContent='ℹ️ '+(enseigneDe(e)||e.nom);
