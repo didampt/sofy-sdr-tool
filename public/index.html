@@ -694,7 +694,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v76';
+const VERSION='v77';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1144,6 +1144,31 @@ function premierTel(e){
  return null;
 }
 function toggleFiche(i){REAL[i]._open=!REAL[i]._open;rerender(i);}
+function ligneEditContacts(e,i){
+ const cs=contactsDe(e);
+ const esc=v=>(v||'').toString().replace(/"/g,'&quot;');
+ if(!cs.length)return '<div style="font-size:12.5px;color:var(--ink-soft);padding:4px 0">Aucun contact — clique « ➕ Ajouter un contact ».</div>';
+ return cs.map((c,j)=>{
+  const en=c.enrich||{};
+  return `<div class="edit-contact" data-cj="${j}" style="border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;background:#fff">
+   <div style="display:flex;gap:6px;margin-bottom:6px">
+    <input class="field" id="ec-prenom${i}-${j}" placeholder="Prénom" value="${esc(c.prenom)}" style="flex:1">
+    <input class="field" id="ec-nom${i}-${j}" placeholder="Nom" value="${esc(c.nom)}" style="flex:1">
+    <button class="act act-export" onclick="supprContactEdit(${i},${j})" title="Retirer ce contact" style="padding:6px 10px">🗑</button>
+   </div>
+   <input class="field" id="ec-fonction${i}-${j}" placeholder="Fonction" value="${esc(c.fonction)}" style="width:100%;margin-bottom:6px">
+   <div style="display:flex;gap:6px;margin-bottom:6px">
+    <input class="field" id="ec-email${i}-${j}" placeholder="✉️ Email" value="${esc(en.email)}" style="flex:1">
+    <input class="field" id="ec-tel${i}-${j}" placeholder="📱 Téléphone" value="${esc(en.telephone)}" style="flex:1">
+   </div>
+   <input class="field" id="ec-linkedin${i}-${j}" placeholder="🔗 LinkedIn du contact" value="${esc(en.linkedin)}" style="width:100%">
+  </div>`;
+ }).join('');
+}
+function ouvrirEdition(i){
+ REAL[i]._open=true;rerender(i);
+ setTimeout(()=>{const b=document.getElementById('edit'+i);if(b){b.style.display='block';b.scrollIntoView({behavior:'smooth',block:'center'});}},80);
+}
 function copierEmail(i){
  const m=REAL[i].score&&REAL[i].score.email;
  if(!m)return;
@@ -1164,7 +1189,7 @@ function ficheReal(e,i){
   ${e._busy?`<div class="prog-wrap"><div class="prog-top"><span class="prog-label"><span class="spin"></span> <span id="progl${i}">${(e._prog&&e._prog.label)||'Démarrage…'}</span></span><span class="prog-pct" id="progp${i}">${(e._prog&&e._prog.pct)||0} %</span></div><div class="prog-bar"><span id="progb${i}" style="width:${(e._prog&&e._prog.pct)||0}%"></span></div></div>`:''}
   <div class="fiche-head" onclick="toggleFiche(${i})" title="Cliquer pour ${open?'replier':'déployer'} la fiche">
    <div style="flex:1;min-width:0">
-    <div class="lead-name">${titre}</div>
+    <div class="lead-name">${titre} <span onclick="event.stopPropagation();ouvrirEdition(${i})" title="Corriger cette fiche" style="cursor:pointer;font-size:14px;opacity:.5;font-weight:normal">✏️</span></div>
     <div class="lead-meta">${(!estHL&&contacts.length&&contacts[0].nom)?e.nom+' · ':''}${e.enseigne&&e.enseigne!==e.nom?'Enseigne : '+e.enseigne+' · ':''}${e.naf}${e.nb_etablissements?' · '+e.nb_etablissements+' établissement'+(e.nb_etablissements>1?'s':''):''}${e.effectif?' · '+String(e.effectif).replace(/ salariés?$/i,'')+' salariés':''}${ca?' · CA '+ca:''} · ${e.ville||'—'}</div>
     <div class="badges">
      ${e.gmb&&e.gmb.trouve?`<span class="badge b-gmb">GMB ${String(e.gmb.note_moyenne).replace('.',',')} ★ (${e.gmb.total_avis} avis)</span>`:''}
@@ -1190,7 +1215,16 @@ function ficheReal(e,i){
      <input class="field" id="edit-site${i}" placeholder="Site web (ex : porsche-guadeloupe.fr)" value="${(e.site_web||'').replace(/"/g,'&quot;')}">
      <button class="btn btn-primary" onclick="majFiche(${i})">💾 Enregistrer + relancer GMB</button>
     </div>
-    <div style="margin-top:8px;text-align:right"><button class="act act-export" onclick="reinitFiche(${i})">♻️ Réinitialiser la fiche + re-analyser</button></div>
+    <div style="margin-top:10px"><input class="field" id="edit-liso${i}" placeholder="LinkedIn société (ex : linkedin.com/company/...)" value="${(e.linkedin_entreprise||'').replace(/"/g,'&quot;')}" style="width:100%"></div>
+    <div style="font-size:12.5px;font-weight:700;color:var(--ink-soft);margin:14px 0 6px">👥 CONTACTS</div>
+    <div id="edit-contacts${i}">${ligneEditContacts(e,i)}</div>
+    <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:12px;flex-wrap:wrap">
+     <button class="act act-copy" onclick="ajouterContactEdit(${i})">➕ Ajouter un contact</button>
+     <div style="display:flex;gap:8px">
+      <button class="act act-export" onclick="reinitFiche(${i})">♻️ Réinitialiser + re-analyser</button>
+      <button class="btn btn-primary" onclick="majFicheComplet(${i})">💾 Tout enregistrer</button>
+     </div>
+    </div>
    </div>
    ${e.ia?`<div class="contact-line" style="margin-top:8px" title="${(e.ia.explication||'').replace(/"/g,'&quot;')}">🤖 IA : ${e.ia.nom_commercial||e.ia.site_web?`${e.ia.nom_commercial||''}${e.ia.site_web?' · '+e.ia.site_web:''}`:'rien de fiable trouvé'} <span class="badge b-gmb">confiance ${e.ia.confiance||'?'}</span></div>`:''}
    ${e.source_hotlead==='RB2B'||(e.signal&&e.signal.source==='RB2B')?(()=>{
@@ -1294,6 +1328,54 @@ async function majFiche(i){
  }
  toast('Relance GMB : '+(enseigneDe(e)||e.nom));
  await analyserGmb(i);
+}
+
+// Sauvegarde COMPLÈTE de la fiche (nom, site, LinkedIn société, tous les contacts) — sans relancer le GMB
+async function majFicheComplet(i){
+ const e=REAL[i];
+ if(e._busy){toast('Analyse en cours — patience ⏳');return;}
+ const val=id=>{const el=document.getElementById(id);return el?el.value.trim():'';};
+ // Société
+ const ens=val('edit-ens'+i); if(ens)e.enseigne_ia=ens;
+ let site=val('edit-site'+i).replace(/^https?:\/\//,'').replace(/^www\./,'').split('/')[0];
+ if(site&&site.includes('.')&&!site.includes(' ')){e.site_web=site;e.site_source='sdr';}
+ const liso=val('edit-liso'+i); if(liso)e.linkedin_entreprise=liso.startsWith('http')?liso:'https://'+liso.replace(/^\/+/,'');
+ // Contacts : relire chaque sous-bloc présent dans le DOM
+ const cont=document.getElementById('edit-contacts'+i);
+ if(cont){
+  const blocs=cont.querySelectorAll('.edit-contact');
+  const nouveaux=[];
+  blocs.forEach(b=>{
+   const j=b.getAttribute('data-cj');
+   const prenom=val('ec-prenom'+i+'-'+j),nom=val('ec-nom'+i+'-'+j),fonction=val('ec-fonction'+i+'-'+j);
+   const email=val('ec-email'+i+'-'+j),tel=val('ec-tel'+i+'-'+j),linkedin=val('ec-linkedin'+i+'-'+j);
+   if(!prenom&&!nom&&!email&&!tel&&!linkedin)return; // ligne vide ignorée
+   // Repartir du contact existant (préserve source, drapeaux d'enrichissement) si déjà présent
+   const ancien=(contactsDe(e)[+j])||{};
+   const en=Object.assign({},ancien.enrich||{});
+   en.email=email||undefined; en.telephone=tel||undefined; en.linkedin=linkedin||undefined;
+   if(email){en.email_source='sdr';} 
+   nouveaux.push(Object.assign({},ancien,{prenom,nom,fonction,enrich:en,source:ancien.source||'sdr'}));
+  });
+  e.contacts=nouveaux;
+ }
+ rerender(i);persister();
+ toast('✅ Fiche enregistrée');
+}
+function ajouterContactEdit(i){
+ const e=REAL[i];
+ e.contacts=contactsDe(e).slice();
+ e.contacts.push({prenom:'',nom:'',fonction:'',source:'sdr',enrich:{}});
+ rerender(i);
+ setTimeout(()=>{const b=document.getElementById('edit'+i);if(b)b.style.display='block';},60);
+}
+function supprContactEdit(i,j){
+ const e=REAL[i];
+ const cs=contactsDe(e).slice();
+ cs.splice(j,1);
+ e.contacts=cs;
+ rerender(i);
+ setTimeout(()=>{const b=document.getElementById('edit'+i);if(b)b.style.display='block';},60);
 }
 
 /* ───────── IA : trouve site web + nom commercial (équivalent Claygent) ───────── */
