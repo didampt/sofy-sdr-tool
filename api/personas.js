@@ -28,12 +28,13 @@ export default async function handler(req, res) {
 
 Entreprise : ${entreprise.nom}${entreprise.enseigne ? ` (enseigne : ${entreprise.enseigne})` : ''}
 ${entreprise.site ? `Site web : ${entreprise.site}` : ''}
+${entreprise.linkedin ? `Page LinkedIn de l'entreprise (déjà connue, utilise-la directement) : ${entreprise.linkedin}` : ''}
 Ville : ${entreprise.ville || ''}
 Postes recherchés en priorité : ${jobs.join(', ')}
 Postes acceptés en repli (décideurs locaux, à proposer même s'ils ne correspondent pas exactement) : Directeur, Directeur Adjoint, Directeur d'exploitation, Responsable (marketing/commercial/communication/établissement), Gérant, DG, CEO, COO, Fondateur
 
 Méthode :
-1. Cherche la page LinkedIn de l'entreprise ("${entreprise.enseigne || entreprise.nom} linkedin"${entreprise.site ? `, "site:linkedin.com ${entreprise.site}"` : ''})
+1. ${entreprise.linkedin ? `La page LinkedIn de l'entreprise est ${entreprise.linkedin} — va directement sur sa page "people" : ${entreprise.linkedin.replace(/\/$/,'')}/people` : `Cherche la page LinkedIn de l'entreprise ("${entreprise.enseigne || entreprise.nom} linkedin"${entreprise.site ? `, "site:linkedin.com ${entreprise.site}"` : ''})`}
 2. Cherche les profils publics : "site:linkedin.com/in ${entreprise.enseigne || entreprise.nom} ${jobs[0]}" et variantes pour chaque poste prioritaire, puis pour les postes de repli (directeur, responsable, gérant…)
 2bis. Consulte aussi la page "people" de l'entreprise si trouvée : "linkedin.com/company/…/people"
 3. Vérifie que la personne travaille ACTUELLEMENT dans cette entreprise (pas un ancien poste)
