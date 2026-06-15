@@ -198,7 +198,8 @@ export async function ajouterHotLead(profil, cfg) {
       signal: { type: profil.type, source: profil.source, detail: profil.detail, date: maintenant }
     }] : []
   });
-  await sql`UPDATE listes SET entreprises = ${JSON.stringify(ents.slice(0, 300))} WHERE id = ${hl.id}`;
+  const finales = ents.slice(0, 300);
+  await sql`UPDATE listes SET entreprises = ${JSON.stringify(finales)}, total = ${finales.length} WHERE id = ${hl.id}`;
   return { ajoute: true, liste_id: hl.id };
 }
 
