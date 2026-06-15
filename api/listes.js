@@ -55,7 +55,7 @@ export default async function handler(req, res) {
       const recherche = (q || '').trim();
       const rows = recherche
         ? await sql`SELECT id, nom, sdr, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
-                    WHERE nom ILIKE ${'%' + recherche + '%'} OR sdr ILIKE ${'%' + recherche + '%'}
+                    WHERE nom ILIKE ${'%' + recherche + '%'} OR sdr ILIKE ${'%' + recherche + '%'} OR entreprises::text ILIKE ${'%' + recherche + '%'}
                     ORDER BY created_at DESC LIMIT 50`
         : await sql`SELECT id, nom, sdr, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                     ORDER BY created_at DESC LIMIT 50`;
