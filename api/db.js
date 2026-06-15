@@ -137,6 +137,23 @@ export async function listeHotLeads(cfgSdr) {
 }
 
 // true si le contact existe dans HubSpot comme CLIENT (lifecyclestage customer) → à exclure des hot leads
+// true si le contact existe dans HubSpot À N'IMPORTE QUEL STADE (client, lead, deal en cours…) → déjà connu
+export async function existeDansHubspot(email) {
+  const token = process.env.HUBSPOT_API_KEY;
+  if (!token || !email) return null;
+  try {
+    const r = await fetch('https://api.hubapi.com/crm/v3/objects/contacts/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ filterGroups: [{ filters: [{ propertyName: 'email', operator: 'EQ', value: email }] }], properties: ['lifecyclestage', 'hubspot_owner_id'], limit: 1 })
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || !data.total) return null;
+    const p = data.results[0].properties || {};
+    return { stage: p.lifecyclestage || 'inconnu', owner: p.hubspot_owner_id || null };
+  } catch (_) { return null; }
+}
+
 export async function estClientHubspot(email, domaine) {
   const token = process.env.HUBSPOT_API_KEY;
   if (!token || (!email && !domaine)) return false;
