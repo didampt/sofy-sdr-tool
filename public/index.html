@@ -402,7 +402,8 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
           <div class="kpi"><b id="k-total">0</b><span>contacts</span></div>
           <div class="kpi"><b id="k-new">0</b><span>hors CRM ✓</span></div>
           <div class="kpi"><b id="k-sig">0</b><span>signaux 🔥</span></div>
-          <button class="act act-call" onclick="lancerWaterfall()">🚀 Lancer l'enrichissement</button>
+          <button class="act act-call" onclick="lancerWaterfall(false)">🚀 Lancer l'enrichissement</button>
+          <button class="act act-call" id="btn-nouvelles" style="display:none;background:#0a8f57" onclick="lancerWaterfall(true)">🚀 Nouvelles fiches</button>
           <button class="act act-export" onclick="exportCsv()">⬇️ Export Excel / CSV</button>
           <button class="btn-reset" onclick="resetWizard();nav('wizard',document.querySelector('[data-view=wizard]'))">↺ Nouvelle liste</button>
         </div>
@@ -693,7 +694,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v74';
+const VERSION='v75';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1019,6 +1020,7 @@ function showRealResults(total,c){
   :`${_naf}${_naf?' · ':''}${total} entreprises trouvées (Pappers) · ${c.emp||''} salariés · CA ${c.ca||'—'}${_pays?' · '+_pays:''}${c.ville?' / '+c.ville:''} — affichage : ${REAL.length}${state.savedId?' · Sauvegardée ✓ (#'+state.savedId+')':''}`;
  document.getElementById('kpis').style.display='flex';
  const sw2=document.getElementById('search-wrap');if(sw2){sw2.style.display='block';const sf2=document.getElementById('search-fiches');if(sf2)sf2.value='';}
+ majBtnNouvelles();
  document.getElementById('sort-bar').style.display='flex'; // tris actifs : signaux/scores IA, note GMB, établissements
  document.getElementById('k-total').textContent=REAL.length;
  document.getElementById('k-new').textContent=REAL.filter(e=>!e.deja_hubspot).length;
@@ -1785,22 +1787,34 @@ async function lancerFiche(i){
 function gmbAFaire(e){return !e.gmb||(e.gmb.trouve&&e.gmb.telephone===undefined)||(!e.gmb.trouve&&sigDe(e)!=='|'&&(e.gmb._sig||'')!==sigDe(e));}
 function contactAFaire(e,c){return !!(c.nom&&(!c.enrich||(!c.enrich.email&&!c.enrich.avec_domaine&&!!domaineDe(e))));}
 
-async function lancerWaterfall(){
+function majBtnNouvelles(){
+ const b=document.getElementById('btn-nouvelles');if(!b)return;
+ const dejaEnrichies=REAL.some(e=>e.score);
+ const restantes=REAL.some(e=>!e.score);
+ b.style.display=(dejaEnrichies&&restantes)?'inline-flex':'none';
+}
+async function lancerWaterfall(nouvellesSeulement){
  if(!REAL.length){toast('Aucune fiche');return;}
+ // Indices à traiter : toutes, ou seulement celles sans score (= jamais enrichies)
+ const aTraiter=[];
+ for(let i=0;i<REAL.length;i++){ if(!nouvellesSeulement||!REAL[i].score) aTraiter.push(i); }
+ if(nouvellesSeulement&&!aTraiter.length){toast('✅ Toutes les fiches sont déjà enrichies');return;}
  const nbGmb=REAL.filter(gmbAFaire).length;
  const nbIa=REAL.filter(e=>!e.ia&&!domaineDe(e)).length;
  const nbContacts=REAL.reduce((s,e)=>s+contactsDe(e).filter(c=>c.nom&&!c.enrich).length,0);
- if(!confirm(`🚀 Lancer l'enrichissement sur ${REAL.length} fiches ?\n\n1. GMB + domaine + ☎️ standard : ~${nbGmb} fiches\n2. IA site web/nom commercial (si GMB échoue) : jusqu'à ${nbIa} appels (~0,02 €)\n3. Emails Dropcontact : ~${nbContacts} crédits\n4. Personas (${jobsCibles().length?jobsCibles().join(', '):'aucun sélectionné'}) : IA LinkedIn (~0,05-0,15 €/fiche)\n5. FullEnrich (repli email + MOBILE) : contacts incomplets uniquement — ⚠️ un mobile coûte ~10 crédits FullEnrich\n5bis. Mobile : IA trouve le profil LinkedIn (~0,01 €) puis Kaspr (1 crédit tél. + 1 crédit export)\n6. Scoring + synthèse d'appel + email perso (IA, ~0,03 €/fiche)\n\n💡 Exclus d'abord les fiches inutiles (🗑).`))return;
+ if(!confirm(`🚀 Lancer l'enrichissement sur ${aTraiter.length} fiche${aTraiter.length>1?'s':''}${nouvellesSeulement?' (nouvelles uniquement)':''} ?\n\n1. GMB + domaine + ☎️ standard : ~${nbGmb} fiches\n2. IA site web/nom commercial (si GMB échoue) : jusqu'à ${nbIa} appels (~0,02 €)\n3. Emails Dropcontact : ~${nbContacts} crédits\n4. Personas (${jobsCibles().length?jobsCibles().join(', '):'aucun sélectionné'}) : IA LinkedIn (~0,05-0,15 €/fiche)\n5. FullEnrich (repli email + MOBILE) : contacts incomplets uniquement — ⚠️ un mobile coûte ~10 crédits FullEnrich\n5bis. Mobile : IA trouve le profil LinkedIn (~0,01 €) puis Kaspr (1 crédit tél. + 1 crédit export)\n6. Scoring + synthèse d'appel + email perso (IA, ~0,03 €/fiche)\n\n💡 Exclus d'abord les fiches inutiles (🗑).`))return;
  ouvrirWfModal();
  WF_STOP=false;
  const btnStop=document.getElementById('wf-stop');if(btnStop){btnStop.disabled=false;btnStop.textContent='⏹ Stop';}
  let emailsOk=0,emailsTentes=0,arrete=false;
- for(let i=0;i<REAL.length;i++){
+ let fait=0;
+ for(const i of aTraiter){
   if(WF_STOP){arrete=true;break;}
-  const lbl=document.getElementById('wfg-label');if(lbl)lbl.textContent=(enseigneDe(REAL[i])||REAL[i].nom)+' · fiche '+(i+1)+'/'+REAL.length;
+  fait++;
+  const lbl=document.getElementById('wfg-label');if(lbl)lbl.textContent=(enseigneDe(REAL[i])||REAL[i].nom)+' · fiche '+fait+'/'+aTraiter.length;
   const r=await pipelineFiche(i);
   emailsTentes+=r.tentes;emailsOk+=r.ok;
-  const p=Math.round((i+1)/REAL.length*100),b=document.getElementById('wfg-bar');
+  const p=Math.round(fait/aTraiter.length*100),b=document.getElementById('wfg-bar');
   if(b){b.style.width=p+'%';document.getElementById('wfg-pct').textContent=p+' %';}
  }
  document.getElementById('wf-titre').textContent=arrete?`⏹ Enrichissement arrêté — ${emailsOk} email(s) trouvés (les fiches faites sont conservées)`:`🏁 Enrichissement terminé — ${emailsOk}/${emailsTentes} nouveaux emails`;
@@ -1815,6 +1829,7 @@ async function lancerWaterfall(){
  document.getElementById('wf-fermer').disabled=false;
  majCoutListe();
  persister();
+ majBtnNouvelles();
 }
 
 /* ───────── ENVOIS : LEMLIST / HUBSPOT / SMS ───────── */
