@@ -680,7 +680,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v60';
+const VERSION='v61';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1135,6 +1135,7 @@ function ficheReal(e,i){
     <div class="badges">
      ${e.gmb&&e.gmb.trouve?`<span class="badge b-gmb">GMB ${String(e.gmb.note_moyenne).replace('.',',')} ★ (${e.gmb.total_avis} avis)</span>`:''}
      ${e.signal_hot?'<span class="badge b-signal">🔥 Signal détecté</span>':''}
+     ${e.enrichi_par?(e.score?`<span class="badge b-new">✅ Enrichi par ${e.enrichi_par}</span>`:(e.enrich_lock_ts&&(Date.now()-e.enrich_lock_ts<5*60*1000)?`<span class="badge b-gmb">🔄 En cours par ${e.enrichi_par}</span>`:'')):''}
      ${aEmail?'<span class="badge b-new">Nouveau ✓</span>':(e.detail_charge?'<span class="badge b-signal">À enrichir</span>':'<span class="badge b-dup">Détail non chargé</span>')}
      ${e.lemlist_envoye?'<span class="badge b-new">✈️ Lemlist ✓</span>':''}${e.hubspot_envoye?'<span class="badge b-new">🤝 HubSpot ✓</span>':''}${e.sms_envoye?'<span class="badge b-new">💬 SMS ✓</span>':''}
      ${siteWeb?`<span class="badge b-new"><a href="${siteWeb.startsWith('http')?siteWeb:'https://'+siteWeb}" target="_blank" onclick="event.stopPropagation()" style="color:inherit">🌐 ${siteWeb.replace(/^https?:\/\/(www\.)?/,'').split('/')[0]}</a></span>`:''}
@@ -2175,6 +2176,7 @@ async function basculerVeille(id,activer){
  chargerHistorique();
 }
 
+function cleSignal(e){return ((e.signal&&e.signal.date)?e.signal.date:'')+(e.nom||'');}
 async function enrichirHotLeads(indices){
  // Réutilise le modal de progression global + pipelineFiche (déjà testés)
  document.getElementById('wf-modal').style.display='flex';
@@ -2183,17 +2185,30 @@ async function enrichirHotLeads(indices){
   `<div class="wf-row" id="wfr${i}"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${enseigneDe(e)||e.nom}</span><span class="wf-cell" id="wf${i}-gmb">—</span><span class="wf-cell" id="wf${i}-ia">—</span><span class="wf-cell" id="wf${i}-pers">—</span><span class="wf-cell" id="wf${i}-mail">—</span><span class="wf-cell" id="wf${i}-fe">—</span><span class="wf-cell" id="wf${i}-kaspr">—</span><span class="wf-cell" id="wf${i}-sc">—</span></div>`).join('');
  document.getElementById('wf-fermer').disabled=true;
  WF_STOP=false;const bs=document.getElementById('wf-stop');if(bs){bs.disabled=false;bs.textContent='⏹ Stop';}
- let n=0;
+ let n=0,skip=0;
  for(const i of indices){
   if(WF_STOP)break;
-  const lbl=document.getElementById('wfg-label');if(lbl)lbl.textContent=(enseigneDe(REAL[i])||REAL[i].nom)+' · '+(n+1)+'/'+indices.length;
+  const e=REAL[i];
+  const cle=cleSignal(e);
+  let v={ok:true};
+  try{const rv=await api('/api/verrou',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({liste_id:state.savedId,signal_cle:cle,action:'prendre'})});v=await rv.json();}catch(_){}
+  if(!v.ok){
+   skip++;
+   const row=document.getElementById('wfr'+i);if(row)row.style.opacity='.5';
+   toast('🔒 '+v.par+' enrichit déjà '+(enseigneDe(e)||e.nom));
+   e.enrichi_par=v.par;rerender(i);
+   continue;
+  }
+  e.enrichi_par=state.user?state.user.nom:'?';
+  const lbl=document.getElementById('wfg-label');if(lbl)lbl.textContent=(enseigneDe(e)||e.nom)+' · '+(n+1)+'/'+indices.length;
   await pipelineFiche(i);
-  REAL[i].a_enrichir=false;
+  e.a_enrichir=false;
+  try{await api('/api/verrou',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({liste_id:state.savedId,signal_cle:cle,action:'liberer'})});}catch(_){}
   n++;
-  const p=Math.round(n/indices.length*100),b=document.getElementById('wfg-bar');
+  const p=Math.round((n+skip)/indices.length*100),b=document.getElementById('wfg-bar');
   if(b){b.style.width=p+'%';document.getElementById('wfg-pct').textContent=p+' %';}
  }
- document.getElementById('wf-titre').textContent=`🏁 ${n} Hot Lead(s) enrichi(s)`;
+ document.getElementById('wf-titre').textContent='🏁 '+n+' Hot Lead(s) enrichi(s)'+(skip?' · '+skip+' déjà pris par un collègue':'');
  document.getElementById('wf-fermer').disabled=false;
  if(document.getElementById('wf-stop'))document.getElementById('wf-stop').disabled=true;
  persister();majCoutListe();
@@ -2209,7 +2224,9 @@ async function ouvrirListe(id){
   if((l.criteres||{}).auto!=='hotleads')document.getElementById('res-sub').textContent+=' · Rouverte depuis l\'historique (0 crédit)';
   majCoutListe();
   // ── Hot Leads : enrichissement automatique des fiches non encore traitées ──
-  const aFaire=REAL.map((e,i)=>({e,i})).filter(x=>x.e.a_enrichir&&!x.e.score);
+  const moi=state.user?state.user.nom:'';
+  const verrouRecent=e=>e.enrichi_par&&e.enrichi_par!==moi&&e.enrich_lock_ts&&(Date.now()-e.enrich_lock_ts<5*60*1000)&&!e.score;
+  const aFaire=REAL.map((e,i)=>({e,i})).filter(x=>x.e.a_enrichir&&!x.e.score&&!verrouRecent(x.e));
   if(aFaire.length){
    toast(`🔥 ${aFaire.length} Hot Lead(s) à enrichir — lancement automatique…`);
    setTimeout(()=>enrichirHotLeads(aFaire.map(x=>x.i)),600);
