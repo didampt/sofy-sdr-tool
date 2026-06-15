@@ -680,7 +680,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v61';
+const VERSION='v62';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1532,11 +1532,14 @@ function jobsCibles(){
 }
 async function chercherPersonas(i){
  const e=REAL[i];
- const jobs=jobsCibles();
+ let jobs=jobsCibles();
+ // Hot Lead (RB2B) sans critères de liste → personas C-level par défaut
+ const estHotLead=e.source_hotlead==='RB2B'||(e.signal&&e.signal.source==='RB2B');
+ if(!jobs.length&&estHotLead){jobs=['Directeur Général','Directeur Marketing','Directeur Commercial','Responsable Communication'];}
  if(!jobs.length){toast('Aucun persona sélectionné dans les critères de cette liste (hors Dirigeant/PDG)');return false;}
  try{
   const r=await api('/api/personas',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({liste_id:state.savedId,entreprise:{nom:e.nom,enseigne:enseigneDe(e),site:domaineDe(e),ville:e.ville||''},jobs})});
+   body:JSON.stringify({liste_id:state.savedId,entreprise:{nom:e.nom,enseigne:enseigneDe(e),site:domaineDe(e),ville:e.ville||'',linkedin:e.linkedin_entreprise||''},jobs})});
   let d;
   try{d=await r.json();}catch(_){toast('Personas : réponse invalide ('+r.status+')');return false;}
   if(d.erreur){toast('Personas : '+d.erreur+(d.detail?' — '+d.detail:''));return false;}
