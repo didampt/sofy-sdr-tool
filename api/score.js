@@ -34,6 +34,15 @@ Analyse et produis :
    - SoConnect ↑ si : avis mentionnant des appels/messages sans réponse, entreprise multi-sites, volume d'avis élevé (= flux clients), pas de site web
    - SoReach ↑ si : activité avec relances clients (entretiens, révisions auto, rendez-vous), base clients probable (ancienneté, volume d'avis), multi-établissements
 2. **Score global** = potentiel commercial d'ensemble (pondère aussi taille/CA)
+
+⚡ SIGNAL CHAUD (si présent dans les données) : si l'entreprise a un champ "signal" de source "RB2B" (= elle a visité sofy.fr) ou un signal LinkedIn, c'est un prospect TIÈDE À CHAUD, pas une approche à froid. Dans ce cas :
+   - Monte le score global (un visiteur du site est bien plus intéressé qu'un nom tiré de Pappers)
+   - Surtout, REGARDE les pages visitées ("pages_visitees") pour orienter le produit dominant :
+     • page contenant "so-reach" / "sms" / "rcs" → booste fortement **SoReach** (il s'intéresse aux campagnes SMS)
+     • page contenant "so-view" / "avis" → booste fortement **Soview**
+     • page contenant "so-connect" / "budy" / "messaging" → booste fortement **SoConnect**
+     • page "demo" / "tarifs" / "pricing" → intention d'achat forte, monte le score global
+   - L'accroche, la synthèse et l'email DOIVENT mentionner subtilement ce signal ("j'ai vu que vous vous intéressiez à…", "suite à votre visite sur notre page X") — c'est un warm call, le SDR a un prétexte naturel. Reste élégant, ne dis pas "notre logiciel espion vous a tracké".
 3. **Signaux** : liste courte des éléments concrets exploitables (max 4), formulés pour un SDR
 4. **Synthèse d'appel** (4-6 phrases) : qui appeler, contexte de l'entreprise, LE point de douleur n°1 avec les chiffres exacts (note, avis, concurrents), et l'angle d'attaque produit recommandé
 5. **Accroche d'appel** : LA première phrase que le SDR peut dire après bonjour (naturelle, factuelle, pas commerciale agressive)

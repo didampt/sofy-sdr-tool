@@ -189,6 +189,7 @@ export async function ajouterHotLead(profil, cfg) {
     nb_visites: profil.nb_visites || null,
     date_visite: profil.date_visite || maintenant,
     source_hotlead: profil.source, date_hotlead: maintenant,
+    a_enrichir: true,
     signal_hot: true,
     signal: { type: profil.type, source: profil.source, detail: profil.detail, date: maintenant, pages: profil.pages_visitees || [] },
     contacts: profil.nom_complet ? [{
