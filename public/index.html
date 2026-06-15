@@ -680,7 +680,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v58';
+const VERSION='v59';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -2151,7 +2151,7 @@ async function chargerHistorique(){
    return `<div class="fiche"><div class="fiche-top" style="grid-template-columns:1fr auto;align-items:center">
     <div>
      <div class="lead-name">${l.nom}</div>
-     <div class="lead-meta">SDR : <b>${l.sdr}</b> · ${date} · ${l.total} entreprises · ${(cr.naf||[]).join(', ')} · ${(cr.pays||[]).join(' + ')} · ~${l.credits_estimes||0} crédits Pappers</div>
+     <div class="lead-meta">SDR : <b>${l.sdr}</b> · ${date} · ${l.total||l.nb_entreprises||0} entreprise${(l.total||l.nb_entreprises||0)>1?'s':''}${cr.auto==='hotleads'?' · 🔥 liste automatique':` · ${(cr.naf||[]).join(', ')} · ${(cr.pays||[]).join(' + ')} · ~${l.credits_estimes||0} crédits Pappers`}</div>
     </div>
     <div class="act-row" style="margin:0">
      <button class="act ${l.veille?'act-call':'act-copy'}" onclick="basculerVeille(${l.id},${l.veille?'false':'true'})" title="${l.veille?'Veille active jusqu\'au '+new Date(l.veille_fin).toLocaleDateString('fr-FR')+' — cliquer pour arrêter':'Surveiller les signaux LinkedIn de cette liste (60 j)'}">${l.veille?'🔔 Veille ON':'🔕 Veille'}</button>
