@@ -83,7 +83,7 @@ export default async function handler(req, res) {
 
     // ── Mise à jour des entreprises (analyses GMB, enrichissements futurs) ──
     if (req.method === 'PUT') {
-      const { id, entreprises, veille, veille_jours } = req.body || {};
+      const { id, entreprises, veille, veille_jours, supprimees } = req.body || {};
       if (!id) return res.status(400).json({ erreur: 'id requis' });
       if (Array.isArray(entreprises)) {
         const lid = parseInt(id);
@@ -98,8 +98,11 @@ export default async function handler(req, res) {
           // Repartir des fiches envoyées (à jour), puis rajouter celles de la base qui manquent
           const fusion = [...entreprises];
           const clesEnvoyees = new Set(entreprises.map(cleFiche));
+          const clesSupprimees = new Set(Array.isArray(supprimees) ? supprimees : []);
           for (const eb of base) {
-            if (!clesEnvoyees.has(cleFiche(eb))) fusion.push(eb);
+            const c = cleFiche(eb);
+            // On conserve une fiche de la base SAUF si le front l'a explicitement supprimée
+            if (!clesEnvoyees.has(c) && !clesSupprimees.has(c)) fusion.push(eb);
           }
           await sql`UPDATE listes SET entreprises = ${JSON.stringify(fusion.slice(0, 300))}, total = ${fusion.length} WHERE id = ${lid}`;
         } else {
