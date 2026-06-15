@@ -693,7 +693,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v72';
+const VERSION='v73';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1039,10 +1039,12 @@ function sauverNote(i,val){
  persister();
  toast('📝 Note enregistrée');
 }
-function persister(){
+function persister(supprimees){
  if(state.savedId){
+  const payload={id:state.savedId,entreprises:REAL};
+  if(Array.isArray(supprimees)&&supprimees.length)payload.supprimees=supprimees;
   api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({id:state.savedId,entreprises:REAL},(k,v)=>(k==='_busy'||k==='_open'||k==='_prog')?undefined:v)}).catch(()=>{});
+   body:JSON.stringify(payload,(k,v)=>(k==='_busy'||k==='_open'||k==='_prog')?undefined:v)}).catch(()=>{});
  }
 }
 
@@ -1389,10 +1391,11 @@ async function analyserFiche(i){
 function exclure(i){
  const e=REAL[i];
  if(!confirm(`Exclure « ${e.nom} » de la liste ? (ne sera pas enrichie, n'apparaîtra plus)`))return;
+ const cleSupp=cleSignal(e);   // mémoriser la clé pour que la fusion serveur ne la ressuscite pas
  REAL.splice(i,1);
  document.getElementById('fiches').innerHTML=REAL.map((x,k)=>ficheReal(x,k)).join('');
  document.getElementById('k-total').textContent=REAL.length;
- persister();
+ persister([cleSupp]);
  toast('Fiche exclue — filtre d\'abord, enrichis ensuite 👍');
 }
 
@@ -2276,7 +2279,7 @@ async function enrichirHotLeads(indices){
   trierReal();   // re-render complet de la liste avec la fiche enrichie à jour
   setTimeout(()=>{
    const idx=REAL.findIndex(e=>cleSignal(e)===cleCible);   // retrouver la VRAIE position après re-tri
-   const row=idx>=0?document.getElementById('f'+idx):null;
+   const row=idx>=0?document.getElementById('fr'+idx):null;
    if(row){row.scrollIntoView({behavior:'smooth',block:'center'});row.style.transition='box-shadow .4s';row.style.boxShadow='0 0 0 4px var(--accent)';setTimeout(()=>row.style.boxShadow='',3000);}
    toast('✅ '+nomCible+' enrichi — fiche ouverte');
   },500);
@@ -2300,7 +2303,7 @@ async function ouvrirListe(id,cibleFiche){
    const idx=REAL.findIndex(e=>cleSignal(e)===cibleFiche);
    if(idx>=0){
     const e=REAL[idx];
-    const row=document.getElementById('f'+idx);
+    const row=document.getElementById('fr'+idx);
     if(row){row.scrollIntoView({behavior:'smooth',block:'center'});row.style.transition='box-shadow .4s';row.style.boxShadow='0 0 0 3px var(--accent)';setTimeout(()=>row.style.boxShadow='',2500);}
     if(e.a_enrichir&&!e.score&&!verrouRecent(e)){
      // Validation manuelle avant d'enrichir (évite de brûler des crédits sur un visiteur hors cible)
