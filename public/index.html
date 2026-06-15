@@ -680,7 +680,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v62';
+const VERSION='v63';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -723,7 +723,8 @@ function demarrerApp(u){
  // Lien direct vers une liste (ex : depuis Slack → ?liste=ID)
  const params=new URLSearchParams(location.search);
  const lid=params.get('liste');
- if(lid){history.replaceState(null,'',location.pathname);setTimeout(()=>ouvrirListe(parseInt(lid)),300);}
+ const fcle=params.get('fiche');
+ if(lid){history.replaceState(null,'',location.pathname);setTimeout(()=>ouvrirListe(parseInt(lid),fcle?decodeURIComponent(fcle):null),300);}
 }
 async function verifSession(){
  const t=localStorage.getItem('sofy_token');
@@ -2216,7 +2217,7 @@ async function enrichirHotLeads(indices){
  if(document.getElementById('wf-stop'))document.getElementById('wf-stop').disabled=true;
  persister();majCoutListe();
 }
-async function ouvrirListe(id){
+async function ouvrirListe(id,cibleFiche){
  try{
   const r=await api('/api/listes?id='+id);
   const l=await r.json();
@@ -2226,13 +2227,29 @@ async function ouvrirListe(id){
   showRealResults(l.total,l.criteres);
   if((l.criteres||{}).auto!=='hotleads')document.getElementById('res-sub').textContent+=' · Rouverte depuis l\'historique (0 crédit)';
   majCoutListe();
-  // ── Hot Leads : enrichissement automatique des fiches non encore traitées ──
+  // ── Hot Leads : enrichissement automatique ──
   const moi=state.user?state.user.nom:'';
   const verrouRecent=e=>e.enrichi_par&&e.enrichi_par!==moi&&e.enrich_lock_ts&&(Date.now()-e.enrich_lock_ts<5*60*1000)&&!e.score;
-  const aFaire=REAL.map((e,i)=>({e,i})).filter(x=>x.e.a_enrichir&&!x.e.score&&!verrouRecent(x.e));
-  if(aFaire.length){
-   toast(`🔥 ${aFaire.length} Hot Lead(s) à enrichir — lancement automatique…`);
-   setTimeout(()=>enrichirHotLeads(aFaire.map(x=>x.i)),600);
+  if(cibleFiche){
+   // Depuis un lien Slack : enrichir UNIQUEMENT la fiche visitée + scroller dessus
+   const idx=REAL.findIndex(e=>cleSignal(e)===cibleFiche);
+   if(idx>=0){
+    const e=REAL[idx];
+    const row=document.getElementById('f'+idx);
+    if(row){row.scrollIntoView({behavior:'smooth',block:'center'});row.style.transition='box-shadow .4s';row.style.boxShadow='0 0 0 3px var(--accent)';setTimeout(()=>row.style.boxShadow='',2500);}
+    if(e.a_enrichir&&!e.score&&!verrouRecent(e)){
+     toast(`🔥 Enrichissement de ${enseigneDe(e)||e.nom}…`);
+     setTimeout(()=>enrichirHotLeads([idx]),600);
+    }else if(e.score){toast(`✅ ${enseigneDe(e)||e.nom} est déjà enrichi`);}
+    else if(verrouRecent(e)){toast(`🔒 ${e.enrichi_par} enrichit déjà cette fiche`);}
+   }else{toast('Fiche introuvable dans la liste (peut-être déjà traitée)');}
+  }else{
+   // Ouverture manuelle : enrichir toutes les fiches en attente
+   const aFaire=REAL.map((e,i)=>({e,i})).filter(x=>x.e.a_enrichir&&!x.e.score&&!verrouRecent(x.e));
+   if(aFaire.length){
+    toast(`🔥 ${aFaire.length} Hot Lead(s) à enrichir — lancement automatique…`);
+    setTimeout(()=>enrichirHotLeads(aFaire.map(x=>x.i)),600);
+   }
   }
  }catch(e){toast('Erreur : '+e.message);}
 }
