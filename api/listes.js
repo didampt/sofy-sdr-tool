@@ -86,7 +86,25 @@ export default async function handler(req, res) {
       const { id, entreprises, veille, veille_jours } = req.body || {};
       if (!id) return res.status(400).json({ erreur: 'id requis' });
       if (Array.isArray(entreprises)) {
-        await sql`UPDATE listes SET entreprises = ${JSON.stringify(entreprises)} WHERE id = ${parseInt(id)}`;
+        const lid = parseInt(id);
+        // Protection anti-disparition : pour la liste Hot Leads (auto), on FUSIONNE au lieu d'écraser.
+        // Une fiche présente en base mais absente de l'envoi (race condition, webhook concurrent) est conservée.
+        const cur = await sql`SELECT criteres, entreprises FROM listes WHERE id = ${lid}`;
+        const estAuto = cur.length && cur[0].criteres && cur[0].criteres.auto === 'hotleads';
+        if (estAuto) {
+          const cleFiche = e => ((e.signal && e.signal.date) ? e.signal.date : '') + (e.nom || '');
+          const envoyees = new Map(entreprises.map(e => [cleFiche(e), e]));
+          const base = cur[0].entreprises || [];
+          // Repartir des fiches envoyées (à jour), puis rajouter celles de la base qui manquent
+          const fusion = [...entreprises];
+          const clesEnvoyees = new Set(entreprises.map(cleFiche));
+          for (const eb of base) {
+            if (!clesEnvoyees.has(cleFiche(eb))) fusion.push(eb);
+          }
+          await sql`UPDATE listes SET entreprises = ${JSON.stringify(fusion.slice(0, 300))}, total = ${fusion.length} WHERE id = ${lid}`;
+        } else {
+          await sql`UPDATE listes SET entreprises = ${JSON.stringify(entreprises)}, total = ${entreprises.length} WHERE id = ${lid}`;
+        }
       }
       if (veille !== undefined) {
         const fin = veille ? new Date(Date.now() + (parseInt(veille_jours) || 60) * 24 * 3600 * 1000) : null;
