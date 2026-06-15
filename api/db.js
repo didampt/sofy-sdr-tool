@@ -204,6 +204,37 @@ export async function ajouterHotLead(profil, cfg) {
   return { ajoute: true, liste_id: hl.id };
 }
 
+// Verrou d'enrichissement Hot Lead : pose enrichi_par sur une fiche (par index) si libre.
+// Renvoie {ok:true} si le verrou est acquis, {ok:false, par, depuis} si déjà pris (<5min).
+export async function verrouHotLead(listeId, signalCle, sdr) {
+  const rows = await sql`SELECT entreprises FROM listes WHERE id = ${listeId}`;
+  if (!rows.length) return { ok: false, par: null };
+  const ents = rows[0].entreprises || [];
+  const idx = ents.findIndex(e => (e.signal && e.signal.date ? e.signal.date : '') + (e.nom || '') === signalCle);
+  if (idx < 0) return { ok: true, idx: -1 }; // fiche introuvable → laisser passer
+  const e = ents[idx];
+  const maintenant = Date.now();
+  if (e.enrichi_par && e.enrich_lock_ts && (maintenant - e.enrich_lock_ts) < 5 * 60 * 1000 && !e.score) {
+    return { ok: false, par: e.enrichi_par, depuis: Math.round((maintenant - e.enrich_lock_ts) / 1000) };
+  }
+  ents[idx].enrichi_par = sdr;
+  ents[idx].enrich_lock_ts = maintenant;
+  await sql`UPDATE listes SET entreprises = ${JSON.stringify(ents)} WHERE id = ${listeId}`;
+  return { ok: true, idx };
+}
+
+// Libère le verrou d'enrichissement d'un Hot Lead (après enrichissement terminé).
+export async function libererHotLead(listeId, signalCle) {
+  const rows = await sql`SELECT entreprises FROM listes WHERE id = ${listeId}`;
+  if (!rows.length) return;
+  const ents = rows[0].entreprises || [];
+  const idx = ents.findIndex(e => (e.signal && e.signal.date ? e.signal.date : '') + (e.nom || '') === signalCle);
+  if (idx < 0) return;
+  // On garde enrichi_par (= qui l'a traité, utile pour le badge ✅) mais on retire le timestamp de lock
+  delete ents[idx].enrich_lock_ts;
+  await sql`UPDATE listes SET entreprises = ${JSON.stringify(ents)} WHERE id = ${listeId}`;
+}
+
 export async function limiteAtteinte(user) {
   if (!sql || !user) return null;
   try {
