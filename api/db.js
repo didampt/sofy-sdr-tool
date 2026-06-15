@@ -130,8 +130,8 @@ export async function majSoldeApi(api, solde) {
 export async function listeHotLeads(cfgSdr) {
   const rows = await sql`SELECT id, entreprises FROM listes WHERE criteres->>'auto' = 'hotleads' LIMIT 1`;
   if (rows.length) return rows[0];
-  const crea = await sql`INSERT INTO listes (nom, sdr, criteres, entreprises, veille)
-    VALUES ('🔥 Hot Leads (auto)', ${cfgSdr || 'didier'}, ${JSON.stringify({ auto: 'hotleads' })}, '[]', TRUE)
+  const crea = await sql`INSERT INTO listes (nom, sdr, criteres, criteres_hash, entreprises, veille)
+    VALUES ('🔥 Hot Leads (auto)', ${cfgSdr || 'didier'}, ${JSON.stringify({ auto: 'hotleads' })}, 'auto:hotleads', '[]', TRUE)
     RETURNING id, entreprises`;
   return crea[0];
 }
