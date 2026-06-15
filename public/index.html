@@ -694,7 +694,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v80';
+const VERSION='v82';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1977,7 +1977,31 @@ async function envoyerLemlist(i){
 }
 function prendreRdv(i){
  const e=REAL[i];
- const c=contactsDe(e).find(x=>x.enrich&&x.enrich.email)||contactsDe(e).find(x=>x.nom)||contactsDe(e)[0]||{};
+ // Contacts candidats (avec au moins un nom ou un email)
+ const cands=contactsDe(e).filter(x=>x.nom||(x.enrich&&x.enrich.email));
+ if(cands.length>1){ choisirContactRdv(i,cands); return; }
+ ouvrirRdv(i,cands[0]||contactsDe(e)[0]||{});
+}
+function choisirContactRdv(i,cands){
+ const m=document.getElementById('confirm-modal');
+ document.getElementById('cm-titre').textContent='🤝 RDV pris — quel contact ?';
+ const corps=document.getElementById('cm-corps');
+ corps.innerHTML='Choisis le contact à transmettre à l\'AE :<div id="cm-contacts" style="margin-top:12px;display:flex;flex-direction:column;gap:8px"></div>';
+ const box=document.getElementById('cm-contacts');
+ box.innerHTML=cands.map((c,k)=>{
+  const en=c.enrich||{};
+  const sub=[en.email,en.telephone,c.fonction].filter(Boolean).join(' · ')||'pas de détail';
+  return `<button class="act act-copy" style="text-align:left;padding:10px" onclick="window._rdvChoix(${i},${k})"><b>${((c.prenom||'')+' '+(c.nom||'')).trim()||'Contact '+(k+1)}</b><br><span style="font-size:12px;color:var(--ink-soft)">${sub}</span></button>`;
+ }).join('');
+ window._rdvChoix=(fi,fk)=>{m.style.display='none';ouvrirRdv(fi,cands[fk]);};
+ document.getElementById('cm-ok').style.display='none';
+ const an=document.getElementById('cm-annuler');an.textContent='Annuler';
+ an.onclick=()=>{m.style.display='none';document.getElementById('cm-ok').style.display='';};
+ m.style.display='flex';
+}
+function ouvrirRdv(i,c){
+ const e=REAL[i];
+ c=c||{};
  const ent=e.enseigne_ia||e.enseigne||e.nom||'';
  const en=c.enrich||{};
  // Préremplissage du lien round-robin AE (champs connus)
@@ -1988,7 +2012,15 @@ function prendreRdv(i){
  if(en.email)params.set('email',en.email);
  if(ent)params.set('company',ent);
  const tel=en.telephone||(e.gmb&&e.gmb.telephone)||'';
- if(tel)params.set('phone',tel);
+ if(tel)params.set('mobilephone',tel);
+ // Champ "Décrivez votre besoin" (revops_message) = synthèse d'appel IA + note SDR
+ const sc=e.score||{};
+ const bouts=[];
+ if(sc.synthese)bouts.push(sc.synthese);
+ if(e.notes_sdr)bouts.push('Note SDR : '+e.notes_sdr);
+ if(sc.signaux&&sc.signaux.length)bouts.push('Signaux : '+sc.signaux.join(' · '));
+ const besoin=bouts.join('\n\n').slice(0,1500);
+ if(besoin)params.set('revops_message',besoin);
  const url=base+(params.toString()?'?'+params.toString():'');
  window.open(url,'_blank');
  // Marque la fiche comme RDV pris (badge + tag pour les stats terrain)
@@ -2369,6 +2401,7 @@ function cleSignal(e){return ((e.signal&&e.signal.date)?e.signal.date:'')+(e.nom
 function confirmSofy(titre,corps,labelOk){
  return new Promise(resolve=>{
   const m=document.getElementById('confirm-modal');
+  document.getElementById('cm-ok').style.display='';
   document.getElementById('cm-titre').textContent=titre;
   document.getElementById('cm-corps').textContent=corps;
   document.getElementById('cm-ok').textContent=labelOk||'🚀 Lancer';
