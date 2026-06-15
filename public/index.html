@@ -220,6 +220,15 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
 .pscore .pscore-v{color:var(--ink)}
 .fiche{padding:24px 28px !important;margin-bottom:18px}
 @media(max-width:700px){.fiche{padding:18px !important}}
+.note-box{margin-top:16px;background:#FFFCF5;border:1px solid #FAE6B8;border-radius:14px;padding:14px 16px}
+.note-box .col-title{margin-top:0}
+.note-tags{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.tag-btn{border:1.5px solid var(--line);background:#fff;border-radius:99px;padding:6px 13px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--ink-soft);transition:all .15s;font-family:inherit}
+.tag-btn:hover{border-color:var(--accent)}
+.tag-btn.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.tag-btn.on-bad{background:#FEE2E2;color:#B91C1C;border-color:#FCA5A5}
+.tag-btn.on-good{background:#DCFCE7;color:#15803D;border-color:#86EFAC}
+.note-area{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;font-family:inherit;font-size:13.5px;resize:vertical;min-height:54px}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:12px 22px;border-radius:11px;font-size:14px;font-weight:500;box-shadow:var(--shadow);transition:.25s;z-index:99;opacity:0}
 .toast.on{transform:translateX(-50%);opacity:1}
 @media(max-width:880px){.app{grid-template-columns:1fr}.side{position:static;height:auto;flex-direction:row;align-items:center;flex-wrap:wrap}.demo-pill{margin-top:0}.main{padding:24px}.fiche-grid,.api-grid,.row3,.comp-grid{grid-template-columns:1fr}.fiche-top{grid-template-columns:1fr}}
@@ -565,7 +574,8 @@ Spot-Hit</textarea>
       <div class="map-card">
         <h2>📋 Par liste (30 dernières)</h2>
         <div class="role">% emails / mobiles = contacts avec email / mobile trouvé. % enrichi = fiches avec au moins un moyen de contact. Coût par contact = coût liste ÷ contacts enrichis.</div>
-        <div style="overflow-x:auto"><table class="map-table" id="stats-listes"><tr><th>Liste</th><th>SDR</th><th>Fiches</th><th>Emails</th><th>% emails</th><th>📱 mobiles</th><th>☎️ tél GMB</th><th>% enrichi</th><th>Coût</th><th>€ / contact</th></tr></table></div>
+        <div id="stats-notes" style="margin-top:18px"></div>
+        <div style="overflow-x:auto"><table class="map-table" id="stats-listes"><tr><th>Liste</th><th>SDR</th><th>Fiches</th><th>Emails</th><th>% emails</th><th>📱 mobiles</th><th>☎️ tél GMB</th><th>% enrichi</th><th>🤝 RDV</th><th>Coût</th><th>€ / contact</th></tr></table></div>
       </div>
     </section>
 
@@ -665,7 +675,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v54';
+const VERSION='v57';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -964,7 +974,12 @@ function showRealResults(total,c){
  document.getElementById('loader').classList.remove('on');
  nav('results');
  document.getElementById('res-title').textContent=`${state.listeNom||'Liste'} · ${state.sdr||''}`;
- document.getElementById('res-sub').textContent=`${c.naf.join(', ')} · ${total} entreprises trouvées (Pappers) · ${c.emp} salariés · CA ${c.ca} · ${c.pays.join(' + ')}${c.ville?' / '+c.ville:''} — affichage : ${REAL.length}${state.savedId?' · Sauvegardée ✓ (#'+state.savedId+')':''}`;
+ const _naf=Array.isArray(c.naf)?c.naf.join(', '):(c.naf||'');
+ const _pays=Array.isArray(c.pays)?c.pays.join(' + '):(c.pays||'');
+ const estAuto=c.auto==='hotleads';
+ document.getElementById('res-sub').textContent=estAuto
+  ?`🔥 Liste automatique des Hot Leads · ${REAL.length} fiche(s)${state.savedId?' · #'+state.savedId:''}`
+  :`${_naf}${_naf?' · ':''}${total} entreprises trouvées (Pappers) · ${c.emp||''} salariés · CA ${c.ca||'—'}${_pays?' · '+_pays:''}${c.ville?' / '+c.ville:''} — affichage : ${REAL.length}${state.savedId?' · Sauvegardée ✓ (#'+state.savedId+')':''}`;
  document.getElementById('kpis').style.display='flex';
  document.getElementById('sort-bar').style.display='flex'; // tris actifs : signaux/scores IA, note GMB, établissements
  document.getElementById('k-total').textContent=REAL.length;
@@ -973,6 +988,19 @@ function showRealResults(total,c){
  document.getElementById('fiches').innerHTML=REAL.length?REAL.map((e,i)=>ficheReal(e,i)).join(''):'<p style="color:var(--ink-soft)">Aucune entreprise ne correspond à ces critères. Élargis les filtres (effectif ou CA).</p>';
 }
 
+function toggleTag(i,tag){
+ const e=REAL[i];
+ const tags=e.tags_sdr||[];
+ const k=tags.indexOf(tag);
+ if(k>=0)tags.splice(k,1);else tags.push(tag);
+ e.tags_sdr=tags;
+ rerender(i);persister();
+}
+function sauverNote(i,val){
+ REAL[i].notes_sdr=val;
+ persister();
+ toast('📝 Note enregistrée');
+}
 function persister(){
  if(state.savedId){
   api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},
@@ -1162,6 +1190,13 @@ function ficheReal(e,i){
       <button class="btn-cta btn-cta-coral" onclick="envoyerHubspot(${i})">🤝 RDV pris → HubSpot</button>
      </div>`}
     </div>
+   </div>
+   <div class="note-box">
+    <div class="col-title">📝 Bloc-notes SDR <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--ink-soft)">— issue d'appel & retours (analysé dans les Statistiques)</span></div>
+    <div class="note-tags">
+     ${['🤝 RDV pris','📞 Pas de réponse','❌ Pas intéressé','📵 Mauvais numéro','✉️ Mauvais email','🔁 À rappeler'].map(t=>{const on=(e.tags_sdr||[]).includes(t);const cls=on?(t.includes('RDV')?'on-good':(t.includes('intéressé')||t.includes('Mauvais')?'on-bad':'on')):'';return `<button class="tag-btn ${cls}" onclick="toggleTag(${i},'${t}')">${t}</button>`}).join('')}
+    </div>
+    <textarea class="note-area" id="note${i}" placeholder="Note libre : objection entendue, bon interlocuteur, ressenti terrain…" onchange="sauverNote(${i},this.value)">${(e.notes_sdr||'').replace(/</g,'&lt;').replace(/"/g,'&quot;')}</textarea>
    </div>
    <div class="act-row" style="border-top:1px solid var(--line);padding-top:12px;margin-top:16px">
     <button class="act act-call" onclick="lancerFiche(${i})" title="Pipeline complet sur cette fiche">🚀 Fiche</button>
@@ -1762,7 +1797,7 @@ async function envoyerHubspot(i){
  const g=e.gmb||{},sc=e.score||{};
  const note=[
   sc.synthese?'📋 SYNTHÈSE : '+sc.synthese:'',
-  (sc.signaux&&sc.signaux.length)?'🔥 SIGNAUX : '+sc.signaux.join(' · '):'',
+  (sc.signaux&&sc.signaux.length)?'🔥 SIGNAUX : '+(sc.signaux||[]).join(' · '):'',
   g.trouve?`⭐ GMB : ${g.note_moyenne}★ (${g.total_avis} avis) · pire fiche ${g.pire_fiche.nom} ${g.pire_fiche.note}★`:'',
   'Source : Sofy Scrap · SDR '+(state.user?state.user.nom:'')+' · '+new Date().toLocaleDateString('fr-FR')
  ].filter(Boolean).join('\n\n');
@@ -2168,7 +2203,13 @@ async function chargerStats(){
      <td>${lim?`${Number(lim).toFixed(0)} € <span class="badge ${pct>=100?'b-signal':pct>=80?'b-dup':'b-gmb'}">${pct}%</span>`:'Illimité'}</td></tr>`;
    }).join(''):'<tr><td colspan="4" style="color:var(--ink-soft)">Aucune consommation ce mois-ci</td></tr>');
   const tl=document.getElementById('stats-listes');
-  tl.innerHTML='<tr><th>Liste</th><th>SDR</th><th>Fiches</th><th>Emails</th><th>% emails</th><th>📱 mobiles</th><th>☎️ tél GMB</th><th>% enrichi</th><th>Coût</th><th>€ / contact</th></tr>'+
+  tl.innerHTML='<tr><th>Liste</th><th>SDR</th><th>Fiches</th><th>Emails</th><th>% emails</th><th>📱 mobiles</th><th>☎️ tél GMB</th><th>% enrichi</th><th>🤝 RDV</th><th>Coût</th><th>€ / contact</th></tr>'+
+   '';
+  // Retours terrain (notes SDR) agrégés
+  const avecNotes=(d.par_liste||[]).filter(l=>l.notes&&l.notes.length);
+  const cn=document.getElementById('stats-notes');
+  if(cn)cn.innerHTML=avecNotes.length?`<div class="map-card" style="background:#FFFCF5;border-color:#FAE6B8"><h2 style="margin-top:0">📝 Retours terrain des SDR</h2>${avecNotes.map(l=>`<div style="margin-bottom:12px"><b>${l.nom}</b> <span style="color:var(--ink-soft);font-size:12px">(${l.sdr})</span>${Object.keys(l.tags||{}).length?'<div class="badges" style="margin:5px 0">'+Object.entries(l.tags).map(([t,n])=>`<span class="badge b-gmb">${t} ×${n}</span>`).join('')+'</div>':''}${l.notes.map(nt=>`<div style="font-size:13px;color:var(--ink);margin-top:3px">• <b>${nt.entreprise}</b> : ${nt.note.replace(/</g,'&lt;')}</div>`).join('')}</div>`).join('')}</div>`:'';
+  tl.innerHTML+=
    (d.par_liste||[]).map(l=>`<tr>
     <td><b>${l.nom}</b><br><span style="font-size:11.5px;color:var(--ink-soft)">${new Date(l.created_at).toLocaleDateString('fr-FR')}</span></td>
     <td>${l.sdr}</td><td>${l.total}</td><td>${l.emails}/${l.contacts}</td>
@@ -2176,6 +2217,7 @@ async function chargerStats(){
     <td>${l.mobiles||0}/${l.contacts} <span style="color:var(--ink-soft)">(${l.pct_mobiles||0}%)</span></td>
     <td>${l.tel_gmb||0} <span style="color:var(--ink-soft)">(${l.pct_tel_gmb||0}%)</span></td>
     <td><span class="badge ${l.pct_enrichi>=60?'b-new':l.pct_enrichi>=30?'b-gmb':'b-dup'}">${l.pct_enrichi||0}%</span></td>
+    <td>${l.rdv>0?`<span class="badge b-new">${l.rdv} 🤝</span>`:'—'}${l.pas_interesse>0?` <span class="badge b-dup">${l.pas_interesse} ❌</span>`:''}</td>
     <td><b>${l.cout.toFixed(2)} €</b></td>
     <td>${l.cout_par_contact_enrichi!==null?l.cout_par_contact_enrichi.toFixed(2)+' €':'—'}</td></tr>`).join('');
  }catch(e){toast('Stats : '+e.message);}
