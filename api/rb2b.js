@@ -156,7 +156,7 @@ export default async function handler(req, res) {
         if (r2.ajoute) {
           hotleads++;
           const prod = pages.find(p => /so-?reach/i.test(p)) ? 'SoReach' : pages.find(p => /so-?view|avis/i.test(p)) ? 'Soview' : pages.find(p => /so-?connect|budy|messaging/i.test(p)) ? 'SoConnect' : null;
-          const lienListe = `https://sofy-sdr-tool.vercel.app/?liste=${r2.liste_id}`;
+          const lienListe = `https://sofy-sdr-tool.vercel.app/?liste=${r2.liste_id}&fiche=${encodeURIComponent(r2.cle_fiche || '')}`;
           await envoyerSlack(`🔥 *Nouveau Hot Lead* (visite sofy.fr) — ${ent || nomC}${v.title ? ' · ' + v.title : ''}${v.industry ? ' · ' + v.industry : ''}\n👀 Pages : ${pagesTxt}${prod ? ` → intérêt probable *${prod}*` : ''}\n📂 <${lienListe}|Ouvrir la fiche dans Sofy Scrap> — enrichissement auto au chargement`);
         }
       }

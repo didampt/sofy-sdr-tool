@@ -201,7 +201,8 @@ export async function ajouterHotLead(profil, cfg) {
   });
   const finales = ents.slice(0, 300);
   await sql`UPDATE listes SET entreprises = ${JSON.stringify(finales)}, total = ${finales.length} WHERE id = ${hl.id}`;
-  return { ajoute: true, liste_id: hl.id };
+  const cleFiche = maintenant + (profil.entreprise || profil.nom_complet || 'Inconnu');
+  return { ajoute: true, liste_id: hl.id, cle_fiche: cleFiche };
 }
 
 // Verrou d'enrichissement Hot Lead : pose enrichi_par sur une fiche (par index) si libre.
