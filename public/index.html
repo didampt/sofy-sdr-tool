@@ -690,7 +690,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v68';
+const VERSION='v69';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1684,8 +1684,10 @@ async function pipelineFiche(i){
    wfSet(i,'ia',e.ia&&(e.ia.site_web||e.ia.nom_commercial)?'ok':(domaineDe(e)?'ok':'—'));
   }
   prog(i,35,'Étape 3/7 · 👥 Recherche des personas LinkedIn…');
-  // ── 2.5 Personas (si la liste en cible et que la fiche a un domaine ou une enseigne) ──
-  if(jobsCibles().length&&!e.personas_fait&&(domaineDe(e)||e.enseigne_ia)){
+  // ── 2.5 Personas (si la liste en cible OU Hot Lead, et que la fiche a un domaine/enseigne/LinkedIn) ──
+  const estHotLead=e.source_hotlead==='RB2B'||(e.signal&&e.signal.source==='RB2B');
+  const peutPersonas=(jobsCibles().length||estHotLead)&&(domaineDe(e)||e.enseigne_ia||e.linkedin_entreprise);
+  if(peutPersonas&&!e.personas_fait){
    wfSet(i,'pers','run');
    await chercherPersonas(i);
    wfSet(i,'pers',contactsDe(e).some(c=>c.source==='linkedin')?'ok':'ko');
