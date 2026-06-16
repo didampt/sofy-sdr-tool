@@ -35,7 +35,7 @@ function extraireProfils(data) {
   const lignes = Array.isArray(data) ? data : (data && Array.isArray(data.result) ? data.result : []);
   for (const ligne of lignes) {
     if (!ligne || typeof ligne !== 'object') continue;
-    let url = null, nom = null, occupation = null, post = null, memberId = null, reaction = null;
+    let url = null, nom = null, occupation = null, post = null, memberId = null, reaction = null, commentaire = null;
     for (const [k, v] of Object.entries(ligne)) {
       const kl = k.toLowerCase();
       if (typeof v === 'string') {
@@ -44,16 +44,31 @@ function extraireProfils(data) {
         if (!nom && (kl === 'name' || kl === 'fullname' || kl === 'full_name' || kl === 'profilename')) nom = v;
         if (!occupation && (kl === 'occupation' || kl === 'title' || kl === 'headline' || kl === 'job')) occupation = v;
         if (!reaction && kl === 'reactiontype') reaction = v;
+        if (!commentaire && (kl === 'comment' || kl === 'commenttext' || kl === 'commentcontent')) commentaire = v;
       }
       if ((kl === 'memberid' || kl === 'membre_id') && v) memberId = String(v);
     }
     if (url || nom) profils.push({
       url: normaliserLinkedin(url), brut: url || '', nom: nom || '', nomNorm: normaliserNom(nom),
-      occupation: occupation || '', post: post || '', reaction: reaction || '',
+      occupation: occupation || '', post: post || '', reaction: reaction || '', commentaire: commentaire || '',
       cle: memberId || normaliserLinkedin(url) || normaliserNom(nom)
     });
   }
   return profils.filter(p => p.cle);
+}
+
+// Détermine le type d'interaction (like / commentaire / follow) à partir du nom du Phantom + des champs
+function typerSignal(nomAgent, p) {
+  const n = (nomAgent || '').toLowerCase();
+  const r = (p.reaction || '').toLowerCase();
+  // Follow : Phantom "Company Follower"
+  if (n.includes('follow')) return { emoji: '➕', label: 'suit la page', verbe: 'suit' };
+  // Commentaire : Phantom "Commenter" ou champ commentaire présent
+  if (n.includes('comment') || p.commentaire) return { emoji: '💬', label: 'a commenté', verbe: 'a commenté' };
+  // Like / réaction : Phantom "Post Likers" (cas par défaut des posts)
+  const react = { like: '👍 a liké', praise: '👏 a applaudi', empathy: '❤️ a soutenu', interest: '💡 intéressé', appreciation: '👏 a apprécié', maybe: '🤔 curieux', funny: '😄 a ri' };
+  if (r && react[r]) return { emoji: '💙', label: react[r], verbe: react[r] };
+  return { emoji: '💙', label: 'a liké', verbe: 'a réagi' };
 }
 
 async function envoyerSlack(texte) {
@@ -180,34 +195,33 @@ export default async function handler(req, res) {
           if (premierPassage || cfgHL.actif === false || !p.nom) continue;
           const occ = (p.occupation || '').toLowerCase();
           if (CONCURRENTS_DEF.some(c => occ.includes(c))) continue; // employé d'un concurrent ≠ lead
-          const concurrent = p.post && p.post.includes('/posts/') ? p.post.split('/posts/')[1].split('_')[0] : '';
+          const sigT = typerSignal(nomAgent, p);
           const r2 = await ajouterHotLead({
             nom_complet: p.nom, email: null, entreprise: '',
             linkedin_brut: p.brut || null, fonction: p.occupation || '',
             source: nomAgent, type: 'linkedin',
-            detail: `${p.nom} ${p.reaction ? 'a réagi (' + p.reaction + ')' : 'a interagi'}${concurrent ? ' sur ' + concurrent : ''}`
+            detail: `${sigT.emoji} ${p.nom} ${sigT.label}${p.post ? ' — ' + p.post : ''}`
           }, cfgHL);
           if (r2.ajoute) {
             resume.hotleads = (resume.hotleads || 0) + 1;
-            await envoyerSlack(`🔥 *Nouveau Hot Lead* (LinkedIn) — ${p.nom}${p.occupation ? ' · ' + p.occupation.slice(0, 70) : ''}\n${concurrent ? 'A réagi sur un post *' + concurrent + '*' : nomAgent}\n→ ajouté à « 🔥 Hot Leads (auto) »`);
+            await envoyerSlack(`🔥 *Nouveau Hot Lead* (LinkedIn) — ${p.nom}${p.occupation ? ' · ' + p.occupation.slice(0, 70) : ''}\n${sigT.emoji} ${sigT.label} (concurrent surveillé)${p.post ? '\n' + p.post : ''}\n→ ajouté à « 🔥 Hot Leads (auto) »`);
           }
           continue;
         }
         resume.matches++;
-        const quoi = p.reaction ? `a réagi (${p.reaction})` : 'a interagi';
-        const surQuoi = p.post ? ` sur ${p.post.includes('/posts/') ? p.post.split('/posts/')[1].split('_')[0] : 'un post'}` : '';
-        const detail = `${p.nom || m.contact} ${quoi}${surQuoi}${p.occupation ? ' · ' + p.occupation.slice(0, 80) : ''} (${nomAgent})`;
+        const sigT = typerSignal(nomAgent, p);
+        const detail = `${sigT.emoji} ${p.nom || m.contact} ${sigT.label}${p.post ? ' — ' + p.post : ''}${p.occupation ? ' · ' + p.occupation.slice(0, 80) : ''}`;
         await sql`INSERT INTO signaux (liste_id, entreprise_nom, contact_nom, linkedin, type, source, detail, sdr)
           VALUES (${m.liste.id}, ${m.entreprise}, ${m.contact || p.nom}, ${p.brut}, 'linkedin', ${nomAgent}, ${detail}, ${m.liste.sdr})`;
         // Marquer la fiche 🔥
         const ents = aSauver.get(m.liste.id) || m.liste.entreprises;
         const e = ents[m.ei];
         e.signal_hot = true;
-        const sig = { type: 'linkedin', source: nomAgent, detail, date: new Date().toISOString() };
+        const sig = { type: 'linkedin', interaction: sigT.label, emoji: sigT.emoji, source: nomAgent, detail, post: p.post || '', date: new Date().toISOString() };
         if (m.ci >= 0 && e.contacts && e.contacts[m.ci]) e.contacts[m.ci].signal = sig;
         else e.signal = sig;
         aSauver.set(m.liste.id, ents);
-        await envoyerSlack(`🔥 *Signal LinkedIn* — ${m.contact || p.nom} (${m.entreprise})\n${detail}\nListe « ${m.liste.nom} » · SDR *${m.liste.sdr}*${p.post ? '\n' + p.post : ''}`);
+        await envoyerSlack(`${sigT.emoji} *Signal LinkedIn* — ${m.contact || p.nom} (${m.entreprise})\n${sigT.label}${p.occupation ? ' · ' + p.occupation.slice(0,70) : ''}\nListe « ${m.liste.nom} » · SDR *${m.liste.sdr}*${p.post ? '\n' + p.post : ''}`);
       }
     }
 
