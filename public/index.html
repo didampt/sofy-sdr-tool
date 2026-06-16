@@ -700,7 +700,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v89';
+const VERSION='v90';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1012,10 +1012,25 @@ function filtrerFiches(q){
  const terme=(q||'').trim().toLowerCase();
  const cnt=document.getElementById('search-count');
  if(!terme){document.getElementById('fiches').innerHTML=REAL.map((x,k)=>ficheReal(x,k)).join('');if(cnt)cnt.textContent='';return;}
+ // Normalise les numéros : retire espaces, points, tirets, parenthèses → recherche tolérante au format
+ const digits=s=>String(s||'').replace(/[\s.()\-+]/g,'');
+ const termeDigits=digits(terme);
+ const estNum=/^[0-9]{3,}$/.test(termeDigits)&&termeDigits.length>=4;
  const matchFiche=e=>{
   const champs=[e.nom,enseigneDe(e),e.ville,e.region,domaineDe(e),e.secteur_rb2b];
-  for(const c of contactsDe(e)){champs.push((c.prenom||'')+' '+(c.nom||''),c.fonction,(c.enrich&&c.enrich.email),(c.enrich&&c.enrich.telephone),(c.enrich&&c.enrich.linkedin));}
-  return champs.some(v=>v&&String(v).toLowerCase().includes(terme));
+  // Téléphones : GMB (standard) + chaque contact
+  const tels=[(e.gmb&&e.gmb.telephone)];
+  for(const c of contactsDe(e)){
+   champs.push((c.prenom||'')+' '+(c.nom||''),c.fonction,(c.enrich&&c.enrich.email),(c.enrich&&c.enrich.linkedin));
+   tels.push(c.enrich&&c.enrich.telephone);
+  }
+  // Match texte classique
+  if(champs.some(v=>v&&String(v).toLowerCase().includes(terme)))return true;
+  // Match téléphone : comparaison sur les chiffres uniquement (tolère espaces/points)
+  if(estNum&&tels.some(t=>t&&digits(t).includes(termeDigits)))return true;
+  // Si le terme contient des chiffres mêlés à du texte, on teste aussi le tél en brut
+  if(!estNum&&tels.some(t=>t&&String(t).toLowerCase().includes(terme)))return true;
+  return false;
  };
  const html=REAL.map((x,k)=>matchFiche(x)?ficheReal(x,k):'').join('');
  document.getElementById('fiches').innerHTML=html||'<div style="text-align:center;color:var(--ink-soft);padding:30px">Aucune fiche ne correspond à « '+terme.replace(/</g,'&lt;')+' »</div>';
