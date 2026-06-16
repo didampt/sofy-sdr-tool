@@ -306,6 +306,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
   <aside class="side">
     <div class="logo" style="display:flex;align-items:center;gap:9px"><img src="/logo-icon.png" alt="" style="width:28px;height:28px" onerror="this.style.display='none'">Sofy <span>Scrap</span></div>
     <div class="tagline">Listes d'appel SDR<span id="bonjour-sdr" style="display:block;margin-top:6px;color:#E8EAF5;font-size:13px;font-weight:600"></span></div>
+    <button class="nav-btn" data-view="signaux" onclick="ouvrirSignaux(this)">🔥 Signaux</button>
     <button class="nav-btn active" data-view="wizard" onclick="nav('wizard',this)">🎯 Nouvelle liste</button>
     <button class="nav-btn" data-view="results" onclick="nav('results',this)">📞 Résultats</button>
     <button class="nav-btn" data-view="history" onclick="nav('history',this);chargerHistorique()">🗂 Historique</button>
@@ -699,7 +700,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v87';
+const VERSION='v89';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -758,6 +759,24 @@ async function verifSession(){
 }
 
 /* ───────── NAV / TOAST ───────── */
+async function ouvrirSignaux(btn){
+ // Active le bouton Signaux dans le menu
+ document.querySelectorAll('.nav-btn').forEach(x=>x.classList.remove('active'));
+ if(btn)btn.classList.add('active');
+ // Trouver la liste Hot Leads (auto) et l'ouvrir
+ try{
+  const r=await api('/api/listes');
+  const d=await r.json();
+  const auto=(d.listes||[]).find(l=>(l.criteres||{}).auto==='hotleads');
+  if(auto){
+   await ouvrirListe(auto.id);
+   // ouvrirListe → nav('results') réactive "Résultats" : on remet Signaux actif
+   document.querySelectorAll('.nav-btn').forEach(x=>x.classList.remove('active'));
+   const b=document.querySelector('[data-view="signaux"]');if(b)b.classList.add('active');
+  }
+  else{ toast('Aucune liste Hot Leads pour le moment'); }
+ }catch(e){ toast('Erreur : '+e.message); }
+}
 function nav(v,btn){
  document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
  document.getElementById('view-'+v).classList.add('on');
@@ -2425,6 +2444,8 @@ async function chargerHistorique(){
   const d=await r.json();
   if(d.erreur){zone.innerHTML='<p style="color:var(--ink-soft)">'+d.erreur+'</p>';return;}
   if(!d.listes||!d.listes.length){zone.innerHTML='<p style="color:var(--ink-soft)">Aucune liste'+(q?' pour « '+q+' »':' pour l\'instant — génère ta première liste !')+'</p>';return;}
+  // Hot Leads (auto) toujours en tête (sécurité front en plus du tri serveur)
+  d.listes.sort((a,b)=>{const aa=((a.criteres||{}).auto==='hotleads')?1:0,bb=((b.criteres||{}).auto==='hotleads')?1:0;if(aa!==bb)return bb-aa;return new Date(b.created_at)-new Date(a.created_at);});
   zone.innerHTML=d.listes.map(l=>{
    const date=new Date(l.created_at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
    const cr=l.criteres||{};
