@@ -42,14 +42,13 @@ function calculerStatsListe(entreprises) {
     else if (tag === '📞 Pas de réponse') pasReponse++;
   }
   const pct = n => total ? Math.round(n / total * 100) : 0;
-  // Score qualité pondéré (sur les fiches TRAITÉES, sinon basé sur la complétion)
-  let qualite;
-  if (traites > 0) {
+  // Score qualité UNIQUEMENT basé sur les tags SDR. null si pas assez de retours terrain (<30% de fiches taguées).
+  const tauxTag = total ? traites / total : 0;
+  let qualite = null;
+  if (tauxTag >= 0.30 && traites > 0) {
+    // score moyen pondéré par fiche traitée (RDV +40, mauvais n°/email -15, pas intéressé -10, pas de réponse -5)
     const score = (rdv * 40 + (mauvaisNum + mauvaisMail) * -15 + pasInteresse * -10 + pasReponse * -5) / traites;
-    // score moyen par fiche traitée (entre -15 et +40) → ramené sur 0-100 (40 = excellent)
     qualite = Math.max(0, Math.min(100, Math.round(50 + score)));
-  } else {
-    qualite = pct(enrichies); // pas encore de retours terrain → on reflète la complétion
   }
   return {
     total,
@@ -59,6 +58,7 @@ function calculerStatsListe(entreprises) {
     pct_pas_interesse: pct(pasInteresse),
     pct_pas_reponse: pct(pasReponse),
     traites,
+    pct_tag: pct(traites),
     qualite
   };
 }
@@ -107,18 +107,18 @@ export default async function handler(req, res) {
       if (recherche) {
         const like = '%' + recherche + '%';
         rows = toutVoir
-          ? await sql`SELECT id, nom, sdr, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+          ? await sql`SELECT id, nom, sdr, createur, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                       WHERE (nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like})
                       ORDER BY (criteres->>'auto' = 'hotleads') DESC, created_at DESC LIMIT 50`
-          : await sql`SELECT id, nom, sdr, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+          : await sql`SELECT id, nom, sdr, createur, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                       WHERE (sdr = ${moi} OR criteres->>'auto' = 'hotleads')
                         AND (nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like})
                       ORDER BY (criteres->>'auto' = 'hotleads') DESC, created_at DESC LIMIT 50`;
       } else {
         rows = toutVoir
-          ? await sql`SELECT id, nom, sdr, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+          ? await sql`SELECT id, nom, sdr, createur, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                       ORDER BY (criteres->>'auto' = 'hotleads') DESC, created_at DESC LIMIT 50`
-          : await sql`SELECT id, nom, sdr, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+          : await sql`SELECT id, nom, sdr, createur, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                       WHERE (sdr = ${moi} OR criteres->>'auto' = 'hotleads')
                       ORDER BY (criteres->>'auto' = 'hotleads') DESC, created_at DESC LIMIT 50`;
       }
@@ -147,8 +147,8 @@ export default async function handler(req, res) {
         return res.status(400).json({ erreur: 'nom, sdr, criteres et entreprises requis' });
       }
       const h = hashCriteres(criteres);
-      const rows = await sql`INSERT INTO listes (nom, sdr, criteres, criteres_hash, entreprises, total, credits_estimes)
-        VALUES (${nom}, ${sdr}, ${JSON.stringify(criteres)}, ${h}, ${JSON.stringify(entreprises)}, ${entreprises.length}, ${credits_estimes || 0})
+      const rows = await sql`INSERT INTO listes (nom, sdr, createur, criteres, criteres_hash, entreprises, total, credits_estimes)
+        VALUES (${nom}, ${sdr}, ${user.nom}, ${JSON.stringify(criteres)}, ${h}, ${JSON.stringify(entreprises)}, ${entreprises.length}, ${credits_estimes || 0})
         RETURNING id, created_at`;
       // Rattache les crédits Pappers consommés à l'instant (extraction avant sauvegarde) à cette liste
       try {
@@ -161,7 +161,7 @@ export default async function handler(req, res) {
 
     // ── Mise à jour des entreprises (analyses GMB, enrichissements futurs) ──
     if (req.method === 'PUT') {
-      const { id, entreprises, veille, veille_jours, supprimees, nom } = req.body || {};
+      const { id, entreprises, veille, veille_jours, supprimees, nom, assigner_a } = req.body || {};
       if (!id) return res.status(400).json({ erreur: 'id requis' });
       if (Array.isArray(entreprises)) {
         const lid = parseInt(id);
@@ -191,6 +191,14 @@ export default async function handler(req, res) {
       if (nom !== undefined && typeof nom === 'string' && nom.trim()) {
         await sql`UPDATE listes SET nom = ${nom.trim().slice(0, 120)} WHERE id = ${parseInt(id)}`;
         return res.status(200).json({ ok: true, nom: nom.trim().slice(0, 120) });
+      }
+      // Transfert d'une liste à un autre SDR (réservé admin/superadmin)
+      if (assigner_a !== undefined && typeof assigner_a === 'string' && assigner_a.trim()) {
+        if (!['admin', 'superadmin'].includes(user.role)) {
+          return res.status(403).json({ erreur: 'Seuls les administrateurs peuvent transférer une liste' });
+        }
+        await sql`UPDATE listes SET sdr = ${assigner_a.trim()} WHERE id = ${parseInt(id)}`;
+        return res.status(200).json({ ok: true, assigne: assigner_a.trim() });
       }
       if (veille !== undefined) {
         const fin = veille ? new Date(Date.now() + (parseInt(veille_jours) || 60) * 24 * 3600 * 1000) : null;
