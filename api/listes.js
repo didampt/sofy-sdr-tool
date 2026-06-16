@@ -83,7 +83,7 @@ export default async function handler(req, res) {
 
     // ── Mise à jour des entreprises (analyses GMB, enrichissements futurs) ──
     if (req.method === 'PUT') {
-      const { id, entreprises, veille, veille_jours, supprimees } = req.body || {};
+      const { id, entreprises, veille, veille_jours, supprimees, nom } = req.body || {};
       if (!id) return res.status(400).json({ erreur: 'id requis' });
       if (Array.isArray(entreprises)) {
         const lid = parseInt(id);
@@ -108,6 +108,11 @@ export default async function handler(req, res) {
         } else {
           await sql`UPDATE listes SET entreprises = ${JSON.stringify(entreprises)}, total = ${entreprises.length} WHERE id = ${lid}`;
         }
+      }
+      // #2 Renommage d'une liste
+      if (nom !== undefined && typeof nom === 'string' && nom.trim()) {
+        await sql`UPDATE listes SET nom = ${nom.trim().slice(0, 120)} WHERE id = ${parseInt(id)}`;
+        return res.status(200).json({ ok: true, nom: nom.trim().slice(0, 120) });
       }
       if (veille !== undefined) {
         const fin = veille ? new Date(Date.now() + (parseInt(veille_jours) || 60) * 24 * 3600 * 1000) : null;
