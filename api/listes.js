@@ -23,6 +23,46 @@ function hashCriteres(criteres) {
   return createHash('sha256').update(cle).digest('hex').slice(0, 32);
 }
 
+// #3+#4 Calcule les stats d'une liste à partir de ses entreprises (tags SDR) + score qualité 0-100
+function calculerStatsListe(entreprises) {
+  const ents = Array.isArray(entreprises) ? entreprises : [];
+  const total = ents.length;
+  if (!total) return null;
+  let enrichies = 0, rdv = 0, mauvaisNum = 0, mauvaisMail = 0, pasInteresse = 0, pasReponse = 0, traites = 0;
+  for (const e of ents) {
+    const contacts = e.contacts || [];
+    const aContact = contacts.some(c => (c.enrich && (c.enrich.email || c.enrich.telephone)));
+    if (aContact || (e.gmb && e.gmb.trouve) || e.score) enrichies++;
+    const tag = (e.tags_sdr || [])[0] || null;
+    if (tag) traites++;
+    if (tag === '🤝 RDV pris') rdv++;
+    else if (tag === '📵 Mauvais numéro') mauvaisNum++;
+    else if (tag === '✉️ Mauvais email') mauvaisMail++;
+    else if (tag === '❌ Pas intéressé') pasInteresse++;
+    else if (tag === '📞 Pas de réponse') pasReponse++;
+  }
+  const pct = n => total ? Math.round(n / total * 100) : 0;
+  // Score qualité pondéré (sur les fiches TRAITÉES, sinon basé sur la complétion)
+  let qualite;
+  if (traites > 0) {
+    const score = (rdv * 40 + (mauvaisNum + mauvaisMail) * -15 + pasInteresse * -10 + pasReponse * -5) / traites;
+    // score moyen par fiche traitée (entre -15 et +40) → ramené sur 0-100 (40 = excellent)
+    qualite = Math.max(0, Math.min(100, Math.round(50 + score)));
+  } else {
+    qualite = pct(enrichies); // pas encore de retours terrain → on reflète la complétion
+  }
+  return {
+    total,
+    pct_complete: pct(enrichies),
+    rdv,
+    pct_mauvais_num: pct(mauvaisNum + mauvaisMail),
+    pct_pas_interesse: pct(pasInteresse),
+    pct_pas_reponse: pct(pasReponse),
+    traites,
+    qualite
+  };
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
@@ -67,22 +107,37 @@ export default async function handler(req, res) {
       if (recherche) {
         const like = '%' + recherche + '%';
         rows = toutVoir
-          ? await sql`SELECT id, nom, sdr, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+          ? await sql`SELECT id, nom, sdr, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                       WHERE (nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like})
-                      ORDER BY created_at DESC LIMIT 50`
-          : await sql`SELECT id, nom, sdr, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+                      ORDER BY (criteres->>'auto' = 'hotleads') DESC, created_at DESC LIMIT 50`
+          : await sql`SELECT id, nom, sdr, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                       WHERE (sdr = ${moi} OR criteres->>'auto' = 'hotleads')
                         AND (nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like})
-                      ORDER BY created_at DESC LIMIT 50`;
+                      ORDER BY (criteres->>'auto' = 'hotleads') DESC, created_at DESC LIMIT 50`;
       } else {
         rows = toutVoir
-          ? await sql`SELECT id, nom, sdr, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
-                      ORDER BY created_at DESC LIMIT 50`
-          : await sql`SELECT id, nom, sdr, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+          ? await sql`SELECT id, nom, sdr, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+                      ORDER BY (criteres->>'auto' = 'hotleads') DESC, created_at DESC LIMIT 50`
+          : await sql`SELECT id, nom, sdr, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                       WHERE (sdr = ${moi} OR criteres->>'auto' = 'hotleads')
-                      ORDER BY created_at DESC LIMIT 50`;
+                      ORDER BY (criteres->>'auto' = 'hotleads') DESC, created_at DESC LIMIT 50`;
       }
-      return res.status(200).json({ listes: rows });
+      // Récupérer les coûts par liste en une requête (table consommations)
+      const ids = rows.map(r => r.id);
+      let couts = {};
+      if (ids.length) {
+        try {
+          const cr = await sql`SELECT c.liste_id, COALESCE(SUM(c.quantite * COALESCE(t.prix,0)),0) AS cout FROM consommations c LEFT JOIN tarifs t ON t.api = c.api WHERE c.liste_id = ANY(${ids}) GROUP BY c.liste_id`;
+          cr.forEach(c => { couts[c.liste_id] = Number(c.cout) || 0; });
+        } catch (_) {}
+      }
+      // Calculer les stats par liste + retirer le gros JSON entreprises du payload
+      const listes = rows.map(r => {
+        const stats = calculerStatsListe(r.entreprises);
+        const { entreprises, ...meta } = r;
+        return { ...meta, cout: couts[r.id] || 0, stats };
+      });
+      return res.status(200).json({ listes });
     }
 
     // ── Sauvegarde ──
