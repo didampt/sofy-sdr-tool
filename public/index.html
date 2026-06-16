@@ -699,7 +699,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v86';
+const VERSION='v87';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -2442,18 +2442,44 @@ async function chargerHistorique(){
    return `<div class="fiche"><div class="fiche-top" style="grid-template-columns:1fr auto auto;align-items:center;gap:14px">
     <div>
      <div class="lead-name">${l.nom}${cr.auto!=='hotleads'?` <span onclick="renommerListe(${l.id},this)" data-nom="${(l.nom||'').replace(/"/g,'&quot;')}" title="Renommer la liste" style="cursor:pointer;font-size:14px;opacity:.5;font-weight:normal">✏️</span>`:''}</div>
-     <div class="lead-meta">SDR : <b>${l.sdr}</b> · ${date} · ${l.total||l.nb_entreprises||0} entreprise${(l.total||l.nb_entreprises||0)>1?'s':''}${cr.auto==='hotleads'?' · 🔥 liste automatique':` · ${(cr.naf||[]).join(', ')} · ${(cr.pays||[]).join(' + ')} · ~${l.credits_estimes||0} crédits Pappers`}</div>
+     <div class="lead-meta">SDR : <b>${l.sdr}</b>${(l.createur&&l.createur!==l.sdr)?` · créée par <b>${l.createur}</b>`:''} · ${date} · ${l.total||l.nb_entreprises||0} entreprise${(l.total||l.nb_entreprises||0)>1?'s':''}${cr.auto==='hotleads'?' · 🔥 liste automatique':` · ${(cr.naf||[]).join(', ')} · ${(cr.pays||[]).join(' + ')} · ~${l.credits_estimes||0} crédits Pappers`}</div>
      ${pastilles}
     </div>
     ${q!==null?`<div class="qbadge" style="background:${qcol}" title="Score qualité de la liste">${q}%</div>`:''}
     <div class="act-row" style="margin:0">
      <button class="act ${l.veille?'act-call':'act-copy'}" onclick="basculerVeille(${l.id},${l.veille?'false':'true'})" title="${l.veille?'Veille active jusqu\'au '+new Date(l.veille_fin).toLocaleDateString('fr-FR')+' — cliquer pour arrêter':'Surveiller les signaux LinkedIn de cette liste (60 j)'}">${l.veille?'🔔 Veille ON':'🔕 Veille'}</button>
      <button class="act act-copy" onclick="ouvrirListe(${l.id})">📂 Ouvrir (gratuit)</button>
+     ${(state.user&&['admin','superadmin'].includes(state.user.role)&&cr.auto!=='hotleads')?`<button class="act act-copy" onclick="transfererListe(${l.id},'${(l.nom||'').replace(/'/g,"\\'")}')">👤 Transférer</button>`:''}
      <button class="act act-export" onclick="majListe(${l.id})">↻ Mettre à jour</button>
     </div>
    </div></div>`;
   }).join('');
  }catch(e){zone.innerHTML='<p style="color:var(--ink-soft)">Erreur : '+e.message+'</p>';}
+}
+async function transfererListe(id,nom){
+ // Récupérer les SDR disponibles
+ let sdrs=[];
+ try{ const r=await api('/api/sdrs'); const d=await r.json(); sdrs=(d.sdrs||d||[]).filter(s=>s.actif!==false); }catch(_){}
+ if(!sdrs.length){toast('Impossible de charger la liste des SDR');return;}
+ // Modal de choix (réutilise confirm-modal)
+ const m=document.getElementById('confirm-modal');
+ document.getElementById('cm-titre').textContent='👤 Transférer « '+nom+' »';
+ const corps=document.getElementById('cm-corps');
+ corps.innerHTML='Assigner cette liste à :<div id="cm-sdrs" style="margin-top:12px;display:flex;flex-direction:column;gap:8px;max-height:300px;overflow:auto"></div>';
+ document.getElementById('cm-sdrs').innerHTML=sdrs.map(s=>`<button class="act act-copy" style="text-align:left;padding:10px" onclick="window._transf(${id},'${(s.nom||'').replace(/'/g,"\\'")}')"><b>${s.nom}</b>${s.role&&s.role!=='sdr'?` <span style="font-size:11px;color:var(--ink-soft)">(${s.role})</span>`:''}</button>`).join('');
+ window._transf=async(lid,sdrNom)=>{
+  m.style.display='none';document.getElementById('cm-ok').style.display='';
+  try{
+   const r=await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:lid,assigner_a:sdrNom})});
+   const d=await r.json();
+   if(d.ok){toast('✅ Liste transférée à '+sdrNom);chargerHistorique();}
+   else toast('Erreur : '+(d.erreur||'transfert impossible'));
+  }catch(e){toast('Erreur réseau : '+e.message);}
+ };
+ document.getElementById('cm-ok').style.display='none';
+ const an=document.getElementById('cm-annuler');an.textContent='Annuler';
+ an.onclick=()=>{m.style.display='none';document.getElementById('cm-ok').style.display='';};
+ m.style.display='flex';
 }
 async function renommerListe(id,el){
  const actuel=el&&el.getAttribute('data-nom')||'';
