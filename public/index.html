@@ -700,7 +700,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v91';
+const VERSION='v92';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1272,7 +1272,7 @@ function ficheReal(e,i){
     <div class="lead-meta">${(!estHL&&contacts.length&&contacts[0].nom)?e.nom+' · ':''}${e.enseigne&&e.enseigne!==e.nom?'Enseigne : '+e.enseigne+' · ':''}${e.naf}${e.nb_etablissements?' · '+e.nb_etablissements+' établissement'+(e.nb_etablissements>1?'s':''):''}${e.effectif?' · '+String(e.effectif).replace(/ salariés?$/i,'')+' salariés':''}${ca?' · CA '+ca:''} · ${e.ville||'—'}</div>
     <div class="badges">
      ${e.gmb&&e.gmb.trouve?`<span class="badge b-gmb">GMB ${String(e.gmb.note_moyenne).replace('.',',')} ★ (${e.gmb.total_avis} avis)</span>`:''}
-     ${e.signal_hot?'<span class="badge b-signal">🔥 Signal détecté</span>':''}
+     ${e.signal_hot?`<span class="badge b-signal">${(e.signal&&e.signal.emoji)?e.signal.emoji:'🔥'} ${(e.signal&&e.signal.interaction)?e.signal.interaction:'Signal détecté'}</span>`:''}
      ${e.enrichi_par?(e.score?`<span class="badge b-new">✅ Enrichi par ${e.enrichi_par}</span>`:(e.enrich_lock_ts&&(Date.now()-e.enrich_lock_ts<5*60*1000)?`<span class="badge b-gmb">🔄 En cours par ${e.enrichi_par}</span>`:'')):''}
      ${aEmail?'<span class="badge b-new">Nouveau ✓</span>':(e.detail_charge?'<span class="badge b-signal">À enrichir</span>':'<span class="badge b-dup">Détail non chargé</span>')}
      ${e.deja_hubspot?'<span class="badge b-dup" title="Un contact de cette fiche existe déjà dans HubSpot">🔶 Déjà dans HubSpot</span>':''}
