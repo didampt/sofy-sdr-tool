@@ -106,13 +106,19 @@ export default async function handler(req, res) {
       let rows;
       if (recherche) {
         const like = '%' + recherche + '%';
+        // Recherche par numéro : on compare les chiffres du terme au JSON débarrassé de ses espaces/ponctuation
+        const digits = recherche.replace(/[^0-9]/g, '');
+        const estNum = digits.length >= 4 && /^[0-9\s.()+\-]+$/.test(recherche);
+        const likeDigits = '%' + digits + '%';
         rows = toutVoir
           ? await sql`SELECT id, nom, sdr, createur, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
-                      WHERE (nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like})
+                      WHERE (nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like}
+                             OR (${estNum} AND regexp_replace(entreprises::text, '[^0-9]', '', 'g') ILIKE ${likeDigits}))
                       ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`
           : await sql`SELECT id, nom, sdr, createur, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                       WHERE (sdr = ${moi} OR criteres->>'auto' = 'hotleads')
-                        AND (nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like})
+                        AND (nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like}
+                             OR (${estNum} AND regexp_replace(entreprises::text, '[^0-9]', '', 'g') ILIKE ${likeDigits}))
                       ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`;
       } else {
         rows = toutVoir
