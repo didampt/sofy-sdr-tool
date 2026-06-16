@@ -230,6 +230,10 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
 .note-box{margin-top:16px;background:#FFFCF5;border:1px solid #FAE6B8;border-radius:14px;padding:14px 16px}
 .note-box .col-title{margin-top:0}
 .note-tags{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.stat-pill{display:inline-block;padding:4px 10px;border-radius:8px;font-size:12px;font-weight:700;margin:3px 4px 0 0;background:#1e1b4b;color:#fff}
+.stat-pill.good{background:#14532d}
+.stat-pill.bad{background:#1e1b4b}
+.qbadge{display:flex;align-items:center;justify-content:center;width:62px;height:62px;border-radius:50%;font-weight:800;font-size:16px;color:#fff;flex-shrink:0}
 .tag-btn{border:1.5px solid var(--line);background:#fff;border-radius:99px;padding:6px 13px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--ink-soft);transition:all .15s;font-family:inherit}
 .tag-btn:hover{border-color:var(--accent)}
 .tag-btn.on{background:var(--ink);color:#fff;border-color:var(--ink)}
@@ -695,7 +699,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v85';
+const VERSION='v86';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -2424,11 +2428,24 @@ async function chargerHistorique(){
   zone.innerHTML=d.listes.map(l=>{
    const date=new Date(l.created_at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
    const cr=l.criteres||{};
-   return `<div class="fiche"><div class="fiche-top" style="grid-template-columns:1fr auto;align-items:center">
+   const st=l.stats;
+   const q=st?st.qualite:null;
+   const qcol=q===null?'#94A3B8':(q>=60?'#14532d':(q>=40?'#B45309':'#991B1B'));
+   const pastilles=st?`<div style="margin-top:8px">
+     <span class="stat-pill">${st.pct_complete}% complété</span>
+     <span class="stat-pill">coût ${(l.cout||0).toFixed(2)} €</span>
+     ${st.rdv?`<span class="stat-pill good">🤝 ${st.rdv} RDV pris</span>`:''}
+     ${st.pct_mauvais_num?`<span class="stat-pill bad">${st.pct_mauvais_num}% ❌ numéros</span>`:''}
+     ${st.pct_pas_interesse?`<span class="stat-pill bad">${st.pct_pas_interesse}% ❌ intéressé</span>`:''}
+     ${st.pct_pas_reponse?`<span class="stat-pill bad">${st.pct_pas_reponse}% ❌ réponse</span>`:''}
+   </div>`:'';
+   return `<div class="fiche"><div class="fiche-top" style="grid-template-columns:1fr auto auto;align-items:center;gap:14px">
     <div>
      <div class="lead-name">${l.nom}${cr.auto!=='hotleads'?` <span onclick="renommerListe(${l.id},this)" data-nom="${(l.nom||'').replace(/"/g,'&quot;')}" title="Renommer la liste" style="cursor:pointer;font-size:14px;opacity:.5;font-weight:normal">✏️</span>`:''}</div>
      <div class="lead-meta">SDR : <b>${l.sdr}</b> · ${date} · ${l.total||l.nb_entreprises||0} entreprise${(l.total||l.nb_entreprises||0)>1?'s':''}${cr.auto==='hotleads'?' · 🔥 liste automatique':` · ${(cr.naf||[]).join(', ')} · ${(cr.pays||[]).join(' + ')} · ~${l.credits_estimes||0} crédits Pappers`}</div>
+     ${pastilles}
     </div>
+    ${q!==null?`<div class="qbadge" style="background:${qcol}" title="Score qualité de la liste">${q}%</div>`:''}
     <div class="act-row" style="margin:0">
      <button class="act ${l.veille?'act-call':'act-copy'}" onclick="basculerVeille(${l.id},${l.veille?'false':'true'})" title="${l.veille?'Veille active jusqu\'au '+new Date(l.veille_fin).toLocaleDateString('fr-FR')+' — cliquer pour arrêter':'Surveiller les signaux LinkedIn de cette liste (60 j)'}">${l.veille?'🔔 Veille ON':'🔕 Veille'}</button>
      <button class="act act-copy" onclick="ouvrirListe(${l.id})">📂 Ouvrir (gratuit)</button>
@@ -2454,7 +2471,7 @@ async function renommerListe(id,el){
 }
 async function basculerVeille(id,activer){
  if(activer&&!confirm('🔔 Activer la veille 60 jours sur cette liste ?\n\nPhantomBuster + notre robot (toutes les 6 h) surveilleront les likes/follows LinkedIn des contacts de la liste. Match → 🔥 sur la fiche + alerte Slack au SDR.'))return;
- const r=await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,veille:activer,veille_jours:60,ringover_numero:document.getElementById('sr'+id).value,role:document.getElementById('sg'+id).value})});
+ const r=await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,veille:activer,veille_jours:60})});
  const d=await r.json();
  if(d.erreur){toast(d.erreur);return;}
  toast(activer?'🔔 Veille activée (60 j) ✓':'🔕 Veille arrêtée');
