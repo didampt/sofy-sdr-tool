@@ -41,7 +41,14 @@ export default async function handler(req, res) {
       if (id) {
         const rows = await sql`SELECT * FROM listes WHERE id = ${parseInt(id)}`;
         if (!rows.length) return res.status(404).json({ erreur: 'Liste introuvable' });
-        return res.status(200).json(rows[0]);
+        // #3 Sécurité : un 'sdr' ne peut ouvrir QUE ses listes ou la liste Hot Leads auto
+        const l = rows[0];
+        const estAuto = l.criteres && l.criteres.auto === 'hotleads';
+        const toutVoir = ['admin', 'superadmin'].includes(user.role);
+        if (!toutVoir && l.sdr !== user.nom && !estAuto) {
+          return res.status(403).json({ erreur: 'Cette liste appartient à un autre SDR' });
+        }
+        return res.status(200).json(l);
       }
 
       if (criteres) {
@@ -53,12 +60,28 @@ export default async function handler(req, res) {
       }
 
       const recherche = (q || '').trim();
-      const rows = recherche
-        ? await sql`SELECT id, nom, sdr, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
-                    WHERE nom ILIKE ${'%' + recherche + '%'} OR sdr ILIKE ${'%' + recherche + '%'} OR entreprises::text ILIKE ${'%' + recherche + '%'}
-                    ORDER BY created_at DESC LIMIT 50`
-        : await sql`SELECT id, nom, sdr, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
-                    ORDER BY created_at DESC LIMIT 50`;
+      // #3 Visibilité par rôle : un 'sdr' ne voit QUE ses listes + la liste Hot Leads auto ; admin/superadmin voient tout.
+      const toutVoir = ['admin', 'superadmin'].includes(user.role);
+      const moi = user.nom;
+      let rows;
+      if (recherche) {
+        const like = '%' + recherche + '%';
+        rows = toutVoir
+          ? await sql`SELECT id, nom, sdr, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+                      WHERE (nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like})
+                      ORDER BY created_at DESC LIMIT 50`
+          : await sql`SELECT id, nom, sdr, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+                      WHERE (sdr = ${moi} OR criteres->>'auto' = 'hotleads')
+                        AND (nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like})
+                      ORDER BY created_at DESC LIMIT 50`;
+      } else {
+        rows = toutVoir
+          ? await sql`SELECT id, nom, sdr, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+                      ORDER BY created_at DESC LIMIT 50`
+          : await sql`SELECT id, nom, sdr, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+                      WHERE (sdr = ${moi} OR criteres->>'auto' = 'hotleads')
+                      ORDER BY created_at DESC LIMIT 50`;
+      }
       return res.status(200).json({ listes: rows });
     }
 
