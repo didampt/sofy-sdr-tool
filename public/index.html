@@ -695,7 +695,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v83';
+const VERSION='v84';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1889,6 +1889,12 @@ function majBtnNouvelles(){
  const restantes=REAL.some(e=>!e.score);
  b.style.display=(dejaEnrichies&&restantes)?'inline-flex':'none';
 }
+function notifierEnrichSlack(nb){
+ // #4 Alerte Slack uniquement pour la liste partagée Hot Leads (auto) — évite les lancements parallèles
+ if(!(state.criteres&&state.criteres.auto==='hotleads'))return;
+ const nom=(state.listeNom||'Hot Leads (auto)');
+ api('/api/notif-enrich',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({liste_nom:nom,nb})}).catch(()=>{});
+}
 async function lancerWaterfall(nouvellesSeulement){
  if(!REAL.length){toast('Aucune fiche');return;}
  // Indices à traiter : toutes, ou seulement celles sans score (= jamais enrichies)
@@ -1903,6 +1909,7 @@ async function lancerWaterfall(nouvellesSeulement){
  WF_STOP=false;
  const btnStop=document.getElementById('wf-stop');if(btnStop){btnStop.disabled=false;btnStop.textContent='⏹ Stop';}
  let emailsOk=0,emailsTentes=0,arrete=false;
+ notifierEnrichSlack(aTraiter.length);
  let fait=0;
  for(const i of aTraiter){
   if(WF_STOP){arrete=true;break;}
@@ -2440,6 +2447,7 @@ function confirmSofy(titre,corps,labelOk){
  });
 }
 async function enrichirHotLeads(indices){
+ notifierEnrichSlack(indices.length);
  // Réutilise le modal de progression global + pipelineFiche (déjà testés)
  document.getElementById('wf-modal').style.display='flex';
  document.getElementById('wf-titre').textContent='🔥 Enrichissement automatique des Hot Leads…';
