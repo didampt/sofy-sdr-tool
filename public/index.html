@@ -695,7 +695,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v84';
+const VERSION='v85';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1039,10 +1039,18 @@ function showRealResults(total,c){
 
 function toggleTag(i,tag){
  const e=REAL[i];
- const tags=e.tags_sdr||[];
- const k=tags.indexOf(tag);
- if(k>=0)tags.splice(k,1);else tags.push(tag);
- e.tags_sdr=tags;
+ const actuel=(e.tags_sdr||[])[0]||null;
+ const moi=state.user?state.user.nom:'?';
+ if(actuel===tag){
+  // Re-clic sur le même tag → on le retire (fiche redevient non traitée)
+  e.tags_sdr=[];
+  e.traite_par=null;e.traite_le=null;
+ }else{
+  // #5 Tag UNIQUE : le nouveau tag remplace l'ancien
+  e.tags_sdr=[tag];
+  e.traite_par=moi;
+  e.traite_le=new Date().toISOString();
+ }
  rerender(i);persister();majTraites();
 }
 function majTraites(){
@@ -1156,7 +1164,22 @@ function premierTel(e){
  if(e.ia&&e.ia.telephone)return e.ia.telephone;
  return null;
 }
-function toggleFiche(i){REAL[i]._open=!REAL[i]._open;rerender(i);}
+function toggleFiche(i){
+ const e=REAL[i];
+ // #5 Si on DÉPLIE une fiche traitée par un AUTRE SDR (pas encore rouverte) → confirmation
+ if(!e._open && doitConfirmerReouverture(e)){
+  confirmReouverture(e).then(ok=>{ if(ok){e._reouvert=true;e._open=true;rerender(i);} });
+  return;
+ }
+ e._open=!e._open;rerender(i);
+}
+function doitConfirmerReouverture(e){
+ const moi=state.user?state.user.nom:'?';
+ return e.tags_sdr&&e.tags_sdr.length&&e.traite_par&&e.traite_par!==moi&&!e._reouvert;
+}
+function confirmReouverture(e){
+ return confirmSofy('🔒 Lead déjà traité',`Ce lead a été traité par ${e.traite_par||'un autre SDR'}${e.traite_le?' le '+new Date(e.traite_le).toLocaleDateString('fr-FR'):''} (${(e.tags_sdr||[])[0]||''}).\n\nSouhaitez-vous ré-ouvrir ce lead ?`,'Ré-ouvrir');
+}
 function ligneEditContacts(e,i){
  const cs=contactsDe(e);
  const esc=v=>(v||'').toString().replace(/"/g,'&quot;');
@@ -1179,6 +1202,11 @@ function ligneEditContacts(e,i){
  }).join('');
 }
 function ouvrirEdition(i){
+ const ed=REAL[i];
+ if(doitConfirmerReouverture(ed)){
+  confirmReouverture(ed).then(ok=>{ if(ok){ed._reouvert=true;ouvrirEdition(i);} });
+  return;
+ }
  REAL[i]._open=true;rerender(i);
  setTimeout(()=>{const b=document.getElementById('edit'+i);if(b){b.style.display='block';b.scrollIntoView({behavior:'smooth',block:'center'});}},80);
 }
@@ -1202,7 +1230,7 @@ function ficheReal(e,i){
   ${e._busy?`<div class="prog-wrap"><div class="prog-top"><span class="prog-label"><span class="spin"></span> <span id="progl${i}">${(e._prog&&e._prog.label)||'Démarrage…'}</span></span><span class="prog-pct" id="progp${i}">${(e._prog&&e._prog.pct)||0} %</span></div><div class="prog-bar"><span id="progb${i}" style="width:${(e._prog&&e._prog.pct)||0}%"></span></div></div>`:''}
   <div class="fiche-head" onclick="toggleFiche(${i})" title="Cliquer pour ${open?'replier':'déployer'} la fiche">
    <div style="flex:1;min-width:0">
-    <div class="lead-name">${estHL?'🔥 ':''}${titre} <span onclick="event.stopPropagation();ouvrirEdition(${i})" title="Corriger cette fiche" style="cursor:pointer;font-size:14px;opacity:.5;font-weight:normal">✏️</span></div>
+    <div class="lead-name">${(e.tags_sdr&&e.tags_sdr.length)?`<span title="Traité par ${e.traite_par||'?'}${e.traite_le?' le '+new Date(e.traite_le).toLocaleDateString('fr-FR'):''}" style="margin-right:2px">✅</span>`:''}${estHL?'🔥 ':''}${titre} <span onclick="event.stopPropagation();ouvrirEdition(${i})" title="Corriger cette fiche" style="cursor:pointer;font-size:14px;opacity:.5;font-weight:normal">✏️</span></div>
     <div class="lead-meta">${(!estHL&&contacts.length&&contacts[0].nom)?e.nom+' · ':''}${e.enseigne&&e.enseigne!==e.nom?'Enseigne : '+e.enseigne+' · ':''}${e.naf}${e.nb_etablissements?' · '+e.nb_etablissements+' établissement'+(e.nb_etablissements>1?'s':''):''}${e.effectif?' · '+String(e.effectif).replace(/ salariés?$/i,'')+' salariés':''}${ca?' · CA '+ca:''} · ${e.ville||'—'}</div>
     <div class="badges">
      ${e.gmb&&e.gmb.trouve?`<span class="badge b-gmb">GMB ${String(e.gmb.note_moyenne).replace('.',',')} ★ (${e.gmb.total_avis} avis)</span>`:''}
@@ -2043,10 +2071,12 @@ function ouvrirRdv(i,c){
  if(besoin)params.set('revops_message',besoin);
  const url=base+(params.toString()?'?'+params.toString():'');
  window.open(url,'_blank');
- // Marque la fiche comme RDV pris (badge + tag pour les stats terrain)
+ // Marque la fiche RDV pris (tag UNIQUE + traité par le SDR courant)
  e.hubspot_envoye=true;
- e.tags_sdr=(e.tags_sdr||[]).includes('🤝 RDV pris')?e.tags_sdr:[...(e.tags_sdr||[]),'🤝 RDV pris'];
- rerender(i);persister();
+ e.tags_sdr=['🤝 RDV pris'];
+ e.traite_par=state.user?state.user.nom:'?';
+ e.traite_le=new Date().toISOString();
+ rerender(i);persister();majTraites();
  toast('📅 Page de réservation ouverte'+(c.prenom?' pour '+c.prenom:'')+' — champs préremplis');
 }
 async function envoyerHubspot(i){
