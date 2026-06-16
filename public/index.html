@@ -310,7 +310,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
     <button class="nav-btn active" data-view="wizard" onclick="nav('wizard',this)">🎯 Nouvelle liste</button>
     <button class="nav-btn" data-view="results" onclick="nav('results',this)">📞 Résultats</button>
     <button class="nav-btn" data-view="history" onclick="nav('history',this);chargerHistorique()">🗂 Historique</button>
-    <button class="nav-btn" data-view="mapping" onclick="nav('mapping',this);chargerEnvois()">⚙️ Envois & mapping</button>
+    <button class="nav-btn" data-view="mapping" onclick="nav('mapping',this);chargerEnvois();chargerConcurrents()">⚙️ Envois & mapping</button>
     <button class="nav-btn" data-view="stats" onclick="nav('stats',this);chargerStats()">📊 Statistiques</button>
     <button class="nav-btn" data-view="params" onclick="nav('params',this);chargerSdrs();chargerTarifs()">⚙️ Paramètres</button>
     <button class="nav-btn" data-view="settings" onclick="nav('settings',this);chargerHotleads()">🔌 Connexions</button>
@@ -447,7 +447,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
         <div class="comp-grid">
           <div class="comp-col">
             <h4><span class="dot" style="background:var(--soview)"></span>Soview</h4>
-            <textarea>Partoo
+            <textarea id="comp-soview">Partoo
 Guest Suite
 Custplace
 Trustfolio
@@ -459,13 +459,13 @@ Solocal</textarea>
           </div>
           <div class="comp-col">
             <h4><span class="dot" style="background:var(--soconnect)"></span>SoConnect</h4>
-            <textarea>Simio
+            <textarea id="comp-soconnect">Simio
 Alcméon
 GreenBureau</textarea>
           </div>
           <div class="comp-col">
             <h4><span class="dot" style="background:var(--soreach)"></span>SoReach SMS / RCS</h4>
-            <textarea>SMSPartner
+            <textarea id="comp-soreach">SMSPartner
 SMSFactor
 Esendex
 Brevo
@@ -476,7 +476,7 @@ Spot-Hit</textarea>
         </div>
         <div class="toggle-row" style="margin-top:12px"><input type="checkbox" checked id="sig-ourpost"><label for="sig-ourpost">Activer le signal « 💙 A liké notre post LinkedIn (Sofy) »</label></div>
         <div class="toggle-row"><input type="checkbox" checked id="sig-comppost"><label for="sig-comppost">Activer le signal « 💙 A liké le post d'un concurrent » (boost du score du produit concerné)</label></div>
-        <div class="save-bar"><button class="btn btn-primary" onclick="toast('Liste de concurrents enregistrée (mode démo)')">Enregistrer</button></div>
+        <div class="save-bar"><button class="btn btn-primary" onclick="enregistrerConcurrents()">Enregistrer</button></div>
       </div>
 
       <!-- LEMLIST -->
@@ -700,7 +700,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v90';
+const VERSION='v91';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -2227,6 +2227,33 @@ async function sauverEnvois(){
  toast(d1.ok&&d2.ok?'⚡ Connexion réelle enregistrée ✓':(d1.erreur||d2.erreur||'Erreur'));
 }
 
+function lignes(id){const el=document.getElementById(id);if(!el)return [];return el.value.split('\n').map(s=>s.trim()).filter(Boolean);}
+async function enregistrerConcurrents(){
+ const valeur={
+  soview:lignes('comp-soview'),
+  soconnect:lignes('comp-soconnect'),
+  soreach:lignes('comp-soreach'),
+  signal_ourpost:document.getElementById('sig-ourpost')?document.getElementById('sig-ourpost').checked:true,
+  signal_comppost:document.getElementById('sig-comppost')?document.getElementById('sig-comppost').checked:true
+ };
+ try{
+  const r=await api('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({cle:'concurrents',valeur})});
+  const d=await r.json();
+  const total=valeur.soview.length+valeur.soconnect.length+valeur.soreach.length;
+  toast(d.ok?`✅ ${total} concurrents enregistrés ✓`:(d.erreur||'Erreur'));
+ }catch(e){toast('Erreur réseau : '+e.message);}
+}
+async function chargerConcurrents(){
+ try{
+  const r=await api('/api/config');const d=await r.json();
+  const c=d.concurrents;if(!c)return;
+  if(c.soview&&document.getElementById('comp-soview'))document.getElementById('comp-soview').value=c.soview.join('\n');
+  if(c.soconnect&&document.getElementById('comp-soconnect'))document.getElementById('comp-soconnect').value=c.soconnect.join('\n');
+  if(c.soreach&&document.getElementById('comp-soreach'))document.getElementById('comp-soreach').value=c.soreach.join('\n');
+  if(document.getElementById('sig-ourpost')&&c.signal_ourpost!==undefined)document.getElementById('sig-ourpost').checked=c.signal_ourpost;
+  if(document.getElementById('sig-comppost')&&c.signal_comppost!==undefined)document.getElementById('sig-comppost').checked=c.signal_comppost;
+ }catch(_){}
+}
 /* ───────── DÉMO (conservée pour référence design) ───────── */
 
 const DEMO=[
