@@ -402,6 +402,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
           <div class="kpi"><b id="k-total">0</b><span>contacts</span></div>
           <div class="kpi"><b id="k-new">0</b><span>hors CRM ✓</span></div>
           <div class="kpi"><b id="k-sig">0</b><span>signaux 🔥</span></div>
+          <div class="kpi"><b id="k-traites">0</b><span>traités ✅</span></div>
           <button class="act act-call" onclick="lancerWaterfall(false)">🚀 Lancer l'enrichissement</button>
           <button class="act act-call" id="btn-nouvelles" style="display:none;background:#0a8f57" onclick="lancerWaterfall(true)">🚀 Nouvelles fiches</button>
           <button class="act act-export" onclick="exportCsv()">⬇️ Export Excel / CSV</button>
@@ -694,7 +695,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v82';
+const VERSION='v83';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -909,6 +910,13 @@ function criteresActuels(){
 }
 
 async function launch(crit,skipCheck){
+ // #1 Garde-fou : nom de liste obligatoire (sauf liste auto Hot Leads qui passe crit explicite)
+ if(!crit&&!(state.listeNom&&state.listeNom.trim())){
+  toast('⚠️ Donne un nom à ta liste avant de la générer');
+  const champ=document.getElementById('liste-nom');
+  if(champ){champ.focus();champ.style.borderColor='var(--danger)';setTimeout(()=>champ.style.borderColor='',2000);}
+  return;
+ }
  const c=crit||criteresActuels();
  // Anti-doublon : cette cible a-t-elle déjà été lancée ?
  if(!skipCheck){
@@ -1025,6 +1033,7 @@ function showRealResults(total,c){
  document.getElementById('k-total').textContent=REAL.length;
  document.getElementById('k-new').textContent=REAL.filter(e=>!e.deja_hubspot).length;
  document.getElementById('k-sig').textContent=REAL.filter(e=>e.signal_hot).length||'0';
+ const kt=document.getElementById('k-traites');if(kt)kt.textContent=REAL.filter(e=>e.tags_sdr&&e.tags_sdr.length).length;
  document.getElementById('fiches').innerHTML=REAL.length?REAL.map((e,i)=>ficheReal(e,i)).join(''):'<p style="color:var(--ink-soft)">Aucune entreprise ne correspond à ces critères. Élargis les filtres (effectif ou CA).</p>';
 }
 
@@ -1034,7 +1043,11 @@ function toggleTag(i,tag){
  const k=tags.indexOf(tag);
  if(k>=0)tags.splice(k,1);else tags.push(tag);
  e.tags_sdr=tags;
- rerender(i);persister();
+ rerender(i);persister();majTraites();
+}
+function majTraites(){
+ const kt=document.getElementById('k-traites');
+ if(kt)kt.textContent=REAL.filter(e=>e.tags_sdr&&e.tags_sdr.length).length;
 }
 function sauverNote(i,val){
  REAL[i].notes_sdr=val;
@@ -2376,7 +2389,7 @@ async function chargerHistorique(){
    const cr=l.criteres||{};
    return `<div class="fiche"><div class="fiche-top" style="grid-template-columns:1fr auto;align-items:center">
     <div>
-     <div class="lead-name">${l.nom}</div>
+     <div class="lead-name">${l.nom}${cr.auto!=='hotleads'?` <span onclick="renommerListe(${l.id},this)" data-nom="${(l.nom||'').replace(/"/g,'&quot;')}" title="Renommer la liste" style="cursor:pointer;font-size:14px;opacity:.5;font-weight:normal">✏️</span>`:''}</div>
      <div class="lead-meta">SDR : <b>${l.sdr}</b> · ${date} · ${l.total||l.nb_entreprises||0} entreprise${(l.total||l.nb_entreprises||0)>1?'s':''}${cr.auto==='hotleads'?' · 🔥 liste automatique':` · ${(cr.naf||[]).join(', ')} · ${(cr.pays||[]).join(' + ')} · ~${l.credits_estimes||0} crédits Pappers`}</div>
     </div>
     <div class="act-row" style="margin:0">
@@ -2387,6 +2400,20 @@ async function chargerHistorique(){
    </div></div>`;
   }).join('');
  }catch(e){zone.innerHTML='<p style="color:var(--ink-soft)">Erreur : '+e.message+'</p>';}
+}
+async function renommerListe(id,el){
+ const actuel=el&&el.getAttribute('data-nom')||'';
+ const nouveau=prompt('Nouveau nom de la liste :',actuel);
+ if(nouveau===null)return;                       // annulé
+ const nom=nouveau.trim();
+ if(!nom){toast('Le nom ne peut pas être vide');return;}
+ if(nom===actuel)return;                          // inchangé
+ try{
+  const r=await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,nom})});
+  const d=await r.json();
+  if(d.ok){toast('✅ Liste renommée');chargerHistorique();}
+  else toast('Erreur : '+(d.erreur||'renommage impossible'));
+ }catch(e){toast('Erreur réseau : '+e.message);}
 }
 async function basculerVeille(id,activer){
  if(activer&&!confirm('🔔 Activer la veille 60 jours sur cette liste ?\n\nPhantomBuster + notre robot (toutes les 6 h) surveilleront les likes/follows LinkedIn des contacts de la liste. Match → 🔥 sur la fiche + alerte Slack au SDR.'))return;
