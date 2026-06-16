@@ -116,6 +116,13 @@ export default async function handler(req, res) {
       });
       const agent = await rAgent.json().catch(() => ({}));
       const nomAgent = agent.name || `Phantom ${agentId}`;
+      // ── Détection d'un Phantom en erreur (cookie LinkedIn mort, désync...) → alerte Slack ──
+      const statut = (agent.lastEndStatus || agent.lastEndMessage || '').toString().toLowerCase();
+      const enErreur = statut && !['success', 'finished', 'ok'].some(s => statut.includes(s));
+      if (enErreur) {
+        resume.erreurs = (resume.erreurs || 0) + 1;
+        await envoyerSlack(`⚠️ *Veille LinkedIn — Phantom en erreur*\n« ${nomAgent} » : ${agent.lastEndStatus || agent.lastEndMessage || 'statut inconnu'}\n👉 Vérifie le cookie LinkedIn (li_at) dans PhantomBuster — la veille ne remonte aucun signal tant que le Phantom est en erreur.`);
+      }
       let data = null;
       if (agent.orgS3Folder && agent.s3Folder) {
         const rRes = await fetch(`https://phantombuster.s3.amazonaws.com/${agent.orgS3Folder}/${agent.s3Folder}/result.json`);
@@ -129,7 +136,14 @@ export default async function handler(req, res) {
         const out = await rOut.json().catch(() => ({}));
         if (out && out.resultObject) { try { data = JSON.parse(out.resultObject); } catch (_) {} }
       }
-      if (!data) continue;
+      if (!data) {
+        // Aucune donnée récupérée : souvent un cookie LinkedIn mort. On alerte (une fois) si pas déjà signalé en erreur.
+        if (!enErreur) {
+          resume.vides = (resume.vides || 0) + 1;
+          await envoyerSlack(`⚠️ *Veille LinkedIn — aucun résultat*\n« ${nomAgent} » n'a renvoyé aucune donnée.\n👉 Le Phantom tourne-t-il ? Cookie LinkedIn (li_at) à vérifier dans PhantomBuster.`);
+        }
+        continue;
+      }
 
       const profils = extraireProfils(data);
 
@@ -151,7 +165,13 @@ export default async function handler(req, res) {
       // Config Hot Leads (une fois par agent)
       const cfgRowsHL = await sql`SELECT valeur FROM config WHERE cle = 'hotleads'`;
       const cfgHL = cfgRowsHL.length ? cfgRowsHL[0].valeur : {};
-      const CONCURRENTS = ['partoo', 'brevo', 'guest suite', 'guestsuite', 'simio'];
+      // Liste des concurrents : lue depuis la config (onglet Envois & mapping), repli sur une liste par défaut
+      const cfgRowsC = await sql`SELECT valeur FROM config WHERE cle = 'concurrents'`;
+      const cfgC = cfgRowsC.length ? cfgRowsC[0].valeur : {};
+      const CONCURRENTS = [
+        ...(cfgC.soview || []), ...(cfgC.soconnect || []), ...(cfgC.soreach || [])
+      ].map(c => String(c).toLowerCase().trim()).filter(Boolean);
+      const CONCURRENTS_DEF = CONCURRENTS.length ? CONCURRENTS : ['partoo', 'brevo', 'guest suite', 'guestsuite', 'simio'];
 
       for (const p of nouveaux) {
         const m = (p.url && index.get(p.url)) || (p.nomNorm && indexNoms.get(p.nomNorm));
@@ -159,7 +179,7 @@ export default async function handler(req, res) {
           // ── Non matché → Hot Lead auto (sauf employés des concurrents et premier passage) ──
           if (premierPassage || cfgHL.actif === false || !p.nom) continue;
           const occ = (p.occupation || '').toLowerCase();
-          if (CONCURRENTS.some(c => occ.includes(c))) continue; // employé d'un concurrent ≠ lead
+          if (CONCURRENTS_DEF.some(c => occ.includes(c))) continue; // employé d'un concurrent ≠ lead
           const concurrent = p.post && p.post.includes('/posts/') ? p.post.split('/posts/')[1].split('_')[0] : '';
           const r2 = await ajouterHotLead({
             nom_complet: p.nom, email: null, entreprise: '',
