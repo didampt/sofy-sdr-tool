@@ -109,18 +109,18 @@ export default async function handler(req, res) {
         rows = toutVoir
           ? await sql`SELECT id, nom, sdr, createur, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                       WHERE (nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like})
-                      ORDER BY (criteres->>'auto' = 'hotleads') DESC, created_at DESC LIMIT 50`
+                      ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`
           : await sql`SELECT id, nom, sdr, createur, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                       WHERE (sdr = ${moi} OR criteres->>'auto' = 'hotleads')
                         AND (nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like})
-                      ORDER BY (criteres->>'auto' = 'hotleads') DESC, created_at DESC LIMIT 50`;
+                      ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`;
       } else {
         rows = toutVoir
           ? await sql`SELECT id, nom, sdr, createur, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
-                      ORDER BY (criteres->>'auto' = 'hotleads') DESC, created_at DESC LIMIT 50`
+                      ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`
           : await sql`SELECT id, nom, sdr, createur, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                       WHERE (sdr = ${moi} OR criteres->>'auto' = 'hotleads')
-                      ORDER BY (criteres->>'auto' = 'hotleads') DESC, created_at DESC LIMIT 50`;
+                      ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`;
       }
       // Récupérer les coûts par liste en une requête (table consommations)
       const ids = rows.map(r => r.id);
