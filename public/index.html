@@ -701,7 +701,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v94';
+const VERSION='v95';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1121,6 +1121,15 @@ function contactsDe(e){
 }
 function valideDomaine(s){
  return !!s&&s.includes('.')&&!/\s/.test(s.trim());
+}
+function extraireSocieteFront(occupation){
+ if(!occupation)return '';
+ let s=occupation;
+ if(s.includes('@'))s=s.split('@')[1];
+ else if(/\b(chez|at)\b/i.test(s))s=s.split(/\b(?:chez|at)\b/i)[1]||'';
+ else return '';
+ s=(s||'').split(/[|•\u2022,]/)[0].replace(/\s+/g,' ').trim();
+ return s.length>=2&&s.length<=60?s:'';
 }
 function domaineDe(e){
  // Auto-réparation : purge un site invalide (ex : "porsche guadeloupe" saisi avant la validation),
@@ -1576,9 +1585,10 @@ async function enrichir(i,j){
  const btn=document.getElementById(`enrbtn${i}_${j||0}`);
  if(btn){btn.disabled=true;btn.textContent='⏳ Dropcontact… (15-45 s)';}
  try{
+  const nomEntreprise=(e.enseigne||e.nom||'').trim()||extraireSocieteFront(c.fonction||(c.signal&&c.signal.detail)||'')||extraireSocieteFront(e.fonction||'');
   const r=await api('/api/enrich',{method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({liste_id:state.savedId,contact:{prenom:c.prenom,nom:c.nom,linkedin:c.linkedin||(c.enrich&&c.enrich.linkedin)||''},
-    entreprise:{nom:e.enseigne||e.nom,siren:e.siren,site:domaineDe(e)}})});
+    entreprise:{nom:nomEntreprise,siren:e.siren,site:domaineDe(e)}})});
   let d=await r.json();
   let essais=0;
   while(d.pending&&d.request_id&&essais<5){
