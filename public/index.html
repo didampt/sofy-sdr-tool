@@ -278,8 +278,8 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
  <div class="wf-panel" style="width:min(540px,94vw)">
   <div class="wf-head">💬 SMS SoReach — <span id="sms-dest"></span></div>
   <div style="padding:0 24px">
-   <textarea class="field" id="sms-texte" rows="5" style="width:100%;resize:vertical" oninput="document.getElementById('sms-count').textContent=this.value.length"></textarea>
-   <div class="hint" style="margin-top:6px"><span id="sms-count">0</span> caractères · expéditeur « Sofy » · mention STOP ajoutée automatiquement (36789 DOM · 36229 métropole) · 1 crédit SoReach</div>
+   <textarea class="field" id="sms-texte" rows="5" style="width:100%;resize:vertical" oninput="majCompteurSms()"></textarea>
+   <div class="hint" id="sms-hint" style="margin-top:6px"></div>
   </div>
   <div class="wf-foot">
    <button class="btn" style="background:var(--paper)" onclick="document.getElementById('sms-modal').style.display='none'">Annuler</button>
@@ -733,7 +733,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v106';
+const VERSION='v107';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2222,6 +2222,25 @@ async function envoyerHubspot(i){
  toast('🤝 '+(d.dejaPresent?'Contact mis à jour':'Contact créé')+(d.dealId?' + transaction ✓':'')+(d.avertissement?' ⚠️ '+d.avertissement:''));
 }
 let SMS_CTX=null;let WF_STOP=false;
+function calculerSms(texte){
+ // Mention STOP ajoutée automatiquement par SoReach → compte dans la longueur réelle
+ const STOP=' STOP au 36111';
+ const longueur=(texte||'').length+STOP.length;
+ // Règle SMS standard : 160 car = 1 SMS ; au-delà, segments de 153 car (en-tête concaténation)
+ let sms;
+ if(longueur<=160)sms=1;
+ else sms=Math.ceil(longueur/153);
+ return {longueur,sms};
+}
+function majCompteurSms(){
+ const ta=document.getElementById('sms-texte');
+ const hint=document.getElementById('sms-hint');
+ if(!ta||!hint)return;
+ const {longueur,sms}=calculerSms(ta.value);
+ const trop=ta.value.length>160;
+ const coul=trop?'var(--danger)':'var(--ink-soft)';
+ hint.innerHTML=`<span style="color:${coul};font-weight:${trop?'700':'400'}">${ta.value.length} caractères${trop?' ⚠️ dépasse 160 !':''}</span> · expéditeur « Sofy » · STOP auto · <b>${sms} crédit${sms>1?'s':''} SoReach</b>${sms>1?` <span style="color:var(--danger)">(message long = ${sms} SMS facturés)</span>`:''}`;
+}
 function ouvrirSms(i){
  const e=REAL[i];
  const dispo=[];
@@ -2232,10 +2251,13 @@ function ouvrirSms(i){
  const c={prenom:dispo[0].prenom};
  const qui='choisir ci-dessous';
  document.getElementById('sms-dest').innerHTML='<div style="margin-top:8px">'+SMS_CTX.dispo.map((d,k)=>`<label style="display:inline-flex;align-items:center;gap:6px;margin-right:14px;font-size:13px;font-weight:600;cursor:pointer"><input type="checkbox" class="sms-chk" value="${k}" ${k===0?'checked':''} style="accent-color:var(--accent);width:16px;height:16px">${d.nom} · ${d.mobile}</label>`).join('')+'</div>';
- const defaut=(e.score&&e.score.sms)||`Bonjour${c?' '+c.prenom:''}, ${state.user?state.user.nom:'l\'équipe'} de Sofy. ${e.gmb&&e.gmb.trouve?`Vu votre note Google (${String(e.gmb.note_moyenne).replace('.',',')}★) — on aide les pros à reprendre la main sur leurs avis.`:'On aide les pros à être plus visibles sur Google.'} Dispo 10 min cette semaine ?`;
+ const numSdr=(state.user&&state.user.ringover_numero)?state.user.ringover_numero.replace(/\s/g,''):'';
+ const signature=numSdr?` Rappelez-moi au ${numSdr}.`:'';
+ let defaut=(e.score&&e.score.sms)||`Bonjour${c?' '+c.prenom:''}, ${state.user?state.user.nom:'l\'équipe'} de Sofy. ${e.gmb&&e.gmb.trouve?`Vu votre note Google (${String(e.gmb.note_moyenne).replace('.',',')}★).`:'On aide les pros à être plus visibles sur Google.'} Dispo cette semaine ?`;
+ if(numSdr&&!defaut.includes(numSdr))defaut+=signature;
  const ta=document.getElementById('sms-texte');
  ta.value=defaut;
- document.getElementById('sms-count').textContent=ta.value.length;
+ majCompteurSms();
  document.getElementById('sms-modal').style.display='flex';
 }
 async function envoyerSms(){
