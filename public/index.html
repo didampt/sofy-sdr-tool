@@ -683,6 +683,7 @@ Spot-Hit</textarea>
       <h1>Statut des connexions</h1>
       <p class="sub">Les clés API sont stockées côté serveur (Vercel) et ne transitent jamais par le navigateur. Cette page indique simplement ce qui est branché.</p>
       <div class="notice">🔐 Pour ajouter ou modifier une clé : <b>Vercel → projet sofy-sdr-tool → Settings → Environment Variables</b>, puis redéployer (ou attendre le prochain commit). Le nom de variable attendu est indiqué sur chaque carte.</div>
+      <div class="save-bar" style="justify-content:flex-start;margin:0 0 16px"><button class="btn btn-primary" id="btn-test-cnx" onclick="testerConnexions()">🔌 Tester les connexions</button><span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">Vérifie que chaque clé répond (détecte les clés expirées / refusées).</span></div>
       <div class="api-grid" id="api-grid"><p style="color:var(--ink-soft)">Chargement du statut…</p></div>
     </section>
 
@@ -732,7 +733,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v104';
+const VERSION='v105';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2969,13 +2970,14 @@ async function majCoutListe(){
  }catch(_){}
 }
 
-async function chargerStatut(){
+async function chargerStatut(avecTest){
  const grid=document.getElementById('api-grid');
  try{
-  const r=await api('/api/status');
+  const r=await api('/api/status'+(avecTest?'?test=1':''));
   const data=await r.json();
   const SEUILS={pappers:300,dropcontact:100,fullenrich:50,kaspr:50};
   const soldes=data.soldes||{};
+  const tests=data.tests||null;
   grid.innerHTML=(data.outils||[]).map(o=>{
    const solde=soldes[o.id];
    let ligneSolde='';
@@ -2983,16 +2985,32 @@ async function chargerStatut(){
     const alerte=SEUILS[o.id]&&Number(solde)<SEUILS[o.id];
     ligneSolde=`<div class="api-status ${alerte?'st-empty':'st-ok'}" style="margin-top:6px">${alerte?'🔴':'💳'} Solde : <b>${Number(solde).toLocaleString('fr-FR')}</b> crédits${alerte?' — ⚠️ pense à recharger !':''}</div>`;
    }
+   // Résultat du test réel (si lancé)
+   let ligneTest='';
+   const t=tests&&tests[o.id];
+   if(t){
+    const ic=t.etat==='ok'?'🟢':(t.etat==='absent'?'⚪':'🔴');
+    const cls=t.etat==='ok'?'st-ok':'st-empty';
+    ligneTest=`<div class="api-status ${cls}" style="margin-top:6px;font-weight:600">${ic} Test : ${t.detail}</div>`;
+   }
    return `
    <div class="api-card">
     <h3>${o.configuree?'🟢':'⚪'} ${o.nom}</h3>
     <div class="role">${o.role}</div>
     <div class="api-status ${o.configuree?'st-ok':'st-empty'}">${o.configuree?'Clé configurée côté serveur ✓':'Non configurée — variable attendue : '+o.variable}</div>
     ${ligneSolde}
+    ${ligneTest}
    </div>`;}).join('');
  }catch(e){
   grid.innerHTML='<p style="color:var(--ink-soft)">Impossible de charger le statut ('+e.message+').</p>';
  }
+}
+async function testerConnexions(){
+ const btn=document.getElementById('btn-test-cnx');
+ if(btn){btn.disabled=true;btn.textContent='⏳ Test en cours… (10-20 s)';}
+ await chargerStatut(true);
+ if(btn){btn.disabled=false;btn.textContent='🔌 Tester les connexions';}
+ toast('🔌 Test des connexions terminé');
 }
 document.getElementById('ver-side').textContent=VERSION;
 document.getElementById('ver-login').textContent=VERSION;
