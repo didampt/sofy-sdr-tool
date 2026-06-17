@@ -357,6 +357,9 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
         <h2>Quel effectif ?</h2>
         <div class="chips" id="emp-chips"></div>
         <p class="hint">ICP Sofy multi-sites : 20+ salariés recommandé.</p>
+        <h2 style="margin-top:22px">Nombre d'établissements ?</h2>
+        <div class="chips" id="etab-chips"></div>
+        <p class="hint">ICP Sofy = multi-sites. « 2+ » cible les entreprises à plusieurs points de vente. Optionnel.</p>
       </div>
 
       <div class="qcard" data-q="3" style="display:none">
@@ -711,7 +714,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v101';
+const VERSION='v102';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -846,6 +849,7 @@ function chips(id,opts,key,multi){
 }
 chips('size-chips',["25","50","100","250","500"],'size');
 chips('emp-chips',["1–9","10–19","20–49","50–199","200–499","500+"],'emp');
+chips('etab-chips',["Indifférent","2+","5+","10+"],'etab');
 chips('ca-chips',["< 500 K€","500 K€ – 2 M€","2 – 10 M€","10 – 50 M€","50 M€ +","Indifférent"],'ca');
 chips('job-chips',["Dirigeant / PDG","Directeur Marketing","Directeur Relation Client","Directeur Expérience Client (CX)","Directeur Omnicanal / Digital","Responsable Service Client","Directeur CRM","Directeur Commercial","Responsable Communication","Directeur Réseau / Retail"],'jobs',true);
 chips('pays-chips',["Guadeloupe","Martinique","Guyane française","Réunion","France","Mayotte"],'pays',true);
@@ -930,7 +934,7 @@ function move(dir){
 
 /* ───────── RESET ───────── */
 function resetWizard(){
- state.naf=[];state.size=null;state.emp=null;state.ca=null;state.jobs=[];state.pays=[];state.step=0;state.sdr=null;state.listeNom='';state.savedId=null;
+ state.naf=[];state.size=null;state.emp=null;state.ca=null;state.jobs=[];state.pays=[];state.etab=null;state.step=0;state.sdr=null;state.listeNom='';state.savedId=null;
  document.getElementById('liste-nom').value='';
  document.querySelectorAll('.chip.sel').forEach(c=>c.classList.remove('sel'));
  document.querySelectorAll('.custom-chip').forEach(c=>c.remove());
@@ -960,7 +964,7 @@ function confirmerCoutListe(taille){
 }
 
 function criteresActuels(){
- return {naf:state.naf,size:state.size,emp:state.emp,ca:state.ca,jobs:state.jobs,pays:state.pays,
+ return {naf:state.naf,size:state.size,emp:state.emp,ca:state.ca,jobs:state.jobs,pays:state.pays,etab:state.etab,
          ville:document.getElementById('loc-ville').value.trim()};
 }
 
@@ -1007,6 +1011,9 @@ async function launch(crit,skipCheck){
  const ca=CA_MAP[c.ca]||["",""];
  if(ca[0])p.set('ca_min',ca[0]);
  if(ca[1])p.set('ca_max',ca[1]);
+ // Filtre nombre d'établissements (ICP multi-sites). "2+"/"5+"/"10+" → valeur min ; "Indifférent"/null → rien
+ const etabMin=({"2+":"2","5+":"5","10+":"10"})[c.etab];
+ if(etabMin)p.set('nb_etab_min',etabMin);
  p.set('nb',Math.min(parseInt(c.size)||25,500)); // pagination Pappers gérée côté serveur (5 pages max)
  p.set('detail','25'); // fiches détaillées (dirigeants, CA, établissements) — plafonné pour maîtriser les crédits
 
