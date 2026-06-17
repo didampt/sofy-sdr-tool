@@ -702,7 +702,28 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v97';
+const VERSION='v98';
+// F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
+const STATUTS_APPEL=[
+ {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
+ {v:'Demande email / envoyer doc',e:'📧',score:10,cat:'good'},
+ {v:'Rappel demandé / occupé',e:'🔁',score:5,cat:'good'},
+ {v:'Pas de réponse',e:'📞',score:0,cat:'neutre'},
+ {v:'Message vocal laissé',e:'📭',score:0,cat:'neutre'},
+ {v:'Barrage secrétaire / standard',e:'🚪',score:0,cat:'neutre'},
+ {v:'Absent',e:'🌙',score:0,cat:'neutre'},
+ {v:'Connecté',e:'☎️',score:0,cat:'neutre'},
+ {v:'Hors ICP / à requalifier',e:'🎯',score:-10,cat:'bad'},
+ {v:'Pas le bon contact / referral',e:'👤',score:-5,cat:'bad'},
+ {v:'Non décisionnaire',e:'🏢',score:-5,cat:'bad'},
+ {v:'Refus – timing / pas prioritaire',e:'✋',score:-5,cat:'bad'},
+ {v:'Refus – concurrence',e:'🥊',score:-10,cat:'bad'},
+ {v:'Négatif (refus ferme)',e:'👎',score:-10,cat:'bad'},
+ {v:'Faux numéro',e:'📵',score:-15,cat:'bad'},
+ {v:'Numéro perso – ne plus appeler',e:'🙅',score:-15,cat:'bad'},
+ {v:'Opt-out téléphone',e:'🚫',score:-15,cat:'bad'},
+ {v:'Hors prospection',e:'🛑',score:0,cat:'neutre'}
+];
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1077,22 +1098,24 @@ function showRealResults(total,c){
  document.getElementById('fiches').innerHTML=REAL.length?REAL.map((e,i)=>ficheReal(e,i)).join(''):'<p style="color:var(--ink-soft)">Aucune entreprise ne correspond à ces critères. Élargis les filtres (effectif ou CA).</p>';
 }
 
-function toggleTag(i,tag){
+function setStatutAppel(i,statut){
  const e=REAL[i];
- const actuel=(e.tags_sdr||[])[0]||null;
  const moi=state.user?state.user.nom:'?';
- if(actuel===tag){
-  // Re-clic sur le même tag → on le retire (fiche redevient non traitée)
-  e.tags_sdr=[];
-  e.traite_par=null;e.traite_le=null;
+ if(!statut){
+  // Statut vide → fiche non traitée (sauf si RDV pris posé par le bouton)
+  e.statut_appel=null;
+  if(!(e.tags_sdr||[]).includes('🤝 RDV pris')){e.tags_sdr=[];e.traite_par=null;e.traite_le=null;}
  }else{
-  // #5 Tag UNIQUE : le nouveau tag remplace l'ancien
-  e.tags_sdr=[tag];
+  e.statut_appel=statut;
+  // On garde tags_sdr pour compat (compteur traités + stats) : le statut devient le tag unique
+  e.tags_sdr=[statut];
   e.traite_par=moi;
   e.traite_le=new Date().toISOString();
  }
  rerender(i);persister();majTraites();
 }
+// Compat : d'anciens appels peuvent encore référencer toggleTag
+function toggleTag(i,tag){setStatutAppel(i,tag);}
 function majTraites(){
  const kt=document.getElementById('k-traites');
  if(kt)kt.textContent=REAL.filter(e=>e.tags_sdr&&e.tags_sdr.length).length;
@@ -1376,7 +1399,11 @@ function ficheReal(e,i){
    <div class="note-box">
     <div class="col-title">📝 Bloc-notes SDR <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--ink-soft)">— issue d'appel & retours (analysé dans les Statistiques)</span></div>
     <div class="note-tags">
-     ${['🤝 RDV pris','📞 Pas de réponse','❌ Pas intéressé','📵 Mauvais numéro','✉️ Mauvais email','🔁 À rappeler'].map(t=>{const on=(e.tags_sdr||[]).includes(t);const cls=on?(t.includes('RDV')?'on-good':(t.includes('intéressé')||t.includes('Mauvais')?'on-bad':'on')):'';return `<button class="tag-btn ${cls}" onclick="toggleTag(${i},'${t}')">${t}</button>`}).join('')}
+     <label style="font-size:12.5px;font-weight:600;color:var(--ink-soft);margin-right:8px">📋 Statut de l'appel :</label>
+     <select class="field" style="max-width:280px;display:inline-block" onchange="setStatutAppel(${i},this.value)">
+      <option value="">— Choisir un statut —</option>
+      ${STATUTS_APPEL.map(s=>`<option value="${s.v}"${(e.statut_appel===s.v)?' selected':''}>${s.e} ${s.v}</option>`).join('')}
+     </select>
     </div>
     <textarea class="note-area" id="note${i}" placeholder="Note libre : objection entendue, bon interlocuteur, ressenti terrain…" onchange="sauverNote(${i},this.value)">${(e.notes_sdr||'').replace(/</g,'&lt;').replace(/"/g,'&quot;')}</textarea>
    </div>
@@ -2124,9 +2151,10 @@ function ouvrirRdv(i,c){
  if(besoin)params.set('revops_message',besoin);
  const url=base+(params.toString()?'?'+params.toString():'');
  window.open(url,'_blank');
- // Marque la fiche RDV pris (tag UNIQUE + traité par le SDR courant)
+ // Marque la fiche RDV pris (prioritaire : efface un statut d'appel contradictoire)
  e.hubspot_envoye=true;
  e.tags_sdr=['🤝 RDV pris'];
+ e.statut_appel='Intéressé – RDV à prendre';
  e.traite_par=state.user?state.user.nom:'?';
  e.traite_le=new Date().toISOString();
  rerender(i);persister();majTraites();
