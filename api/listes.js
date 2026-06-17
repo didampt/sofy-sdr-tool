@@ -91,7 +91,21 @@ export default async function handler(req, res) {
   try {
     // ── Lecture ──
     if (req.method === 'GET') {
-      const { id, q, criteres, archivees } = req.query;
+      const { id, q, criteres, archivees, migrer_stats } = req.query;
+
+      // Migration ponctuelle (superadmin) : pré-remplir stats des listes qui n'en ont pas encore.
+      // À lancer une fois après déploiement. Charge le JSON uniquement pour ces listes-là.
+      if (migrer_stats === '1') {
+        if (user.role !== 'superadmin') return res.status(403).json({ erreur: 'Réservé au superadmin' });
+        const aMigrer = await sql`SELECT id, entreprises FROM listes WHERE stats IS NULL`;
+        let n = 0;
+        for (const l of aMigrer) {
+          const st = calculerStatsListe(l.entreprises);
+          await sql`UPDATE listes SET stats = ${JSON.stringify(st)} WHERE id = ${l.id}`;
+          n++;
+        }
+        return res.status(200).json({ ok: true, migrees: n });
+      }
 
       if (id) {
         const rows = await sql`SELECT * FROM listes WHERE id = ${parseInt(id)}`;
@@ -126,20 +140,20 @@ export default async function handler(req, res) {
         const estNum = digits.length >= 4 && /^[0-9\s.()+\-]+$/.test(recherche);
         const likeDigits = '%' + digits + '%';
         rows = toutVoir
-          ? await sql`SELECT id, nom, sdr, createur, archivee, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+          ? await sql`SELECT id, nom, sdr, createur, archivee, stats, total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                       WHERE (nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like}
                              OR (${estNum} AND regexp_replace(entreprises::text, '[^0-9]', '', 'g') ILIKE ${likeDigits}))
                       ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`
-          : await sql`SELECT id, nom, sdr, createur, archivee, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+          : await sql`SELECT id, nom, sdr, createur, archivee, stats, total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                       WHERE (sdr = ${moi} OR criteres->>'auto' = 'hotleads')
                         AND (nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like}
                              OR (${estNum} AND regexp_replace(entreprises::text, '[^0-9]', '', 'g') ILIKE ${likeDigits}))
                       ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`;
       } else {
         rows = toutVoir
-          ? await sql`SELECT id, nom, sdr, createur, archivee, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+          ? await sql`SELECT id, nom, sdr, createur, archivee, stats, total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                       ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`
-          : await sql`SELECT id, nom, sdr, createur, archivee, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+          : await sql`SELECT id, nom, sdr, createur, archivee, stats, total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                       WHERE (sdr = ${moi} OR criteres->>'auto' = 'hotleads')
                       ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`;
       }
@@ -152,15 +166,11 @@ export default async function handler(req, res) {
           cr.forEach(c => { couts[c.liste_id] = Number(c.cout) || 0; });
         } catch (_) {}
       }
-      // Calculer les stats par liste + retirer le gros JSON entreprises du payload
+      // Stats déjà pré-calculées et stockées en base (colonne stats) → aucun gros JSON chargé.
       const voirArchivees = archivees === '1' || archivees === 'true';
       const listes = rows
         .filter(r => voirArchivees ? true : !r.archivee)
-        .map(r => {
-          const stats = calculerStatsListe(r.entreprises);
-          const { entreprises, ...meta } = r;
-          return { ...meta, cout: couts[r.id] || 0, stats };
-        });
+        .map(r => ({ ...r, cout: couts[r.id] || 0, stats: r.stats || null }));
       return res.status(200).json({ listes });
     }
 
@@ -171,8 +181,9 @@ export default async function handler(req, res) {
         return res.status(400).json({ erreur: 'nom, sdr, criteres et entreprises requis' });
       }
       const h = hashCriteres(criteres);
-      const rows = await sql`INSERT INTO listes (nom, sdr, createur, criteres, criteres_hash, entreprises, total, credits_estimes)
-        VALUES (${nom}, ${sdr}, ${user.nom}, ${JSON.stringify(criteres)}, ${h}, ${JSON.stringify(entreprises)}, ${entreprises.length}, ${credits_estimes || 0})
+      const statsInit = calculerStatsListe(entreprises);
+      const rows = await sql`INSERT INTO listes (nom, sdr, createur, criteres, criteres_hash, entreprises, total, credits_estimes, stats)
+        VALUES (${nom}, ${sdr}, ${user.nom}, ${JSON.stringify(criteres)}, ${h}, ${JSON.stringify(entreprises)}, ${entreprises.length}, ${credits_estimes || 0}, ${JSON.stringify(statsInit)})
         RETURNING id, created_at`;
       // Rattache les crédits Pappers consommés à l'instant (extraction avant sauvegarde) à cette liste
       try {
@@ -217,9 +228,12 @@ export default async function handler(req, res) {
             // On conserve une fiche de la base SAUF si le front l'a explicitement supprimée
             if (!clesEnvoyees.has(c) && !clesSupprimees.has(c)) fusion.push(eb);
           }
-          await sql`UPDATE listes SET entreprises = ${JSON.stringify(fusion.slice(0, 300))}, total = ${fusion.length} WHERE id = ${lid}`;
+          const fusionFinale = fusion.slice(0, 300);
+          const statsAuto = calculerStatsListe(fusionFinale);
+          await sql`UPDATE listes SET entreprises = ${JSON.stringify(fusionFinale)}, total = ${fusionFinale.length}, stats = ${JSON.stringify(statsAuto)} WHERE id = ${lid}`;
         } else {
-          await sql`UPDATE listes SET entreprises = ${JSON.stringify(entreprises)}, total = ${entreprises.length} WHERE id = ${lid}`;
+          const statsMaj = calculerStatsListe(entreprises);
+          await sql`UPDATE listes SET entreprises = ${JSON.stringify(entreprises)}, total = ${entreprises.length}, stats = ${JSON.stringify(statsMaj)} WHERE id = ${lid}`;
         }
       }
       // #2 Renommage d'une liste

@@ -96,6 +96,15 @@ export async function ensureSchema() {
   )`;
   await sql`ALTER TABLE sdrs ADD COLUMN IF NOT EXISTS ringover_numero TEXT`;
   await sql`ALTER TABLE sdrs ADD COLUMN IF NOT EXISTS slack_id TEXT`;
+  await sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS stats JSONB`;
+  // Index pour la montée en charge (tri/filtre fréquents)
+  await sql`CREATE INDEX IF NOT EXISTS idx_listes_created ON listes (created_at DESC)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_listes_sdr ON listes (sdr)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_listes_archivee ON listes (archivee)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_listes_hash ON listes (criteres_hash)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_taches_sdr_faite ON taches (sdr, faite)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_taches_rappel ON taches (date_rappel) WHERE faite = FALSE`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_conso_liste ON consommations (liste_id)`;
   await sql`INSERT INTO tarifs (api, prix) VALUES ('soreach', 0.07) ON CONFLICT (api) DO NOTHING`;
   ready = true;
 }
