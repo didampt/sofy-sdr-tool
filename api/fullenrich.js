@@ -86,6 +86,8 @@ export default async function handler(req, res) {
           lastname: contact.nom,
           company_name: entreprise.nom,
           ...(entreprise.site ? { domain: entreprise.site } : {}),
+          // LinkedIn (même URL cryptée /in/ACoAA…) : FullEnrich sait la résoudre → clé pour les Hot Leads issus de la veille
+          ...(contact.linkedin ? { linkedin_url: contact.linkedin } : {}),
           enrich_fields: ['contact.emails', 'contact.phones']
         }]
       };
