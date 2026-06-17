@@ -76,7 +76,7 @@ export default async function handler(req, res) {
   try {
     // ── Lecture ──
     if (req.method === 'GET') {
-      const { id, q, criteres } = req.query;
+      const { id, q, criteres, archivees } = req.query;
 
       if (id) {
         const rows = await sql`SELECT * FROM listes WHERE id = ${parseInt(id)}`;
@@ -111,20 +111,20 @@ export default async function handler(req, res) {
         const estNum = digits.length >= 4 && /^[0-9\s.()+\-]+$/.test(recherche);
         const likeDigits = '%' + digits + '%';
         rows = toutVoir
-          ? await sql`SELECT id, nom, sdr, createur, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+          ? await sql`SELECT id, nom, sdr, createur, archivee, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                       WHERE (nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like}
                              OR (${estNum} AND regexp_replace(entreprises::text, '[^0-9]', '', 'g') ILIKE ${likeDigits}))
                       ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`
-          : await sql`SELECT id, nom, sdr, createur, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+          : await sql`SELECT id, nom, sdr, createur, archivee, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                       WHERE (sdr = ${moi} OR criteres->>'auto' = 'hotleads')
                         AND (nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like}
                              OR (${estNum} AND regexp_replace(entreprises::text, '[^0-9]', '', 'g') ILIKE ${likeDigits}))
                       ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`;
       } else {
         rows = toutVoir
-          ? await sql`SELECT id, nom, sdr, createur, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+          ? await sql`SELECT id, nom, sdr, createur, archivee, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                       ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`
-          : await sql`SELECT id, nom, sdr, createur, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+          : await sql`SELECT id, nom, sdr, createur, archivee, entreprises, GREATEST(total, COALESCE(jsonb_array_length(entreprises),0)) AS total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                       WHERE (sdr = ${moi} OR criteres->>'auto' = 'hotleads')
                       ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`;
       }
@@ -138,11 +138,14 @@ export default async function handler(req, res) {
         } catch (_) {}
       }
       // Calculer les stats par liste + retirer le gros JSON entreprises du payload
-      const listes = rows.map(r => {
-        const stats = calculerStatsListe(r.entreprises);
-        const { entreprises, ...meta } = r;
-        return { ...meta, cout: couts[r.id] || 0, stats };
-      });
+      const voirArchivees = archivees === '1' || archivees === 'true';
+      const listes = rows
+        .filter(r => voirArchivees ? true : !r.archivee)
+        .map(r => {
+          const stats = calculerStatsListe(r.entreprises);
+          const { entreprises, ...meta } = r;
+          return { ...meta, cout: couts[r.id] || 0, stats };
+        });
       return res.status(200).json({ listes });
     }
 
@@ -166,8 +169,19 @@ export default async function handler(req, res) {
     }
 
     // ── Mise à jour des entreprises (analyses GMB, enrichissements futurs) ──
+    // ── Suppression définitive (réservé superadmin) ──
+    if (req.method === 'DELETE') {
+      const id = req.query.id || (req.body && req.body.id);
+      if (!id) return res.status(400).json({ erreur: 'id requis' });
+      if (user.role !== 'superadmin') {
+        return res.status(403).json({ erreur: 'Seul le superadmin peut supprimer définitivement une liste' });
+      }
+      await sql`DELETE FROM listes WHERE id = ${parseInt(id)}`;
+      return res.status(200).json({ ok: true, supprime: true });
+    }
+
     if (req.method === 'PUT') {
-      const { id, entreprises, veille, veille_jours, supprimees, nom, assigner_a } = req.body || {};
+      const { id, entreprises, veille, veille_jours, supprimees, nom, assigner_a, archiver } = req.body || {};
       if (!id) return res.status(400).json({ erreur: 'id requis' });
       if (Array.isArray(entreprises)) {
         const lid = parseInt(id);
@@ -205,6 +219,14 @@ export default async function handler(req, res) {
         }
         await sql`UPDATE listes SET sdr = ${assigner_a.trim()} WHERE id = ${parseInt(id)}`;
         return res.status(200).json({ ok: true, assigne: assigner_a.trim() });
+      }
+      // Archiver / désarchiver une liste (réservé admin/superadmin)
+      if (archiver !== undefined) {
+        if (!['admin', 'superadmin'].includes(user.role)) {
+          return res.status(403).json({ erreur: 'Seuls les administrateurs peuvent archiver une liste' });
+        }
+        await sql`UPDATE listes SET archivee = ${!!archiver} WHERE id = ${parseInt(id)}`;
+        return res.status(200).json({ ok: true, archivee: !!archiver });
       }
       if (veille !== undefined) {
         const fin = veille ? new Date(Date.now() + (parseInt(veille_jours) || 60) * 24 * 3600 * 1000) : null;

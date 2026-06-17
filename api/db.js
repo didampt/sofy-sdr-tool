@@ -63,6 +63,7 @@ export async function ensureSchema() {
   }
   await sql`CREATE TABLE IF NOT EXISTS etats_api (api TEXT PRIMARY KEY, solde NUMERIC, maj TIMESTAMPTZ DEFAULT NOW())`;
   await sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS createur TEXT DEFAULT NULL`;
+  await sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS archivee BOOLEAN DEFAULT FALSE`;
   await sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS veille BOOLEAN DEFAULT FALSE`;
   await sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS veille_fin TIMESTAMPTZ DEFAULT NULL`;
   await sql`CREATE TABLE IF NOT EXISTS signaux (
