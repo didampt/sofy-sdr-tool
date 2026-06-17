@@ -58,6 +58,21 @@ function extraireProfils(data) {
 }
 
 // Détermine le type d'interaction (like / commentaire / follow) à partir du nom du Phantom + des champs
+// Extrait le nom de la société depuis l'occupation LinkedIn
+// Ex: "Chief Marketing Officer@Splio" → "Splio" ; "Ecosystem Builder @ Splio | AI-First CRM" → "Splio"
+function extraireSociete(occupation) {
+  if (!occupation) return '';
+  let s = occupation;
+  // Après le @ (séparateur titre@société)
+  if (s.includes('@')) s = s.split('@')[1];
+  // Sinon après "chez" / "at"
+  else if (/\b(chez|at)\b/i.test(s)) s = s.split(/\b(?:chez|at)\b/i)[1] || '';
+  else return ''; // pas de séparateur fiable → on ne devine pas
+  // Coupe aux séparateurs courants (| , - •) et nettoie
+  s = (s || '').split(/[|•\u2022,]/)[0].replace(/\s+/g, ' ').trim();
+  return s.length >= 2 && s.length <= 60 ? s : '';
+}
+
 // Extrait le nom du concurrent depuis l'URL du post LinkedIn (ex: /posts/partoo_... → Partoo)
 function extraireConcurrent(post) {
   if (!post) return '';
@@ -207,8 +222,9 @@ export default async function handler(req, res) {
           const occ = (p.occupation || '').toLowerCase();
           if (CONCURRENTS_DEF.some(c => occ.includes(c))) continue; // employé d'un concurrent ≠ lead
           const sigT = typerSignal(nomAgent, p);
+          const societe = extraireSociete(p.occupation);
           const r2 = await ajouterHotLead({
-            nom_complet: p.nom, email: null, entreprise: '',
+            nom_complet: p.nom, email: null, entreprise: societe,
             linkedin_brut: p.brut || null, fonction: p.occupation || '',
             source: nomAgent, type: 'linkedin',
             detail: `${sigT.emoji} ${p.nom} ${sigT.label}${p.post ? ' — ' + p.post : ''}`
