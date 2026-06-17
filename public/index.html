@@ -733,7 +733,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v109';
+const VERSION='v110';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1218,7 +1218,23 @@ function waLink(t){
  const num=waNumero(t);
  const sdr=state.user?state.user.nom:'';
  const numSdr=(state.user&&state.user.ringover_numero)?state.user.ringover_numero.replace(/\s/g,''):'';
- const msg=`Bonjour, ${sdr?sdr+' de ':''}Sofy. On aide les pros à être plus visibles sur Google et à mieux communiquer avec leurs clients. Auriez-vous un moment cette semaine ?${numSdr?' Vous pouvez aussi me joindre au '+numSdr+'.':''}`;
+ const e=window._ficheAff;
+ const prenom=(e&&contactsDe(e)[0]&&contactsDe(e)[0].prenom)?contactsDe(e)[0].prenom:'';
+ // Priorité au contenu IA : accroche (courte/percutante), sinon SMS IA, sinon message générique
+ let coeur='';
+ if(e&&e.score&&e.score.accroche)coeur=e.score.accroche;
+ else if(e&&e.score&&e.score.sms)coeur=e.score.sms.replace(/\s*STOP au \d{5}\.?\s*$/i,'').trim();
+ if(coeur){
+  // Éviter le doublon "Bonjour" si le contenu IA commence déjà par une salutation
+  coeur=coeur.replace(/^\s*(bonjour|bonsoir)[\s,!.]*/i,'').trim();
+  coeur=coeur.charAt(0).toUpperCase()+coeur.slice(1);
+  // Réduire pour rester accrocheur sur WhatsApp (~280 car max)
+  if(coeur.length>280)coeur=coeur.slice(0,277).trim()+'…';
+  const sign=sdr?`\n\n${sdr} — Sofy${numSdr?' · '+numSdr:''}`:'';
+  const msg=`Bonjour${prenom?' '+prenom:''}, ${coeur}${sign}`;
+  return `https://wa.me/${num}?text=${encodeURIComponent(msg)}`;
+ }
+ const msg=`Bonjour${prenom?' '+prenom:''}, ${sdr?sdr+' de ':''}Sofy. On aide les pros à être plus visibles sur Google et à mieux communiquer avec leurs clients. Auriez-vous un moment cette semaine ?${numSdr?' Vous pouvez aussi me joindre au '+numSdr+'.':''}`;
  return `https://wa.me/${num}?text=${encodeURIComponent(msg)}`;
 }
 function telBtns(t){
@@ -1329,6 +1345,7 @@ function copierEmail(i){
  toast('✉️ Email copié dans le presse-papier');
 }
 function ficheReal(e,i){
+ window._ficheAff=e; // mémo pour waLink (accroche IA WhatsApp)
  const ca=e.chiffre_affaires?Number(e.chiffre_affaires).toLocaleString('fr-FR')+' €':null;
  const contacts=contactsDe(e);
  const siteWeb=domaineDe(e);
