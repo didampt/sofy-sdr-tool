@@ -605,6 +605,24 @@ Spot-Hit</textarea>
       <div class="eyebrow">Pilotage</div>
       <h1>Statistiques</h1>
       <p class="sub">Consommations du mois par SDR, coût et taux de réussite par liste. Les tarifs unitaires se règlent dans ⚙️ Paramètres.</p>
+      <div class="map-card" style="background:#F5F8FF;border-color:#C7D7FE">
+        <h2>💰 Coût total réel du mois</h2>
+        <div class="role">Abonnements fixes mensuels + consommation à l'usage (APIs). À comparer à votre ancien prestataire.</div>
+        <div id="cout-total-bloc" style="margin-top:8px">Chargement…</div>
+      </div>
+      <div class="map-card">
+        <h2>🔁 Abonnements fixes mensuels</h2>
+        <div class="role">Outils facturés au forfait (RB2B, PhantomBuster, Kaspr…), indépendants de la consommation. Modifiable par les admins.</div>
+        <table class="map-table" id="abos-table" style="margin-top:10px"><tr><td style="color:var(--ink-soft)">Chargement…</td></tr></table>
+        <div id="abos-edit" style="display:none;margin-top:14px">
+          <div class="map-sub">Ajouter un abonnement fixe</div>
+          <div class="row3">
+            <input class="field" id="new-abo-nom" placeholder="Nom (ex : RB2B)">
+            <input class="field" id="new-abo-montant" type="number" step="0.01" min="0" placeholder="€ / mois">
+          </div>
+          <div class="save-bar"><button class="btn btn-primary" onclick="ajouterAbo()">+ Ajouter</button></div>
+        </div>
+      </div>
       <div class="map-card">
         <h2>👥 Consommation du mois par SDR</h2>
         <div class="role">Coût calculé : quantité × tarif unitaire de chaque API. Limite mensuelle appliquée automatiquement (blocage à l'atteinte).</div>
@@ -714,7 +732,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v102';
+const VERSION='v103';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2810,12 +2828,59 @@ async function majListe(id){
 
 /* ───────── STATUT DES CONNEXIONS (clés côté serveur, jamais exposées) ───────── */
 /* ───────── STATISTIQUES & TARIFS ───────── */
+const ARSENE_REF=1690; // coût de référence de l'ancien prestataire (€/mois)
+function afficherCoutTotal(d){
+ const bloc=document.getElementById('cout-total-bloc');
+ if(!bloc)return;
+ const conso=Number(d.cout_conso_mois||0), abos=Number(d.cout_abonnements||0), total=conso+abos;
+ const eco=ARSENE_REF-total;
+ bloc.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:22px;align-items:baseline">
+   <div><span style="font-size:30px;font-weight:800">${total.toFixed(2)} €</span> <span style="color:var(--ink-soft)">coût total ce mois</span></div>
+   <div style="font-size:13px;color:var(--ink-soft)">= ${abos.toFixed(2)} € abonnements fixes + ${conso.toFixed(2)} € consommation à l'usage</div>
+ </div>
+ <div style="margin-top:10px;font-size:14px">${eco>=0?`✅ <b style="color:#14532d">${eco.toFixed(2)} € d'économie</b> vs ancien prestataire (${ARSENE_REF} €/mois)`:`⚠️ <b style="color:#991B1B">${Math.abs(eco).toFixed(2)} € de plus</b> que l'ancien prestataire (${ARSENE_REF} €/mois)`}</div>`;
+}
+function afficherAbonnements(abos){
+ const t=document.getElementById('abos-table');
+ const admin=state.user&&['admin','superadmin'].includes(state.user.role);
+ const ed=document.getElementById('abos-edit');
+ if(ed)ed.style.display=admin?'block':'none';
+ if(!t)return;
+ const total=abos.reduce((s,a)=>s+(Number(a.montant)||0),0);
+ t.innerHTML='<tr><th>Abonnement</th><th>€ / mois</th>'+(admin?'<th></th>':'')+'</tr>'+
+  (abos.length?abos.map((a,i)=>`<tr><td><b>${(a.nom||'').replace(/</g,'&lt;')}</b></td><td>${Number(a.montant||0).toFixed(2)} €</td>${admin?`<td><button class="act act-export" style="color:#991B1B;border-color:#FCA5A5" onclick="supprimerAbo(${i})">🗑️</button></td>`:''}</tr>`).join(''):`<tr><td colspan="${admin?3:2}" style="color:var(--ink-soft)">Aucun abonnement fixe enregistré${admin?' — ajoutez-en ci-dessous.':''}</td></tr>`)+
+  `<tr style="border-top:2px solid var(--line)"><td><b>Total fixe</b></td><td><b>${total.toFixed(2)} €</b></td>${admin?'<td></td>':''}</tr>`;
+ window._abos=abos;
+}
+async function ajouterAbo(){
+ const nom=document.getElementById('new-abo-nom').value.trim();
+ const montant=parseFloat(document.getElementById('new-abo-montant').value);
+ if(!nom||isNaN(montant)){toast('Nom et montant requis');return;}
+ const abos=[...(window._abos||[]),{nom,montant}];
+ await sauverAbos(abos);
+ document.getElementById('new-abo-nom').value='';document.getElementById('new-abo-montant').value='';
+}
+async function supprimerAbo(i){
+ const abos=(window._abos||[]).filter((_,k)=>k!==i);
+ await sauverAbos(abos);
+}
+async function sauverAbos(abos){
+ try{
+  const r=await api('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({cle:'abonnements',valeur:abos})});
+  const d=await r.json();
+  if(d.ok){toast('💾 Abonnements enregistrés');chargerStats();}
+  else toast('Erreur : '+(d.erreur||'sauvegarde impossible'));
+ }catch(e){toast('Erreur réseau : '+e.message);}
+}
 async function chargerStats(){
  try{
   const r=await api('/api/stats');
   const d=await r.json();
   const ts=document.getElementById('stats-sdr');
   if(d.erreur){ts.innerHTML='<tr><td colspan="4">'+d.erreur+'</td></tr>';return;}
+  // Coût total réel + abonnements fixes
+  afficherCoutTotal(d);
+  afficherAbonnements(d.abonnements||[]);
   const limites={};(d.limites||[]).forEach(l=>limites[l.nom]=l.limite_credits);
   const parSdr={};
   (d.par_sdr||[]).forEach(x=>{
