@@ -683,7 +683,7 @@ Spot-Hit</textarea>
       <h1>Statut des connexions</h1>
       <p class="sub">Les clés API sont stockées côté serveur (Vercel) et ne transitent jamais par le navigateur. Cette page indique simplement ce qui est branché.</p>
       <div class="notice">🔐 Pour ajouter ou modifier une clé : <b>Vercel → projet sofy-sdr-tool → Settings → Environment Variables</b>, puis redéployer (ou attendre le prochain commit). Le nom de variable attendu est indiqué sur chaque carte.</div>
-      <div class="save-bar" style="justify-content:flex-start;margin:0 0 16px"><button class="btn btn-primary" id="btn-test-cnx" onclick="testerConnexions()">🔌 Tester les connexions</button><span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">Vérifie que chaque clé répond (détecte les clés expirées / refusées).</span></div>
+      <div class="save-bar" style="justify-content:flex-start;margin:0 0 16px"><button class="btn btn-primary" id="btn-test-cnx" onclick="testerConnexions()">🔌 Tester les connexions</button><button class="act act-copy" id="btn-monitor" onclick="lancerMonitor()" style="margin-left:10px">🔔 Tester l'alerte Slack</button><span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">Vérifie que chaque clé répond. « Tester l'alerte » lance le monitoring (Slack si problème).</span></div>
       <div class="api-grid" id="api-grid"><p style="color:var(--ink-soft)">Chargement du statut…</p></div>
     </section>
 
@@ -733,7 +733,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v105';
+const VERSION='v106';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -3004,6 +3004,22 @@ async function chargerStatut(avecTest){
  }catch(e){
   grid.innerHTML='<p style="color:var(--ink-soft)">Impossible de charger le statut ('+e.message+').</p>';
  }
+}
+async function lancerMonitor(){
+ const btn=document.getElementById('btn-monitor');
+ if(btn){btn.disabled=true;btn.textContent='⏳ Monitoring…';}
+ try{
+  const r=await api('/api/monitor');
+  const d=await r.json();
+  if(d.ok){
+   if(d.problemes&&d.problemes.length){
+    toast(`⚠️ ${d.problemes.length} problème(s) détecté(s)${d.slack_envoye?' — Slack envoyé':' (déjà signalé, pas de doublon Slack)'}`);
+   }else{
+    toast('✅ Toutes les APIs opérationnelles — aucune alerte');
+   }
+  }else toast('Erreur : '+(d.erreur||'monitoring impossible'));
+ }catch(e){toast('Erreur réseau : '+e.message);}
+ if(btn){btn.disabled=false;btn.textContent="🔔 Tester l'alerte Slack";}
 }
 async function testerConnexions(){
  const btn=document.getElementById('btn-test-cnx');
