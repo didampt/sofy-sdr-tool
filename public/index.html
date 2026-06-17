@@ -432,6 +432,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
       <h1>Historique</h1>
       <p class="sub">Toutes les listes générées, sauvegardées automatiquement. Rouvre une liste sans consommer de crédits, ou relance-la pour une mise à jour.</p>
       <input class="field" id="hist-search" placeholder="🔍 Rechercher : nom de liste, SDR, société, contact, email…" style="max-width:480px;margin-bottom:20px" oninput="clearTimeout(window._ht);window._ht=setTimeout(chargerHistorique,300)">
+      <label id="hist-arch-label" style="display:none;align-items:center;gap:6px;margin:0 0 20px 14px;font-size:13px;color:var(--ink-soft);cursor:pointer"><input type="checkbox" id="hist-archivees" onchange="chargerHistorique()"> 🗄️ Voir les listes archivées</label>
       <div id="hist-liste"><p style="color:var(--ink-soft)">Chargement…</p></div>
     </section>
 
@@ -701,7 +702,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v96';
+const VERSION='v97';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -2495,8 +2496,13 @@ async function supprSdr(id,nom){
 async function chargerHistorique(){
  const zone=document.getElementById('hist-liste');
  const q=document.getElementById('hist-search').value.trim();
+ // Affiche la case "archivées" pour admin/superadmin
+ const lab=document.getElementById('hist-arch-label');
+ if(lab)lab.style.display=(state.user&&['admin','superadmin'].includes(state.user.role))?'inline-flex':'none';
+ const voirArch=document.getElementById('hist-archivees')&&document.getElementById('hist-archivees').checked;
  try{
-  const r=await api('/api/listes'+(q?'?q='+encodeURIComponent(q):''));
+  const qs=[];if(q)qs.push('q='+encodeURIComponent(q));if(voirArch)qs.push('archivees=1');
+  const r=await api('/api/listes'+(qs.length?'?'+qs.join('&'):''));
   const d=await r.json();
   if(d.erreur){zone.innerHTML='<p style="color:var(--ink-soft)">'+d.erreur+'</p>';return;}
   if(!d.listes||!d.listes.length){zone.innerHTML='<p style="color:var(--ink-soft)">Aucune liste'+(q?' pour « '+q+' »':' pour l\'instant — génère ta première liste !')+'</p>';return;}
@@ -2527,11 +2533,34 @@ async function chargerHistorique(){
      <button class="act ${l.veille?'act-call':'act-copy'}" onclick="basculerVeille(${l.id},${l.veille?'false':'true'})" title="${l.veille?'Veille active jusqu\'au '+new Date(l.veille_fin).toLocaleDateString('fr-FR')+' — cliquer pour arrêter':'Surveiller les signaux LinkedIn de cette liste (60 j)'}">${l.veille?'🔔 Veille ON':'🔕 Veille'}</button>
      <button class="act act-copy" onclick="ouvrirListe(${l.id})">📂 Ouvrir (gratuit)</button>
      ${(state.user&&['admin','superadmin'].includes(state.user.role)&&cr.auto!=='hotleads')?`<button class="act act-copy" onclick="transfererListe(${l.id},'${(l.nom||'').replace(/'/g,"\\'")}')">👤 Transférer</button>`:''}
+     ${(state.user&&['admin','superadmin'].includes(state.user.role)&&cr.auto!=='hotleads')?`<button class="act act-copy" onclick="archiverListe(${l.id},'${(l.nom||'').replace(/'/g,"\\'")}',${l.archivee?'false':'true'})">${l.archivee?'♻️ Désarchiver':'🗄️ Archiver'}</button>`:''}
+     ${(state.user&&state.user.role==='superadmin'&&cr.auto!=='hotleads')?`<button class="act act-export" style="color:#991B1B;border-color:#FCA5A5" onclick="supprimerListe(${l.id},'${(l.nom||'').replace(/'/g,"\\'")}')">🗑️</button>`:''}
      <button class="act act-export" onclick="majListe(${l.id})">↻ Mettre à jour</button>
     </div>
    </div></div>`;
   }).join('');
  }catch(e){zone.innerHTML='<p style="color:var(--ink-soft)">Erreur : '+e.message+'</p>';}
+}
+async function archiverListe(id,nom,archiver){
+ const action=archiver?'archiver':'désarchiver';
+ const ok=await confirmSofy(archiver?'🗄️ Archiver la liste':'♻️ Désarchiver la liste',`Voulez-vous ${action} « ${nom} » ?${archiver?'\n\nElle sera masquée de l\'historique (récupérable à tout moment).':''}`,archiver?'Archiver':'Désarchiver');
+ if(!ok)return;
+ try{
+  const r=await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,archiver})});
+  const d=await r.json();
+  if(d.ok){toast(archiver?'🗄️ Liste archivée':'♻️ Liste désarchivée');chargerHistorique();}
+  else toast('Erreur : '+(d.erreur||'action impossible'));
+ }catch(e){toast('Erreur réseau : '+e.message);}
+}
+async function supprimerListe(id,nom){
+ const ok=await confirmSofy('🗑️ Supprimer définitivement','⚠️ Cette action est IRRÉVERSIBLE.\n\nLa liste « '+nom+' » et toutes ses fiches seront définitivement supprimées.\n\nPréférez l\'archivage si vous voulez juste la masquer.','Supprimer définitivement');
+ if(!ok)return;
+ try{
+  const r=await api('/api/listes?id='+id,{method:'DELETE'});
+  const d=await r.json();
+  if(d.ok){toast('🗑️ Liste supprimée');chargerHistorique();}
+  else toast('Erreur : '+(d.erreur||'suppression impossible'));
+ }catch(e){toast('Erreur réseau : '+e.message);}
 }
 async function transfererListe(id,nom){
  // Récupérer les SDR disponibles
