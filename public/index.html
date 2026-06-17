@@ -732,7 +732,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v103';
+const VERSION='v104';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2828,17 +2828,37 @@ async function majListe(id){
 
 /* ───────── STATUT DES CONNEXIONS (clés côté serveur, jamais exposées) ───────── */
 /* ───────── STATISTIQUES & TARIFS ───────── */
-const ARSENE_REF=1690; // coût de référence de l'ancien prestataire (€/mois)
 function afficherCoutTotal(d){
  const bloc=document.getElementById('cout-total-bloc');
  if(!bloc)return;
  const conso=Number(d.cout_conso_mois||0), abos=Number(d.cout_abonnements||0), total=conso+abos;
- const eco=ARSENE_REF-total;
+ const budget=Number(d.budget_ref||0); // budget de référence fixé par la RevOps (Manon)
+ const admin=state.user&&['admin','superadmin'].includes(state.user.role);
+ let compa='';
+ if(budget>0){
+  const eco=budget-total;
+  compa=`<div style="margin-top:10px;font-size:14px">${eco>=0?`✅ <b style="color:#14532d">${eco.toFixed(2)} € sous le budget</b> (référence ${budget.toFixed(0)} €/mois)`:`⚠️ <b style="color:#991B1B">${Math.abs(eco).toFixed(2)} € au-dessus du budget</b> (référence ${budget.toFixed(0)} €/mois)`}</div>`;
+ }else if(admin){
+  compa=`<div style="margin-top:10px;font-size:13px;color:var(--ink-soft)">Aucun budget de référence défini. <a href="#" onclick="modifierBudget();return false" style="font-weight:600">Définir un budget mensuel</a></div>`;
+ }
+ const lienModif=(budget>0&&admin)?` · <a href="#" onclick="modifierBudget();return false" style="font-size:12px;color:var(--ink-soft)">modifier</a>`:'';
  bloc.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:22px;align-items:baseline">
-   <div><span style="font-size:30px;font-weight:800">${total.toFixed(2)} €</span> <span style="color:var(--ink-soft)">coût total ce mois</span></div>
+   <div><span style="font-size:30px;font-weight:800">${total.toFixed(2)} €</span> <span style="color:var(--ink-soft)">coût total ce mois${lienModif}</span></div>
    <div style="font-size:13px;color:var(--ink-soft)">= ${abos.toFixed(2)} € abonnements fixes + ${conso.toFixed(2)} € consommation à l'usage</div>
- </div>
- <div style="margin-top:10px;font-size:14px">${eco>=0?`✅ <b style="color:#14532d">${eco.toFixed(2)} € d'économie</b> vs ancien prestataire (${ARSENE_REF} €/mois)`:`⚠️ <b style="color:#991B1B">${Math.abs(eco).toFixed(2)} € de plus</b> que l'ancien prestataire (${ARSENE_REF} €/mois)`}</div>`;
+ </div>${compa}`;
+}
+async function modifierBudget(){
+ const actuel=window._budgetRef||'';
+ const v=prompt('Budget de référence mensuel (€/mois) fixé par la RevOps :\n\nLaisser vide pour ne pas afficher de comparaison.',actuel);
+ if(v===null)return;
+ const montant=v.trim()===''?0:parseFloat(v);
+ if(v.trim()!==''&&isNaN(montant)){toast('Montant invalide');return;}
+ try{
+  const r=await api('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({cle:'budget_ref',valeur:montant})});
+  const d=await r.json();
+  if(d.ok){toast('💾 Budget de référence enregistré');chargerStats();}
+  else toast('Erreur : '+(d.erreur||'sauvegarde impossible'));
+ }catch(e){toast('Erreur réseau : '+e.message);}
 }
 function afficherAbonnements(abos){
  const t=document.getElementById('abos-table');
@@ -2879,6 +2899,7 @@ async function chargerStats(){
   const ts=document.getElementById('stats-sdr');
   if(d.erreur){ts.innerHTML='<tr><td colspan="4">'+d.erreur+'</td></tr>';return;}
   // Coût total réel + abonnements fixes
+  window._budgetRef=d.budget_ref||'';
   afficherCoutTotal(d);
   afficherAbonnements(d.abonnements||[]);
   const limites={};(d.limites||[]).forEach(l=>limites[l.nom]=l.limite_credits);
