@@ -733,7 +733,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v107';
+const VERSION='v108';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1208,20 +1208,11 @@ function estMobile(t){
  const n=telNorm(t).replace(/^\+33/,'0').replace(/^\+590/,'0').replace(/^\+596/,'0').replace(/^\+262/,'0');
  return /^0[67]/.test(n)||/^069[01]/.test(n)||/^069[67]/.test(n)||/^069[23]/.test(n);
 }
-let RINGOVER_OK=null; // mémo : lignes configurées ?
-async function appeler(num,ev){
- if(ev)ev.preventDefault();
- if(RINGOVER_OK===false){location.href='tel:'+telNorm(num);return;}
- const r=await api('/api/ringover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:num})});
- const d=await r.json().catch(()=>({}));
- if(d.ok){toast('☎️ '+d.detail);return;}
- RINGOVER_OK=false; // pas configuré → repli tel: pour toute la session
- toast((d.erreur||'Ringover indisponible')+' — appel via le téléphone');
- setTimeout(()=>location.href='tel:'+telNorm(num),900);
-}
+// Appel via l'extension Ringover click-to-call : un simple lien tel: suffit, l'extension le capte.
+function appeler(num){ location.href='tel:'+telNorm(num); }
 function telBtns(t){
  const n=telNorm(t);
- let h=` <a class="act act-call" style="padding:4px 10px;font-size:12px" href="tel:${n}" onclick="appeler('${n}',event)" title="Appeler avec Ringover (clic) — repli téléphone">📞</a>`;
+ let h=` <a class="act act-call" style="padding:4px 10px;font-size:12px" href="tel:${n}" title="Appeler (extension Ringover click-to-call)">📞</a>`;
  if(estMobile(t))h+=` <a class="act act-lemlist" style="padding:4px 10px;font-size:12px" href="sms:${n}" title="Envoyer un SMS">💬</a>`;
  return h;
 }
@@ -1397,7 +1388,7 @@ function ficheReal(e,i){
      ${contacts.map((c,j)=>contactHtml(c,i,j)).join('')||'<div class="hint">Aucun contact identifié — lance 🚀 Fiche.</div>'}
      ${e.linkedin_entreprise?`<div class="contact-line">🏢 <a href="${e.linkedin_entreprise.startsWith('http')?e.linkedin_entreprise:'https://'+e.linkedin_entreprise}" target="_blank">Page LinkedIn entreprise ✓</a></div>`:''}
      <div class="cta-row">
-      ${tel?`<button class="btn-cta btn-cta-green" onclick="appeler('${telNorm(tel)}')">📞 Appeler (Ringover)</button>`:''}
+      ${tel?`<a class="btn-cta btn-cta-green" href="tel:${telNorm(tel)}" style="text-decoration:none;display:inline-block">📞 Appeler</a>`:''}
       <button class="btn-cta btn-cta-orange" onclick="ouvrirSms(${i})">💬 SMS / RCS (Sofy)</button>
      </div>
      ${gmbHtml(e.gmb)}
