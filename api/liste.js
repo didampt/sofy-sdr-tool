@@ -76,6 +76,7 @@ export default async function handler(req, res) {
     naf = '', dep = '',
     effectif_min = '', effectif_max = '',
     ca_min = '', ca_max = '',
+    nb_etab_min = '',
     nb = '25'
   } = req.query;
   const nbDemande = Math.min(parseInt(nb) || 25, 500); // jusqu'à 500 fiches (5 pages Pappers)
@@ -170,6 +171,8 @@ export default async function handler(req, res) {
 
     // ── 3. Fusion + exclusion des entreprises cessées ou en procédure collective ──
     let exclues = 0;
+    let exclusEtab = 0;
+    const etabMinNum = parseInt(nb_etab_min) || 0;
     const entreprises = bruts.map((e, i) => {
       const d = details[i] || {};
       return {
@@ -193,6 +196,9 @@ export default async function handler(req, res) {
       };
     }).filter(e => {
       if (e._cessee || e._proc) { exclues++; return false; }
+      // Filtre ICP multi-sites : exclut les entreprises sous le seuil d'établissements.
+      // On ne filtre que si le nombre est connu (fiche détaillée) — sinon on garde (info absente ≠ exclusion).
+      if (etabMinNum && e.nb_etablissements != null && e.nb_etablissements < etabMinNum) { exclusEtab++; return false; }
       return true;
     }).map(({ _cessee, _proc, ...e }) => e);
 
@@ -202,6 +208,8 @@ export default async function handler(req, res) {
       filtre_effectif: filtreEffectif,
       fiches_detaillees: nDetail,
       exclues_cessees_ou_liquidation: exclues,
+      exclus_sous_seuil_etablissements: exclusEtab,
+      filtre_etablissements_min: etabMinNum || null,
       doublons_inter_listes: doublonsInterListes,
       listes_doublons: [...listesTouchees].slice(0, 5),
       credits_estimes: nDetail + 1,
