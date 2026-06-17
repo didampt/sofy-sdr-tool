@@ -103,6 +103,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
 .badges{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
 .badge{font-size:12px;font-weight:600;padding:4px 10px;border-radius:99px}
 .b-signal{background:#FDF1E4;color:#B4690E}
+.b-source{background:#EEF2FF;color:#3730A3}
 .b-like{background:#E8F1FF;color:#1E5FCC}
 .b-new{background:#E7F7EF;color:#0B7A4C}
 .b-dup{background:#FDEAEA;color:#B23A3E}
@@ -700,7 +701,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v93';
+const VERSION='v94';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1176,7 +1177,7 @@ function gmbHtml(g){
 function contactHtml(c,i,j){
  const en=c.enrich;
  return `<div style="border-top:1px dashed var(--line);padding:10px 0 4px;margin-top:10px">
-  ${c.signal?`<div class="contact-line" style="color:var(--danger);font-weight:700">🔥 ${c.signal.detail} · ${new Date(c.signal.date).toLocaleDateString('fr-FR')}</div>`:''}
+  ${c.signal?`<div class="contact-line" style="color:var(--danger);font-weight:700">🔥 ${c.signal.emoji||'💙'} ${c.signal.interaction||'a réagi'}${c.signal.concurrent?` sur un post <b>${c.signal.concurrent}</b>`:''}${c.signal.post?` <a href="${c.signal.post}" target="_blank" style="font-weight:600">→ voir le post</a>`:''} · ${new Date(c.signal.date).toLocaleDateString('fr-FR')}</div>`:''}
   <div class="contact-line"><b>${(c.prenom+' '+c.nom).trim()}</b> — ${(en&&en.fonction)||c.fonction||'?'} <span class="badge b-gmb">${c.source}</span></div>
   ${en?`
    ${en.email?`<div class="contact-line">✉️ <b>${en.email}</b> <a class="act act-call" style="padding:4px 10px;font-size:12px" href="mailto:${en.email}" title="Écrire un email">📧</a> <button class="act act-copy" style="padding:4px 10px;font-size:12px" onclick="navigator.clipboard.writeText('${en.email}');toast('Email copié ✓')" title="Copier l'adresse">📋</button>${en.email_qualification?` <span class="badge b-new">${en.email_qualification}</span>`:''}</div>`:'<div class="contact-line" style="color:var(--ink-soft)">✉️ Email non trouvé (Dropcontact) — repli FullEnrich à venir</div>'}
@@ -1272,7 +1273,8 @@ function ficheReal(e,i){
     <div class="lead-meta">${(!estHL&&contacts.length&&contacts[0].nom)?e.nom+' · ':''}${e.enseigne&&e.enseigne!==e.nom?'Enseigne : '+e.enseigne+' · ':''}${e.naf}${e.nb_etablissements?' · '+e.nb_etablissements+' établissement'+(e.nb_etablissements>1?'s':''):''}${e.effectif?' · '+String(e.effectif).replace(/ salariés?$/i,'')+' salariés':''}${ca?' · CA '+ca:''} · ${e.ville||'—'}</div>
     <div class="badges">
      ${e.gmb&&e.gmb.trouve?`<span class="badge b-gmb">GMB ${String(e.gmb.note_moyenne).replace('.',',')} ★ (${e.gmb.total_avis} avis)</span>`:''}
-     ${e.signal_hot?`<span class="badge b-signal">${(e.signal&&e.signal.emoji)?e.signal.emoji:'🔥'} ${(e.signal&&e.signal.interaction)?e.signal.interaction:'Signal détecté'}</span>`:''}
+     ${(()=>{const s=e.source_hotlead||(e.signal&&e.signal.source)||'';if(!s&&!e.signal_hot)return '';const estRB2B=s==='RB2B';return `<span class="badge b-source">${estRB2B?'📍 source sofy.fr':'💼 source LinkedIn'}</span>`;})()}
+     ${e.signal_hot?`<span class="badge b-signal">${(e.signal&&e.signal.emoji)?e.signal.emoji:'🔥'} ${(e.signal&&e.signal.interaction)?e.signal.interaction:'Signal détecté'}${(e.signal&&e.signal.concurrent)?' · '+e.signal.concurrent:''}</span>`:''}
      ${e.enrichi_par?(e.score?`<span class="badge b-new">✅ Enrichi par ${e.enrichi_par}</span>`:(e.enrich_lock_ts&&(Date.now()-e.enrich_lock_ts<5*60*1000)?`<span class="badge b-gmb">🔄 En cours par ${e.enrichi_par}</span>`:'')):''}
      ${aEmail?'<span class="badge b-new">Nouveau ✓</span>':(e.detail_charge?'<span class="badge b-signal">À enrichir</span>':'<span class="badge b-dup">Détail non chargé</span>')}
      ${e.deja_hubspot?'<span class="badge b-dup" title="Un contact de cette fiche existe déjà dans HubSpot">🔶 Déjà dans HubSpot</span>':''}
