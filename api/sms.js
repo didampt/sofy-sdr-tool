@@ -65,8 +65,11 @@ export default async function handler(req, res) {
     if (!r.ok) {
       return res.status(502).json({ erreur: 'API Sofy SMS', status: r.status, detail: JSON.stringify(data).slice(0, 300) });
     }
-    await loggerConso(user, 'soreach', 1, liste_id);
-    return res.status(200).json({ ok: true, id: data.id || null, statut: data.status || 'pending', destinataire: dest });
+    // Comptage réel des crédits : 160 car = 1 SMS, au-delà segments de 153 car (en-tête concaténation)
+    const lg = (message || '').length;
+    const nbSms = lg <= 160 ? 1 : Math.ceil(lg / 153);
+    await loggerConso(user, 'soreach', nbSms, liste_id);
+    return res.status(200).json({ ok: true, id: data.id || null, statut: data.status || 'pending', destinataire: dest, credits: nbSms, caracteres: lg });
   } catch (err) {
     return res.status(500).json({ erreur: 'Erreur serveur', detail: err.message });
   }

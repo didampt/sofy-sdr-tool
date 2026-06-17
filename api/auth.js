@@ -31,7 +31,7 @@ export default async function handler(req, res) {
     if (req.method === 'GET' && req.query.action === 'me') {
       const u = verifierToken(req);
       if (!u) return res.status(401).json({ erreur: 'Session invalide ou expirée' });
-      return res.status(200).json({ ok: true, user: { id: u.id, email: u.email, nom: u.nom, role: u.role } });
+      return res.status(200).json({ ok: true, user: { id: u.id, email: u.email, nom: u.nom, role: u.role, ringover_numero: u.ringover_numero || null } });
     }
 
     if (req.method === 'POST') {
@@ -60,7 +60,7 @@ export default async function handler(req, res) {
           return res.status(409).json({ erreur: 'Mot de passe déjà défini — utilise la connexion normale' });
         }
         await sql`UPDATE sdrs SET password_hash = ${hacher(password)} WHERE id = ${user.id}`;
-        return res.status(200).json({ ok: true, token: signerToken(user), user: { id: user.id, email: user.email, nom: user.nom, role: user.role } });
+        return res.status(200).json({ ok: true, token: signerToken(user), user: { id: user.id, email: user.email, nom: user.nom, role: user.role, ringover_numero: user.ringover_numero || null } });
       }
 
       // Connexion normale
@@ -70,7 +70,7 @@ export default async function handler(req, res) {
       if (!verifier(password, user.password_hash)) {
         return res.status(401).json({ erreur: 'Email ou mot de passe incorrect' });
       }
-      return res.status(200).json({ ok: true, token: signerToken(user), user: { id: user.id, email: user.email, nom: user.nom, role: user.role } });
+      return res.status(200).json({ ok: true, token: signerToken(user), user: { id: user.id, email: user.email, nom: user.nom, role: user.role, ringover_numero: user.ringover_numero || null } });
     }
 
     return res.status(405).json({ erreur: 'Méthode non autorisée' });
