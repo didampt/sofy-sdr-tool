@@ -706,6 +706,14 @@ Spot-Hit</textarea>
       </div>
         <table class="map-table" id="tarifs-table"></table>
       </div>
+      <div class="map-card" id="maintenance-card" style="display:none">
+        <h2>🔧 Maintenance</h2>
+        <div class="role">Outils techniques réservés au superadmin.</div>
+        <div class="save-bar" style="justify-content:flex-start;margin-top:10px">
+          <button class="btn" style="background:var(--paper)" id="btn-migrer-stats" onclick="migrerStats()">📊 Recalculer les stats des listes</button>
+          <span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">À lancer une fois après une mise à jour, pour pré-calculer les statistiques des anciennes listes.</span>
+        </div>
+      </div>
 </section>
 
     <section class="view" id="view-settings">
@@ -763,7 +771,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v113';
+const VERSION='v114';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2613,7 +2621,20 @@ function exportCsv(){
 }
 
 /* ───────── PARAMÈTRES : GESTION SDR ───────── */
+async function migrerStats(){
+ const btn=document.getElementById('btn-migrer-stats');
+ if(btn){btn.disabled=true;btn.textContent='⏳ Recalcul en cours…';}
+ try{
+  const r=await api('/api/listes?migrer_stats=1');
+  const d=await r.json();
+  if(d.ok)toast(`📊 ${d.migrees} liste(s) recalculée(s) ✓`);
+  else toast('Erreur : '+(d.erreur||'migration impossible'));
+ }catch(e){toast('Erreur réseau : '+e.message);}
+ if(btn){btn.disabled=false;btn.textContent='📊 Recalculer les stats des listes';}
+}
 async function chargerSdrs(){
+ const mc=document.getElementById('maintenance-card');
+ if(mc)mc.style.display=(state.user&&state.user.role==='superadmin')?'block':'none';
  const t=document.getElementById('sdr-table');
  try{
   const r=await api('/api/sdrs');
