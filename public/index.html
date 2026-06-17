@@ -701,7 +701,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v95';
+const VERSION='v96';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1796,8 +1796,10 @@ async function enrichirFE(i,j){
  const c=contactsDe(e)[j||0];
  if(!c||!c.nom||!c.enrich)return false;
  try{
+  const nomEntFE=(e.enseigne_ia||e.enseigne||e.nom||'').trim()||extraireSocieteFront(c.fonction||(c.signal&&c.signal.detail)||'')||extraireSocieteFront(e.fonction||'');
+  const lkFE=c.linkedin||(c.enrich&&c.enrich.linkedin)||'';
   const r=await api('/api/fullenrich',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({liste_id:state.savedId,contact:{prenom:c.prenom,nom:c.nom},entreprise:{nom:e.enseigne_ia||e.enseigne||e.nom,site:domaineDe(e)}})});
+   body:JSON.stringify({liste_id:state.savedId,contact:{prenom:c.prenom,nom:c.nom,linkedin:lkFE},entreprise:{nom:nomEntFE,site:domaineDe(e)}})});
   let d;
   try{d=await r.json();}catch(_){toast('FullEnrich : réponse invalide ('+r.status+')');return false;}
   let essais=0;
