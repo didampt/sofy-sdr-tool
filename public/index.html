@@ -733,7 +733,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v108';
+const VERSION='v109';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1210,10 +1210,24 @@ function estMobile(t){
 }
 // Appel via l'extension Ringover click-to-call : un simple lien tel: suffit, l'extension le capte.
 function appeler(num){ location.href='tel:'+telNorm(num); }
+function waNumero(t){
+ // wa.me veut le numéro international SANS + ni espaces (ex : 33612345678)
+ return telNorm(t).replace(/[^0-9]/g,'');
+}
+function waLink(t){
+ const num=waNumero(t);
+ const sdr=state.user?state.user.nom:'';
+ const numSdr=(state.user&&state.user.ringover_numero)?state.user.ringover_numero.replace(/\s/g,''):'';
+ const msg=`Bonjour, ${sdr?sdr+' de ':''}Sofy. On aide les pros à être plus visibles sur Google et à mieux communiquer avec leurs clients. Auriez-vous un moment cette semaine ?${numSdr?' Vous pouvez aussi me joindre au '+numSdr+'.':''}`;
+ return `https://wa.me/${num}?text=${encodeURIComponent(msg)}`;
+}
 function telBtns(t){
  const n=telNorm(t);
  let h=` <a class="act act-call" style="padding:4px 10px;font-size:12px" href="tel:${n}" title="Appeler (extension Ringover click-to-call)">📞</a>`;
- if(estMobile(t))h+=` <a class="act act-lemlist" style="padding:4px 10px;font-size:12px" href="sms:${n}" title="Envoyer un SMS">💬</a>`;
+ if(estMobile(t)){
+  h+=` <a class="act act-lemlist" style="padding:4px 10px;font-size:12px" href="sms:${n}" title="Envoyer un SMS">💬</a>`;
+  h+=` <a class="act" style="padding:4px 10px;font-size:12px;background:#25D366;color:#fff" href="${waLink(t)}" target="_blank" title="Ouvrir WhatsApp (depuis votre compte) avec un message prérempli">🟢 WA</a>`;
+ }
  return h;
 }
 
