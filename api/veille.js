@@ -58,6 +58,17 @@ function extraireProfils(data) {
 }
 
 // Détermine le type d'interaction (like / commentaire / follow) à partir du nom du Phantom + des champs
+// Extrait le nom du concurrent depuis l'URL du post LinkedIn (ex: /posts/partoo_... → Partoo)
+function extraireConcurrent(post) {
+  if (!post) return '';
+  // Format LinkedIn : linkedin.com/posts/<slug>_... ou /company/<slug>/
+  let m = post.match(/\/posts\/([a-z0-9\-]+?)[_\/]/i) || post.match(/\/company\/([a-z0-9\-]+)/i) || post.match(/\/in\/([a-z0-9\-]+)/i);
+  if (!m) return '';
+  // Nettoie : enlève les suffixes activity/tirets, capitalise
+  let nom = m[1].replace(/-\d+$/, '').replace(/-/g, ' ').trim();
+  return nom.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
 function typerSignal(nomAgent, p) {
   const n = (nomAgent || '').toLowerCase();
   const r = (p.reaction || '').toLowerCase();
@@ -217,7 +228,7 @@ export default async function handler(req, res) {
         const ents = aSauver.get(m.liste.id) || m.liste.entreprises;
         const e = ents[m.ei];
         e.signal_hot = true;
-        const sig = { type: 'linkedin', interaction: sigT.label, emoji: sigT.emoji, source: nomAgent, detail, post: p.post || '', date: new Date().toISOString() };
+        const sig = { type: 'linkedin', interaction: sigT.label, emoji: sigT.emoji, source: nomAgent, detail, post: p.post || '', concurrent: extraireConcurrent(p.post), date: new Date().toISOString() };
         if (m.ci >= 0 && e.contacts && e.contacts[m.ci]) e.contacts[m.ci].signal = sig;
         else e.signal = sig;
         aSauver.set(m.liste.id, ents);
