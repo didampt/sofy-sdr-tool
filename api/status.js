@@ -64,5 +64,78 @@ export default async function handler(req, res) {
     }
   } catch (_) {}
 
-  res.status(200).json({ outils: statut, soldes });
+  // ── Mode TEST réel : ping chaque API pour vérifier que la clé fonctionne (détecte les 401/403) ──
+  let tests = null;
+  if (req.query && (req.query.test === '1' || req.query.test === 'true')) {
+    tests = {};
+    const fin = (etat, detail) => ({ etat, detail }); // etat: 'ok' | 'erreur' | 'absent'
+    // Helper : timeout court pour ne pas bloquer
+    const pf = (url, opts = {}) => Promise.race([
+      fetch(url, opts),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))
+    ]);
+
+    // Pappers
+    try {
+      if (!process.env.PAPPERS_API_KEY) tests.pappers = fin('absent', 'Clé manquante');
+      else { const r = await pf(`https://api.pappers.fr/v2/suivi?api_token=${process.env.PAPPERS_API_KEY}`); tests.pappers = r.ok ? fin('ok', 'Clé valide') : fin('erreur', `HTTP ${r.status}`); }
+    } catch (e) { tests.pappers = fin('erreur', e.message); }
+
+    // Kaspr (le cas qui t'intéresse : 401 = clé morte)
+    try {
+      if (!process.env.KASPR_API_KEY) tests.kaspr = fin('absent', 'Clé manquante');
+      else {
+        const r = await pf('https://api.kaspr.io/api/v2/account/credits', { headers: { 'Authorization': process.env.KASPR_API_KEY, 'Content-Type': 'application/json' } });
+        tests.kaspr = (r.status === 401 || r.status === 403) ? fin('erreur', `Clé refusée (HTTP ${r.status})`) : (r.ok ? fin('ok', 'Clé valide') : fin('erreur', `HTTP ${r.status}`));
+      }
+    } catch (e) { tests.kaspr = fin('erreur', e.message); }
+
+    // FullEnrich
+    try {
+      if (!process.env.FULLENRICH_API_KEY) tests.fullenrich = fin('absent', 'Clé manquante');
+      else { const r = await pf('https://app.fullenrich.com/api/v1/account/credits', { headers: { 'Authorization': `Bearer ${process.env.FULLENRICH_API_KEY}` } }); tests.fullenrich = (r.status === 401 || r.status === 403) ? fin('erreur', `Clé refusée (HTTP ${r.status})`) : (r.ok ? fin('ok', 'Clé valide') : fin('erreur', `HTTP ${r.status}`)); }
+    } catch (e) { tests.fullenrich = fin('erreur', e.message); }
+
+    // Dropcontact
+    try {
+      if (!process.env.DROPCONTACT_API_KEY) tests.dropcontact = fin('absent', 'Clé manquante');
+      else { const r = await pf('https://api.dropcontact.com/v1/credits', { headers: { 'X-Access-Token': process.env.DROPCONTACT_API_KEY } }); tests.dropcontact = (r.status === 401 || r.status === 403) ? fin('erreur', `Clé refusée (HTTP ${r.status})`) : (r.ok ? fin('ok', 'Clé valide') : fin('erreur', `HTTP ${r.status}`)); }
+    } catch (e) { tests.dropcontact = fin('erreur', e.message); }
+
+    // HubSpot
+    try {
+      if (!process.env.HUBSPOT_API_KEY) tests.hubspot = fin('absent', 'Clé manquante');
+      else { const r = await pf('https://api.hubapi.com/crm/v3/objects/contacts?limit=1', { headers: { 'Authorization': `Bearer ${process.env.HUBSPOT_API_KEY}` } }); tests.hubspot = (r.status === 401 || r.status === 403) ? fin('erreur', `Clé refusée (HTTP ${r.status})`) : (r.ok ? fin('ok', 'Clé valide') : fin('erreur', `HTTP ${r.status}`)); }
+    } catch (e) { tests.hubspot = fin('erreur', e.message); }
+
+    // Lemlist
+    try {
+      if (!process.env.LEMLIST_API_KEY) tests.lemlist = fin('absent', 'Clé manquante');
+      else { const r = await pf('https://api.lemlist.com/api/team', { headers: { 'Authorization': 'Basic ' + Buffer.from(':' + process.env.LEMLIST_API_KEY).toString('base64') } }); tests.lemlist = (r.status === 401 || r.status === 403) ? fin('erreur', `Clé refusée (HTTP ${r.status})`) : (r.ok ? fin('ok', 'Clé valide') : fin('erreur', `HTTP ${r.status}`)); }
+    } catch (e) { tests.lemlist = fin('erreur', e.message); }
+
+    // Ringover
+    try {
+      if (!process.env.RINGOVER_API_KEY) tests.ringover = fin('absent', 'Clé manquante');
+      else { const r = await pf('https://public-api.ringover.com/v2/contacts?limit=1', { headers: { 'Authorization': process.env.RINGOVER_API_KEY } }); tests.ringover = (r.status === 401 || r.status === 403) ? fin('erreur', `Clé refusée (HTTP ${r.status})`) : (r.ok ? fin('ok', 'Clé valide') : fin('erreur', `HTTP ${r.status}`)); }
+    } catch (e) { tests.ringover = fin('erreur', e.message); }
+
+    // PhantomBuster
+    try {
+      if (!process.env.PHANTOMBUSTER_API_KEY) tests.phantom = fin('absent', 'Clé manquante');
+      else { const r = await pf('https://api.phantombuster.com/api/v2/agents/fetch-all', { headers: { 'X-Phantombuster-Key-1': process.env.PHANTOMBUSTER_API_KEY } }); tests.phantom = (r.status === 401 || r.status === 403) ? fin('erreur', `Clé refusée (HTTP ${r.status})`) : (r.ok ? fin('ok', 'Clé valide') : fin('erreur', `HTTP ${r.status}`)); }
+    } catch (e) { tests.phantom = fin('erreur', e.message); }
+
+    // Slack (webhook : on ne peut pas ping sans envoyer ; on vérifie juste le format)
+    if (!process.env.SLACK_WEBHOOK_URL) tests.slack = fin('absent', 'Webhook manquant');
+    else tests.slack = (process.env.SLACK_WEBHOOK_URL.startsWith('https://hooks.slack.com/')) ? fin('ok', 'Webhook configuré') : fin('erreur', 'Format inattendu');
+
+    // Claude
+    try {
+      if (!process.env.ANTHROPIC_API_KEY) tests.claude = fin('absent', 'Clé manquante');
+      else { const r = await pf('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }) }); tests.claude = (r.status === 401 || r.status === 403) ? fin('erreur', `Clé refusée (HTTP ${r.status})`) : (r.ok || r.status === 400 ? fin('ok', 'Clé valide') : fin('erreur', `HTTP ${r.status}`)); }
+    } catch (e) { tests.claude = fin('erreur', e.message); }
+  }
+
+  res.status(200).json({ outils: statut, soldes, tests });
 }
