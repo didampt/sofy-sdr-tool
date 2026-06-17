@@ -763,7 +763,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v111';
+const VERSION='v112';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1193,7 +1193,10 @@ function ouvrirRappel(i){
  // Pré-remplir : demain 10h par défaut
  const d=new Date();d.setDate(d.getDate()+1);d.setHours(10,0,0,0);
  document.getElementById('rappel-date').value=isoLocal(d);
- document.getElementById('rappel-note').value='';
+ // Pré-remplir la note du rappel avec le bloc-notes de la fiche (valeur en cours de saisie, sinon enregistrée)
+ const champNote=document.getElementById('note'+i);
+ const noteFiche=(champNote&&champNote.value!=null)?champNote.value:(e.notes_sdr||'');
+ document.getElementById('rappel-note').value=noteFiche.trim();
  document.getElementById('rappel-modal').style.display='flex';
 }
 function isoLocal(d){
