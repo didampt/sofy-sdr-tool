@@ -24,38 +24,51 @@ function hashCriteres(criteres) {
 }
 
 // #3+#4 Calcule les stats d'une liste à partir de ses entreprises (tags SDR) + score qualité 0-100
+// F3 — Score des statuts d'appel (doit refléter STATUTS_APPEL côté front)
+const SCORE_STATUT = {
+  '🤝 RDV pris': 40,
+  'Intéressé – RDV à prendre': 30,
+  'Demande email / envoyer doc': 10,
+  'Rappel demandé / occupé': 5,
+  'Pas de réponse': 0, 'Message vocal laissé': 0, 'Barrage secrétaire / standard': 0,
+  'Absent': 0, 'Connecté': 0, 'Hors prospection': 0,
+  'Hors ICP / à requalifier': -10, 'Pas le bon contact / referral': -5, 'Non décisionnaire': -5,
+  'Refus – timing / pas prioritaire': -5, 'Refus – concurrence': -10, 'Négatif (refus ferme)': -10,
+  'Faux numéro': -15, 'Numéro perso – ne plus appeler': -15, 'Opt-out téléphone': -15
+};
 function calculerStatsListe(entreprises) {
   const ents = Array.isArray(entreprises) ? entreprises : [];
   const total = ents.length;
   if (!total) return null;
-  let enrichies = 0, rdv = 0, mauvaisNum = 0, mauvaisMail = 0, pasInteresse = 0, pasReponse = 0, traites = 0;
+  let enrichies = 0, rdv = 0, fauxNum = 0, refus = 0, pasReponse = 0, traites = 0, sommeScore = 0;
   for (const e of ents) {
     const contacts = e.contacts || [];
     const aContact = contacts.some(c => (c.enrich && (c.enrich.email || c.enrich.telephone)));
     if (aContact || (e.gmb && e.gmb.trouve) || e.score) enrichies++;
-    const tag = (e.tags_sdr || [])[0] || null;
-    if (tag) traites++;
-    if (tag === '🤝 RDV pris') rdv++;
-    else if (tag === '📵 Mauvais numéro') mauvaisNum++;
-    else if (tag === '✉️ Mauvais email') mauvaisMail++;
-    else if (tag === '❌ Pas intéressé') pasInteresse++;
-    else if (tag === '📞 Pas de réponse') pasReponse++;
+    // Le statut d'appel = e.statut_appel (nouveau) ou le 1er tag (compat ancien + RDV pris)
+    const statut = e.statut_appel || (e.tags_sdr || [])[0] || null;
+    if (statut) {
+      traites++;
+      sommeScore += (SCORE_STATUT[statut] != null ? SCORE_STATUT[statut] : 0);
+      if (statut === '🤝 RDV pris' || statut === 'Intéressé – RDV à prendre') rdv++;
+      else if (statut === 'Faux numéro' || statut === 'Numéro perso – ne plus appeler' || statut === 'Opt-out téléphone') fauxNum++;
+      else if (statut.indexOf('Refus') === 0 || statut === 'Négatif (refus ferme)') refus++;
+      else if (statut === 'Pas de réponse' || statut === 'Message vocal laissé' || statut === 'Absent') pasReponse++;
+    }
   }
   const pct = n => total ? Math.round(n / total * 100) : 0;
-  // Score qualité UNIQUEMENT basé sur les tags SDR. null si pas assez de retours terrain (<30% de fiches taguées).
+  // Score qualité basé sur les statuts. null si <30% de fiches traitées (pas assez de retours).
   const tauxTag = total ? traites / total : 0;
   let qualite = null;
   if (tauxTag >= 0.30 && traites > 0) {
-    // score moyen pondéré par fiche traitée (RDV +40, mauvais n°/email -15, pas intéressé -10, pas de réponse -5)
-    const score = (rdv * 40 + (mauvaisNum + mauvaisMail) * -15 + pasInteresse * -10 + pasReponse * -5) / traites;
-    qualite = Math.max(0, Math.min(100, Math.round(50 + score)));
+    qualite = Math.max(0, Math.min(100, Math.round(50 + sommeScore / traites)));
   }
   return {
     total,
     pct_complete: pct(enrichies),
     rdv,
-    pct_mauvais_num: pct(mauvaisNum + mauvaisMail),
-    pct_pas_interesse: pct(pasInteresse),
+    pct_mauvais_num: pct(fauxNum),
+    pct_pas_interesse: pct(refus),
     pct_pas_reponse: pct(pasReponse),
     traites,
     pct_tag: pct(traites),
