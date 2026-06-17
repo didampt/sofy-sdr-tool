@@ -287,6 +287,27 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
   </div>
  </div>
 </div>
+<div id="rappel-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:901;align-items:center;justify-content:center;padding:20px">
+ <div class="wf-panel" style="width:min(460px,94vw)">
+  <div class="wf-head">🔁 Planifier un rappel — <span id="rappel-dest"></span></div>
+  <div style="padding:18px 24px">
+   <label style="font-size:13px;font-weight:600;color:var(--ink-soft);display:block;margin-bottom:6px">Quand rappeler ?</label>
+   <input class="field" type="datetime-local" id="rappel-date" style="width:100%">
+   <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+    <button class="act act-copy" style="font-size:12px" onclick="rappelRaccourci(2)">Dans 2h</button>
+    <button class="act act-copy" style="font-size:12px" onclick="rappelRaccourci(24)">Demain</button>
+    <button class="act act-copy" style="font-size:12px" onclick="rappelRaccourci(48)">Dans 2j</button>
+    <button class="act act-copy" style="font-size:12px" onclick="rappelRaccourci(168)">Dans 1 sem.</button>
+   </div>
+   <label style="font-size:13px;font-weight:600;color:var(--ink-soft);display:block;margin:16px 0 6px">Note (optionnel)</label>
+   <textarea class="field" id="rappel-note" rows="2" style="width:100%;resize:vertical" placeholder="Ex : rappeler après 17h, demander le gérant…"></textarea>
+  </div>
+  <div class="wf-foot">
+   <button class="btn" style="background:var(--paper)" onclick="document.getElementById('rappel-modal').style.display='none'">Annuler</button>
+   <button class="btn btn-primary" onclick="creerRappel()">✅ Créer le rappel</button>
+  </div>
+ </div>
+</div>
 <div id="login-overlay">
  <div class="login-card">
   <img src="/logo-full.png" alt="Sofy" onerror="this.style.display='none'">
@@ -310,6 +331,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
     <button class="nav-btn" data-view="signaux" onclick="ouvrirSignaux(this)">🔥 Signaux</button>
     <button class="nav-btn active" data-view="wizard" onclick="nav('wizard',this)">🎯 Nouvelle liste</button>
     <button class="nav-btn" data-view="results" onclick="nav('results',this)">📞 Résultats</button>
+    <button class="nav-btn" data-view="taches" onclick="nav('taches',this);chargerTaches()">✅ Tâches <span id="taches-badge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:2px"></span></button>
     <button class="nav-btn" data-view="history" onclick="nav('history',this);chargerHistorique()">🗂 Historique</button>
     <button class="nav-btn" id="nav-archives" data-view="archives" style="display:none" onclick="nav('archives',this);chargerArchives()">🗄️ Archives</button>
     <button class="nav-btn" data-view="mapping" onclick="nav('mapping',this);chargerEnvois();chargerConcurrents()">⚙️ Envois & mapping</button>
@@ -431,6 +453,14 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
     </section>
 
     <!-- ════ VUE : HISTORIQUE ════ -->
+    <section class="view" id="view-taches">
+      <div class="eyebrow">Rappels à passer</div>
+      <h1>✅ Mes tâches</h1>
+      <p class="sub">Vos rappels, triés par échéance. Un clic sur « Ouvrir la fiche » vous emmène sur le prospect et retire la tâche.</p>
+      <div id="taches-stats" style="display:flex;gap:12px;margin-bottom:22px"></div>
+      <div id="taches-liste"><p style="color:var(--ink-soft)">Chargement…</p></div>
+    </section>
+
     <section class="view" id="view-history">
       <div class="eyebrow">Mémoire des listes</div>
       <h1>Historique</h1>
@@ -733,7 +763,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v110';
+const VERSION='v111';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1148,9 +1178,46 @@ function setStatutAppel(i,statut){
   e.traite_le=new Date().toISOString();
  }
  rerender(i);persister();majTraites();
+ // Statut "Rappel demandé" → proposer de créer une tâche de rappel
+ if(statut&&statut.indexOf('Rappel demandé')===0)ouvrirRappel(i);
 }
 // Compat : d'anciens appels peuvent encore référencer toggleTag
 function toggleTag(i,tag){setStatutAppel(i,tag);}
+let RAPPEL_CTX=null;
+function ouvrirRappel(i){
+ const e=REAL[i];
+ const c=contactsDe(e)[0];
+ const contactNom=(c&&c.nom)?`${c.prenom||''} ${c.nom}`.trim():'';
+ RAPPEL_CTX={i,entreprise:enseigneDe(e)||e.nom,contact:contactNom,fiche_cle:'fr'+i};
+ document.getElementById('rappel-dest').textContent=(enseigneDe(e)||e.nom||'').slice(0,40);
+ // Pré-remplir : demain 10h par défaut
+ const d=new Date();d.setDate(d.getDate()+1);d.setHours(10,0,0,0);
+ document.getElementById('rappel-date').value=isoLocal(d);
+ document.getElementById('rappel-note').value='';
+ document.getElementById('rappel-modal').style.display='flex';
+}
+function isoLocal(d){
+ // format datetime-local (YYYY-MM-DDTHH:MM) en heure locale
+ const p=n=>String(n).padStart(2,'0');
+ return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function rappelRaccourci(heures){
+ const d=new Date();d.setHours(d.getHours()+heures);
+ document.getElementById('rappel-date').value=isoLocal(d);
+}
+async function creerRappel(){
+ if(!RAPPEL_CTX)return;
+ const val=document.getElementById('rappel-date').value;
+ if(!val){toast('Choisis une date/heure');return;}
+ const note=document.getElementById('rappel-note').value.trim();
+ try{
+  const r=await api('/api/taches',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({liste_id:state.savedId,fiche_cle:RAPPEL_CTX.fiche_cle,entreprise_nom:RAPPEL_CTX.entreprise,contact_nom:RAPPEL_CTX.contact,description:note,date_rappel:new Date(val).toISOString()})});
+  const d=await r.json();
+  if(d.ok){toast('🔁 Rappel planifié ✓');document.getElementById('rappel-modal').style.display='none';}
+  else toast('Erreur : '+(d.erreur||'création impossible'));
+ }catch(e){toast('Erreur réseau : '+e.message);}
+}
 function majTraites(){
  const kt=document.getElementById('k-traites');
  if(kt)kt.textContent=REAL.filter(e=>e.tags_sdr&&e.tags_sdr.length).length;
@@ -2550,11 +2617,12 @@ async function chargerSdrs(){
   const d=await r.json();
   if(d.erreur){t.innerHTML='<tr><td colspan="6">'+d.erreur+'</td></tr>';return;}
   const sup=state.user&&state.user.role==='superadmin';
-  t.innerHTML='<tr><th>Nom</th><th>Email</th><th>☎️ Ringover</th><th>Rôle</th><th>Limite € / mois</th><th>Mot de passe</th><th>Actif</th><th></th></tr>'+
+  t.innerHTML='<tr><th>Nom</th><th>Email</th><th>☎️ Ringover</th><th>💬 Slack ID</th><th>Rôle</th><th>Limite € / mois</th><th>Mot de passe</th><th>Actif</th><th></th></tr>'+
    (d.sdrs||[]).map(s=>`<tr>
     <td><input class="field" value="${s.nom}" id="sn${s.id}"></td>
     <td><input class="field" value="${s.email||''}" placeholder="email@sofy.fr" id="se${s.id}"></td>
     <td><input class="field" value="${s.ringover_numero||''}" placeholder="07 12 34 56 78" id="sr${s.id}" title="Ligne Ringover du SDR/AE — l'indicatif +33 (ou DOM) est ajouté automatiquement"></td>
+    <td><input class="field" value="${s.slack_id||''}" placeholder="U07ABC123" id="ss${s.id}" title="Slack Member ID (profil Slack → Copier l'ID du membre) — pour les rappels en DM"></td>
     <td><select class="field" id="sg${s.id}" ${sup?'':'disabled title="Seul le superadmin change les rôles"'}>
       <option value="sdr" ${(!s.role||s.role==='sdr')?'selected':''}>SDR</option>
       <option value="admin" ${s.role==='admin'?'selected':''}>Admin (paramètres + stats)</option>
@@ -2587,6 +2655,7 @@ async function majSdr(id){
   body:JSON.stringify({id,nom:document.getElementById('sn'+id).value,email:document.getElementById('se'+id).value,
    limite_credits:limite===''?null:limite,actif:document.getElementById('sa'+id).checked,
    ringover_numero:(document.getElementById('sr'+id)||{}).value,
+   slack_id:(document.getElementById('ss'+id)||{}).value,
    role:(document.getElementById('sg'+id)||{}).value,
    password:document.getElementById('sp'+id).value||undefined})});
  const d=await r.json();
@@ -2647,6 +2716,78 @@ async function chargerArchives(){
   if(!arch.length){zone.innerHTML='<p style="color:var(--ink-soft)">Aucune liste archivée'+(q?' pour « '+q+' »':'')+'.</p>';return;}
   zone.innerHTML=arch.map(l=>rendreLigneListe(l,'arch-search')).join('');
  }catch(e){zone.innerHTML='<p style="color:var(--ink-soft)">Erreur : '+e.message+'</p>';}
+}
+async function chargerTaches(){
+ const zone=document.getElementById('taches-liste');
+ const statsZone=document.getElementById('taches-stats');
+ try{
+  const r=await api('/api/taches');
+  const d=await r.json();
+  if(d.erreur){zone.innerHTML='<p style="color:var(--ink-soft)">'+d.erreur+'</p>';return;}
+  const taches=d.taches||[];
+  majBadgeTaches(taches);
+  if(!taches.length){statsZone.innerHTML='';zone.innerHTML='<p style="color:var(--ink-soft)">Aucun rappel en attente. Les rappels apparaissent ici quand vous mettez le statut « 🔁 Rappel demandé » sur une fiche.</p>';return;}
+  const maintenant=new Date();
+  const finJour=new Date();finJour.setHours(23,59,59,999);
+  const retard=[],aujourdhui=[],avenir=[];
+  for(const t of taches){
+   const d2=t.date_rappel?new Date(t.date_rappel):null;
+   if(!d2){avenir.push(t);continue;}
+   if(d2<maintenant)retard.push(t);
+   else if(d2<=finJour)aujourdhui.push(t);
+   else avenir.push(t);
+  }
+  // Compteurs
+  statsZone.innerHTML=`
+   <div style="background:var(--panel);border-radius:10px;padding:12px 16px;flex:1"><div style="font-size:13px;color:var(--ink-soft)">En retard</div><div style="font-size:24px;font-weight:700;color:${retard.length?'var(--danger)':'var(--ink)'}">${retard.length}</div></div>
+   <div style="background:var(--panel);border-radius:10px;padding:12px 16px;flex:1"><div style="font-size:13px;color:var(--ink-soft)">Aujourd'hui</div><div style="font-size:24px;font-weight:700">${aujourdhui.length}</div></div>
+   <div style="background:var(--panel);border-radius:10px;padding:12px 16px;flex:1"><div style="font-size:13px;color:var(--ink-soft)">À venir</div><div style="font-size:24px;font-weight:700">${avenir.length}</div></div>`;
+  let html='';
+  if(retard.length)html+=sectionTaches('En retard',retard,'var(--danger)');
+  if(aujourdhui.length)html+=sectionTaches("Aujourd'hui",aujourdhui,'var(--ink-soft)');
+  if(avenir.length)html+=sectionTaches('À venir',avenir,'var(--ink-soft)');
+  zone.innerHTML=html;
+ }catch(e){zone.innerHTML='<p style="color:var(--ink-soft)">Erreur : '+e.message+'</p>';}
+}
+function sectionTaches(titre,taches,coul){
+ const lignes=taches.map(t=>{
+  const d=t.date_rappel?new Date(t.date_rappel):null;
+  const quand=d?formatRappel(d):'Sans date';
+  const enRetard=d&&d<new Date();
+  return `<div class="fiche" style="${enRetard?'border-left:3px solid var(--danger)':''}">
+   <div class="fiche-top" style="grid-template-columns:1fr auto;align-items:center;gap:14px">
+    <div>
+     <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
+      <span style="font-size:13px;font-weight:600;color:${enRetard?'var(--danger)':'var(--ink-soft)'}">${enRetard?'⏰':'🕒'} ${quand}</span>
+     </div>
+     <div class="lead-name">${(t.entreprise_nom||'Fiche').replace(/</g,'&lt;')}${t.contact_nom?' — '+t.contact_nom.replace(/</g,'&lt;'):''}</div>
+     ${t.description?`<div class="lead-meta">${t.description.replace(/</g,'&lt;')}</div>`:''}
+    </div>
+    <button class="act act-call" onclick="ouvrirTache(${t.id},${t.liste_id||'null'},'${(t.entreprise_nom||'').replace(/'/g,"\\'").replace(/"/g,'')}')">📂 Ouvrir la fiche</button>
+   </div></div>`;
+ }).join('');
+ return `<div style="font-size:12px;font-weight:600;color:${coul};text-transform:uppercase;letter-spacing:.06em;margin:18px 0 8px">${titre}</div>${lignes}`;
+}
+function formatRappel(d){
+ const auj=new Date();const demain=new Date();demain.setDate(demain.getDate()+1);
+ const h=d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+ if(d.toDateString()===auj.toDateString())return `Aujourd'hui ${h}`;
+ if(d.toDateString()===demain.toDateString())return `Demain ${h}`;
+ return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})+' '+h;
+}
+async function ouvrirTache(id,listeId,terme){
+ // Marque la tâche faite (disparaît) puis ouvre la fiche ciblée
+ try{await api('/api/taches',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,faite:true})});}catch(e){}
+ if(listeId){
+  ouvrirListe(listeId,null,terme||'');
+ }else{toast('Tâche terminée ✓');chargerTaches();}
+}
+function majBadgeTaches(taches){
+ const b=document.getElementById('taches-badge');
+ if(!b)return;
+ const due=(taches||[]).filter(t=>t.date_rappel&&new Date(t.date_rappel)<=new Date()).length;
+ if(due>0){b.textContent=due;b.style.display='inline-block';}
+ else b.style.display='none';
 }
 async function chargerHistorique(){
  const zone=document.getElementById('hist-liste');
