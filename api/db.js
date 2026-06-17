@@ -81,7 +81,21 @@ export async function ensureSchema() {
   )`;
   await sql`CREATE TABLE IF NOT EXISTS veille_etat (cle TEXT PRIMARY KEY, deja_vus JSONB DEFAULT '[]', maj TIMESTAMPTZ DEFAULT NOW())`;
   await sql`CREATE TABLE IF NOT EXISTS config (cle TEXT PRIMARY KEY, valeur JSONB NOT NULL DEFAULT '{}')`;
+  await sql`CREATE TABLE IF NOT EXISTS taches (
+    id SERIAL PRIMARY KEY,
+    sdr TEXT NOT NULL,
+    liste_id INTEGER,
+    fiche_cle TEXT,
+    entreprise_nom TEXT,
+    contact_nom TEXT,
+    description TEXT,
+    date_rappel TIMESTAMPTZ,
+    faite BOOLEAN DEFAULT FALSE,
+    alertee BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`;
   await sql`ALTER TABLE sdrs ADD COLUMN IF NOT EXISTS ringover_numero TEXT`;
+  await sql`ALTER TABLE sdrs ADD COLUMN IF NOT EXISTS slack_id TEXT`;
   await sql`INSERT INTO tarifs (api, prix) VALUES ('soreach', 0.07) ON CONFLICT (api) DO NOTHING`;
   ready = true;
 }
