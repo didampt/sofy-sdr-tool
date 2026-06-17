@@ -711,7 +711,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v100';
+const VERSION='v101';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2546,6 +2546,7 @@ function rendreLigneListe(l,champRecherche){
    ${st.pct_mauvais_num?`<span class="stat-pill bad">${st.pct_mauvais_num}% ❌ numéros</span>`:''}
    ${st.pct_pas_interesse?`<span class="stat-pill bad">${st.pct_pas_interesse}% ❌ intéressé</span>`:''}
    ${st.pct_pas_reponse?`<span class="stat-pill bad">${st.pct_pas_reponse}% ❌ réponse</span>`:''}
+   ${cr.auto!=='hotleads'?`<span class="stat-pill" style="background:${st.pct_tag>=100?'#14532d':'#475569'}">✋ ${st.pct_tag||0}% traités${st.pct_tag>=100?' ✓':''}</span>`:''}
  </div>`:'';
  return `<div class="fiche"><div class="fiche-top" style="grid-template-columns:1fr auto auto;align-items:center;gap:14px">
   <div>
@@ -2553,7 +2554,7 @@ function rendreLigneListe(l,champRecherche){
    <div class="lead-meta">SDR : <b>${l.sdr}</b>${(l.createur&&l.createur!==l.sdr)?` · créée par <b>${l.createur}</b>`:''} · ${date} · ${l.total||l.nb_entreprises||0} entreprise${(l.total||l.nb_entreprises||0)>1?'s':''}${cr.auto==='hotleads'?' · 🔥 liste automatique':` · ${(cr.naf||[]).join(', ')} · ${(cr.pays||[]).join(' + ')} · ~${l.credits_estimes||0} crédits Pappers`}</div>
    ${pastilles}
   </div>
-  ${q!==null?`<div class="qbadge" style="background:${qcol}" title="Score qualité de la liste">${q}%</div>`:''}
+  ${(q!==null&&st&&st.pct_tag>=100)?`<div class="qbadge" style="background:${qcol}" title="Score qualité (liste 100% traitée)">${q}%</div>`:''}
   <div class="act-row" style="margin:0">
    <button class="act ${l.veille?'act-call':'act-copy'}" onclick="basculerVeille(${l.id},${l.veille?'false':'true'})" title="${l.veille?'Veille active — cliquer pour arrêter':'Surveiller les signaux LinkedIn (60 j)'}">${l.veille?'🔔 Veille ON':'🔕 Veille'}</button>
    <button class="act act-copy" onclick="ouvrirListe(${l.id},null,document.getElementById('${champ}').value.trim())">📂 Ouvrir (gratuit)</button>
