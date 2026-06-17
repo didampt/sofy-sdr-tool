@@ -78,15 +78,15 @@ export default async function handler(req, res) {
     // Pappers
     try {
       if (!process.env.PAPPERS_API_KEY) tests.pappers = fin('absent', 'Clé manquante');
-      else { const r = await pf(`https://api.pappers.fr/v2/suivi?api_token=${process.env.PAPPERS_API_KEY}`); tests.pappers = r.ok ? fin('ok', 'Clé valide') : fin('erreur', `HTTP ${r.status}`); }
+      else { const r = await pf(`https://api.pappers.fr/v2/recherche?api_token=${process.env.PAPPERS_API_KEY}&code_naf=4511Z&par_page=1`); tests.pappers = (r.status === 401 || r.status === 403) ? fin('erreur', `Clé refusée (HTTP ${r.status})`) : (r.ok ? fin('ok', 'Clé valide') : fin('erreur', `HTTP ${r.status}`)); }
     } catch (e) { tests.pappers = fin('erreur', e.message); }
 
     // Kaspr (le cas qui t'intéresse : 401 = clé morte)
     try {
       if (!process.env.KASPR_API_KEY) tests.kaspr = fin('absent', 'Clé manquante');
       else {
-        const r = await pf('https://api.kaspr.io/api/v2/account/credits', { headers: { 'Authorization': process.env.KASPR_API_KEY, 'Content-Type': 'application/json' } });
-        tests.kaspr = (r.status === 401 || r.status === 403) ? fin('erreur', `Clé refusée (HTTP ${r.status})`) : (r.ok ? fin('ok', 'Clé valide') : fin('erreur', `HTTP ${r.status}`));
+        const r = await pf('https://api.developers.kaspr.io/profile/linkedin', { method: 'POST', headers: { 'Authorization': `Bearer ${process.env.KASPR_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ linkedinUrl: 'https://www.linkedin.com/in/test-monitoring-key' }) });
+        tests.kaspr = (r.status === 401 || r.status === 403) ? fin('erreur', `Clé refusée (HTTP ${r.status})`) : fin('ok', 'Clé valide');
       }
     } catch (e) { tests.kaspr = fin('erreur', e.message); }
 
@@ -99,7 +99,7 @@ export default async function handler(req, res) {
     // Dropcontact
     try {
       if (!process.env.DROPCONTACT_API_KEY) tests.dropcontact = fin('absent', 'Clé manquante');
-      else { const r = await pf('https://api.dropcontact.com/v1/credits', { headers: { 'X-Access-Token': process.env.DROPCONTACT_API_KEY } }); tests.dropcontact = (r.status === 401 || r.status === 403) ? fin('erreur', `Clé refusée (HTTP ${r.status})`) : (r.ok ? fin('ok', 'Clé valide') : fin('erreur', `HTTP ${r.status}`)); }
+      else { const r = await pf('https://api.dropcontact.com/v1/enrich/all/test-monitoring', { headers: { 'X-Access-Token': process.env.DROPCONTACT_API_KEY } }); tests.dropcontact = (r.status === 401 || r.status === 403) ? fin('erreur', `Clé refusée (HTTP ${r.status})`) : fin('ok', 'Clé valide'); }
     } catch (e) { tests.dropcontact = fin('erreur', e.message); }
 
     // HubSpot
