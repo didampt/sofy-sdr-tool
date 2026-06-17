@@ -311,6 +311,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
     <button class="nav-btn active" data-view="wizard" onclick="nav('wizard',this)">🎯 Nouvelle liste</button>
     <button class="nav-btn" data-view="results" onclick="nav('results',this)">📞 Résultats</button>
     <button class="nav-btn" data-view="history" onclick="nav('history',this);chargerHistorique()">🗂 Historique</button>
+    <button class="nav-btn" id="nav-archives" data-view="archives" style="display:none" onclick="nav('archives',this);chargerArchives()">🗄️ Archives</button>
     <button class="nav-btn" data-view="mapping" onclick="nav('mapping',this);chargerEnvois();chargerConcurrents()">⚙️ Envois & mapping</button>
     <button class="nav-btn" data-view="stats" onclick="nav('stats',this);chargerStats()">📊 Statistiques</button>
     <button class="nav-btn" data-view="params" onclick="nav('params',this);chargerSdrs();chargerTarifs()">⚙️ Paramètres</button>
@@ -432,8 +433,16 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
       <h1>Historique</h1>
       <p class="sub">Toutes les listes générées, sauvegardées automatiquement. Rouvre une liste sans consommer de crédits, ou relance-la pour une mise à jour.</p>
       <input class="field" id="hist-search" placeholder="🔍 Rechercher : nom de liste, SDR, société, contact, email…" style="max-width:480px;margin-bottom:20px" oninput="clearTimeout(window._ht);window._ht=setTimeout(chargerHistorique,300)">
-      <label id="hist-arch-label" style="display:none;align-items:center;gap:6px;margin:0 0 20px 14px;font-size:13px;color:var(--ink-soft);cursor:pointer"><input type="checkbox" id="hist-archivees" onchange="chargerHistorique()"> 🗄️ Voir les listes archivées</label>
       <div id="hist-liste"><p style="color:var(--ink-soft)">Chargement…</p></div>
+    </section>
+
+    <!-- ════ VUE ARCHIVES ════ -->
+    <section class="view" id="view-archives">
+      <div class="eyebrow">Listes archivées</div>
+      <h1>🗄️ Archives</h1>
+      <p class="sub">Listes mises de côté. Elles ne consomment rien et restent récupérables : « ♻️ Désarchiver » les renvoie dans l'Historique.</p>
+      <input class="field" id="arch-search" placeholder="🔍 Rechercher dans les archives : nom, SDR, société, contact…" style="max-width:480px;margin-bottom:20px" oninput="clearTimeout(window._at);window._at=setTimeout(chargerArchives,300)">
+      <div id="arch-liste"><p style="color:var(--ink-soft)">Chargement…</p></div>
     </section>
 
     <!-- ════ VUE 3 : ENVOIS & MAPPING ════ -->
@@ -702,7 +711,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v98';
+const VERSION='v99';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2521,53 +2530,73 @@ async function supprSdr(id,nom){
 }
 
 /* ───────── HISTORIQUE DES LISTES ───────── */
+function rendreLigneListe(l,champRecherche){
+ const date=new Date(l.created_at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+ const cr=l.criteres||{};
+ const st=l.stats;
+ const q=st?st.qualite:null;
+ const qcol=q===null?'#94A3B8':(q>=60?'#14532d':(q>=40?'#B45309':'#991B1B'));
+ const admin=state.user&&['admin','superadmin'].includes(state.user.role);
+ const superA=state.user&&state.user.role==='superadmin';
+ const champ=champRecherche||'hist-search';
+ const pastilles=st?`<div style="margin-top:8px">
+   <span class="stat-pill">${st.pct_complete}% complété</span>
+   <span class="stat-pill">coût ${(l.cout||0).toFixed(2)} €</span>
+   ${st.rdv?`<span class="stat-pill good">🤝 ${st.rdv} RDV pris</span>`:''}
+   ${st.pct_mauvais_num?`<span class="stat-pill bad">${st.pct_mauvais_num}% ❌ numéros</span>`:''}
+   ${st.pct_pas_interesse?`<span class="stat-pill bad">${st.pct_pas_interesse}% ❌ intéressé</span>`:''}
+   ${st.pct_pas_reponse?`<span class="stat-pill bad">${st.pct_pas_reponse}% ❌ réponse</span>`:''}
+ </div>`:'';
+ return `<div class="fiche"><div class="fiche-top" style="grid-template-columns:1fr auto auto;align-items:center;gap:14px">
+  <div>
+   <div class="lead-name">${l.nom}${cr.auto!=='hotleads'?` <span onclick="renommerListe(${l.id},this)" data-nom="${(l.nom||'').replace(/"/g,'&quot;')}" title="Renommer la liste" style="cursor:pointer;font-size:14px;opacity:.5;font-weight:normal">✏️</span>`:''}</div>
+   <div class="lead-meta">SDR : <b>${l.sdr}</b>${(l.createur&&l.createur!==l.sdr)?` · créée par <b>${l.createur}</b>`:''} · ${date} · ${l.total||l.nb_entreprises||0} entreprise${(l.total||l.nb_entreprises||0)>1?'s':''}${cr.auto==='hotleads'?' · 🔥 liste automatique':` · ${(cr.naf||[]).join(', ')} · ${(cr.pays||[]).join(' + ')} · ~${l.credits_estimes||0} crédits Pappers`}</div>
+   ${pastilles}
+  </div>
+  ${q!==null?`<div class="qbadge" style="background:${qcol}" title="Score qualité de la liste">${q}%</div>`:''}
+  <div class="act-row" style="margin:0">
+   <button class="act ${l.veille?'act-call':'act-copy'}" onclick="basculerVeille(${l.id},${l.veille?'false':'true'})" title="${l.veille?'Veille active — cliquer pour arrêter':'Surveiller les signaux LinkedIn (60 j)'}">${l.veille?'🔔 Veille ON':'🔕 Veille'}</button>
+   <button class="act act-copy" onclick="ouvrirListe(${l.id},null,document.getElementById('${champ}').value.trim())">📂 Ouvrir (gratuit)</button>
+   ${(admin&&cr.auto!=='hotleads')?`<button class="act act-copy" onclick="transfererListe(${l.id},'${(l.nom||'').replace(/'/g,"\\'")}')">👤 Transférer</button>`:''}
+   ${(admin&&cr.auto!=='hotleads')?`<button class="act act-copy" onclick="archiverListe(${l.id},'${(l.nom||'').replace(/'/g,"\\'")}',${l.archivee?'false':'true'})">${l.archivee?'♻️ Désarchiver':'🗄️ Archiver'}</button>`:''}
+   ${(superA&&cr.auto!=='hotleads')?`<button class="act act-export" style="color:#991B1B;border-color:#FCA5A5" onclick="supprimerListe(${l.id},'${(l.nom||'').replace(/'/g,"\\'")}')">🗑️</button>`:''}
+   <button class="act act-export" onclick="majListe(${l.id})">↻ Mettre à jour</button>
+  </div>
+ </div></div>`;
+}
+async function chargerArchives(){
+ const zone=document.getElementById('arch-liste');
+ const q=document.getElementById('arch-search').value.trim();
+ try{
+  const qs=['archivees=1'];if(q)qs.push('q='+encodeURIComponent(q));
+  const r=await api('/api/listes?'+qs.join('&'));
+  const d=await r.json();
+  if(d.erreur){zone.innerHTML='<p style="color:var(--ink-soft)">'+d.erreur+'</p>';return;}
+  const arch=(d.listes||[]).filter(l=>l.archivee);
+  if(!arch.length){zone.innerHTML='<p style="color:var(--ink-soft)">Aucune liste archivée'+(q?' pour « '+q+' »':'')+'.</p>';return;}
+  zone.innerHTML=arch.map(l=>rendreLigneListe(l,'arch-search')).join('');
+ }catch(e){zone.innerHTML='<p style="color:var(--ink-soft)">Erreur : '+e.message+'</p>';}
+}
 async function chargerHistorique(){
  const zone=document.getElementById('hist-liste');
  const q=document.getElementById('hist-search').value.trim();
- // Affiche la case "archivées" pour admin/superadmin
- const lab=document.getElementById('hist-arch-label');
- if(lab)lab.style.display=(state.user&&['admin','superadmin'].includes(state.user.role))?'inline-flex':'none';
- const voirArch=document.getElementById('hist-archivees')&&document.getElementById('hist-archivees').checked;
+ // Affiche l'onglet Archives pour admin/superadmin
+ const na=document.getElementById('nav-archives');
+ if(na)na.style.display=(state.user&&['admin','superadmin'].includes(state.user.role))?'':'none';
  try{
-  const qs=[];if(q)qs.push('q='+encodeURIComponent(q));if(voirArch)qs.push('archivees=1');
-  const r=await api('/api/listes'+(qs.length?'?'+qs.join('&'):''));
+  const r=await api('/api/listes'+(q?'?q='+encodeURIComponent(q):''));
   const d=await r.json();
   if(d.erreur){zone.innerHTML='<p style="color:var(--ink-soft)">'+d.erreur+'</p>';return;}
   if(!d.listes||!d.listes.length){zone.innerHTML='<p style="color:var(--ink-soft)">Aucune liste'+(q?' pour « '+q+' »':' pour l\'instant — génère ta première liste !')+'</p>';return;}
   // Hot Leads (auto) toujours en tête (sécurité front en plus du tri serveur)
   d.listes.sort((a,b)=>{const aa=((a.criteres||{}).auto==='hotleads')?1:0,bb=((b.criteres||{}).auto==='hotleads')?1:0;if(aa!==bb)return bb-aa;return new Date(b.created_at)-new Date(a.created_at);});
-  zone.innerHTML=d.listes.map(l=>{
-   const date=new Date(l.created_at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
-   const cr=l.criteres||{};
-   const st=l.stats;
-   const q=st?st.qualite:null;
-   const qcol=q===null?'#94A3B8':(q>=60?'#14532d':(q>=40?'#B45309':'#991B1B'));
-   const pastilles=st?`<div style="margin-top:8px">
-     <span class="stat-pill">${st.pct_complete}% complété</span>
-     <span class="stat-pill">coût ${(l.cout||0).toFixed(2)} €</span>
-     ${st.rdv?`<span class="stat-pill good">🤝 ${st.rdv} RDV pris</span>`:''}
-     ${st.pct_mauvais_num?`<span class="stat-pill bad">${st.pct_mauvais_num}% ❌ numéros</span>`:''}
-     ${st.pct_pas_interesse?`<span class="stat-pill bad">${st.pct_pas_interesse}% ❌ intéressé</span>`:''}
-     ${st.pct_pas_reponse?`<span class="stat-pill bad">${st.pct_pas_reponse}% ❌ réponse</span>`:''}
-   </div>`:'';
-   return `<div class="fiche"><div class="fiche-top" style="grid-template-columns:1fr auto auto;align-items:center;gap:14px">
-    <div>
-     <div class="lead-name">${l.nom}${cr.auto!=='hotleads'?` <span onclick="renommerListe(${l.id},this)" data-nom="${(l.nom||'').replace(/"/g,'&quot;')}" title="Renommer la liste" style="cursor:pointer;font-size:14px;opacity:.5;font-weight:normal">✏️</span>`:''}</div>
-     <div class="lead-meta">SDR : <b>${l.sdr}</b>${(l.createur&&l.createur!==l.sdr)?` · créée par <b>${l.createur}</b>`:''} · ${date} · ${l.total||l.nb_entreprises||0} entreprise${(l.total||l.nb_entreprises||0)>1?'s':''}${cr.auto==='hotleads'?' · 🔥 liste automatique':` · ${(cr.naf||[]).join(', ')} · ${(cr.pays||[]).join(' + ')} · ~${l.credits_estimes||0} crédits Pappers`}</div>
-     ${pastilles}
-    </div>
-    ${q!==null?`<div class="qbadge" style="background:${qcol}" title="Score qualité de la liste">${q}%</div>`:''}
-    <div class="act-row" style="margin:0">
-     <button class="act ${l.veille?'act-call':'act-copy'}" onclick="basculerVeille(${l.id},${l.veille?'false':'true'})" title="${l.veille?'Veille active jusqu\'au '+new Date(l.veille_fin).toLocaleDateString('fr-FR')+' — cliquer pour arrêter':'Surveiller les signaux LinkedIn de cette liste (60 j)'}">${l.veille?'🔔 Veille ON':'🔕 Veille'}</button>
-     <button class="act act-copy" onclick="ouvrirListe(${l.id})">📂 Ouvrir (gratuit)</button>
-     ${(state.user&&['admin','superadmin'].includes(state.user.role)&&cr.auto!=='hotleads')?`<button class="act act-copy" onclick="transfererListe(${l.id},'${(l.nom||'').replace(/'/g,"\\'")}')">👤 Transférer</button>`:''}
-     ${(state.user&&['admin','superadmin'].includes(state.user.role)&&cr.auto!=='hotleads')?`<button class="act act-copy" onclick="archiverListe(${l.id},'${(l.nom||'').replace(/'/g,"\\'")}',${l.archivee?'false':'true'})">${l.archivee?'♻️ Désarchiver':'🗄️ Archiver'}</button>`:''}
-     ${(state.user&&state.user.role==='superadmin'&&cr.auto!=='hotleads')?`<button class="act act-export" style="color:#991B1B;border-color:#FCA5A5" onclick="supprimerListe(${l.id},'${(l.nom||'').replace(/'/g,"\\'")}')">🗑️</button>`:''}
-     <button class="act act-export" onclick="majListe(${l.id})">↻ Mettre à jour</button>
-    </div>
-   </div></div>`;
-  }).join('');
+  zone.innerHTML=d.listes.map(l=>rendreLigneListe(l,'hist-search')).join('');
  }catch(e){zone.innerHTML='<p style="color:var(--ink-soft)">Erreur : '+e.message+'</p>';}
+}
+function rafraichirListes(){
+ const vArch=document.getElementById('view-archives');
+ if(vArch&&vArch.classList.contains('on'))chargerArchives();
+ else chargerHistorique();
 }
 async function archiverListe(id,nom,archiver){
  const action=archiver?'archiver':'désarchiver';
@@ -2576,7 +2605,7 @@ async function archiverListe(id,nom,archiver){
  try{
   const r=await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,archiver})});
   const d=await r.json();
-  if(d.ok){toast(archiver?'🗄️ Liste archivée':'♻️ Liste désarchivée');chargerHistorique();}
+  if(d.ok){toast(archiver?'🗄️ Liste archivée':'♻️ Liste désarchivée');rafraichirListes();}
   else toast('Erreur : '+(d.erreur||'action impossible'));
  }catch(e){toast('Erreur réseau : '+e.message);}
 }
@@ -2586,7 +2615,7 @@ async function supprimerListe(id,nom){
  try{
   const r=await api('/api/listes?id='+id,{method:'DELETE'});
   const d=await r.json();
-  if(d.ok){toast('🗑️ Liste supprimée');chargerHistorique();}
+  if(d.ok){toast('🗑️ Liste supprimée');rafraichirListes();}
   else toast('Erreur : '+(d.erreur||'suppression impossible'));
  }catch(e){toast('Erreur réseau : '+e.message);}
 }
@@ -2703,7 +2732,7 @@ async function enrichirHotLeads(indices){
   },500);
  }
 }
-async function ouvrirListe(id,cibleFiche){
+async function ouvrirListe(id,cibleFiche,termeRecherche){
  try{
   const r=await api('/api/listes?id='+id);
   const l=await r.json();
@@ -2738,6 +2767,24 @@ async function ouvrirListe(id,cibleFiche){
    // Le SDR choisit : 🚀 Lancer l'enrichissement (global) ou 🚀 par fiche — comme une liste normale.
    const aFaire=REAL.filter(e=>e.a_enrichir&&!e.score&&!verrouRecent(e)).length;
    if(aFaire)toast(`🔥 ${aFaire} Hot Lead(s) en attente — tri d'abord les visiteurs hors cible, puis 🚀 Lancer l'enrichissement`);
+  }
+  // Recherche venue de l'Historique : pré-remplir le filtre de la liste + cibler la 1ère fiche trouvée
+  if(termeRecherche){
+   setTimeout(()=>{
+    const champ=document.getElementById('search-fiches');
+    const wrap=document.getElementById('search-wrap');
+    if(wrap)wrap.style.display='block';
+    if(champ){
+     champ.value=termeRecherche;
+     filtrerFiches(termeRecherche);
+     // filtrerFiches réécrit #fiches : la 1ère carte affichée EST la 1ère fiche trouvée
+     setTimeout(()=>{
+      const cible=document.querySelector('#fiches .fiche');
+      if(cible){cible.scrollIntoView({behavior:'smooth',block:'center'});cible.style.transition='box-shadow .4s';cible.style.boxShadow='0 0 0 3px var(--accent)';setTimeout(()=>cible.style.boxShadow='',2800);toast(`🔎 Fiche(s) trouvée(s) pour « ${termeRecherche} »`);}
+      else{toast(`Aucune fiche pour « ${termeRecherche} » dans cette liste`);}
+     },400);
+    }
+   },500);
   }
  }catch(e){toast('Erreur : '+e.message);}
 }
