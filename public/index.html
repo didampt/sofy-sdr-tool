@@ -700,7 +700,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v92';
+const VERSION='v93';
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
@@ -1575,7 +1575,7 @@ async function enrichir(i,j){
  if(btn){btn.disabled=true;btn.textContent='⏳ Dropcontact… (15-45 s)';}
  try{
   const r=await api('/api/enrich',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({liste_id:state.savedId,contact:{prenom:c.prenom,nom:c.nom},
+   body:JSON.stringify({liste_id:state.savedId,contact:{prenom:c.prenom,nom:c.nom,linkedin:c.linkedin||(c.enrich&&c.enrich.linkedin)||''},
     entreprise:{nom:e.enseigne||e.nom,siren:e.siren,site:domaineDe(e)}})});
   let d=await r.json();
   let essais=0;
