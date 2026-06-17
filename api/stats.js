@@ -43,11 +43,14 @@ export default async function handler(req, res) {
                          WHERE c.liste_id = l.id), 0)::float AS cout
         FROM listes l ORDER BY l.created_at DESC LIMIT 30`;
       const parListe = listes.map(l => {
-        let contacts = 0, emails = 0, mobiles = 0, telGmb = 0, enrichis = 0, fichesAvecGmbTel = 0;
+        let contacts = 0, emails = 0, mobiles = 0, telGmb = 0, enrichis = 0;
+        const tags = {}; const notes = [];
         const estMobileNum = t => /^(\+?(33)?\s?0?[67]|\+?(590|596|594|262)|0(690|691|696|697|694|692|693))/.test(String(t || '').replace(/[\s.\-()]/g, ''));
         for (const e of (l.entreprises || [])) {
           const cs = e.contacts || (e.dirigeant ? [{ enrich: e.enrich }] : []);
           if (e.gmb && e.gmb.telephone) { telGmb++; if (estMobileNum(e.gmb.telephone)) {} }
+          (e.tags_sdr || []).forEach(t => { tags[t] = (tags[t] || 0) + 1; });
+          if (e.notes_sdr && e.notes_sdr.trim()) notes.push({ entreprise: e.enseigne_ia || e.enseigne || e.nom, note: e.notes_sdr.trim().slice(0, 200) });
           for (const c of cs) {
             contacts++;
             const en = c.enrich || {};
@@ -66,13 +69,27 @@ export default async function handler(req, res) {
           pct_mobiles: contacts ? Math.round(100 * mobiles / contacts) : 0,
           pct_tel_gmb: l.total ? Math.round(100 * telGmb / l.total) : 0,
           pct_enrichi: contacts ? Math.round(100 * enrichis / contacts) : 0,
-          cout_par_contact_enrichi: enrichis ? Math.round(100 * Number(l.cout) / enrichis) / 100 : null
+          cout_par_contact_enrichi: enrichis ? Math.round(100 * Number(l.cout) / enrichis) / 100 : null,
+          tags, notes,
+          rdv: tags['🤝 RDV pris'] || 0,
+          pas_interesse: tags['❌ Pas intéressé'] || 0
         };
       });
 
       const tarifs = await sql`SELECT api, prix FROM tarifs ORDER BY api`;
       const limites = await sql`SELECT nom, limite_credits FROM sdrs WHERE actif = TRUE ORDER BY nom`;
-      return res.status(200).json({ par_sdr: parSdr, par_liste: parListe, tarifs, limites });
+
+      // Abonnements fixes mensuels (config) + total consommation à l'usage du mois
+      const aboRows = await sql`SELECT valeur FROM config WHERE cle = 'abonnements'`;
+      const abonnements = (aboRows.length && Array.isArray(aboRows[0].valeur)) ? aboRows[0].valeur : [];
+      const totalConsoRows = await sql`
+        SELECT COALESCE(SUM(c.quantite * COALESCE(t.prix, 0)), 0)::float AS total
+        FROM consommations c LEFT JOIN tarifs t ON t.api = c.api
+        WHERE date_trunc('month', c.created_at) = date_trunc('month', NOW())`;
+      const cout_conso_mois = Math.round((totalConsoRows[0]?.total || 0) * 100) / 100;
+      const cout_abonnements = Math.round(abonnements.reduce((s, a) => s + (Number(a.montant) || 0), 0) * 100) / 100;
+
+      return res.status(200).json({ par_sdr: parSdr, par_liste: parListe, tarifs, limites, abonnements, cout_conso_mois, cout_abonnements });
     }
 
     // ── Modification d'un tarif ──
