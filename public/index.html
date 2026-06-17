@@ -763,7 +763,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v112';
+const VERSION='v113';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2720,6 +2720,8 @@ async function chargerArchives(){
   zone.innerHTML=arch.map(l=>rendreLigneListe(l,'arch-search')).join('');
  }catch(e){zone.innerHTML='<p style="color:var(--ink-soft)">Erreur : '+e.message+'</p>';}
 }
+let TACHES_GROUPES={retard:[],aujourdhui:[],avenir:[]};
+let TACHES_FILTRE='tous';
 async function chargerTaches(){
  const zone=document.getElementById('taches-liste');
  const statsZone=document.getElementById('taches-stats');
@@ -2740,17 +2742,45 @@ async function chargerTaches(){
    else if(d2<=finJour)aujourdhui.push(t);
    else avenir.push(t);
   }
-  // Compteurs
-  statsZone.innerHTML=`
-   <div style="background:var(--panel);border-radius:10px;padding:12px 16px;flex:1"><div style="font-size:13px;color:var(--ink-soft)">En retard</div><div style="font-size:24px;font-weight:700;color:${retard.length?'var(--danger)':'var(--ink)'}">${retard.length}</div></div>
-   <div style="background:var(--panel);border-radius:10px;padding:12px 16px;flex:1"><div style="font-size:13px;color:var(--ink-soft)">Aujourd'hui</div><div style="font-size:24px;font-weight:700">${aujourdhui.length}</div></div>
-   <div style="background:var(--panel);border-radius:10px;padding:12px 16px;flex:1"><div style="font-size:13px;color:var(--ink-soft)">À venir</div><div style="font-size:24px;font-weight:700">${avenir.length}</div></div>`;
-  let html='';
-  if(retard.length)html+=sectionTaches('En retard',retard,'var(--danger)');
-  if(aujourdhui.length)html+=sectionTaches("Aujourd'hui",aujourdhui,'var(--ink-soft)');
-  if(avenir.length)html+=sectionTaches('À venir',avenir,'var(--ink-soft)');
-  zone.innerHTML=html;
+  TACHES_GROUPES={retard,aujourdhui,avenir};
+  if(!['tous','retard','aujourdhui','avenir'].includes(TACHES_FILTRE))TACHES_FILTRE='tous';
+  rendreCompteursTaches();
+  rendreTaches();
  }catch(e){zone.innerHTML='<p style="color:var(--ink-soft)">Erreur : '+e.message+'</p>';}
+}
+function rendreCompteursTaches(){
+ const {retard,aujourdhui,avenir}=TACHES_GROUPES;
+ const f=TACHES_FILTRE;
+ const carte=(cat,label,n,coul)=>{
+  const actif=f===cat;
+  const bord=actif?`border:2px solid ${coul==='danger'?'var(--danger)':'var(--accent)'}`:'border:2px solid transparent';
+  return `<div onclick="filtrerTaches('${cat}')" style="background:var(--panel);border-radius:10px;padding:12px 16px;flex:1;cursor:pointer;${bord};transition:border-color .15s" title="Afficher : ${label}">
+   <div style="font-size:13px;color:var(--ink-soft)">${label}</div>
+   <div style="font-size:24px;font-weight:700;color:${coul==='danger'&&n?'var(--danger)':'var(--ink)'}">${n}</div></div>`;
+ };
+ document.getElementById('taches-stats').innerHTML=
+  carte('retard','En retard',retard.length,'danger')+
+  carte('aujourdhui',"Aujourd'hui",aujourdhui.length,'')+
+  carte('avenir','À venir',avenir.length,'')+
+  carte('tous','Tout voir',retard.length+aujourdhui.length+avenir.length,'');
+}
+function filtrerTaches(cat){
+ TACHES_FILTRE=(TACHES_FILTRE===cat&&cat!=='tous')?'tous':cat;
+ rendreCompteursTaches();
+ rendreTaches();
+}
+function rendreTaches(){
+ const {retard,aujourdhui,avenir}=TACHES_GROUPES;
+ const f=TACHES_FILTRE;
+ let html='';
+ if((f==='tous'||f==='retard')&&retard.length)html+=sectionTaches('En retard',retard,'var(--danger)');
+ if((f==='tous'||f==='aujourdhui')&&aujourdhui.length)html+=sectionTaches("Aujourd'hui",aujourdhui,'var(--ink-soft)');
+ if((f==='tous'||f==='avenir')&&avenir.length)html+=sectionTaches('À venir',avenir,'var(--ink-soft)');
+ if(!html){
+  const noms={retard:'en retard',aujourdhui:"pour aujourd'hui",avenir:'à venir'};
+  html=`<p style="color:var(--ink-soft)">Aucune tâche ${noms[f]||''}.</p>`;
+ }
+ document.getElementById('taches-liste').innerHTML=html;
 }
 function sectionTaches(titre,taches,coul){
  const lignes=taches.map(t=>{
