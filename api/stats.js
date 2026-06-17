@@ -82,6 +82,9 @@ export default async function handler(req, res) {
       // Abonnements fixes mensuels (config) + total consommation à l'usage du mois
       const aboRows = await sql`SELECT valeur FROM config WHERE cle = 'abonnements'`;
       const abonnements = (aboRows.length && Array.isArray(aboRows[0].valeur)) ? aboRows[0].valeur : [];
+      // Budget de référence mensuel (fixé par la RevOps)
+      const budgetRows = await sql`SELECT valeur FROM config WHERE cle = 'budget_ref'`;
+      const budget_ref = budgetRows.length ? Number(budgetRows[0].valeur) || 0 : 0;
       const totalConsoRows = await sql`
         SELECT COALESCE(SUM(c.quantite * COALESCE(t.prix, 0)), 0)::float AS total
         FROM consommations c LEFT JOIN tarifs t ON t.api = c.api
@@ -89,7 +92,7 @@ export default async function handler(req, res) {
       const cout_conso_mois = Math.round((totalConsoRows[0]?.total || 0) * 100) / 100;
       const cout_abonnements = Math.round(abonnements.reduce((s, a) => s + (Number(a.montant) || 0), 0) * 100) / 100;
 
-      return res.status(200).json({ par_sdr: parSdr, par_liste: parListe, tarifs, limites, abonnements, cout_conso_mois, cout_abonnements });
+      return res.status(200).json({ par_sdr: parSdr, par_liste: parListe, tarifs, limites, abonnements, cout_conso_mois, cout_abonnements, budget_ref });
     }
 
     // ── Modification d'un tarif ──
