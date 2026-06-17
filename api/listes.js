@@ -59,8 +59,10 @@ function calculerStatsListe(entreprises) {
   const pct = n => total ? Math.round(n / total * 100) : 0;
   // Score qualité basé sur les statuts. null si <30% de fiches traitées (pas assez de retours).
   const tauxTag = total ? traites / total : 0;
+  // Le score est calculé dès qu'il y a des fiches traitées. L'affichage de la pastille
+  // (seuil 100% traités) est géré côté front via pct_tag.
   let qualite = null;
-  if (tauxTag >= 0.30 && traites > 0) {
+  if (traites > 0) {
     qualite = Math.max(0, Math.min(100, Math.round(50 + sommeScore / traites)));
   }
   return {
