@@ -71,7 +71,9 @@ export default async function handler(req, res) {
           last_name: contact.nom,
           company: entreprise.nom,
           ...(entreprise.siren ? { num_siren: String(entreprise.siren) } : {}),
-          ...(entreprise.site ? { website: entreprise.site } : {})
+          ...(entreprise.site ? { website: entreprise.site } : {}),
+          // LinkedIn du contact : très efficace pour retrouver l'email (cas des Hot Leads issus de la veille)
+          ...(contact.linkedin ? { linkedin: contact.linkedin } : {})
         }],
         siren: true,
         language: 'fr'
