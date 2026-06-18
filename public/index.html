@@ -924,7 +924,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v122';
+const VERSION='v123';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1284,6 +1284,44 @@ async function choisirGoogle(placeId){
   box.style.display='none';
   document.getElementById('f-google').value=d.nom||'';
   toast('✅ Champs pré-remplis depuis Google');
+ }catch(e){toast('Erreur réseau : '+e.message);box.style.display='none';}
+}
+// Versions pour l'ÉDITION d'une fiche (champs edit-...${i})
+let GOOGLE_DEBOUNCE_EDIT=null;
+function rechercheGoogleEdit(i,q){
+ const box=document.getElementById('edit-google-results'+i);
+ if(!box)return;
+ clearTimeout(GOOGLE_DEBOUNCE_EDIT);
+ if(!q||q.trim().length<3){box.style.display='none';return;}
+ GOOGLE_DEBOUNCE_EDIT=setTimeout(async()=>{
+  try{
+   const r=await api('/api/places-autocomplete?q='+encodeURIComponent(q.trim()));
+   const d=await r.json();
+   if(!d.resultats||!d.resultats.length){box.innerHTML='<div style="padding:12px;font-size:13px;color:var(--ink-soft)">Aucun résultat Google.</div>';box.style.display='block';return;}
+   box.innerHTML=d.resultats.map(x=>`<div onclick="choisirGoogleEdit(${i},'${x.place_id}')" style="padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:10px;align-items:flex-start" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='#fff'">
+     <span style="font-size:16px;margin-top:1px">📍</span>
+     <div><div style="font-size:14px;font-weight:600">${(x.nom||'').replace(/</g,'&lt;')}</div><div style="font-size:12.5px;color:var(--ink-soft)">${(x.adresse||'').replace(/</g,'&lt;')}</div></div>
+    </div>`).join('');
+   box.style.display='block';
+  }catch(e){box.style.display='none';}
+ },400);
+}
+async function choisirGoogleEdit(i,placeId){
+ const box=document.getElementById('edit-google-results'+i);
+ box.innerHTML='<div style="padding:12px;font-size:13px;color:var(--ink-soft)">⏳ Récupération…</div>';
+ try{
+  const r=await api('/api/places-autocomplete?place_id='+encodeURIComponent(placeId));
+  const d=await r.json();
+  if(d.erreur){toast('Erreur : '+d.erreur);box.style.display='none';return;}
+  const set=(id,val)=>{const el=document.getElementById(id);if(el&&val)el.value=val;};
+  set('edit-nom'+i,d.nom);set('edit-ville'+i,d.ville);set('edit-cp'+i,d.code_postal);set('edit-adresse'+i,d.adresse);set('edit-site'+i,d.site_web);
+  // Mémorise le place_id et le téléphone Google sur la fiche
+  const e=REAL[i];
+  e.place_id=d.place_id||placeId;
+  if(d.telephone)e.telephone_google=d.telephone;
+  box.style.display='none';
+  document.getElementById('edit-google'+i).value=d.nom||'';
+  toast('✅ Champs mis à jour depuis Google');
  }catch(e){toast('Erreur réseau : '+e.message);box.style.display='none';}
 }
 // ── Ajout manuel d'une fiche dans la liste ouverte ──
@@ -1895,14 +1933,26 @@ function ficheReal(e,i){
    <div class="fiche-chev">${open?'▾':'▸'}</div>
   </div>
   <div class="fiche-body" style="display:${open?'block':'none'}">
-   <div id="edit${i}" style="display:none;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:12px">
+   <div id="edit${i}" style="display:none;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:12px">
     <div class="map-sub" style="margin-top:0">✏️ Corriger la fiche (le SDR connaît son terrain mieux que les bases)</div>
-    <div class="row3" style="grid-template-columns:1fr 1fr auto">
+    <label style="display:block;font-size:12.5px;font-weight:600;margin:8px 0 5px">🔍 Rechercher sur Google <span style="font-weight:400;color:var(--ink-soft)">(facultatif — met à jour les champs)</span></label>
+    <div style="position:relative;margin-bottom:14px">
+     <input class="field" id="edit-google${i}" placeholder="Ex : Garage Dupont Bordeaux…" style="width:100%" autocomplete="off" oninput="rechercheGoogleEdit(${i},this.value)">
+     <div id="edit-google-results${i}" style="display:none;position:absolute;left:0;right:0;top:40px;background:#fff;border:1px solid var(--line);border-radius:10px;z-index:10;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.12);max-height:240px;overflow-y:auto"></div>
+    </div>
+    <label style="display:block;font-size:12.5px;font-weight:600;margin-bottom:4px">Nom de la société</label>
+    <input class="field" id="edit-nom${i}" placeholder="Nom officiel (Pappers)" value="${(e.nom||'').replace(/"/g,'&quot;')}" style="width:100%;margin-bottom:10px">
+    <div class="row3" style="grid-template-columns:1fr 1fr;margin-bottom:10px">
      <input class="field" id="edit-ens${i}" placeholder="Nom commercial / Google Maps" value="${(e.enseigne_ia||e.enseigne||'').replace(/"/g,'&quot;')}">
      <input class="field" id="edit-site${i}" placeholder="Site web (ex : porsche-guadeloupe.fr)" value="${(e.site_web||'').replace(/"/g,'&quot;')}">
-     <button class="btn btn-primary" onclick="majFiche(${i})">💾 Enregistrer + relancer GMB</button>
     </div>
-    <div style="margin-top:10px"><input class="field" id="edit-liso${i}" placeholder="LinkedIn société (ex : linkedin.com/company/...)" value="${(e.linkedin_entreprise||'').replace(/"/g,'&quot;')}" style="width:100%"></div>
+    <div class="row3" style="grid-template-columns:2fr 1fr;margin-bottom:10px">
+     <input class="field" id="edit-ville${i}" placeholder="Ville" value="${(e.ville||'').replace(/"/g,'&quot;')}">
+     <input class="field" id="edit-cp${i}" placeholder="Code postal" value="${(e.code_postal||'').replace(/"/g,'&quot;')}">
+    </div>
+    <input class="field" id="edit-adresse${i}" placeholder="Adresse" value="${(e.adresse||'').replace(/"/g,'&quot;')}" style="width:100%;margin-bottom:10px">
+    <input class="field" id="edit-liso${i}" placeholder="LinkedIn société (ex : linkedin.com/company/...)" value="${(e.linkedin_entreprise||'').replace(/"/g,'&quot;')}" style="width:100%;margin-bottom:6px">
+    <div style="text-align:right;margin-bottom:6px"><button class="btn btn-primary" onclick="majFiche(${i})">💾 Enregistrer + relancer GMB</button></div>
     <div style="font-size:12.5px;font-weight:700;color:var(--ink-soft);margin:14px 0 6px">👥 CONTACTS</div>
     <div id="edit-contacts${i}">${ligneEditContacts(e,i)}</div>
     <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:12px;flex-wrap:wrap">
@@ -2012,6 +2062,12 @@ async function majFiche(i){
  }
  if(ens)e.enseigne_ia=ens;
  if(site){e.site_web=site;e.site_source='sdr';}
+ // Champs entreprise (alignés création) pris en compte avant la relance GMB
+ const vNom=document.getElementById('edit-nom'+i);if(vNom&&vNom.value.trim())e.nom=vNom.value.trim();
+ const vVille=document.getElementById('edit-ville'+i);if(vVille)e.ville=vVille.value.trim();
+ const vCp=document.getElementById('edit-cp'+i);if(vCp)e.code_postal=vCp.value.trim();
+ const vAdr=document.getElementById('edit-adresse'+i);if(vAdr)e.adresse=vAdr.value.trim();
+ const vLiso=document.getElementById('edit-liso'+i);if(vLiso&&vLiso.value.trim()){const l=vLiso.value.trim();e.linkedin_entreprise=l.startsWith('http')?l:'https://'+l.replace(/^\/+/,'');}
  e.gmb=null; // re-match avec les nouvelles infos
  rerender(i);persister();
  if(indice){
@@ -2026,8 +2082,12 @@ async function majFicheComplet(i){
  const e=REAL[i];
  if(e._busy){toast('Analyse en cours — patience ⏳');return;}
  const val=id=>{const el=document.getElementById(id);return el?el.value.trim():'';};
- // Société
+ // Société (champs complets, alignés sur le formulaire de création)
+ const nom=val('edit-nom'+i); if(nom)e.nom=nom;
  const ens=val('edit-ens'+i); if(ens)e.enseigne_ia=ens;
+ const ville=val('edit-ville'+i); e.ville=ville;
+ const cp=val('edit-cp'+i); e.code_postal=cp;
+ const adresse=val('edit-adresse'+i); e.adresse=adresse;
  let site=val('edit-site'+i).replace(/^https?:\/\//,'').replace(/^www\./,'').split('/')[0];
  if(site&&site.includes('.')&&!site.includes(' ')){e.site_web=site;e.site_source='sdr';}
  const liso=val('edit-liso'+i); if(liso)e.linkedin_entreprise=liso.startsWith('http')?liso:'https://'+liso.replace(/^\/+/,'');
