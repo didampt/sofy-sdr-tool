@@ -405,6 +405,41 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
     <!-- ════ VUE 1 : WIZARD ════ -->
     <section class="view on" id="view-wizard">
       <div class="eyebrow">Nouvelle liste d'appel</div>
+      <div id="mode-choix" style="max-width:680px">
+        <h1 style="margin-bottom:6px">Comment veux-tu créer ta liste ?</h1>
+        <p class="sub" style="margin-bottom:22px">Deux façons : laisser la machine extraire des entreprises depuis Pappers, ou créer une liste vide et y ajouter tes fiches à la main.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div onclick="choisirMode('pappers')" style="cursor:pointer;border:1px solid var(--line);border-radius:14px;padding:22px;transition:.15s;background:var(--card)" onmouseover="this.style.borderColor='#185FA5'" onmouseout="this.style.borderColor='var(--line)'">
+            <div style="font-size:30px;margin-bottom:10px">🎯</div>
+            <div style="font-size:16px;font-weight:700;margin-bottom:5px">Liste depuis Pappers</div>
+            <div style="font-size:13px;color:var(--ink-soft);line-height:1.5">Tu choisis un secteur, une zone, une taille. La machine extrait les entreprises, dédoublonne et score automatiquement.</div>
+          </div>
+          <div onclick="choisirMode('manuelle')" style="cursor:pointer;border:1px solid var(--line);border-radius:14px;padding:22px;transition:.15s;background:var(--card)" onmouseover="this.style.borderColor='#185FA5'" onmouseout="this.style.borderColor='var(--line)'">
+            <div style="font-size:30px;margin-bottom:10px">✍️</div>
+            <div style="font-size:16px;font-weight:700;margin-bottom:5px">Liste manuelle</div>
+            <div style="font-size:13px;color:var(--ink-soft);line-height:1.5">Tu nommes ta liste (ton ICP) et tu y ajoutes toi-même les fiches que tu as identifiées. Idéal pour des cibles repérées à la main.</div>
+          </div>
+        </div>
+      </div>
+      <div id="mode-manuelle" style="display:none;max-width:560px">
+        <div class="head-row">
+          <div><h1>Liste manuelle</h1><p class="sub">Donne un nom à ta liste. Tu pourras y ajouter des fiches juste après.</p></div>
+          <button class="btn-reset" onclick="retourChoixMode()">↺ Retour</button>
+        </div>
+        <div class="qcard">
+          <div class="qnum"><b>1</b> Nom de la liste</div>
+          <h2>Comment s'appelle ta liste ?</h2>
+          <input class="field" id="manuelle-nom" placeholder="Ex : Concessionnaires premium repérés salon auto" style="width:100%">
+          <p class="hint">C'est ton ICP / le nom de ta campagne. Tu ajouteras les fiches une par une ensuite.</p>
+          <div style="margin-top:14px"><label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">Assigner à</label>
+          <select class="field" id="manuelle-sdr" style="width:100%"></select></div>
+          <div class="wiz-foot" style="margin-top:22px">
+            <span></span>
+            <button class="btn btn-primary" onclick="creerListeManuelle()">✍️ Créer la liste vide</button>
+          </div>
+        </div>
+      </div>
+      <div id="wizard-pappers" style="display:none">
       <div class="head-row">
         <div>
           <h1>Construis ta liste, <span id="sdr-name">SDR</span>.</h1>
@@ -476,6 +511,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
       <div class="wiz-foot" id="wiz-foot">
         <button class="btn btn-ghost" id="btn-back" onclick="move(-1)">← Retour</button>
         <button class="btn btn-primary" id="btn-next" onclick="move(1)">Continuer →</button>
+      </div>
       </div>
     </section>
 
@@ -842,7 +878,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v116';
+const VERSION='v117';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -949,6 +985,52 @@ function nav(v,btn){
  document.querySelectorAll('.nav-btn').forEach(x=>x.classList.remove('active'));
  if(btn)btn.classList.add('active');
  else document.querySelector(`[data-view="${v}"]`).classList.add('active');
+ // À l'ouverture de "Nouvelle liste", on repart de l'écran de choix Pappers/Manuelle
+ if(v==='wizard')retourChoixMode();
+}
+// ── Choix du mode de création de liste ──
+function choisirMode(mode){
+ document.getElementById('mode-choix').style.display='none';
+ if(mode==='pappers'){
+  document.getElementById('wizard-pappers').style.display='block';
+  document.getElementById('mode-manuelle').style.display='none';
+ }else{
+  document.getElementById('mode-manuelle').style.display='block';
+  document.getElementById('wizard-pappers').style.display='none';
+  // Remplir le sélecteur SDR (réutilise la liste des SDR)
+  remplirSelectSdrManuelle();
+ }
+}
+function retourChoixMode(){
+ document.getElementById('mode-choix').style.display='block';
+ document.getElementById('wizard-pappers').style.display='none';
+ document.getElementById('mode-manuelle').style.display='none';
+}
+async function remplirSelectSdrManuelle(){
+ const sel=document.getElementById('manuelle-sdr');
+ if(!sel)return;
+ // Un SDR ne choisit pas (c'est lui) ; admin/superadmin peuvent assigner
+ const moi=state.user?state.user.nom:'';
+ if(state.user&&state.user.role==='sdr'){sel.innerHTML=`<option value="${moi}">${moi} (moi)</option>`;sel.disabled=true;return;}
+ try{
+  const r=await api('/api/sdrs');const d=await r.json();
+  sel.innerHTML=(d.sdrs||[]).filter(s=>s.actif).map(s=>`<option value="${s.nom}"${s.nom===moi?' selected':''}>${s.nom}</option>`).join('');
+ }catch(e){sel.innerHTML=`<option value="${moi}">${moi}</option>`;}
+}
+async function creerListeManuelle(){
+ const nom=document.getElementById('manuelle-nom').value.trim();
+ if(!nom){toast('⚠️ Donne un nom à ta liste');document.getElementById('manuelle-nom').focus();return;}
+ const sdr=document.getElementById('manuelle-sdr').value||(state.user?state.user.nom:'');
+ try{
+  // Crée une liste vide avec des critères "manuels"
+  const r=await api('/api/listes',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({nom,sdr,criteres:{manuelle:true,naf:[],pays:[]},entreprises:[],credits_estimes:0})});
+  const d=await r.json();
+  if(d.erreur){toast('Erreur : '+d.erreur);return;}
+  toast('✍️ Liste créée — ajoute tes fiches');
+  // Ouvre directement la liste créée
+  setTimeout(()=>ouvrirListe(d.id),300);
+ }catch(e){toast('Erreur réseau : '+e.message);}
 }
 let toastT;
 function toast(msg){
