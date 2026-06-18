@@ -480,7 +480,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
           <select class="field" id="manuelle-sdr" style="width:100%"></select></div>
           <div class="wiz-foot" style="margin-top:22px">
             <span></span>
-            <button class="btn btn-primary" onclick="creerListeManuelle()">✍️ Créer la liste vide</button>
+            <button class="btn btn-primary" id="btn-creer-manuelle" onclick="creerListeManuelle()">✍️ Créer la liste vide</button>
           </div>
         </div>
       </div>
@@ -924,7 +924,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v119';
+const VERSION='v120';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1063,20 +1063,38 @@ async function remplirSelectSdrManuelle(){
   sel.innerHTML=(d.sdrs||[]).filter(s=>s.actif).map(s=>`<option value="${s.nom}"${s.nom===moi?' selected':''}>${s.nom}</option>`).join('');
  }catch(e){sel.innerHTML=`<option value="${moi}">${moi}</option>`;}
 }
+let CREATION_MANUELLE_EN_COURS=false;
 async function creerListeManuelle(){
+ // Verrou anti double-clic : si une création est déjà en cours, on ignore
+ if(CREATION_MANUELLE_EN_COURS)return;
  const nom=document.getElementById('manuelle-nom').value.trim();
  if(!nom){toast('⚠️ Donne un nom à ta liste');document.getElementById('manuelle-nom').focus();return;}
  const sdr=document.getElementById('manuelle-sdr').value||(state.user?state.user.nom:'');
+ CREATION_MANUELLE_EN_COURS=true;
+ const btn=document.getElementById('btn-creer-manuelle');
+ if(btn){btn.disabled=true;btn.textContent='⏳ Création en cours…';}
  try{
-  // Crée une liste vide avec des critères "manuels"
   const r=await api('/api/listes',{method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({nom,sdr,criteres:{manuelle:true,naf:[],pays:[]},entreprises:[],credits_estimes:0})});
   const d=await r.json();
-  if(d.erreur){toast('Erreur : '+d.erreur);return;}
+  if(d.erreur){
+   toast('Erreur : '+d.erreur);
+   CREATION_MANUELLE_EN_COURS=false;
+   if(btn){btn.disabled=false;btn.textContent='✍️ Créer la liste vide';}
+   return;
+  }
   toast('✍️ Liste créée — ajoute tes fiches');
-  // Ouvre directement la liste créée
-  setTimeout(()=>ouvrirListe(d.id),300);
- }catch(e){toast('Erreur réseau : '+e.message);}
+  // On garde le verrou actif jusqu'à l'ouverture pour éviter tout reclic pendant la transition
+  setTimeout(()=>{
+   CREATION_MANUELLE_EN_COURS=false;
+   if(btn){btn.disabled=false;btn.textContent='✍️ Créer la liste vide';}
+   ouvrirListe(d.id);
+  },300);
+ }catch(e){
+  toast('Erreur réseau : '+e.message);
+  CREATION_MANUELLE_EN_COURS=false;
+  if(btn){btn.disabled=false;btn.textContent='✍️ Créer la liste vide';}
+ }
 }
 let toastT;
 function toast(msg){
