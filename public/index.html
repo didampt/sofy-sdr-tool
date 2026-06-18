@@ -771,7 +771,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v114';
+const VERSION='v115';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2148,6 +2148,14 @@ async function lancerWaterfall(nouvellesSeulement){
  const nbIa=REAL.filter(e=>!e.ia&&!domaineDe(e)).length;
  const nbContacts=REAL.reduce((s,e)=>s+contactsDe(e).filter(c=>c.nom&&!c.enrich).length,0);
  if(!confirm(`🚀 Lancer l'enrichissement sur ${aTraiter.length} fiche${aTraiter.length>1?'s':''}${nouvellesSeulement?' (nouvelles uniquement)':''} ?\n\n1. GMB + domaine + ☎️ standard : ~${nbGmb} fiches\n2. IA site web/nom commercial (si GMB échoue) : jusqu'à ${nbIa} appels (~0,02 €)\n3. Emails Dropcontact : ~${nbContacts} crédits\n4. Personas (${jobsCibles().length?jobsCibles().join(', '):'aucun sélectionné'}) : IA LinkedIn (~0,05-0,15 €/fiche)\n5. FullEnrich (repli email + MOBILE) : contacts incomplets uniquement — ⚠️ un mobile coûte ~10 crédits FullEnrich\n5bis. Mobile : IA trouve le profil LinkedIn (~0,01 €) puis Kaspr (1 crédit tél. + 1 crédit export)\n6. Scoring + synthèse d'appel + email perso (IA, ~0,03 €/fiche)\n\n💡 Exclus d'abord les fiches inutiles (🗑).`))return;
+ // Verrou global : empêche de lancer 2 enrichissements sur LA MÊME liste (même onglet ou autre)
+ if(state.savedId){
+  try{
+   const rv=await api('/api/enrich-lock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({liste_id:state.savedId,action:'prendre',total:aTraiter.length})});
+   const dv=await rv.json();
+   if(!dv.ok){toast(`⚠️ Un enrichissement est déjà en cours sur cette liste (lancé par ${dv.par||'un SDR'}, il y a ${dv.depuis||0}s). Attends qu'il finisse.`);return;}
+  }catch(e){/* en cas d'erreur réseau on laisse passer pour ne pas bloquer le travail */}
+ }
  ouvrirWfModal();
  WF_STOP=false;
  const btnStop=document.getElementById('wf-stop');if(btnStop){btnStop.disabled=false;btnStop.textContent='⏹ Stop';}
@@ -2162,6 +2170,11 @@ async function lancerWaterfall(nouvellesSeulement){
   emailsTentes+=r.tentes;emailsOk+=r.ok;
   const p=Math.round(fait/aTraiter.length*100),b=document.getElementById('wfg-bar');
   if(b){b.style.width=p+'%';document.getElementById('wfg-pct').textContent=p+' %';}
+  // Rafraîchit le verrou + progression partagée (toutes les 3 fiches pour limiter les appels).
+  // Le coût n'est pas envoyé ici (calcul serveur lourd) : un autre onglet le lira via /api/stats.
+  if(state.savedId&&(fait%3===0||fait===aTraiter.length)){
+   api('/api/enrich-lock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({liste_id:state.savedId,action:'rafraichir',faites:fait})}).catch(()=>{});
+  }
  }
  document.getElementById('wf-titre').textContent=arrete?`⏹ Enrichissement arrêté — ${emailsOk} email(s) trouvés (les fiches faites sont conservées)`:`🏁 Enrichissement terminé — ${emailsOk}/${emailsTentes} nouveaux emails`;
  if(document.getElementById('wf-stop'))document.getElementById('wf-stop').disabled=true;
@@ -2173,6 +2186,8 @@ async function lancerWaterfall(nouvellesSeulement){
   api('/api/rapport',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({liste_id:state.savedId,nom:(state.listeNom||'Liste')+(state.savedId?' (#'+state.savedId+')':''),total:REAL.length,emails:nbE,tels:nbT,gmb:nbG})}).catch(()=>{});
  }catch(_){}
  document.getElementById('wf-fermer').disabled=false;
+ // Libère le verrou global : la liste n'est plus en cours d'enrichissement
+ if(state.savedId){api('/api/enrich-lock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({liste_id:state.savedId,action:'liberer'})}).catch(()=>{});}
  majCoutListe();
  persister();
  majBtnNouvelles();
