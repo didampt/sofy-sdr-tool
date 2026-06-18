@@ -118,7 +118,18 @@ export async function ensureSchema() {
 
 // ── Authentification : jetons signés HMAC ──
 function secret() {
-  return process.env.AUTH_SECRET || createHash('sha256').update(url || 'sofy-scrap').digest('hex');
+  // 1) Idéal : AUTH_SECRET dédié (variable Vercel, longue chaîne aléatoire)
+  if (process.env.AUTH_SECRET && process.env.AUTH_SECRET.length >= 16) {
+    return process.env.AUTH_SECRET;
+  }
+  // 2) Repli robuste : dérivé du DATABASE_URL COMPLET (déjà une longue chaîne secrète propre au projet).
+  //    Jamais la chaîne triviale d'avant. On préfixe pour ne pas réutiliser le secret brut tel quel.
+  if (url && url.length >= 24) {
+    return createHash('sha256').update('sofy-auth-v2|' + url).digest('hex');
+  }
+  // 3) Dernier recours (ne devrait jamais arriver en prod) : on signale clairement le risque.
+  console.error('[SECURITE] AUTH_SECRET absent et DATABASE_URL indisponible — signature de tokens NON sécurisée. Définir AUTH_SECRET dans Vercel.');
+  return createHash('sha256').update('sofy-auth-v2|fallback-instable').digest('hex');
 }
 export function signerToken(user) {
   const payload = Buffer.from(JSON.stringify({
