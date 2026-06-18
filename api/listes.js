@@ -179,6 +179,12 @@ export default async function handler(req, res) {
       if (!nom || !sdr || !criteres || !Array.isArray(entreprises)) {
         return res.status(400).json({ erreur: 'nom, sdr, criteres et entreprises requis' });
       }
+      // Anti-doublon de nom : refuse une liste active portant déjà ce nom (insensible à la casse).
+      // Protège contre le double-clic ET les doublons volontaires. Les listes archivées ne comptent pas.
+      const memeNom = await sql`SELECT id FROM listes WHERE LOWER(TRIM(nom)) = ${nom.trim().toLowerCase()} AND archivee = FALSE LIMIT 1`;
+      if (memeNom.length) {
+        return res.status(409).json({ erreur: 'Une liste active porte déjà ce nom. Choisis un nom différent (ou archive l\'ancienne).' });
+      }
       const h = hashCriteres(criteres);
       const statsInit = calculerStatsListe(entreprises);
       const rows = await sql`INSERT INTO listes (nom, sdr, createur, criteres, criteres_hash, entreprises, total, credits_estimes, stats)
