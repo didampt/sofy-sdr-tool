@@ -98,6 +98,15 @@ export async function ensureSchema() {
   await sql`ALTER TABLE sdrs ADD COLUMN IF NOT EXISTS slack_id TEXT`;
   await sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS stats JSONB`;
   // Anti-brute-force : suivi des tentatives de connexion par email
+  await sql`CREATE TABLE IF NOT EXISTS enrich_actif (
+    liste_id INTEGER PRIMARY KEY,
+    sdr TEXT NOT NULL,
+    total INTEGER DEFAULT 0,
+    faites INTEGER DEFAULT 0,
+    cout NUMERIC DEFAULT 0,
+    maj TIMESTAMPTZ DEFAULT NOW(),
+    demarre_le TIMESTAMPTZ DEFAULT NOW()
+  )`;
   await sql`CREATE TABLE IF NOT EXISTS login_attempts (
     email TEXT PRIMARY KEY,
     echecs INTEGER NOT NULL DEFAULT 0,
@@ -308,4 +317,47 @@ export async function limiteAtteinte(user) {
     const conso = Number(rows[0].conso), limite = Number(rows[0].lim);
     return conso >= limite ? { conso: Math.round(conso * 100) / 100, limite } : null;
   } catch (_) { return null; }
+}
+
+// ── Verrou global d'enrichissement par liste (anti-double-lancement + progression partagée) ──
+// Un verrou est considéré "vivant" s'il a été rafraîchi il y a moins de PERIME_MS (onglet actif).
+// Au-delà, on considère que l'onglet est mort (coupure) → la liste peut être relancée.
+const ENRICH_PERIME_MS = 2 * 60 * 1000; // 2 min sans rafraîchissement = verrou périmé
+
+export async function prendreVerrouEnrich(listeId, sdr, total) {
+  await ensureSchema();
+  const r = await sql`SELECT sdr, maj FROM enrich_actif WHERE liste_id = ${listeId}`;
+  if (r.length) {
+    const ageMs = Date.now() - new Date(r[0].maj).getTime();
+    if (ageMs < ENRICH_PERIME_MS) {
+      // Verrou vivant → refus
+      return { ok: false, par: r[0].sdr, depuis: Math.round(ageMs / 1000) };
+    }
+    // Verrou périmé (onglet mort) → on le reprend
+  }
+  await sql`INSERT INTO enrich_actif (liste_id, sdr, total, faites, cout, maj, demarre_le)
+    VALUES (${listeId}, ${sdr}, ${total || 0}, 0, 0, NOW(), NOW())
+    ON CONFLICT (liste_id) DO UPDATE SET sdr = ${sdr}, total = ${total || 0}, faites = 0, cout = 0, maj = NOW(), demarre_le = NOW()`;
+  return { ok: true };
+}
+
+export async function rafraichirVerrouEnrich(listeId, faites, cout) {
+  await ensureSchema();
+  await sql`UPDATE enrich_actif SET faites = ${faites || 0}, cout = ${cout || 0}, maj = NOW() WHERE liste_id = ${listeId}`;
+  return { ok: true };
+}
+
+export async function libererVerrouEnrich(listeId) {
+  await ensureSchema();
+  await sql`DELETE FROM enrich_actif WHERE liste_id = ${listeId}`;
+  return { ok: true };
+}
+
+export async function etatVerrouEnrich(listeId) {
+  await ensureSchema();
+  const r = await sql`SELECT sdr, total, faites, cout, maj, demarre_le FROM enrich_actif WHERE liste_id = ${listeId}`;
+  if (!r.length) return { actif: false };
+  const ageMs = Date.now() - new Date(r[0].maj).getTime();
+  if (ageMs >= ENRICH_PERIME_MS) return { actif: false, perime: true }; // onglet mort
+  return { actif: true, ...r[0], age_sec: Math.round(ageMs / 1000) };
 }
