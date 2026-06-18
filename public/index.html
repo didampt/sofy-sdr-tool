@@ -258,6 +258,37 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
   </div>
  </div>
 </div>
+<div id="alloc-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:901;align-items:center;justify-content:center">
+ <div style="background:#fff;border-radius:16px;max-width:460px;width:92%;padding:26px 28px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+  <div style="font-size:18px;font-weight:700;margin-bottom:3px">💳 Allouer des crédits</div>
+  <div id="alloc-sdr-nom" style="font-size:13px;color:var(--ink-soft);margin-bottom:20px"></div>
+  <div id="alloc-loader" style="text-align:center;padding:24px 0;color:var(--ink-soft)">⏳ Chargement…</div>
+  <div id="alloc-contenu" style="display:none">
+   <div style="display:flex;gap:12px;margin-bottom:18px">
+    <div style="flex:1;background:var(--bg);border-radius:10px;padding:12px 14px">
+     <div style="font-size:12px;color:var(--ink-soft);margin-bottom:3px">Plafond actuel</div>
+     <div style="font-size:20px;font-weight:700" id="alloc-plafond-actuel">—</div>
+    </div>
+    <div style="flex:1;background:var(--bg);border-radius:10px;padding:12px 14px">
+     <div style="font-size:12px;color:var(--ink-soft);margin-bottom:3px">Consommé ce mois</div>
+     <div style="font-size:20px;font-weight:700" id="alloc-conso">—</div>
+    </div>
+   </div>
+   <label style="display:block;font-size:13px;font-weight:600;margin-bottom:6px">Nouveau plafond mensuel (€)</label>
+   <input type="number" id="alloc-nouveau" class="field" style="width:100%;margin-bottom:8px" placeholder="ex : 600">
+   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
+    <button class="btn" style="background:var(--bg);font-size:12.5px;padding:6px 12px" onclick="allocRapide(100)">+100 €</button>
+    <button class="btn" style="background:var(--bg);font-size:12.5px;padding:6px 12px" onclick="allocRapide(250)">+250 €</button>
+    <button class="btn" style="background:var(--bg);font-size:12.5px;padding:6px 12px" onclick="allocRapide(500)">+500 €</button>
+    <button class="btn" style="background:var(--bg);font-size:12.5px;padding:6px 12px" onclick="document.getElementById('alloc-nouveau').value=''">♾️ Illimité</button>
+   </div>
+   <div style="display:flex;gap:10px;justify-content:flex-end">
+    <button class="btn" onclick="document.getElementById('alloc-modal').style.display='none'" style="background:var(--bg)">Annuler</button>
+    <button class="btn btn-primary" id="alloc-valider" onclick="validerAllocation()">Enregistrer</button>
+   </div>
+  </div>
+ </div>
+</div>
 <div id="estim-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:900;align-items:center;justify-content:center">
  <div style="background:#fff;border-radius:16px;max-width:520px;width:92%;padding:26px 28px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
   <div style="font-size:18px;font-weight:700;margin-bottom:3px">📊 Estimation de la liste</div>
@@ -877,6 +908,9 @@ function demarrerApp(u){
  const lid=params.get('liste');
  const fcle=params.get('fiche');
  if(lid){history.replaceState(null,'',location.pathname);setTimeout(()=>ouvrirListe(parseInt(lid),fcle?decodeURIComponent(fcle):null),300);}
+ // Lien direct d'allocation de crédits (depuis Slack → ?allouer=NomSdr), réservé superadmin
+ const allouer=params.get('allouer');
+ if(allouer){history.replaceState(null,'',location.pathname);setTimeout(()=>ouvrirAllocation(decodeURIComponent(allouer)),400);}
 }
 async function verifSession(){
  const t=localStorage.getItem('sofy_token');
@@ -1065,6 +1099,51 @@ function criteresActuels(){
          ville:document.getElementById('loc-ville').value.trim()};
 }
 
+// ── Allocation de crédits (superadmin, depuis le lien Slack ?allouer=) ──
+let ALLOC_SDR=null;
+async function ouvrirAllocation(nomSdr){
+ if(!state.user||state.user.role!=='superadmin'){toast('⚠️ Réservé aux superadmins');return;}
+ ALLOC_SDR=nomSdr;
+ document.getElementById('alloc-sdr-nom').textContent='Pour : '+nomSdr;
+ document.getElementById('alloc-loader').style.display='block';
+ document.getElementById('alloc-contenu').style.display='none';
+ document.getElementById('alloc-modal').style.display='flex';
+ try{
+  // Plafond actuel via /api/sdrs, conso via /api/stats
+  const [rs,rst]=await Promise.all([api('/api/sdrs'),api('/api/stats')]);
+  const ds=await rs.json();const dst=await rst.json();
+  const sdr=(ds.sdrs||[]).find(s=>s.nom===nomSdr);
+  if(!sdr){toast('SDR introuvable : '+nomSdr);document.getElementById('alloc-modal').style.display='none';return;}
+  ALLOC_SDR={nom:sdr.nom,id:sdr.id};
+  // par_sdr est groupé par (sdr, api) → on somme toutes les lignes de ce SDR
+  const consoMois=(dst.par_sdr||[]).filter(x=>x.sdr===nomSdr).reduce((s,x)=>s+Number(x.cout||0),0);
+  document.getElementById('alloc-plafond-actuel').textContent=sdr.limite_credits!=null?Math.round(sdr.limite_credits)+' €':'♾️ illimité';
+  document.getElementById('alloc-conso').textContent=Math.round(consoMois)+' €';
+  document.getElementById('alloc-nouveau').value=sdr.limite_credits!=null?Math.round(sdr.limite_credits):'';
+  document.getElementById('alloc-loader').style.display='none';
+  document.getElementById('alloc-contenu').style.display='block';
+ }catch(e){toast('Erreur : '+e.message);document.getElementById('alloc-modal').style.display='none';}
+}
+function allocRapide(ajout){
+ const champ=document.getElementById('alloc-nouveau');
+ const actuel=Number(champ.value)||0;
+ champ.value=actuel+ajout;
+}
+async function validerAllocation(){
+ if(!ALLOC_SDR||!ALLOC_SDR.id){toast('SDR non chargé');return;}
+ const v=document.getElementById('alloc-nouveau').value;
+ const nouveauPlafond=v===''?null:Number(v); // vide = illimité
+ const btn=document.getElementById('alloc-valider');
+ if(btn){btn.disabled=true;btn.textContent='⏳ Enregistrement…';}
+ try{
+  const r=await api('/api/sdrs',{method:'PUT',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({id:ALLOC_SDR.id,limite_credits:nouveauPlafond})});
+  const d=await r.json();
+  if(d.erreur){toast('Erreur : '+d.erreur);}
+  else{toast(`✅ Plafond de ${ALLOC_SDR.nom} mis à jour : ${nouveauPlafond===null?'illimité':nouveauPlafond+' €'}`);document.getElementById('alloc-modal').style.display='none';}
+ }catch(e){toast('Erreur réseau : '+e.message);}
+ if(btn){btn.disabled=false;btn.textContent='Enregistrer';}
+}
 // ── Estimation de la liste (avant génération) ──
 let ESTIM_CRIT=null; // critères mémorisés pour la génération après validation
 async function estimerListe(){
