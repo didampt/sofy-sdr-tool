@@ -261,7 +261,13 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
 <div id="fiche-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:901;align-items:center;justify-content:center">
  <div style="background:#fff;border-radius:16px;max-width:520px;width:92%;padding:26px 28px;box-shadow:0 20px 60px rgba(0,0,0,.3);max-height:90vh;overflow-y:auto">
   <div style="font-size:18px;font-weight:700;margin-bottom:3px">➕ Ajouter une fiche</div>
-  <div style="font-size:13px;color:var(--ink-soft);margin-bottom:20px">Saisis l'entreprise que tu as identifiée. Seul le nom est obligatoire — plus tu en mets, meilleur sera l'enrichissement.</div>
+  <div style="font-size:13px;color:var(--ink-soft);margin-bottom:18px">Saisis l'entreprise que tu as identifiée. Seul le nom est obligatoire — plus tu en mets, meilleur sera l'enrichissement.</div>
+  <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">🔍 Rechercher sur Google <span style="font-weight:400;color:var(--ink-soft)">(facultatif — pré-remplit les champs)</span></label>
+  <div style="position:relative;margin-bottom:18px">
+   <input class="field" id="f-google" placeholder="Ex : Garage Dupont Bordeaux…" style="width:100%" autocomplete="off" oninput="rechercheGoogle(this.value)">
+   <div id="f-google-results" style="display:none;position:absolute;left:0;right:0;top:40px;background:#fff;border:1px solid var(--line);border-radius:10px;z-index:10;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.12);max-height:260px;overflow-y:auto"></div>
+  </div>
+  <div style="font-size:12px;color:var(--ink-soft);margin-bottom:16px;padding-left:2px">💡 Pour une tête de réseau (siège), ignore Google et saisis directement le nom ci-dessous.</div>
   <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">Nom de la société <span style="color:var(--danger)">*</span></label>
   <input class="field" id="f-nom" placeholder="Ex : Garage Dupont SAS" style="width:100%;margin-bottom:14px">
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
@@ -918,7 +924,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v118';
+const VERSION='v119';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1221,11 +1227,52 @@ function criteresActuels(){
          ville:document.getElementById('loc-ville').value.trim()};
 }
 
+// ── Recherche Google Places (aide à la saisie, facultative) ──
+let GOOGLE_DEBOUNCE=null;
+let FICHE_PLACE_ID=null;   // place_id retenu (pour l'enrichissement)
+let FICHE_TEL_GOOGLE=null; // téléphone récupéré via Google
+function rechercheGoogle(q){
+ const box=document.getElementById('f-google-results');
+ clearTimeout(GOOGLE_DEBOUNCE);
+ if(!q||q.trim().length<3){box.style.display='none';return;}
+ // Debounce : on attend 400ms après la dernière frappe avant d'interroger Google
+ GOOGLE_DEBOUNCE=setTimeout(async()=>{
+  try{
+   const r=await api('/api/places-autocomplete?q='+encodeURIComponent(q.trim()));
+   const d=await r.json();
+   if(!d.resultats||!d.resultats.length){box.innerHTML='<div style="padding:12px;font-size:13px;color:var(--ink-soft)">Aucun résultat Google. Saisis les champs à la main ci-dessous.</div>';box.style.display='block';return;}
+   box.innerHTML=d.resultats.map(x=>`<div onclick="choisirGoogle('${x.place_id}')" style="padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:10px;align-items:flex-start" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='#fff'">
+     <span style="font-size:16px;margin-top:1px">📍</span>
+     <div><div style="font-size:14px;font-weight:600">${(x.nom||'').replace(/</g,'&lt;')}</div><div style="font-size:12.5px;color:var(--ink-soft)">${(x.adresse||'').replace(/</g,'&lt;')}</div></div>
+    </div>`).join('');
+   box.style.display='block';
+  }catch(e){box.style.display='none';}
+ },400);
+}
+async function choisirGoogle(placeId){
+ const box=document.getElementById('f-google-results');
+ box.innerHTML='<div style="padding:12px;font-size:13px;color:var(--ink-soft)">⏳ Récupération des informations…</div>';
+ try{
+  const r=await api('/api/places-autocomplete?place_id='+encodeURIComponent(placeId));
+  const d=await r.json();
+  if(d.erreur){toast('Erreur : '+d.erreur);box.style.display='none';return;}
+  // Pré-remplit les champs
+  const set=(id,val)=>{const el=document.getElementById(id);if(el&&val)el.value=val;};
+  set('f-nom',d.nom);set('f-ville',d.ville);set('f-cp',d.code_postal);set('f-adresse',d.adresse);set('f-site',d.site_web);
+  FICHE_PLACE_ID=d.place_id||placeId;
+  FICHE_TEL_GOOGLE=d.telephone||null;
+  box.style.display='none';
+  document.getElementById('f-google').value=d.nom||'';
+  toast('✅ Champs pré-remplis depuis Google');
+ }catch(e){toast('Erreur réseau : '+e.message);box.style.display='none';}
+}
 // ── Ajout manuel d'une fiche dans la liste ouverte ──
 function ouvrirAjoutFiche(){
  if(!state.savedId){toast('⚠️ Ouvre ou crée une liste d\'abord');return;}
- // Réinitialise les champs
- ['f-nom','f-ville','f-cp','f-site','f-liso','f-naf','f-adresse'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+ // Réinitialise les champs + l'état Google
+ ['f-nom','f-ville','f-cp','f-site','f-liso','f-naf','f-adresse','f-google'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+ const gr=document.getElementById('f-google-results');if(gr)gr.style.display='none';
+ FICHE_PLACE_ID=null;FICHE_TEL_GOOGLE=null;
  document.getElementById('fiche-modal').style.display='flex';
  setTimeout(()=>{const n=document.getElementById('f-nom');if(n)n.focus();},80);
 }
@@ -1243,6 +1290,8 @@ async function creerFicheManuelle(){
   siren:null,activite:null,effectif:null,chiffre_affaires:null,nb_etablissements:null,
   dirigeant:null,enseigne:null,
   source:'manuelle',
+  place_id:FICHE_PLACE_ID||null,
+  telephone_google:FICHE_TEL_GOOGLE||null,
   contacts:[]
  };
  const btn=document.getElementById('f-valider');
