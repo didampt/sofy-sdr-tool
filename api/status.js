@@ -1,5 +1,7 @@
 // /api/status.js — Statut des connexions : présence des clés (jamais leur valeur)
 
+import { verifierToken } from './db.js';
+
 const OUTILS = [
   { id: 'pappers',     nom: 'Pappers',          env: 'PAPPERS_API_KEY',        role: 'Extraction entreprises & dirigeants' },
   { id: 'gplaces',     nom: 'Google Places',    env: 'GOOGLE_PLACES_API_KEY',  role: 'Score GMB, avis, concurrents' },
@@ -35,7 +37,13 @@ function chercherNombre(obj, motifs) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // Sécurité : réservé aux utilisateurs authentifiés (évite la cartographie de l'infra)
+  const user = verifierToken(req);
+  if (!user) return res.status(401).json({ erreur: 'Non authentifié' });
+  // Le mode test (?test=1) ping réellement les APIs → réservé aux admins
+  const veutTest = req.query && (req.query.test === '1' || req.query.test === 'true');
+  const estAdmin = ['admin', 'superadmin'].includes(user.role);
+  if (veutTest && !estAdmin) return res.status(403).json({ erreur: 'Test réservé aux admins' });
   const statut = OUTILS.map(o => ({
     id: o.id,
     nom: o.nom,

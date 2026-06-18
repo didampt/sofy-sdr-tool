@@ -1,55 +1,81 @@
 // /api/pappers.js — Recherche d'entreprises via l'API Pappers
-// La clé API est lue depuis la variable d'environnement PAPPERS_API_KEY (jamais dans le code).
+// Clé lue depuis la variable d'environnement PAPPERS_API_KEY.
+// Filtre effectif en 3 niveaux : effectif_min/max → tranche_effectif_min/max → sans filtre (fallback).
+
+import { verifierToken } from './db.js';
+
+async function callPappers(baseParams, effectifMode, effMin, effMax) {
+  const params = new URLSearchParams(baseParams);
+  if (effectifMode === 'effectif') {
+    if (effMin) params.set('effectif_min', effMin);
+    if (effMax) params.set('effectif_max', effMax);
+  } else if (effectifMode === 'tranche') {
+    if (effMin) params.set('tranche_effectif_min', effMin);
+    if (effMax) params.set('tranche_effectif_max', effMax);
+  }
+  const r = await fetch('https://api.pappers.fr/v2/recherche?' + params.toString());
+  const data = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, data };
+}
 
 export default async function handler(req, res) {
-  // Autoriser uniquement les appels depuis notre propre site
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // Sécurité : réservé aux utilisateurs authentifiés (sinon un tiers consomme les crédits Pappers)
+  const user = verifierToken(req);
+  if (!user) return res.status(401).json({ erreur: 'Non authentifié' });
 
   const apiKey = process.env.PAPPERS_API_KEY;
   if (!apiKey) {
-    return res.status(500).json({ erreur: "PAPPERS_API_KEY manquante dans les variables d'environnement Vercel" });
+    return res.status(500).json({ erreur: "PAPPERS_API_KEY manquante dans Vercel" });
   }
 
-  // ── Paramètres reçus du front ──
   const {
-    naf = '',          // ex: "4511Z,4520A"
-    dep = '',          // ex: "971,972" (971=Guadeloupe, 972=Martinique, 973=Guyane, 974=Réunion, 976=Mayotte)
-    effectif_min = '',
-    effectif_max = '',
-    ca_min = '',
-    ca_max = '',
-    nb = '10'          // nombre de résultats (max 100)
+    naf = '', dep = '',
+    effectif_min = '', effectif_max = '',
+    ca_min = '', ca_max = '',
+    nb = '10'
   } = req.query;
 
-  if (!naf) {
-    return res.status(400).json({ erreur: "Paramètre 'naf' requis (ex: ?naf=4511Z)" });
-  }
+  if (!naf) return res.status(400).json({ erreur: "Paramètre 'naf' requis (ex: ?naf=4511Z)" });
 
-  // ── Construction de la requête Pappers ──
-  const params = new URLSearchParams({
+  const baseParams = {
     api_token: apiKey,
     code_naf: naf,
     entreprise_cessee: 'false',
     par_page: Math.min(parseInt(nb) || 10, 100).toString(),
     precision: 'standard'
-  });
-  if (dep) params.set('departement', dep);
-  if (effectif_min) params.set('effectif_min', effectif_min);
-  if (effectif_max) params.set('effectif_max', effectif_max);
-  if (ca_min) params.set('chiffre_affaires_min', ca_min);
-  if (ca_max) params.set('chiffre_affaires_max', ca_max);
+  };
+  if (dep) baseParams.departement = dep;
+  if (ca_min) baseParams.chiffre_affaires_min = ca_min;
+  if (ca_max) baseParams.chiffre_affaires_max = ca_max;
+
+  const wantsEffectif = !!(effectif_min || effectif_max);
 
   try {
-    const r = await fetch('https://api.pappers.fr/v2/recherche?' + params.toString());
-    const data = await r.json();
+    let result, filtreEffectif = 'aucun';
 
-    if (!r.ok) {
-      // On renvoie l'erreur Pappers telle quelle pour pouvoir ajuster les paramètres si besoin
-      return res.status(r.status).json({ erreur: 'Erreur Pappers', detail: data });
+    if (wantsEffectif) {
+      // Niveau 1 : effectif_min/max
+      result = await callPappers(baseParams, 'effectif', effectif_min, effectif_max);
+      filtreEffectif = 'effectif';
+      // Niveau 2 : tranche_effectif_min/max
+      if (!result.ok || (result.data.total || 0) === 0) {
+        result = await callPappers(baseParams, 'tranche', effectif_min, effectif_max);
+        filtreEffectif = 'tranche_effectif';
+      }
+      // Niveau 3 : sans filtre effectif (données souvent manquantes, surtout DOM)
+      if (!result.ok || (result.data.total || 0) === 0) {
+        result = await callPappers(baseParams, 'aucun');
+        filtreEffectif = 'aucun (donnée effectif souvent manquante — filtre élargi)';
+      }
+    } else {
+      result = await callPappers(baseParams, 'aucun');
     }
 
-    // ── Simplification de la réponse pour le front ──
-    const entreprises = (data.resultats || []).map(e => ({
+    if (!result.ok) {
+      return res.status(result.status).json({ erreur: 'Erreur Pappers', detail: result.data });
+    }
+
+    const entreprises = (result.data.resultats || []).map(e => ({
       nom: e.nom_entreprise,
       siren: e.siren,
       naf: e.code_naf,
@@ -63,8 +89,9 @@ export default async function handler(req, res) {
     }));
 
     return res.status(200).json({
-      total: data.total || entreprises.length,
-      page: data.page || 1,
+      total: result.data.total || entreprises.length,
+      page: result.data.page || 1,
+      filtre_effectif: filtreEffectif,
       entreprises
     });
   } catch (err) {
