@@ -258,6 +258,32 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
   </div>
  </div>
 </div>
+<div id="estim-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:900;align-items:center;justify-content:center">
+ <div style="background:#fff;border-radius:16px;max-width:520px;width:92%;padding:26px 28px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+  <div style="font-size:18px;font-weight:700;margin-bottom:3px">📊 Estimation de la liste</div>
+  <div id="estim-criteres" style="font-size:13px;color:var(--ink-soft);margin-bottom:20px"></div>
+  <div id="estim-loader" style="text-align:center;padding:30px 0;color:var(--ink-soft)">⏳ Comptage en cours…</div>
+  <div id="estim-contenu" style="display:none">
+   <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px">
+    <div style="background:var(--bg);border-radius:10px;padding:14px 16px">
+     <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:3px">Entreprises trouvées</div>
+     <div style="font-size:24px;font-weight:700" id="estim-total">—</div>
+     <div style="font-size:12px;color:var(--ink-soft);margin-top:2px" id="estim-genere"></div>
+    </div>
+    <div style="background:var(--bg);border-radius:10px;padding:14px 16px">
+     <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:3px">Coût enrichissement estimé</div>
+     <div style="font-size:24px;font-weight:700" id="estim-cout">—</div>
+     <div style="font-size:12px;color:var(--ink-soft);margin-top:2px">Selon les fiches trouvées</div>
+    </div>
+   </div>
+   <div id="estim-solde" style="border-radius:10px;padding:12px 14px;font-size:13px;margin-bottom:20px;display:flex;align-items:flex-start;gap:10px"></div>
+   <div style="display:flex;gap:10px;justify-content:flex-end">
+    <button class="btn" onclick="document.getElementById('estim-modal').style.display='none'" id="estim-annuler" style="background:var(--bg)">Modifier les critères</button>
+    <button class="btn btn-primary" id="estim-valider" onclick="validerEstimation()">Générer la liste</button>
+   </div>
+  </div>
+ </div>
+</div>
 <div id="wf-modal">
  <div class="wf-panel">
   <div class="wf-head" id="wf-titre">🚀 Enrichissement en cours…</div>
@@ -785,7 +811,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v115';
+const VERSION='v116';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -994,7 +1020,7 @@ function validate(){
 }
 function move(dir){
  const cards=document.querySelectorAll('.qcard');
- if(dir===1&&state.step===5){launch();return;}
+ if(dir===1&&state.step===5){estimerListe();return;}
  cards[state.step].style.display='none';
  state.step=Math.max(0,Math.min(5,state.step+dir));
  cards[state.step].style.display='block';
@@ -1039,6 +1065,86 @@ function criteresActuels(){
          ville:document.getElementById('loc-ville').value.trim()};
 }
 
+// ── Estimation de la liste (avant génération) ──
+let ESTIM_CRIT=null; // critères mémorisés pour la génération après validation
+async function estimerListe(){
+ // Nom de liste obligatoire avant d'estimer
+ if(!(state.listeNom&&state.listeNom.trim())){
+  toast('⚠️ Donne un nom à ta liste avant de l\'estimer');
+  const champ=document.getElementById('liste-nom');
+  if(champ){champ.focus();champ.style.borderColor='var(--danger)';setTimeout(()=>champ.style.borderColor='',2000);}
+  return;
+ }
+ const c=criteresActuels();
+ ESTIM_CRIT=c;
+ // Construit les paramètres pour /api/estimer (mêmes mappings que launch)
+ const p=new URLSearchParams();
+ p.set('naf',(c.naf||[]).join(','));
+ if(!(c.pays||[]).includes('France')){
+  const deps=(c.pays||[]).map(x=>DEP_MAP[x]).filter(Boolean);
+  if(deps.length)p.set('dep',deps.join(','));
+ }
+ const eff=EFF_MAP[c.emp]||["",""];if(eff[0])p.set('effectif_min',eff[0]);if(eff[1])p.set('effectif_max',eff[1]);
+ const ca=CA_MAP[c.ca]||["",""];if(ca[0])p.set('ca_min',ca[0]);if(ca[1])p.set('ca_max',ca[1]);
+ p.set('nb_souhaite',Math.min(parseInt(c.size)||25,500));
+ // Affiche la modale en mode chargement
+ document.getElementById('estim-criteres').textContent=`${(c.naf||[]).join(', ')} · ${(c.pays||[]).join(' + ')} · ${c.emp||''} salariés${c.ca&&c.ca!=='Indifférent'?' · CA '+c.ca:''}${c.etab&&c.etab!=='Indifférent'?' · '+c.etab+' établissements':''}`;
+ document.getElementById('estim-loader').style.display='block';
+ document.getElementById('estim-contenu').style.display='none';
+ document.getElementById('estim-modal').style.display='flex';
+ try{
+  const r=await api('/api/estimer?'+p.toString());
+  const d=await r.json();
+  if(d.erreur){toast('Erreur estimation : '+d.erreur);document.getElementById('estim-modal').style.display='none';return;}
+  // Remplit les chiffres
+  document.getElementById('estim-total').textContent=(d.total_dispo||0).toLocaleString('fr-FR');
+  document.getElementById('estim-genere').textContent=`Tu vas en générer ${d.nb_genere||0}`;
+  document.getElementById('estim-cout').textContent=`${Math.round(d.cout_min)} – ${Math.round(d.cout_max)} €`;
+  // Bloc solde
+  const box=document.getElementById('estim-solde');
+  const btnValider=document.getElementById('estim-valider');
+  const btnAnnuler=document.getElementById('estim-annuler');
+  if(d.plafond===null){
+   // Plafond illimité
+   box.style.background='#DCFCE7';box.style.color='#15803d';
+   box.innerHTML='✅ <div><b>Aucun plafond</b> défini sur ton compte — tu peux générer librement.</div>';
+   btnValider.textContent='Générer la liste';btnValider.onclick=validerEstimation;
+   btnAnnuler.textContent='Modifier les critères';
+  }else if(d.assez){
+   box.style.background='#DCFCE7';box.style.color='#15803d';
+   box.innerHTML=`✅ <div><b>Solde suffisant.</b> Il te reste ${Math.round(d.solde)} € sur ton plafond de ${Math.round(d.plafond)} € ce mois-ci.</div>`;
+   btnValider.textContent='Générer la liste';btnValider.onclick=validerEstimation;
+   btnAnnuler.textContent='Modifier les critères';
+  }else{
+   box.style.background='#FEE2E2';box.style.color='#B91C1C';
+   box.innerHTML=`⚠️ <div><b>Solde insuffisant.</b> Il te reste ${Math.round(d.solde)} € sur ${Math.round(d.plafond)} €, mais cette liste peut coûter jusqu'à ${Math.round(d.cout_max)} €. Il manque ~${Math.round(d.manque)} €.</div>`;
+   btnValider.textContent='💳 Demander des crédits';btnValider.onclick=()=>demanderCredits(d);
+   btnAnnuler.textContent='Réduire la quantité';
+  }
+  document.getElementById('estim-loader').style.display='none';
+  document.getElementById('estim-contenu').style.display='block';
+ }catch(e){
+  toast('Erreur réseau : '+e.message);
+  document.getElementById('estim-modal').style.display='none';
+ }
+}
+function validerEstimation(){
+ document.getElementById('estim-modal').style.display='none';
+ launch(ESTIM_CRIT,true); // skipCheck=true : l'estimation a déjà fait le comptage/anti-doublon visuel
+}
+async function demanderCredits(d){
+ const btn=document.getElementById('estim-valider');
+ if(btn){btn.disabled=true;btn.textContent='⏳ Envoi…';}
+ try{
+  const r=await api('/api/demande-credits',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({liste_nom:state.listeNom||'Liste',cout_max:d.cout_max,manque:d.manque,nb_fiches:d.nb_genere})});
+  const res=await r.json();
+  if(res.ok&&res.envoyes>0)toast('💳 Demande envoyée — tu seras notifié dès validation');
+  else toast('⚠️ Demande non transmise (aucun superadmin avec Slack configuré). Préviens ton Head of Sales directement.');
+ }catch(e){toast('Erreur réseau : '+e.message);}
+ if(btn){btn.disabled=false;btn.textContent='💳 Demander des crédits';}
+ document.getElementById('estim-modal').style.display='none';
+}
 async function launch(crit,skipCheck){
  // #1 Garde-fou : nom de liste obligatoire (sauf liste auto Hot Leads qui passe crit explicite)
  if(!crit&&!(state.listeNom&&state.listeNom.trim())){
@@ -1048,8 +1154,8 @@ async function launch(crit,skipCheck){
   return;
  }
  const c=crit||criteresActuels();
- // Anti-doublon : cette cible a-t-elle déjà été lancée ?
- if(!skipCheck){
+ // Anti-doublon : cette cible a-t-elle déjà été lancée ? (sauf liste auto Hot Leads)
+ if(!crit){
   try{
    const r=await api('/api/listes?criteres='+encodeURIComponent(JSON.stringify(c)));
    const d=await r.json();
@@ -1062,7 +1168,8 @@ async function launch(crit,skipCheck){
    }
   }catch(_){/* base pas encore prête : on continue */}
  }
- if(!confirmerCoutListe(c.size))return;
+ // confirmerCoutListe sauté si on vient de l'écran d'estimation (skipCheck) : l'estimation a déjà montré le coût
+ if(!skipCheck&&!confirmerCoutListe(c.size))return;
  document.querySelectorAll('.qcard')[5].style.display='none';
  document.getElementById('wiz-foot').style.display='none';
  document.getElementById('loader').classList.add('on');
