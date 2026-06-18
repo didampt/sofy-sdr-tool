@@ -4,7 +4,7 @@
 
 import { sql, ensureSchema } from './db.js';
 
-const APP_URL = 'https://sofy-sdr-tool.vercel.app';
+const APP_URL = (process.env.APP_URL || 'https://sofy-sdr-tool.vercel.app').replace(/\/$/, '');
 
 async function envoyerDM(slackId, texte) {
   const token = process.env.SLACK_BOT_TOKEN;

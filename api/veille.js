@@ -231,7 +231,7 @@ export default async function handler(req, res) {
           if (r2.ajoute) {
             resume.hotleads = (resume.hotleads || 0) + 1;
             const concurrent = extraireConcurrent(p.post);
-            const lienFiche = `https://sofy-sdr-tool.vercel.app/?liste=${r2.liste_id}&fiche=${encodeURIComponent(r2.cle_fiche || '')}`;
+            const lienFiche = `${(process.env.APP_URL || 'https://sofy-sdr-tool.vercel.app').replace(/\/$/, '')}/?liste=${r2.liste_id}&fiche=${encodeURIComponent(r2.cle_fiche || '')}`;
             await envoyerSlack(`🔥 *Nouveau Hot Lead* (LinkedIn) — ${p.nom}${p.occupation ? ' · ' + p.occupation.slice(0, 70) : ''}\n${sigT.emoji} ${sigT.label}${concurrent ? ' sur un post *' + concurrent + '*' : ' (concurrent surveillé)'}${p.post ? '\n' + p.post : ''}\n📂 <${lienFiche}|Ouvrir la fiche dans Sofy Scrap> — enrichissement auto au chargement`);
           }
           continue;

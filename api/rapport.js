@@ -24,7 +24,7 @@ export default async function handler(req, res) {
           from: process.env.RAPPORT_FROM || 'Sofy Scrap <notifications@sofy.fr>',
           to: [user.email],
           subject: `🏁 ${nom} : terminé (${emails} emails, ${tels} mobiles)`,
-          text: `Bonjour ${user.nom},\n\n${synthese}\n\nOuvre ta liste : https://sofy-sdr-tool.vercel.app\n\n— Sofy Scrap`
+          text: `Bonjour ${user.nom},\n\n${synthese}\n\nOuvre ta liste : ${(process.env.APP_URL || 'https://sofy-sdr-tool.vercel.app').replace(/\/$/, '')}\n\n— Sofy Scrap`
         })
       });
       emailEnvoye = r.ok;
