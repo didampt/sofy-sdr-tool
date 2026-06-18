@@ -924,7 +924,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v121';
+const VERSION='v122';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1199,7 +1199,7 @@ function validate(){
  document.getElementById('btn-next').disabled=!ok;
 }
 function move(dir){
- const cards=document.querySelectorAll('.qcard');
+ const cards=document.querySelectorAll('.qcard[data-q]');
  if(dir===1&&state.step===5){estimerListe();return;}
  cards[state.step].style.display='none';
  state.step=Math.max(0,Math.min(5,state.step+dir));
@@ -1219,7 +1219,7 @@ function resetWizard(){
  document.getElementById('loc-ville').value='';
  document.getElementById('naf-results').style.display='none';
  renderNafTags();
- document.querySelectorAll('.qcard').forEach((c,i)=>c.style.display=i===0?'block':'none');
+ document.querySelectorAll('.qcard[data-q]').forEach((c,i)=>c.style.display=i===0?'block':'none');
  document.getElementById('loader').classList.remove('on');
  document.getElementById('wiz-foot').style.display='flex';
  document.getElementById('btn-back').style.visibility='hidden';
@@ -1480,7 +1480,7 @@ async function launch(crit,skipCheck){
  }
  // confirmerCoutListe sauté si on vient de l'écran d'estimation (skipCheck) : l'estimation a déjà montré le coût
  if(!skipCheck&&!confirmerCoutListe(c.size))return;
- document.querySelectorAll('.qcard')[5].style.display='none';
+ document.querySelectorAll('.qcard[data-q]')[5].style.display='none';
  document.getElementById('wiz-foot').style.display='none';
  document.getElementById('loader').classList.add('on');
  document.getElementById('load-step').textContent='Extraction Pappers en cours… (vraies données)';
@@ -1513,7 +1513,7 @@ async function launch(crit,skipCheck){
   if(!r.ok||data.erreur){
    document.getElementById('loader').classList.remove('on');
    document.getElementById('wiz-foot').style.display='flex';
-   document.querySelectorAll('.qcard')[5].style.display='block';
+   document.querySelectorAll('.qcard[data-q]')[5].style.display='block';
    toast('Erreur API : '+(data.erreur||r.status)+' — réessaie ou préviens Didier');
    console.error(data);
    return;
@@ -1532,7 +1532,7 @@ async function launch(crit,skipCheck){
  }catch(err){
   document.getElementById('loader').classList.remove('on');
   document.getElementById('wiz-foot').style.display='flex';
-  document.querySelectorAll('.qcard')[5].style.display='block';
+  document.querySelectorAll('.qcard[data-q]')[5].style.display='block';
   toast('Erreur réseau : '+err.message);
  }
 }
