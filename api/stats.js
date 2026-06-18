@@ -6,7 +6,6 @@
 import { sql, ensureSchema, verifierToken } from './db.js';
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
   if (!sql) return res.status(500).json({ erreur: 'Base de données non configurée' });
   await ensureSchema();
 

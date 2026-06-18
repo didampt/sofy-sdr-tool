@@ -124,7 +124,6 @@ async function textSearch(q, key) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
 
   const { verifierToken, loggerConso, limiteAtteinte } = await import('./db.js');
   const user = verifierToken(req);

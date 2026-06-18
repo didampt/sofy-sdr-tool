@@ -61,7 +61,6 @@ async function detailEntreprise(siren, apiKey) {
 export const config = { maxDuration: 120 };
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
 
   const { verifierToken, loggerConso, limiteAtteinte, sql, ensureSchema } = await import('./db.js');
   const user = verifierToken(req);

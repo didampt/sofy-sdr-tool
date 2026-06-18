@@ -33,7 +33,6 @@ async function envoyerSlack(texte) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
   const secretServeur = (process.env.RB2B_WEBHOOK_SECRET || '').trim();
   const secretRecu = (req.query.secret || '').trim();
   if (!secretServeur) {

@@ -7,7 +7,6 @@ import { verifierToken, loggerConso, limiteAtteinte } from './db.js';
 export const config = { maxDuration: 120 };
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
 
   const user = verifierToken(req);
   if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
