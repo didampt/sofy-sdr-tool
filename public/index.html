@@ -258,6 +258,45 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
   </div>
  </div>
 </div>
+<div id="fiche-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:901;align-items:center;justify-content:center">
+ <div style="background:#fff;border-radius:16px;max-width:520px;width:92%;padding:26px 28px;box-shadow:0 20px 60px rgba(0,0,0,.3);max-height:90vh;overflow-y:auto">
+  <div style="font-size:18px;font-weight:700;margin-bottom:3px">➕ Ajouter une fiche</div>
+  <div style="font-size:13px;color:var(--ink-soft);margin-bottom:20px">Saisis l'entreprise que tu as identifiée. Seul le nom est obligatoire — plus tu en mets, meilleur sera l'enrichissement.</div>
+  <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">Nom de la société <span style="color:var(--danger)">*</span></label>
+  <input class="field" id="f-nom" placeholder="Ex : Garage Dupont SAS" style="width:100%;margin-bottom:14px">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+   <div>
+    <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">Ville</label>
+    <input class="field" id="f-ville" placeholder="Ex : Bordeaux" style="width:100%">
+   </div>
+   <div>
+    <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">Code postal</label>
+    <input class="field" id="f-cp" placeholder="Ex : 33000" style="width:100%">
+   </div>
+  </div>
+  <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">Site web</label>
+  <input class="field" id="f-site" placeholder="Ex : www.garage-dupont.fr" style="width:100%;margin-bottom:14px">
+  <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">LinkedIn de l'entreprise</label>
+  <input class="field" id="f-liso" placeholder="Ex : linkedin.com/company/garage-dupont" style="width:100%;margin-bottom:14px">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+   <div>
+    <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">Secteur / NAF</label>
+    <input class="field" id="f-naf" placeholder="Ex : 4520A ou 'garage'" style="width:100%">
+   </div>
+   <div>
+    <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">Adresse</label>
+    <input class="field" id="f-adresse" placeholder="Ex : 12 rue des Lilas" style="width:100%">
+   </div>
+  </div>
+  <div style="background:var(--bg);border-radius:8px;padding:10px 12px;font-size:12.5px;color:var(--ink-soft);margin-bottom:20px">
+   💡 Après création, tu pourras lancer 🎯 l'analyse IA et ajouter les contacts (nom, LinkedIn, email, tel) via le bouton ✏️ Modifier de la fiche.
+  </div>
+  <div style="display:flex;gap:10px;justify-content:flex-end">
+   <button class="btn" onclick="document.getElementById('fiche-modal').style.display='none'" style="background:var(--bg)">Annuler</button>
+   <button class="btn btn-primary" id="f-valider" onclick="creerFicheManuelle()">➕ Ajouter à la liste</button>
+  </div>
+ </div>
+</div>
 <div id="alloc-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:901;align-items:center;justify-content:center">
  <div style="background:#fff;border-radius:16px;max-width:460px;width:92%;padding:26px 28px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
   <div style="font-size:18px;font-weight:700;margin-bottom:3px">💳 Allouer des crédits</div>
@@ -528,6 +567,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
           <div class="kpi"><b id="k-new">0</b><span>hors CRM ✓</span></div>
           <div class="kpi"><b id="k-sig">0</b><span>signaux 🔥</span></div>
           <div class="kpi"><b id="k-traites">0</b><span>traités ✅</span></div>
+          <button class="act" style="background:#185FA5;color:#fff" onclick="ouvrirAjoutFiche()">➕ Ajouter une fiche</button>
           <button class="act act-call" onclick="lancerWaterfall(false)">🚀 Lancer l'enrichissement</button>
           <button class="act act-call" id="btn-nouvelles" style="display:none;background:#0a8f57" onclick="lancerWaterfall(true)">🚀 Nouvelles fiches</button>
           <button class="act act-export" onclick="exportCsv()">⬇️ Export Excel / CSV</button>
@@ -878,7 +918,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v117';
+const VERSION='v118';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1181,6 +1221,45 @@ function criteresActuels(){
          ville:document.getElementById('loc-ville').value.trim()};
 }
 
+// ── Ajout manuel d'une fiche dans la liste ouverte ──
+function ouvrirAjoutFiche(){
+ if(!state.savedId){toast('⚠️ Ouvre ou crée une liste d\'abord');return;}
+ // Réinitialise les champs
+ ['f-nom','f-ville','f-cp','f-site','f-liso','f-naf','f-adresse'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+ document.getElementById('fiche-modal').style.display='flex';
+ setTimeout(()=>{const n=document.getElementById('f-nom');if(n)n.focus();},80);
+}
+async function creerFicheManuelle(){
+ const nom=document.getElementById('f-nom').value.trim();
+ if(!nom){toast('⚠️ Le nom de la société est obligatoire');document.getElementById('f-nom').focus();return;}
+ const fiche={
+  nom,
+  ville:document.getElementById('f-ville').value.trim(),
+  code_postal:document.getElementById('f-cp').value.trim(),
+  adresse:document.getElementById('f-adresse').value.trim(),
+  naf:document.getElementById('f-naf').value.trim(),
+  site_web:document.getElementById('f-site').value.trim()||null,
+  linkedin_entreprise:document.getElementById('f-liso').value.trim()||null,
+  siren:null,activite:null,effectif:null,chiffre_affaires:null,nb_etablissements:null,
+  dirigeant:null,enseigne:null,
+  source:'manuelle',
+  contacts:[]
+ };
+ const btn=document.getElementById('f-valider');
+ if(btn){btn.disabled=true;btn.textContent='⏳ Ajout…';}
+ try{
+  // Ajoute en tête de la liste locale puis persiste
+  REAL.unshift(fiche);
+  await persister();
+  // Réaffiche les fiches
+  document.getElementById('fiches').innerHTML=REAL.map((x,k)=>ficheReal(x,k)).join('');
+  // Met à jour les compteurs
+  const kt=document.getElementById('k-total');if(kt)kt.textContent=REAL.length;
+  document.getElementById('fiche-modal').style.display='none';
+  toast('✅ Fiche ajoutée — lance 🎯 l\'analyse ou ➕ ajoute les contacts');
+ }catch(e){toast('Erreur : '+e.message);}
+ if(btn){btn.disabled=false;btn.textContent='➕ Ajouter à la liste';}
+}
 // ── Allocation de crédits (superadmin, depuis le lien Slack ?allouer=) ──
 let ALLOC_SDR=null;
 async function ouvrirAllocation(nomSdr){
