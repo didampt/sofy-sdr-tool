@@ -33,7 +33,7 @@ export default async function handler(req, res) {
 
   try {
     const {
-      naf = '', dep = '',
+      naf = '', dep = '', region = '',
       effectif_min = '', effectif_max = '',
       ca_min = '', ca_max = '',
       nb_souhaite = '25'
@@ -45,6 +45,7 @@ export default async function handler(req, res) {
     p.set('par_page', '1');
     if (naf) p.set('code_naf', naf);
     if (dep) p.set('departement', dep);
+    if (region) p.set('region', region);
     if (effectif_min) p.set('effectif_min', effectif_min);
     if (effectif_max) p.set('effectif_max', effectif_max);
     if (ca_min) p.set('chiffre_affaires_min', ca_min);

@@ -72,7 +72,7 @@ export default async function handler(req, res) {
   if (!apiKey) return res.status(500).json({ erreur: 'PAPPERS_API_KEY manquante dans Vercel' });
 
   const {
-    naf = '', dep = '',
+    naf = '', dep = '', region = '',
     effectif_min = '', effectif_max = '',
     ca_min = '', ca_max = '',
     nb_etab_min = '',
@@ -91,6 +91,7 @@ export default async function handler(req, res) {
     precision: 'standard'
   };
   if (dep) base.departement = dep;
+  if (region) base.region = region;
   if (ca_min) base.chiffre_affaires_min = ca_min;
   if (ca_max) base.chiffre_affaires_max = ca_max;
 
