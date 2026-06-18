@@ -441,6 +441,20 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
           <button class="btn-reset" onclick="resetWizard();nav('wizard',document.querySelector('[data-view=wizard]'))">↺ Nouvelle liste</button>
         </div>
       </div>
+      <div id="liste-prog" style="display:none;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:14px 18px;margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span id="liste-prog-badge" style="font-size:12.5px;font-weight:600;padding:4px 11px;border-radius:8px;display:inline-flex;align-items:center;gap:6px">⏳ Enrichissement en cours</span>
+          <button id="liste-prog-stop" onclick="stopEnrichListe()" style="border:1px solid #FCA5A5;color:#B91C1C;background:transparent;font-size:13px;padding:6px 14px;border-radius:8px;cursor:pointer">⏹ Arrêter</button>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
+          <span id="liste-prog-fiches" style="font-size:14px;font-weight:600">0 / 0 fiches</span>
+          <span id="liste-prog-pct" style="font-size:14px;font-weight:600;color:#185FA5">0%</span>
+        </div>
+        <div style="background:var(--line);border-radius:999px;height:9px;overflow:hidden;margin-bottom:8px">
+          <span id="liste-prog-bar" style="display:block;width:0%;height:100%;background:#185FA5;border-radius:999px;transition:width .4s"></span>
+        </div>
+        <div id="liste-prog-cout" style="font-size:12.5px;color:var(--ink-soft)"></div>
+      </div>
       <div class="sort-bar" id="sort-bar" style="display:none">
         <span class="sort-lbl">Classer par :</span>
         <button class="sort-chip sel" data-sort="signal" onclick="setSort('signal',this)">🔥 Signal hot</button>
@@ -1169,6 +1183,10 @@ function showRealResults(total,c){
  document.getElementById('k-sig').textContent=REAL.filter(e=>e.signal_hot).length||'0';
  const kt=document.getElementById('k-traites');if(kt)kt.textContent=REAL.filter(e=>e.tags_sdr&&e.tags_sdr.length).length;
  document.getElementById('fiches').innerHTML=REAL.length?REAL.map((e,i)=>ficheReal(e,i)).join(''):'<p style="color:var(--ink-soft)">Aucune entreprise ne correspond à ces critères. Élargis les filtres (effectif ou CA).</p>';
+ // Cas B : si une liste est ouverte alors qu'un enrichissement tourne (cet onglet ou un autre),
+ // on lance la surveillance qui affichera la barre de progression.
+ if(ENRICH_POLL){clearInterval(ENRICH_POLL);ENRICH_POLL=null;}
+ if(!WF_LOCAL_EN_COURS){const box=document.getElementById('liste-prog');if(box)box.style.display='none';surveillerEnrich();}
 }
 
 function setStatutAppel(i,statut){
@@ -2158,6 +2176,8 @@ async function lancerWaterfall(nouvellesSeulement){
  }
  ouvrirWfModal();
  WF_STOP=false;
+ WF_LOCAL_EN_COURS=true;
+ majBarreProgression(0,aTraiter.length,false);
  const btnStop=document.getElementById('wf-stop');if(btnStop){btnStop.disabled=false;btnStop.textContent='⏹ Stop';}
  let emailsOk=0,emailsTentes=0,arrete=false;
  notifierEnrichSlack(aTraiter.length);
@@ -2170,6 +2190,7 @@ async function lancerWaterfall(nouvellesSeulement){
   emailsTentes+=r.tentes;emailsOk+=r.ok;
   const p=Math.round(fait/aTraiter.length*100),b=document.getElementById('wfg-bar');
   if(b){b.style.width=p+'%';document.getElementById('wfg-pct').textContent=p+' %';}
+  majBarreProgression(fait,aTraiter.length,false);
   // Rafraîchit le verrou + progression partagée (toutes les 3 fiches pour limiter les appels).
   // Le coût n'est pas envoyé ici (calcul serveur lourd) : un autre onglet le lira via /api/stats.
   if(state.savedId&&(fait%3===0||fait===aTraiter.length)){
@@ -2186,6 +2207,8 @@ async function lancerWaterfall(nouvellesSeulement){
   api('/api/rapport',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({liste_id:state.savedId,nom:(state.listeNom||'Liste')+(state.savedId?' (#'+state.savedId+')':''),total:REAL.length,emails:nbE,tels:nbT,gmb:nbG})}).catch(()=>{});
  }catch(_){}
  document.getElementById('wf-fermer').disabled=false;
+ WF_LOCAL_EN_COURS=false;
+ majBarreProgression(fait,aTraiter.length,true);
  // Libère le verrou global : la liste n'est plus en cours d'enrichissement
  if(state.savedId){api('/api/enrich-lock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({liste_id:state.savedId,action:'liberer'})}).catch(()=>{});}
  majCoutListe();
@@ -2336,7 +2359,7 @@ async function envoyerHubspot(i){
  e.hubspot_envoye=true;rerender(i);persister();
  toast('🤝 '+(d.dejaPresent?'Contact mis à jour':'Contact créé')+(d.dealId?' + transaction ✓':'')+(d.avertissement?' ⚠️ '+d.avertissement:''));
 }
-let SMS_CTX=null;let WF_STOP=false;
+let SMS_CTX=null;let WF_STOP=false;let WF_LOCAL_EN_COURS=false;
 function calculerSms(texte){
  // Mention STOP ajoutée automatiquement par SoReach → compte dans la longueur réelle
  const STOP=' STOP au 36111';
@@ -3211,6 +3234,70 @@ async function majTarif(apiNom){
  const r=await api('/api/stats',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({api:apiNom,prix})});
  const d=await r.json();
  toast(d.ok?'Tarif '+apiNom+' enregistré ✓':(d.erreur||'Erreur'));
+}
+let ENRICH_POLL=null; // timer de surveillance (autre onglet)
+// Affiche/maj la barre de progression de la liste
+function majBarreProgression(faites,total,termine){
+ const box=document.getElementById('liste-prog');
+ if(!box)return;
+ if(total<=0){box.style.display='none';return;}
+ box.style.display='block';
+ const pct=total?Math.round(faites/total*100):0;
+ const badge=document.getElementById('liste-prog-badge');
+ const stop=document.getElementById('liste-prog-stop');
+ document.getElementById('liste-prog-fiches').textContent=`${faites} / ${total} fiches`;
+ document.getElementById('liste-prog-pct').textContent=pct+'%';
+ document.getElementById('liste-prog-bar').style.width=pct+'%';
+ if(termine||pct>=100){
+  badge.textContent='✅ Enrichissement terminé';
+  badge.style.background='#DCFCE7';badge.style.color='#15803d';
+  document.getElementById('liste-prog-bar').style.background='#15803d';
+  if(stop)stop.style.display='none';
+  document.getElementById('liste-prog-pct').style.color='#15803d';
+ }else{
+  badge.textContent='⏳ Enrichissement en cours';
+  badge.style.background='#DBEAFE';badge.style.color='#185FA5';
+  document.getElementById('liste-prog-bar').style.background='#185FA5';
+  if(stop)stop.style.display='inline-block';
+  document.getElementById('liste-prog-pct').style.color='#185FA5';
+ }
+}
+// Surveillance : utilisée quand un AUTRE onglet ouvre une liste en cours d'enrichissement
+async function surveillerEnrich(){
+ if(!state.savedId)return;
+ try{
+  const r=await api('/api/enrich-lock?liste_id='+state.savedId);
+  const d=await r.json();
+  if(d.actif){
+   majBarreProgression(d.faites||0,d.total||0,false);
+   // Met à jour le coût réel via stats (léger, espacé)
+   majCoutListe();
+   if(!ENRICH_POLL)ENRICH_POLL=setInterval(surveillerEnrich,5000);
+  }else{
+   // Plus d'enrichissement actif : on arrête la surveillance et on masque (ou montre terminé)
+   if(ENRICH_POLL){clearInterval(ENRICH_POLL);ENRICH_POLL=null;}
+   const box=document.getElementById('liste-prog');
+   // Si la barre était affichée et qu'on n'enrichit pas localement → masquer
+   if(box&&box.style.display!=='none'&&!WF_LOCAL_EN_COURS){box.style.display='none';rafraichirListeDepuisServeur();}
+  }
+ }catch(e){/* silencieux */}
+}
+// Recharge les fiches depuis le serveur (après qu'un autre onglet a fini l'enrichissement)
+async function rafraichirListeDepuisServeur(){
+ if(!state.savedId)return;
+ try{
+  const r=await api('/api/listes?id='+state.savedId);
+  const l=await r.json();
+  if(l&&l.entreprises){REAL=l.entreprises;document.getElementById('fiches').innerHTML=REAL.map((x,k)=>ficheReal(x,k)).join('');majCoutListe();majBtnNouvelles();}
+ }catch(e){}
+}
+async function stopEnrichListe(){
+ // Arrête l'enrichissement local en cours (si c'est cet onglet qui travaille)
+ if(WF_LOCAL_EN_COURS){WF_STOP=true;toast('⏹ Arrêt demandé — après la fiche en cours');}
+ else{
+  // Sinon, on ne peut pas stopper l'onglet distant : on informe
+  toast('⏹ Cet enrichissement tourne dans un autre onglet. Stoppe-le depuis cet onglet, ou attends.');
+ }
 }
 async function majCoutListe(){
  if(!state.savedId)return;
