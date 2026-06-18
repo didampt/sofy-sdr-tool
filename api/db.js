@@ -97,6 +97,13 @@ export async function ensureSchema() {
   await sql`ALTER TABLE sdrs ADD COLUMN IF NOT EXISTS ringover_numero TEXT`;
   await sql`ALTER TABLE sdrs ADD COLUMN IF NOT EXISTS slack_id TEXT`;
   await sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS stats JSONB`;
+  // Anti-brute-force : suivi des tentatives de connexion par email
+  await sql`CREATE TABLE IF NOT EXISTS login_attempts (
+    email TEXT PRIMARY KEY,
+    echecs INTEGER NOT NULL DEFAULT 0,
+    dernier_echec TIMESTAMPTZ,
+    bloque_jusqu TIMESTAMPTZ
+  )`;
   // Index pour la montée en charge (tri/filtre fréquents)
   await sql`CREATE INDEX IF NOT EXISTS idx_listes_created ON listes (created_at DESC)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_listes_sdr ON listes (sdr)`;
