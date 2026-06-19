@@ -258,6 +258,11 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
   </div>
  </div>
 </div>
+<div id="estim-ia-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:902;align-items:center;justify-content:center">
+ <div style="background:#fff;border-radius:16px;max-width:480px;width:92%;padding:26px 28px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+  <div id="estim-ia-contenu"></div>
+ </div>
+</div>
 <div id="fiche-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:901;align-items:center;justify-content:center">
  <div style="background:#fff;border-radius:16px;max-width:520px;width:92%;padding:26px 28px;box-shadow:0 20px 60px rgba(0,0,0,.3);max-height:90vh;overflow-y:auto">
   <div style="font-size:18px;font-weight:700;margin-bottom:3px">➕ Ajouter une fiche</div>
@@ -965,7 +970,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v124';
+const VERSION='v125';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1153,10 +1158,81 @@ function afficherQuestionsIA(questions){
    </div>
   </div>`;
 }
-// L'estimation réelle (appel Basile) sera branchée à l'étape 4.
+// Récupère les valeurs d'affinage saisies + les fusionne dans les critères
+function lireAffinageIA(){
+ const c=IA_CRITERES||{};
+ const eff=document.getElementById('ia-effectif');
+ const ca=document.getElementById('ia-ca');
+ const nb=document.getElementById('ia-nb');
+ // Effectif : on tente d'extraire 2 nombres "20 à 250" → min/max
+ if(eff&&eff.value.trim()){
+  const nums=eff.value.match(/\d+/g);
+  if(nums&&nums.length>=2){c.effectif_min=parseInt(nums[0]);c.effectif_max=parseInt(nums[1]);}
+  else if(nums&&nums.length===1){c.effectif_min=parseInt(nums[0]);}
+ }
+ // CA : extrait un nombre (gère "2 M€" → 2 000 000)
+ if(ca&&ca.value.trim()){
+  const m=ca.value.replace(/\s/g,'').match(/(\d+([.,]\d+)?)\s*(m|k)?/i);
+  if(m){let n=parseFloat(m[1].replace(',','.'));const u=(m[3]||'').toLowerCase();if(u==='m')n*=1e6;else if(u==='k')n*=1e3;c.ca_min=Math.round(n);}
+ }
+ if(nb&&nb.value.trim()){const n=parseInt(nb.value.match(/\d+/));if(n)c.nb_contacts=n;}
+ IA_CRITERES=c;
+ return c;
+}
 async function estimerListeIA(){
- toast('⏳ Estimation Basile — branchement à l\'étape suivante');
- // (placeholder étape 3 — sera remplacé par l'appel de comptage Basile + écran d'estimation)
+ const c=lireAffinageIA();
+ const btn=document.getElementById('ia-btn-estimer');
+ if(btn){btn.disabled=true;btn.textContent='⏳ Comptage Basile…';}
+ try{
+  const r=await api('/api/ia-liste-creer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'estimer',criteres:c})});
+  const d=await r.json();
+  if(d.erreur){toast('Erreur : '+d.erreur);if(btn){btn.disabled=false;btn.textContent='📊 Estimer la liste';}return;}
+  ouvrirEstimationIA(d.nb_entreprises||0,d.nb_contacts_estimes||0);
+ }catch(e){toast('Erreur réseau : '+e.message);}
+ if(btn){btn.disabled=false;btn.textContent='📊 Estimer la liste';}
+}
+function ouvrirEstimationIA(nbEnt,nbContacts){
+ // Fourchette de coût : ~0,09€ à ~0,66€ par contact (waterfall), cohérent avec l'estimation Pappers
+ const coutMin=(nbContacts*0.09).toFixed(0), coutMax=(nbContacts*0.66).toFixed(0);
+ const html=`
+  <div style="font-size:18px;font-weight:700;margin-bottom:3px">📊 Estimation de ta liste</div>
+  <div style="font-size:13px;color:var(--ink-soft);margin-bottom:18px">Comptage Basile (gratuit). Tu peux générer ou affiner.</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+   <div style="background:var(--paper);border-radius:10px;padding:14px"><div style="font-size:13px;color:var(--ink-soft);margin-bottom:4px">Entreprises trouvées</div><div style="font-size:26px;font-weight:700">${nbEnt}</div></div>
+   <div style="background:var(--paper);border-radius:10px;padding:14px"><div style="font-size:13px;color:var(--ink-soft);margin-bottom:4px">Contacts estimés</div><div style="font-size:26px;font-weight:700">~${nbContacts}</div></div>
+  </div>
+  <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid var(--line);font-size:13px"><span style="color:var(--ink-soft)">Coût estimé (fourchette)</span><span style="font-weight:600">${coutMin} à ${coutMax} €</span></div>
+  ${nbContacts===0?'<div style="background:#fcebeb;border-radius:8px;padding:11px 14px;margin-top:12px;font-size:13px;color:#a32d2d">Aucun contact trouvé. Essaie d\'élargir le secteur, les postes ou la zone.</div>':''}
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+   <button class="btn" onclick="document.getElementById('estim-ia-modal').style.display='none'" style="background:var(--paper)">Affiner</button>
+   <button class="btn btn-primary" id="ia-btn-creer" onclick="creerListeIA()" ${nbContacts===0?'disabled style=\'opacity:.5\'':''}>🚀 Générer la liste</button>
+  </div>`;
+ document.getElementById('estim-ia-contenu').innerHTML=html;
+ document.getElementById('estim-ia-modal').style.display='flex';
+}
+let CREATION_IA_EN_COURS=false;
+async function creerListeIA(){
+ if(CREATION_IA_EN_COURS)return;
+ CREATION_IA_EN_COURS=true;
+ const btn=document.getElementById('ia-btn-creer');
+ if(btn){btn.disabled=true;btn.textContent='⏳ Recherche en cours…';}
+ try{
+  // 1) Recherche réelle (entreprises → contacts → fiches)
+  const r=await api('/api/ia-liste-creer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'creer',criteres:IA_CRITERES})});
+  const d=await r.json();
+  if(d.erreur){toast('Erreur : '+d.erreur);CREATION_IA_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🚀 Générer la liste';}return;}
+  const fiches=d.fiches||[];
+  if(!fiches.length){toast('Aucune fiche trouvée — essaie d\'affiner');CREATION_IA_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🚀 Générer la liste';}return;}
+  // 2) Crée la liste avec ces fiches
+  const nom='✨ '+(IA_PROMPT_INITIAL.slice(0,50))+(IA_PROMPT_INITIAL.length>50?'…':'');
+  const sdr=state.user?state.user.nom:'';
+  const rc=await api('/api/listes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nom,sdr,criteres:{ia:true,prompt:IA_PROMPT_INITIAL,criteres_ia:IA_CRITERES,naf:[],pays:[]},entreprises:fiches,credits_estimes:0})});
+  const dc=await rc.json();
+  if(dc.erreur){toast('Erreur création : '+dc.erreur);CREATION_IA_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🚀 Générer la liste';}return;}
+  document.getElementById('estim-ia-modal').style.display='none';
+  toast('✨ Liste créée : '+fiches.length+' fiches');
+  setTimeout(()=>{CREATION_IA_EN_COURS=false;ouvrirListe(dc.id);},300);
+ }catch(e){toast('Erreur réseau : '+e.message);CREATION_IA_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🚀 Générer la liste';}}
 }
 async function remplirSelectSdrManuelle(){
  const sel=document.getElementById('manuelle-sdr');
