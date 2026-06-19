@@ -970,7 +970,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v125';
+const VERSION='v126';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1223,7 +1223,26 @@ async function creerListeIA(){
   if(d.erreur){toast('Erreur : '+d.erreur);CREATION_IA_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🚀 Générer la liste';}return;}
   const fiches=d.fiches||[];
   if(!fiches.length){toast('Aucune fiche trouvée — essaie d\'affiner');CREATION_IA_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🚀 Générer la liste';}return;}
-  // 2) Crée la liste avec ces fiches
+  // 1bis) Déduplication : marque les fiches déjà connues (HubSpot / listes Sofy) pour éviter de brûler des crédits
+  if(btn)btn.textContent='⏳ Vérification doublons…';
+  try{
+   // On envoie un contact représentatif par fiche (le 1er) avec email + tel
+   const contacts=fiches.map(f=>{const c=(f.contacts||[])[0]||{};return {email:c.enrich?.email||null,telephone:c.enrich?.telephone||null,nom:c.nom||'',prenom:c.prenom||''};});
+   const rd=await api('/api/dedup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contacts})});
+   const dd=await rd.json();
+   const rez=dd.resultats||{};
+   // Marque chaque fiche selon le statut renvoyé (clé = email|tel|nom, comme côté serveur)
+   fiches.forEach(f=>{
+    const c=(f.contacts||[])[0]||{};
+    const cle=(c.enrich?.email||'').toLowerCase().trim() || (c.enrich?.telephone||'') || ((c.prenom||'')+' '+(c.nom||'')).trim().toLowerCase();
+    const r=rez[cle];
+    if(r){
+     if(r.hubspot){f.dedup_hubspot=r.hubspot;f.skip_enrich=true;} // déjà dans HubSpot → on bloquera l'enrichissement
+     if(r.liste){f.dedup_liste=r.liste;}
+    }
+   });
+  }catch(e){/* dédup non bloquante : si elle échoue, on crée quand même la liste */}
+  // 2) Crée la liste avec ces fiches (marquées)
   const nom='✨ '+(IA_PROMPT_INITIAL.slice(0,50))+(IA_PROMPT_INITIAL.length>50?'…':'');
   const sdr=state.user?state.user.nom:'';
   const rc=await api('/api/listes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nom,sdr,criteres:{ia:true,prompt:IA_PROMPT_INITIAL,criteres_ia:IA_CRITERES,naf:[],pays:[]},entreprises:fiches,credits_estimes:0})});
@@ -2103,6 +2122,8 @@ function ficheReal(e,i){
      ${e.enrichi_par?(e.score?`<span class="badge b-new">✅ Enrichi par ${e.enrichi_par}</span>`:(e.enrich_lock_ts&&(Date.now()-e.enrich_lock_ts<5*60*1000)?`<span class="badge b-gmb">🔄 En cours par ${e.enrichi_par}</span>`:'')):''}
      ${aEmail?'<span class="badge b-new">Nouveau ✓</span>':(e.detail_charge?'<span class="badge b-signal">À enrichir</span>':'<span class="badge b-dup">Détail non chargé</span>')}
      ${e.deja_hubspot?'<span class="badge b-dup" title="Un contact de cette fiche existe déjà dans HubSpot">🔶 Déjà dans HubSpot</span>':''}
+     ${e.dedup_hubspot?`<span class="badge b-dup" title="Déjà dans HubSpot (${e.dedup_hubspot.stage||'contact'}) — enrichissement bloqué pour économiser des crédits">♻️ Déjà HubSpot</span>`:''}
+     ${e.dedup_liste?`<span class="badge b-dup" title="Déjà présent dans une autre liste">📋 Déjà en liste : ${(e.dedup_liste.nom||'').replace(/"/g,'&quot;').slice(0,30)}</span>`:''}
      ${e.lemlist_envoye?'<span class="badge b-new">✈️ Lemlist ✓</span>':''}${e.hubspot_envoye?'<span class="badge b-new">🤝 HubSpot ✓</span>':''}${e.sms_envoye?'<span class="badge b-new">💬 SMS ✓</span>':''}
      ${siteWeb?`<span class="badge b-new"><a href="${siteWeb.startsWith('http')?siteWeb:'https://'+siteWeb}" target="_blank" onclick="event.stopPropagation()" style="color:inherit">🌐 ${siteWeb.replace(/^https?:\/\/(www\.)?/,'').split('/')[0]}</a></span>`:''}
     </div>
@@ -2708,6 +2729,12 @@ function prog(i,pct,label){
 async function pipelineFiche(i){
  let tentes=0,ok=0;
   const e=REAL[i];
+  // ── Garde-fou anti-gaspillage : fiche déjà connue dans HubSpot → on saute l'enrichissement payant ──
+  // (sauf si le SDR a explicitement forcé via e.forcer_enrich)
+  if(e.skip_enrich&&!e.forcer_enrich){
+   prog(i,100,'♻️ Déjà dans HubSpot — enrichissement ignoré (crédits économisés). Clique « Forcer » si besoin.');
+   return {tentes:0,ok:0,skip:true};
+  }
   // ── 1. GMB ──
   prog(i,5,'Étape 1/7 · ⭐ Analyse Google Business (note, avis, concurrents)…');
   if(gmbAFaire(e)){wfSet(i,'gmb','run');await analyserGmb(i);}
