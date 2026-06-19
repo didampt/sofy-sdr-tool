@@ -524,8 +524,11 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
             <div id="ia-conseil-box" style="display:none;background:#e6f1fb;border-radius:10px;padding:11px 14px;margin-bottom:16px;font-size:13px;line-height:1.5;color:#0c447c"></div>
             <div id="ia-questions"></div>
             <div class="wiz-foot" style="margin-top:20px">
-              <button class="btn btn-ghost" onclick="retourPromptIA()">← Modifier ma demande</button>
-              <button class="btn btn-primary" id="ia-btn-estimer" onclick="estimerListeIA()">📊 Estimer la liste</button>
+              <button class="btn btn-ghost" onclick="retourPromptIA()">← Modifier</button>
+              <div style="display:flex;gap:10px">
+                <button class="btn" id="ia-btn-recalc" onclick="recalculerIA()" style="background:var(--paper)">🔄 Recalculer ma compréhension</button>
+                <button class="btn btn-primary" id="ia-btn-estimer" onclick="estimerListeIA()">📊 Estimer</button>
+              </div>
             </div>
           </div>
         </div>
@@ -970,7 +973,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v126';
+const VERSION='v127';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1136,60 +1139,80 @@ async function analyserPromptIA(){
  if(btn){btn.disabled=false;btn.textContent='✨ Analyser ma demande';}
 }
 function afficherQuestionsIA(questions){
- // On propose toujours 3 champs d'affinage standard (effectif, CA, nb contacts),
- // pré-remplis si l'IA a déjà capté la valeur. Les questions de l'IA servent de libellés/hints.
+ // Champs d'affinage : effectif + nb contacts (le CA n'existe PAS chez le fournisseur de données).
+ // Pré-remplis si l'IA a déjà capté la valeur.
  const c=IA_CRITERES||{};
  const box=document.getElementById('ia-questions');
  const v=(x)=>x==null?'':x;
+ // Champ texte libre pour préciser/corriger la cible (renvoyé à l'IA au recalcul)
  box.innerHTML=`
-  <div style="font-size:13px;font-weight:600;color:var(--ink-soft);margin:4px 0 10px">Pour affiner (facultatif) :</div>
-  <div style="margin-bottom:12px">
-   <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">Taille d'entreprise (effectif)</label>
-   <input class="field" id="ia-effectif" placeholder="Ex : 20 à 250 salariés" value="${(c.effectif_min||c.effectif_max)?((v(c.effectif_min))+(c.effectif_max?' à '+c.effectif_max:'')):''}" style="width:100%">
-  </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+  <div style="font-size:13px;font-weight:600;color:var(--ink-soft);margin:4px 0 10px">Pour affiner :</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
    <div>
-    <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">CA minimum</label>
-    <input class="field" id="ia-ca" placeholder="Ex : 2 M€" value="${c.ca_min?(c.ca_min):''}" style="width:100%">
+    <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">Taille d'entreprise (effectif)</label>
+    <input class="field" id="ia-effectif" placeholder="Ex : 20 à 250 salariés" value="${(c.effectif_min||c.effectif_max)?((v(c.effectif_min))+(c.effectif_max?' à '+c.effectif_max:'')):''}" style="width:100%">
    </div>
    <div>
     <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">Nombre de contacts visé</label>
     <input class="field" id="ia-nb" placeholder="Ex : 150" value="${c.nb_contacts?(c.nb_contacts):''}" style="width:100%">
    </div>
+  </div>
+  <div style="margin-bottom:6px">
+   <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">Précision ou correction (en langage naturel)</label>
+   <input class="field" id="ia-precision" placeholder="Ex : ajoute aussi les directeurs financiers, retire la Guyane…" style="width:100%">
+   <p class="hint" style="margin-top:5px">💡 Après une modification, clique « Recalculer » pour que l'IA mette à jour sa compréhension avant d'estimer.</p>
   </div>`;
 }
-// Récupère les valeurs d'affinage saisies + les fusionne dans les critères
+// Lit les champs d'affinage simples (effectif, nb) et les fusionne dans les critères.
+// NB : pas de CA (inexistant chez le fournisseur).
 function lireAffinageIA(){
  const c=IA_CRITERES||{};
  const eff=document.getElementById('ia-effectif');
- const ca=document.getElementById('ia-ca');
  const nb=document.getElementById('ia-nb');
- // Effectif : on tente d'extraire 2 nombres "20 à 250" → min/max
  if(eff&&eff.value.trim()){
   const nums=eff.value.match(/\d+/g);
   if(nums&&nums.length>=2){c.effectif_min=parseInt(nums[0]);c.effectif_max=parseInt(nums[1]);}
-  else if(nums&&nums.length===1){c.effectif_min=parseInt(nums[0]);}
- }
- // CA : extrait un nombre (gère "2 M€" → 2 000 000)
- if(ca&&ca.value.trim()){
-  const m=ca.value.replace(/\s/g,'').match(/(\d+([.,]\d+)?)\s*(m|k)?/i);
-  if(m){let n=parseFloat(m[1].replace(',','.'));const u=(m[3]||'').toLowerCase();if(u==='m')n*=1e6;else if(u==='k')n*=1e3;c.ca_min=Math.round(n);}
- }
- if(nb&&nb.value.trim()){const n=parseInt(nb.value.match(/\d+/));if(n)c.nb_contacts=n;}
+  else if(nums&&nums.length===1){c.effectif_min=parseInt(nums[0]);c.effectif_max=null;}
+ }else{c.effectif_min=null;c.effectif_max=null;}
+ if(nb&&nb.value.trim()){const n=parseInt((nb.value.match(/\d+/)||[])[0]);if(n)c.nb_contacts=n;}
  IA_CRITERES=c;
  return c;
+}
+// RECALCUL : renvoie le prompt initial + les précisions à l'IA, qui régénère sa compréhension.
+// C'est ça qui supprime le décalage entre le "j'ai compris" affiché et ce qui sera compté.
+async function recalculerIA(){
+ lireAffinageIA(); // capte effectif/nb d'abord
+ const precision=(document.getElementById('ia-precision')||{}).value||'';
+ const btn=document.getElementById('ia-btn-recalc');
+ if(btn){btn.disabled=true;btn.textContent='⏳ Mise à jour…';}
+ try{
+  // On renvoie le prompt d'origine + les précisions (texte + effectif/nb captés) à l'IA
+  const reponses={effectif:(IA_CRITERES.effectif_min||'')+(IA_CRITERES.effectif_max?' à '+IA_CRITERES.effectif_max:''),nb_contacts:IA_CRITERES.nb_contacts||''};
+  const promptComplet=IA_PROMPT_INITIAL+(precision.trim()?('\n\nPrécision supplémentaire : '+precision.trim()):'');
+  const r=await api('/api/ia-liste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:promptComplet,reponses})});
+  const d=await r.json();
+  if(d.erreur){toast('Erreur IA : '+d.erreur);if(btn){btn.disabled=false;btn.textContent='🔄 Recalculer ma compréhension';}return;}
+  // Met à jour les critères + réaffiche la compréhension (reformulation, conseil, champs)
+  IA_CRITERES=d.criteres||IA_CRITERES;
+  document.getElementById('ia-reformulation').textContent=d.reformulation||'(pas de reformulation)';
+  const cbox=document.getElementById('ia-conseil-box');
+  if(d.conseil&&d.conseil.trim()){cbox.innerHTML='💡 '+d.conseil.replace(/</g,'&lt;');cbox.style.display='block';}else cbox.style.display='none';
+  afficherQuestionsIA(d.questions||[]);
+  toast('✓ Compréhension mise à jour');
+ }catch(e){toast('Erreur réseau : '+e.message);}
+ if(btn){btn.disabled=false;btn.textContent='🔄 Recalculer ma compréhension';}
 }
 async function estimerListeIA(){
  const c=lireAffinageIA();
  const btn=document.getElementById('ia-btn-estimer');
- if(btn){btn.disabled=true;btn.textContent='⏳ Comptage Basile…';}
+ if(btn){btn.disabled=true;btn.textContent='⏳ Comptage…';}
  try{
   const r=await api('/api/ia-liste-creer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'estimer',criteres:c})});
   const d=await r.json();
-  if(d.erreur){toast('Erreur : '+d.erreur);if(btn){btn.disabled=false;btn.textContent='📊 Estimer la liste';}return;}
+  if(d.erreur){toast('Erreur : '+d.erreur);if(btn){btn.disabled=false;btn.textContent='📊 Estimer';}return;}
   ouvrirEstimationIA(d.nb_entreprises||0,d.nb_contacts_estimes||0);
  }catch(e){toast('Erreur réseau : '+e.message);}
- if(btn){btn.disabled=false;btn.textContent='📊 Estimer la liste';}
+ if(btn){btn.disabled=false;btn.textContent='📊 Estimer';}
 }
 function ouvrirEstimationIA(nbEnt,nbContacts){
  // Fourchette de coût : ~0,09€ à ~0,66€ par contact (waterfall), cohérent avec l'estimation Pappers
