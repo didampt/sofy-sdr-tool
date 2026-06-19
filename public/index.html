@@ -452,8 +452,14 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
       <div class="eyebrow">Nouvelle liste d'appel</div>
       <div id="mode-choix" style="max-width:680px">
         <h1 style="margin-bottom:6px">Comment veux-tu créer ta liste ?</h1>
-        <p class="sub" style="margin-bottom:22px">Deux façons : laisser la machine extraire des entreprises depuis Pappers, ou créer une liste vide et y ajouter tes fiches à la main.</p>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <p class="sub" style="margin-bottom:22px">Trois façons : décris ta cible à l'IA, extrais depuis Pappers, ou crée une liste vide à remplir à la main.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+          <div onclick="choisirMode('ia')" style="cursor:pointer;border:2px solid #185FA5;border-radius:14px;padding:22px;transition:.15s;background:var(--card);position:relative" onmouseover="this.style.background='#f5f9fe'" onmouseout="this.style.background='var(--card)'">
+            <div style="position:absolute;top:12px;right:12px;font-size:10px;font-weight:700;color:#fff;background:#185FA5;padding:2px 8px;border-radius:20px">NOUVEAU</div>
+            <div style="font-size:30px;margin-bottom:10px">✨</div>
+            <div style="font-size:16px;font-weight:700;margin-bottom:5px">Liste intelligente (IA)</div>
+            <div style="font-size:13px;color:var(--ink-soft);line-height:1.5">Décris ta cible en une phrase. L'IA comprend, te pose les bonnes questions et construit la liste pour toi.</div>
+          </div>
           <div onclick="choisirMode('pappers')" style="cursor:pointer;border:1px solid var(--line);border-radius:14px;padding:22px;transition:.15s;background:var(--card)" onmouseover="this.style.borderColor='#185FA5'" onmouseout="this.style.borderColor='var(--line)'">
             <div style="font-size:30px;margin-bottom:10px">🎯</div>
             <div style="font-size:16px;font-weight:700;margin-bottom:5px">Liste depuis Pappers</div>
@@ -481,6 +487,41 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
           <div class="wiz-foot" style="margin-top:22px">
             <span></span>
             <button class="btn btn-primary" id="btn-creer-manuelle" onclick="creerListeManuelle()">✍️ Créer la liste vide</button>
+          </div>
+        </div>
+      </div>
+      <div id="mode-ia" style="display:none;max-width:680px">
+        <div class="head-row">
+          <div><h1>✨ Liste intelligente</h1><p class="sub">Décris qui tu veux cibler. L'IA comprend, reformule et construit la recherche.</p></div>
+          <button class="btn-reset" onclick="retourChoixMode()">↺ Retour</button>
+        </div>
+        <!-- Étape A : le prompt -->
+        <div id="ia-etape-prompt">
+          <div class="qcard">
+            <div class="qnum"><b>1</b> Ta cible</div>
+            <h2>Décris ta cible en langage naturel</h2>
+            <textarea class="field" id="ia-prompt" placeholder="Ex : Je veux des leads dans le même secteur que le groupe GBH — automobile, wholesale et retail. Uniquement des directeurs commerciaux, directeurs de la communication et responsables CRM. Localisés en France et à la Réunion." style="width:100%;min-height:120px;resize:vertical;font-family:inherit;line-height:1.6"></textarea>
+            <p class="hint">Plus tu es précis (secteur, postes, zone), meilleur sera le ciblage. Tu pourras affiner juste après.</p>
+            <div class="wiz-foot" style="margin-top:18px">
+              <span></span>
+              <button class="btn btn-primary" id="ia-btn-analyser" onclick="analyserPromptIA()">✨ Analyser ma demande</button>
+            </div>
+          </div>
+        </div>
+        <!-- Étape B : la réponse de l'IA (reformulation + questions + conseil) -->
+        <div id="ia-etape-reponse" style="display:none">
+          <div class="qcard">
+            <div style="display:flex;gap:10px;margin-bottom:14px;align-items:flex-start">
+              <div style="width:30px;height:30px;border-radius:50%;background:#e6f1fb;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px">✨</div>
+              <div style="font-size:14px;line-height:1.55;color:var(--ink)"><b>Voici ce que j'ai compris :</b></div>
+            </div>
+            <div id="ia-reformulation" style="background:var(--paper);border-radius:10px;padding:14px 16px;font-size:14px;line-height:1.6;margin-bottom:16px"></div>
+            <div id="ia-conseil-box" style="display:none;background:#e6f1fb;border-radius:10px;padding:11px 14px;margin-bottom:16px;font-size:13px;line-height:1.5;color:#0c447c"></div>
+            <div id="ia-questions"></div>
+            <div class="wiz-foot" style="margin-top:20px">
+              <button class="btn btn-ghost" onclick="retourPromptIA()">← Modifier ma demande</button>
+              <button class="btn btn-primary" id="ia-btn-estimer" onclick="estimerListeIA()">📊 Estimer la liste</button>
+            </div>
           </div>
         </div>
       </div>
@@ -924,7 +965,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v123';
+const VERSION='v124';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1037,13 +1078,17 @@ function nav(v,btn){
 // ── Choix du mode de création de liste ──
 function choisirMode(mode){
  document.getElementById('mode-choix').style.display='none';
+ document.getElementById('wizard-pappers').style.display='none';
+ document.getElementById('mode-manuelle').style.display='none';
+ document.getElementById('mode-ia').style.display='none';
  if(mode==='pappers'){
   document.getElementById('wizard-pappers').style.display='block';
-  document.getElementById('mode-manuelle').style.display='none';
+ }else if(mode==='ia'){
+  document.getElementById('mode-ia').style.display='block';
+  // On repart toujours de l'étape prompt
+  retourPromptIA();
  }else{
   document.getElementById('mode-manuelle').style.display='block';
-  document.getElementById('wizard-pappers').style.display='none';
-  // Remplir le sélecteur SDR (réutilise la liste des SDR)
   remplirSelectSdrManuelle();
  }
 }
@@ -1051,6 +1096,67 @@ function retourChoixMode(){
  document.getElementById('mode-choix').style.display='block';
  document.getElementById('wizard-pappers').style.display='none';
  document.getElementById('mode-manuelle').style.display='none';
+ document.getElementById('mode-ia').style.display='none';
+}
+// ───────── LISTE INTELLIGENTE (IA) ─────────
+let IA_CRITERES=null;      // critères extraits par l'IA (pour l'estimation/création)
+let IA_PROMPT_INITIAL='';  // le prompt d'origine du SDR
+function retourPromptIA(){
+ document.getElementById('ia-etape-prompt').style.display='block';
+ document.getElementById('ia-etape-reponse').style.display='none';
+}
+async function analyserPromptIA(){
+ const prompt=document.getElementById('ia-prompt').value.trim();
+ if(prompt.length<5){toast('⚠️ Décris ta cible en quelques mots');document.getElementById('ia-prompt').focus();return;}
+ IA_PROMPT_INITIAL=prompt;
+ const btn=document.getElementById('ia-btn-analyser');
+ if(btn){btn.disabled=true;btn.textContent='⏳ Analyse en cours…';}
+ try{
+  const r=await api('/api/ia-liste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt})});
+  const d=await r.json();
+  if(d.erreur){toast('Erreur IA : '+d.erreur);if(btn){btn.disabled=false;btn.textContent='✨ Analyser ma demande';}return;}
+  IA_CRITERES=d.criteres||{};
+  // Affiche la reformulation
+  document.getElementById('ia-reformulation').textContent=d.reformulation||'(pas de reformulation)';
+  // Conseil (si présent)
+  const cbox=document.getElementById('ia-conseil-box');
+  if(d.conseil&&d.conseil.trim()){cbox.innerHTML='💡 '+d.conseil.replace(/</g,'&lt;');cbox.style.display='block';}
+  else cbox.style.display='none';
+  // Questions d'affinage → champs texte (effectif, CA, nb contacts)
+  afficherQuestionsIA(d.questions||[]);
+  // Bascule sur l'étape réponse
+  document.getElementById('ia-etape-prompt').style.display='none';
+  document.getElementById('ia-etape-reponse').style.display='block';
+ }catch(e){toast('Erreur réseau : '+e.message);}
+ if(btn){btn.disabled=false;btn.textContent='✨ Analyser ma demande';}
+}
+function afficherQuestionsIA(questions){
+ // On propose toujours 3 champs d'affinage standard (effectif, CA, nb contacts),
+ // pré-remplis si l'IA a déjà capté la valeur. Les questions de l'IA servent de libellés/hints.
+ const c=IA_CRITERES||{};
+ const box=document.getElementById('ia-questions');
+ const v=(x)=>x==null?'':x;
+ box.innerHTML=`
+  <div style="font-size:13px;font-weight:600;color:var(--ink-soft);margin:4px 0 10px">Pour affiner (facultatif) :</div>
+  <div style="margin-bottom:12px">
+   <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">Taille d'entreprise (effectif)</label>
+   <input class="field" id="ia-effectif" placeholder="Ex : 20 à 250 salariés" value="${(c.effectif_min||c.effectif_max)?((v(c.effectif_min))+(c.effectif_max?' à '+c.effectif_max:'')):''}" style="width:100%">
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+   <div>
+    <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">CA minimum</label>
+    <input class="field" id="ia-ca" placeholder="Ex : 2 M€" value="${c.ca_min?(c.ca_min):''}" style="width:100%">
+   </div>
+   <div>
+    <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">Nombre de contacts visé</label>
+    <input class="field" id="ia-nb" placeholder="Ex : 150" value="${c.nb_contacts?(c.nb_contacts):''}" style="width:100%">
+   </div>
+  </div>`;
+}
+// L'estimation réelle (appel Basile) sera branchée à l'étape 4.
+async function estimerListeIA(){
+ toast('⏳ Estimation Basile — branchement à l\'étape suivante');
+ // (placeholder étape 3 — sera remplacé par l'appel de comptage Basile + écran d'estimation)
 }
 async function remplirSelectSdrManuelle(){
  const sel=document.getElementById('manuelle-sdr');
