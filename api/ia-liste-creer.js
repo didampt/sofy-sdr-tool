@@ -85,20 +85,27 @@ function gardeZone(cp, veutMetropole, zonesDom) {
 
 // ── Mappe un lead Basile → fiche Sofy ──
 function leadVersFiche(lead) {
-  // Basile renvoie ~70 colonnes ; on mappe les champs utiles (avec tolérance sur les noms)
-  const nom = lead.legal_name || lead.current_company_name || lead.company_name || '';
-  const prenom = lead.first_name || lead.firstname || '';
-  const nomContact = lead.last_name || lead.lastname || '';
-  const fonction = lead.current_title || lead.title || lead.result_role || '';
-  const email = lead.email || lead.work_email || null;
-  const tel = lead.phone || lead.mobile_phone || null;
-  const linkedin = lead.linkedin_url || lead.linkedin || null;
-  const ville = lead.company_city || lead.city || '';
-  const cp = lead.company_postal_code || lead.postal_code || '';
-  const siteWeb = lead.company_website || lead.website || null;
-  const linkedinEnt = lead.company_linkedin_url || null;
-  const siren = lead.siren || null;
-  const naf = lead.naf_code || lead.company_naf || null;
+  // IMPORTANT : Basile imbrique tout dans lead.data (vérifié via diagnostic réel).
+  const d = lead.data || lead || {};
+  // Entreprise
+  const nom = d.current_company_name || d.legal_name || d.company_name || '';
+  // Contact (personne)
+  const prenom = d.result_first_name || d.first_name || '';
+  const nomContact = d.result_last_name || d.last_name || '';
+  // Poste : présent surtout sur les sources LinkedIn/GMB (peut être absent en source Legal)
+  const fonction = d.result_role || d.current_title || d.title || d.job_title || '';
+  // Coordonnées : Basile = identité ; email/tel souvent absents (→ enrichissement waterfall Sofy ensuite)
+  const email = d.result_email || d.email || d.work_email || null;
+  const tel = d.result_phone || d.phone || d.mobile_phone || null;
+  const linkedin = d.result_linkedin_url || d.linkedin_url || d.linkedin || null;
+  // Localisation : côté people = result_city ; côté entreprise = headquarters_*
+  const ville = d.result_city || d.headquarters_city || d.company_city || d.city || '';
+  const cp = d.headquarters_postal_code || d.result_postal_code || d.company_postal_code || d.postal_code || '';
+  const adresse = d.headquarters_address || d.company_address || '';
+  const siteWeb = d.company_website || d.website || null;
+  const linkedinEnt = d.company_linkedin_url || null;
+  const siren = d.siren || null;
+  const naf = d.naf_code || d.company_naf || null;
 
   const contact = {
     prenom, nom: nomContact, fonction,
@@ -112,7 +119,7 @@ function leadVersFiche(lead) {
   return {
     nom: nom || `${prenom} ${nomContact}`.trim() || 'Sans nom',
     ville, code_postal: cp,
-    adresse: lead.company_address || '',
+    adresse,
     naf, siren,
     site_web: siteWeb,
     linkedin_entreprise: linkedinEnt,
@@ -183,11 +190,12 @@ export default async function handler(req, res) {
       let entreprises = ent.data.leads || [];
       // Post-filtrage géo (métropole/DOM) sur le code postal de l'entreprise
       entreprises = entreprises.filter(e => {
-        const cp = e.headquarters_postal_code || e.postal_code || e.company_postal_code || '';
+        const d = e.data || e || {};
+        const cp = d.headquarters_postal_code || d.postal_code || d.company_postal_code || '';
         return gardeZone(cp, veutMetropole, zonesDom);
       });
-      // Récupère les noms d'entreprises pour le rattachement des contacts
-      const noms = entreprises.map(e => e.legal_name || e.company_name || e.name).filter(Boolean).slice(0, 100);
+      // Récupère les noms d'entreprises pour le rattachement des contacts (dans e.data)
+      const noms = entreprises.map(e => { const d = e.data || e || {}; return d.legal_name || d.company_name || d.name; }).filter(Boolean).slice(0, 100);
       if (!noms.length) return res.status(200).json({ fiches: [] });
 
       // 2) Contacts dans ces entreprises (employer = noms exacts + postes)

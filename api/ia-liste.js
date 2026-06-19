@@ -27,15 +27,14 @@ Tu réponds UNIQUEMENT avec un objet JSON valide, sans aucun texte autour, sans 
     "seniorites": ["C-Level", "Director", "Head", "VP"],  // parmi : C-Level, Director, VP, Head, Manager
     "pays": ["FR"],                            // toujours FR pour l'instant
     "zones": ["metropole", "974"],             // "metropole" et/ou codes DOM (971,972,973,974,976)
-    "effectif_min": null,                      // nombre ou null
+    "effectif_min": null,                      // nombre ou null (tranche d'effectif salarié)
     "effectif_max": null,                      // nombre ou null
-    "ca_min": null,                            // nombre en euros ou null
     "nb_contacts": null                        // nombre souhaité ou null
   },
   "reformulation": "Phrase claire résumant ce que tu as compris (secteur, postes, zone).",
   "questions": [
-    "Question d'affinage 1 (ex : quelle taille d'entreprise ?)",
-    "Question d'affinage 2 (ex : un CA minimum ?)"
+    "Question d'affinage 1 (ex : quelle taille d'entreprise en effectif ?)",
+    "Question d'affinage 2 (ex : combien de contacts veux-tu au total ?)"
   ],
   "conseil": "Un conseil pertinent orienté Sofy pour améliorer le ciblage (ex : privilégier les multi-établissements). Vide si rien d'utile."
 }
@@ -46,7 +45,8 @@ Règles importantes :
 - Pour les zones : "France" ou "France métropolitaine" => "metropole". "Réunion" => "974". "Guadeloupe" => "971". "Martinique" => "972". "Guyane" => "973". "Mayotte" => "976". Antilles => ["971","972"].
 - Si l'effectif / CA / nb de contacts sont déjà donnés dans la demande, remplis-les. Sinon laisse null ET pose la question correspondante.
 - Maximum 3 questions. Ne pose que des questions utiles (ne redemande pas ce qui est déjà clair).
-- Le conseil doit être court (1-2 phrases) et concret.`;
+- Le conseil doit être court (1-2 phrases) et concret.
+- IMPORTANT : la base de données ne permet PAS de filtrer par chiffre d'affaires ni par nombre d'établissements/points de vente. Ne propose JAMAIS ces critères comme filtres. Si le commercial les mentionne (ex : "au moins 3 points de vente", "CA > 2M"), reformule en disant que tu cibleras plutôt par taille d'effectif et secteur, et que ces critères précis pourront être affinés manuellement après. Le seul critère de taille disponible est l'effectif salarié (effectif_min/max).`;
 
 export default async function handler(req, res) {
   // Auth interne (import dynamique pour rester cohérent avec les autres endpoints)
@@ -69,7 +69,6 @@ export default async function handler(req, res) {
   if (reponses && typeof reponses === 'object') {
     const bits = [];
     if (reponses.effectif) bits.push(`Effectif souhaité : ${reponses.effectif}`);
-    if (reponses.ca) bits.push(`CA minimum : ${reponses.ca}`);
     if (reponses.nb_contacts) bits.push(`Nombre de contacts visé : ${reponses.nb_contacts}`);
     if (bits.length) contenu += `\n\nPrécisions déjà fournies :\n` + bits.join('\n') + `\n\nIntègre ces précisions dans les critères et ne repose pas ces questions.`;
   }
