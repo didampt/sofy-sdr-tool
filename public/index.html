@@ -502,6 +502,9 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
         </div>
         <!-- Étape A : le prompt -->
         <div id="ia-etape-prompt">
+          <div id="ia-banniere-maintenance" style="background:#fff4e5;border:1px solid #f0c98a;border-radius:12px;padding:14px 16px;margin-bottom:16px;font-size:13.5px;line-height:1.55;color:#8a5a00">
+            🛠️ <b>Fonction temporairement indisponible.</b> Notre fournisseur de données effectue une maintenance sur sa recherche. La liste intelligente sera réactivée dès le rétablissement. En attendant, utilise une <b>liste Pappers</b> ou une <b>liste manuelle</b>.
+          </div>
           <div class="qcard">
             <div class="qnum"><b>1</b> Ta cible</div>
             <h2>Décris ta cible en langage naturel</h2>
@@ -973,7 +976,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v129';
+const VERSION='v130';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1203,6 +1206,7 @@ async function recalculerIA(){
  if(btn){btn.disabled=false;btn.textContent='🔄 Recalculer ma compréhension';}
 }
 async function estimerListeIA(){
+ if(IA_INDISPONIBLE){toast('⏳ La liste intelligente est temporairement indisponible (maintenance du fournisseur de données). Utilise une liste Pappers ou manuelle en attendant.');return;}
  const c=lireAffinageIA();
  const btn=document.getElementById('ia-btn-estimer');
  if(btn){btn.disabled=true;btn.textContent='⏳ Comptage…';}
@@ -1236,8 +1240,12 @@ function ouvrirEstimationIA(nbPersonnes){
  document.getElementById('estim-ia-contenu').innerHTML=html;
  document.getElementById('estim-ia-modal').style.display='flex';
 }
+// ⚠️ Liste intelligente désactivée temporairement (API Basile en panne côté fournisseur — MAJ cassée le 19/06).
+// Pour réactiver quand Basile aura corrigé : repasser IA_INDISPONIBLE à false.
+let IA_INDISPONIBLE=true;
 let CREATION_IA_EN_COURS=false;
 async function creerListeIA(){
+ if(IA_INDISPONIBLE){toast('⏳ Liste intelligente temporairement indisponible (maintenance fournisseur).');return;}
  if(CREATION_IA_EN_COURS)return;
  CREATION_IA_EN_COURS=true;
  const btn=document.getElementById('ia-btn-creer');
