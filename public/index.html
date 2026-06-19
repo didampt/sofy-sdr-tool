@@ -973,7 +973,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v128';
+const VERSION='v129';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1210,25 +1210,28 @@ async function estimerListeIA(){
   const r=await api('/api/ia-liste-creer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'estimer',criteres:c})});
   const d=await r.json();
   if(d.erreur){toast('Erreur : '+d.erreur);if(btn){btn.disabled=false;btn.textContent='📊 Estimer';}return;}
-  ouvrirEstimationIA(d.nb_entreprises||0,d.nb_contacts_estimes||0);
+  ouvrirEstimationIA(d.nb_personnes||d.nb_contacts_estimes||0);
  }catch(e){toast('Erreur réseau : '+e.message);}
  if(btn){btn.disabled=false;btn.textContent='📊 Estimer';}
 }
-function ouvrirEstimationIA(nbEnt,nbContacts){
- // Fourchette de coût : ~0,09€ à ~0,66€ par contact (waterfall), cohérent avec l'estimation Pappers
- const coutMin=(nbContacts*0.09).toFixed(0), coutMax=(nbContacts*0.66).toFixed(0);
+function ouvrirEstimationIA(nbPersonnes){
+ // On crée la 1re page (100 personnes max). Le coût waterfall s'applique à l'enrichissement de ces fiches.
+ const aCreer=Math.min(nbPersonnes,100);
+ const coutMin=(aCreer*0.09).toFixed(0), coutMax=(aCreer*0.66).toFixed(0);
  const html=`
   <div style="font-size:18px;font-weight:700;margin-bottom:3px">📊 Estimation de ta liste</div>
-  <div style="font-size:13px;color:var(--ink-soft);margin-bottom:18px">Comptage Basile (gratuit). Tu peux générer ou affiner.</div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
-   <div style="background:var(--paper);border-radius:10px;padding:14px"><div style="font-size:13px;color:var(--ink-soft);margin-bottom:4px">Entreprises trouvées</div><div style="font-size:26px;font-weight:700">${nbEnt}</div></div>
-   <div style="background:var(--paper);border-radius:10px;padding:14px"><div style="font-size:13px;color:var(--ink-soft);margin-bottom:4px">Contacts estimés</div><div style="font-size:26px;font-weight:700">~${nbContacts}</div></div>
+  <div style="font-size:13px;color:var(--ink-soft);margin-bottom:18px">Comptage Basile (gratuit, source LinkedIn).</div>
+  <div style="background:var(--paper);border-radius:10px;padding:16px;margin-bottom:14px">
+   <div style="font-size:13px;color:var(--ink-soft);margin-bottom:4px">Personnes correspondant à ta cible</div>
+   <div style="font-size:30px;font-weight:800">${nbPersonnes.toLocaleString('fr-FR')}</div>
+   ${nbPersonnes>100?`<div style="font-size:12.5px;color:var(--ink-soft);margin-top:6px">La liste sera créée avec les <b>100 premières</b> (tu pourras en générer d'autres ensuite).</div>`:''}
   </div>
-  <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid var(--line);font-size:13px"><span style="color:var(--ink-soft)">Coût estimé (fourchette)</span><span style="font-weight:600">${coutMin} à ${coutMax} €</span></div>
-  ${nbContacts===0?'<div style="background:#fcebeb;border-radius:8px;padding:11px 14px;margin-top:12px;font-size:13px;color:#a32d2d">Aucun contact trouvé. Essaie d\'élargir le secteur, les postes ou la zone.</div>':''}
+  <div style="background:#e6f1fb;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:12.5px;line-height:1.5;color:#0c447c">💡 Basile fournit l'identité, le poste et le <b>profil LinkedIn</b>. L'email et le mobile seront récupérés ensuite par l'enrichissement (Kaspr/FullEnrich/Dropcontact).</div>
+  <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid var(--line);font-size:13px"><span style="color:var(--ink-soft)">Coût enrichissement estimé (${aCreer} fiches)</span><span style="font-weight:600">${coutMin} à ${coutMax} €</span></div>
+  ${nbPersonnes===0?'<div style="background:#fcebeb;border-radius:8px;padding:11px 14px;margin-top:12px;font-size:13px;color:#a32d2d">Aucune personne trouvée. Élargis les postes ou la zone, puis recalcule.</div>':''}
   <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
    <button class="btn" onclick="document.getElementById('estim-ia-modal').style.display='none'" style="background:var(--paper)">Affiner</button>
-   <button class="btn btn-primary" id="ia-btn-creer" onclick="creerListeIA()" ${nbContacts===0?'disabled style=\'opacity:.5\'':''}>🚀 Générer la liste</button>
+   <button class="btn btn-primary" id="ia-btn-creer" onclick="creerListeIA()" ${nbPersonnes===0?'disabled style=\'opacity:.5\'':''}>🚀 Générer la liste</button>
   </div>`;
  document.getElementById('estim-ia-contenu').innerHTML=html;
  document.getElementById('estim-ia-modal').style.display='flex';
@@ -2137,7 +2140,7 @@ function ficheReal(e,i){
   <div class="fiche-head" onclick="toggleFiche(${i})" title="Cliquer pour ${open?'replier':'déployer'} la fiche">
    <div style="flex:1;min-width:0">
     <div class="lead-name">${(e.tags_sdr&&e.tags_sdr.length)?`<span title="Traité par ${e.traite_par||'?'}${e.traite_le?' le '+new Date(e.traite_le).toLocaleDateString('fr-FR'):''}" style="margin-right:2px">✅</span>`:''}${estHL?'🔥 ':''}${titre} <span onclick="event.stopPropagation();ouvrirEdition(${i})" title="Corriger cette fiche" style="cursor:pointer;font-size:14px;opacity:.5;font-weight:normal">✏️</span></div>
-    <div class="lead-meta">${(!estHL&&contacts.length&&contacts[0].nom)?e.nom+' · ':''}${e.enseigne&&e.enseigne!==e.nom?'Enseigne : '+e.enseigne+' · ':''}${e.naf}${e.nb_etablissements?' · '+e.nb_etablissements+' établissement'+(e.nb_etablissements>1?'s':''):''}${e.effectif?' · '+String(e.effectif).replace(/ salariés?$/i,'')+' salariés':''}${ca?' · CA '+ca:''} · ${e.ville||'—'}</div>
+    <div class="lead-meta">${(!estHL&&contacts.length&&contacts[0].nom)?e.nom+' · ':''}${e.enseigne&&e.enseigne!==e.nom?'Enseigne : '+e.enseigne+' · ':''}${e.persona_ia?'🎯 '+e.persona_ia+' · ':''}${e.naf||''}${e.nb_etablissements?' · '+e.nb_etablissements+' établissement'+(e.nb_etablissements>1?'s':''):''}${e.effectif?' · '+String(e.effectif).replace(/ salariés?$/i,'')+' salariés':''}${ca?' · CA '+ca:''}${(e.ville||e.region)?' · '+(e.ville||e.region):''}</div>
     <div class="badges">
      ${e.gmb&&e.gmb.trouve?`<span class="badge b-gmb">GMB ${String(e.gmb.note_moyenne).replace('.',',')} ★ (${e.gmb.total_avis} avis)</span>`:''}
      ${(()=>{const s=e.source_hotlead||(e.signal&&e.signal.source)||'';if(!s&&!e.signal_hot)return '';const estRB2B=s==='RB2B';return `<span class="badge b-source">${estRB2B?'📍 source sofy.fr':'💼 source LinkedIn'}</span>`;})()}
