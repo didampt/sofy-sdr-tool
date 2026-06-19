@@ -57,7 +57,8 @@ export default async function handler(req, res) {
     ['Lemlist', !!env.LEMLIST_API_KEY, () => pf('https://api.lemlist.com/api/team', { headers: { 'Authorization': 'Basic ' + Buffer.from(':' + env.LEMLIST_API_KEY).toString('base64') } })],
     ['Ringover', !!env.RINGOVER_API_KEY, () => pf('https://public-api.ringover.com/v2/contacts?limit=1', { headers: { 'Authorization': env.RINGOVER_API_KEY } })],
     ['PhantomBuster', !!env.PHANTOMBUSTER_API_KEY, () => pf('https://api.phantombuster.com/api/v2/agents/fetch-all', { headers: { 'X-Phantombuster-Key-1': env.PHANTOMBUSTER_API_KEY } })],
-    ['Claude', !!env.ANTHROPIC_API_KEY, () => pf('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }) })]
+    ['Claude', !!env.ANTHROPIC_API_KEY, () => pf('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }) })],
+    ['Basile', !!env.BASILE_API_KEY, () => pf('https://api.basile.cc/people/find', { method: 'POST', headers: { 'Authorization': env.BASILE_API_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 1, filters: { result_country_code: { include: ['FR'] } } }) })]
   ];
 
   for (const [nom, present, fn] of checks) {

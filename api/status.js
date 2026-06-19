@@ -16,7 +16,8 @@ const OUTILS = [
   { id: 'slack',       nom: 'Slack Webhook',    env: 'SLACK_WEBHOOK_URL',      role: 'Alertes signaux' },
   { id: 'claude',      nom: 'Claude API',       env: 'ANTHROPIC_API_KEY',      role: 'Scoring, synthèses, emails perso' },
   { id: 'phantom',     nom: 'PhantomBuster',    env: 'PHANTOMBUSTER_API_KEY',  role: 'Signaux LinkedIn' },
-  { id: 'rb2b',        nom: 'RB2B',             env: 'RB2B_WEBHOOK_SECRET',    role: 'Visiteurs du site sofy.fr (webhook temps réel)' }
+  { id: 'rb2b',        nom: 'RB2B',             env: 'RB2B_WEBHOOK_SECRET',    role: 'Visiteurs du site sofy.fr (webhook temps réel)' },
+  { id: 'basile',      nom: 'Basile',           env: 'BASILE_API_KEY',         role: 'Recherche de leads B2B française (Liste intelligente IA)' }
 ];
 
 function chercherNombre(obj, motifs) {
@@ -143,6 +144,15 @@ export default async function handler(req, res) {
       if (!process.env.ANTHROPIC_API_KEY) tests.claude = fin('absent', 'Clé manquante');
       else { const r = await pf('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }) }); tests.claude = (r.status === 401 || r.status === 403) ? fin('erreur', `Clé refusée (HTTP ${r.status})`) : (r.ok || r.status === 400 ? fin('ok', 'Clé valide') : fin('erreur', `HTTP ${r.status}`)); }
     } catch (e) { tests.claude = fin('erreur', e.message); }
+
+    // ── Basile : comptage gratuit (limit:1) ; 401 = clé refusée ──
+    try {
+      if (!process.env.BASILE_API_KEY) tests.basile = fin('absent', 'Clé manquante');
+      else {
+        const r = await pf('https://api.basile.cc/people/find', { method: 'POST', headers: { 'Authorization': process.env.BASILE_API_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 1, filters: { result_country_code: { include: ['FR'] } } }) });
+        tests.basile = (r.status === 401 || r.status === 403) ? fin('erreur', `Clé refusée (HTTP ${r.status})`) : (r.ok ? fin('ok', 'Clé valide') : fin('erreur', `HTTP ${r.status}`));
+      }
+    } catch (e) { tests.basile = fin('erreur', e.message); }
   }
 
   res.status(200).json({ outils: statut, soldes, tests });
