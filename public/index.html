@@ -983,7 +983,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v132';
+const VERSION='v133';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -3928,10 +3928,6 @@ async function chargerStats(){
   // Stocke les listes + remplit les filtres dynamiques, puis rend le tableau (re-filtrable sans recharger)
   STATS_LISTES = d.par_liste||[];
   remplirFiltresStats();
-  // Retours terrain (notes SDR) agrégés
-  const avecNotes=STATS_LISTES.filter(l=>l.notes&&l.notes.length);
-  const cn=document.getElementById('stats-notes');
-  if(cn)cn.innerHTML=avecNotes.length?`<div class="map-card" style="background:#FFFCF5;border-color:#FAE6B8"><h2 style="margin-top:0">📝 Retours terrain des SDR</h2>${avecNotes.map(l=>`<div style="margin-bottom:12px"><b>${l.nom}</b> <span style="color:var(--ink-soft);font-size:12px">(${l.sdr})</span>${Object.keys(l.tags||{}).length?'<div class="badges" style="margin:5px 0">'+Object.entries(l.tags).map(([t,n])=>`<span class="badge b-gmb">${t} ×${n}</span>`).join('')+'</div>':''}${l.notes.map(nt=>`<div style="font-size:13px;color:var(--ink);margin-top:3px">• <b>${nt.entreprise}</b> : ${nt.note.replace(/</g,'&lt;')}</div>`).join('')}</div>`).join('')}</div>`:'';
   appliquerFiltreStats();
  }catch(e){toast('Stats : '+e.message);}
 }
@@ -3967,6 +3963,10 @@ function renderStatsListes(arr){
    <td>${l.cout_par_contact_enrichi!==null?l.cout_par_contact_enrichi.toFixed(2)+' €':'—'}</td></tr>`).join(''):'<tr><td colspan="11" style="color:var(--ink-soft);padding:14px">Aucune liste pour ce filtre.</td></tr>');
  const cpt=document.getElementById('filtre-stats-compte');
  if(cpt)cpt.textContent=arr.length+' liste'+(arr.length>1?'s':'')+' affichée'+(arr.length>1?'s':'');
+ // Retours terrain (notes SDR) : filtrés sur le MÊME jeu de listes que le tableau
+ const avecNotes=arr.filter(l=>l.notes&&l.notes.length);
+ const cn=document.getElementById('stats-notes');
+ if(cn)cn.innerHTML=avecNotes.length?`<div class="map-card" style="background:#FFFCF5;border-color:#FAE6B8"><h2 style="margin-top:0">📝 Retours terrain des SDR</h2>${avecNotes.map(l=>`<div style="margin-bottom:12px"><b>${l.nom}</b> <span style="color:var(--ink-soft);font-size:12px">(${l.sdr})</span>${Object.keys(l.tags||{}).length?'<div class="badges" style="margin:5px 0">'+Object.entries(l.tags).map(([t,n])=>`<span class="badge b-gmb">${t} ×${n}</span>`).join('')+'</div>':''}${l.notes.map(nt=>`<div style="font-size:13px;color:var(--ink);margin-top:3px">• <b>${nt.entreprise}</b> : ${nt.note.replace(/</g,'&lt;')}</div>`).join('')}</div>`).join('')}</div>`:'';
 }
 function appliquerFiltreStats(){
  const s=(document.getElementById('filtre-stats-sdr')||{}).value||'';
