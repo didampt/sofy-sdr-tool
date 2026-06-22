@@ -1,30 +1,14 @@
-// /api/basile-secteur.js — TEMPORAIRE — Le secteur filtre-t-il les PERSONNES ? (naf_code vs activity)
-// Tout en petit limit -> GRATUIT. Superadmin uniquement.
+// /api/basile-secteur.js — TEMPORAIRE — Le filtre "activity" sauve-t-il le ciblage secteur sur les PERSONNES ?
+// Tout en petit limit -> GRATUIT. Superadmin.
 import { verifierToken } from './db.js';
 
 const BASE = 'https://api.basile.cc';
-
 async function post(path, body, key) {
   try {
     const r = await fetch(BASE + path, { method: 'POST', headers: { 'Authorization': key, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const d = await r.json().catch(() => null);
-    return { status: r.status, data: d };
-  } catch (e) { return { status: 0, data: null, err: String(e.message || e) }; }
-}
-async function get(path, key) {
-  try {
-    const r = await fetch(BASE + path, { headers: { 'Authorization': key } });
-    const d = await r.json().catch(() => null);
-    return { status: r.status, data: d };
-  } catch (e) { return { status: 0, data: null, err: String(e.message || e) }; }
-}
-function extraireIds(data) {
-  let arr = Array.isArray(data) ? data : (data && (data.suggestions || data.results || data.items || data.data)) || [];
-  if (!Array.isArray(arr)) arr = [];
-  return arr.map(it => {
-    if (typeof it === 'string') return it;
-    return it.id || it.value || it.concept_id || it.slug || it.key || JSON.stringify(it).slice(0, 40);
-  });
+    return { status: r.status, data: d, total: (d && d.total != null) ? d.total : null };
+  } catch (e) { return { status: 0, data: null, total: null }; }
 }
 
 export default async function handler(req, res) {
@@ -34,52 +18,41 @@ export default async function handler(req, res) {
   const key = process.env.BASILE_API_KEY;
   if (!key) return res.status(500).json({ erreur: 'BASILE_API_KEY manquante' });
 
-  const naf = { include: ['56.10C'] };
   const roleMkt = { include: ['Directeur Marketing', 'Directrice Marketing'] };
+  const fr = { include: ['FR'] };
   const out = [];
 
-  // ① Entreprises restauration rapide (national) + échantillon SIREN
-  const c = await post('/companies/find', { limit: 10, filters: { naf_code: naf } }, key);
-  const comps = (c.data && (c.data.companies || c.data.leads || c.data.results)) || [];
-  const sirens = []; const noms = [];
-  for (const co of comps) { const x = co.data || co || {}; const sir = x.siren || null; const nom = x.company_name || x.name || '?'; if (sir && sirens.length < 8) { sirens.push(sir); noms.push(nom); } }
-  out.push({ label: '① Entreprises NAF 56.10C (national)', type: 'entreprises', status: c.status, total: (c.data && c.data.total != null) ? c.data.total : null, apercu: noms });
+  // ④ référence : Directeur Marketing seul
+  const ref = await post('/people/find', { limit: 1, filters: { result_role: roleMkt, result_country_code: fr } }, key);
+  const refTotal = ref.total;
+  out.push({ label: '④ People: Dir. Marketing seul (référence)', type: 'personnes', status: ref.status, total: refTotal });
 
-  // ② Dirigeants de ces entreprises -> rôles
-  if (sirens.length) {
-    const p = await post('/people/find', { limit: 25, filters: { siren: { include: sirens }, result_is_current: true } }, key);
-    const leads = (p.data && p.data.leads) || [];
-    const cible = leads.filter(l => /marketing|exp[ée]rience client|relation client|cx|crm/.test(((l.data || {}).result_role || (l.data || {}).current_job_title || '').toLowerCase())).length;
-    out.push({ label: '② Dirigeants de ces entreprises', type: 'personnes', status: p.status, total: (p.data && p.data.total != null) ? p.data.total : null, note_cible: cible + ' / ' + leads.length + ' ont un rôle marketing/CX' });
+  // ⑤ activity filtre-t-il les PERSONNES ? (id certifié btp_global)
+  const pBtp = await post('/people/find', { limit: 1, filters: { result_role: roleMkt, activity: { include: ['btp_global'] }, result_country_code: fr } }, key);
+  out.push({ label: '⑤ People: Dir. Marketing + activity=btp_global', type: 'personnes', status: pBtp.status, total: pBtp.total, note_cible: 'vs ④ (' + (refTotal != null ? refTotal.toLocaleString('fr-FR') : '?') + ') : si << alors activity FILTRE les personnes' });
+
+  // ⑥ trouver l'ID concept "restauration" via des slugs plausibles, testés sur ENTREPRISES (où activity marche)
+  const guesses = ['restauration_global', 'food_global', 'restaurants_global', 'fast_food_global', 'hospitality_global', 'restauration_rapide_global'];
+  let best = null; const gr = [];
+  for (const g of guesses) {
+    const r = await post('/companies/find', { limit: 1, filters: { activity: { include: [g] } } }, key);
+    const t = r.total;
+    const plausible = (t != null && t > 5000 && t < 3000000);
+    gr.push(g + ' = ' + (t == null ? 'KO' : t.toLocaleString('fr-FR')) + (plausible ? ' ✓' : (t != null && t >= 3000000 ? ' (ignoré?)' : '')));
+    if (plausible && !best) best = g;
   }
+  out.push({ label: '⑥ IDs activity "restauration" testés (entreprises)', type: 'concepts', status: 200, total: null, apercu: gr });
 
-  // ③ People: Directeur Marketing + NAF (naf ignoré sur les personnes ?)
-  const pNaf = await post('/people/find', { limit: 1, filters: { result_role: roleMkt, naf_code: naf, result_country_code: { include: ['FR'] } } }, key);
-  out.push({ label: '③ People: Dir. Marketing + NAF', type: 'personnes', status: pNaf.status, total: (pNaf.data && pNaf.data.total != null) ? pNaf.data.total : null });
-
-  // ④ People: Directeur Marketing seul (référence)
-  const pRef = await post('/people/find', { limit: 1, filters: { result_role: roleMkt, result_country_code: { include: ['FR'] } } }, key);
-  const refTotal = (pRef.data && pRef.data.total != null) ? pRef.data.total : null;
-  out.push({ label: '④ People: Dir. Marketing seul (référence)', type: 'personnes', status: pRef.status, total: refTotal });
-
-  // ⑤ Résoudre l'ID concept "restauration" via autocomplétion (on teste plusieurs chemins)
-  let activityIds = []; let suggestPath = null;
-  for (const path of ['/people/activities/suggest?q=restauration', '/activities/suggest?q=restauration', '/people/activity/suggest?q=restauration']) {
-    const sg = await get(path, key);
-    if (sg.status === 200 && sg.data) { const ids = extraireIds(sg.data); if (ids.length) { activityIds = ids; suggestPath = path; break; } }
-  }
-  out.push({ label: '⑤ IDs concept "restauration"' + (suggestPath ? ' (' + suggestPath.split('?')[0] + ')' : ' (introuvable)'), type: 'concepts', status: suggestPath ? 200 : 404, total: activityIds.length, apercu: activityIds.slice(0, 10) });
-
-  // ⑥ People: Directeur Marketing + activity (le secteur filtre-t-il enfin les personnes ?)
-  if (activityIds.length) {
-    const pAct = await post('/people/find', { limit: 3, filters: { result_role: roleMkt, activity: { include: [activityIds[0]] }, result_country_code: { include: ['FR'] } } }, key);
-    out.push({ label: '⑥ People: Dir. Marketing + activity="' + activityIds[0] + '"', type: 'personnes', status: pAct.status, total: (pAct.data && pAct.data.total != null) ? pAct.data.total : null, note_cible: 'à comparer à ④ (' + (refTotal != null ? refTotal.toLocaleString('fr-FR') : '?') + ') : si nettement plus petit, le secteur filtre enfin les personnes !' });
+  // ⑦ si un ID valide : Directeur Marketing + cet ID sur les PERSONNES
+  if (best) {
+    const pAct = await post('/people/find', { limit: 3, filters: { result_role: roleMkt, activity: { include: [best] }, result_country_code: fr } }, key);
+    out.push({ label: '⑦ People: Dir. Marketing + activity="' + best + '"', type: 'personnes', status: pAct.status, total: pAct.total, note_cible: 'vs ④ (' + (refTotal != null ? refTotal.toLocaleString('fr-FR') : '?') + ') : si << alors on PEUT cibler poste + secteur sur les personnes' });
   } else {
-    out.push({ label: '⑥ People: Dir. Marketing + activity', type: 'personnes', status: 0, total: null, note_cible: 'non testé (aucun ID concept trouvé en ⑤)' });
+    out.push({ label: '⑦ People: Dir. Marketing + activity', type: 'personnes', status: 0, total: null, note_cible: 'aucun ID activity restauration plausible trouvé en ⑥' });
   }
 
   return res.status(200).json({
-    note: '③≈④ => NAF ignoré sur les personnes. ⑥ vs ④ => si activity réduit fortement le total, on PEUT filtrer un poste par secteur via activity.',
+    note: 'DÉCISIF : ⑤ et ⑦ comparés à ④. Si activity réduit fortement le total, le secteur filtre enfin les personnes (poste + secteur possible). Sinon, impossible avec Basile.',
     out
   });
 }
