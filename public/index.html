@@ -452,6 +452,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
     <button class="nav-btn" id="nav-archives" data-view="archives" style="display:none" onclick="nav('archives',this);chargerArchives()">🗄️ Archives</button>
     <button class="nav-btn" data-view="mapping" onclick="nav('mapping',this);chargerEnvois();chargerConcurrents()">⚙️ Envois & mapping</button>
     <button class="nav-btn" data-view="stats" onclick="nav('stats',this);chargerStats()">📊 Statistiques</button>
+    <button class="nav-btn" data-view="appels" onclick="nav('appels',this);chargerAppels()">🎧 Appels</button>
     <button class="nav-btn" data-view="params" onclick="nav('params',this);chargerSdrs();chargerTarifs()">⚙️ Paramètres</button>
     <button class="nav-btn" data-view="settings" onclick="nav('settings',this);chargerHotleads()">🔌 Connexions</button>
     <div class="user-badge" id="user-badge" style="display:none"><span id="user-nom"></span><button onclick="deconnexion(true)">Déconnexion</button></div>
@@ -887,6 +888,22 @@ Spot-Hit</textarea>
       </div>
     </section>
 
+    <section class="view" id="view-appels">
+      <div class="eyebrow">Management</div>
+      <h1>🎧 Journal des appels</h1>
+      <p class="sub">Tous les appels récents de l'équipe (Ringover). Filtre par SDR ou par jour, clique sur un appel pour réécouter l'enregistrement et lire le résumé IA.</p>
+      <div class="map-card">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+          <select class="field" id="filtre-appels-sdr" onchange="appliquerFiltreAppels()" style="max-width:220px"><option value="">Tous les SDR</option></select>
+          <select class="field" id="filtre-appels-jour" onchange="appliquerFiltreAppels()" style="max-width:200px"><option value="">Tous les jours</option></select>
+          <label style="font-size:12.5px;color:var(--ink-soft);display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="filtre-appels-rec" onchange="appliquerFiltreAppels()"> Avec enregistrement seulement</label>
+          <button class="btn" onclick="resetFiltreAppels()" style="background:var(--paper)">↺ Réinitialiser</button>
+          <span id="filtre-appels-compte" style="font-size:12.5px;color:var(--ink-soft)"></span>
+        </div>
+        <div id="appels-list"><div style="color:var(--ink-soft);padding:14px">Chargement…</div></div>
+      </div>
+    </section>
+
     <section class="view" id="view-params">
       <div class="eyebrow">Administration</div>
       <h1>Paramètres</h1>
@@ -992,7 +1009,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v140';
+const VERSION='v141';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1050,7 +1067,7 @@ function demarrerApp(u){
  document.getElementById('user-nom').textContent=u.nom+(u.role==='superadmin'?' 👑':u.role==='admin'?' 🛡️':'');
  document.getElementById('bonjour-sdr').textContent='Bonjour '+u.nom+' 👋';
  const sn=document.getElementById('sdr-name');if(sn)sn.textContent=u.nom;
- if(!['superadmin','admin'].includes(u.role)){['params','stats'].forEach(v=>{const b=document.querySelector(`[data-view="${v}"]`);if(b)b.style.display='none';});}
+ if(!['superadmin','admin'].includes(u.role)){['params','stats','appels'].forEach(v=>{const b=document.querySelector(`[data-view="${v}"]`);if(b)b.style.display='none';});}
  chargerSdrChips();
  chargerStatut();
  // Lien direct vers une liste (ex : depuis Slack → ?liste=ID)
@@ -2103,10 +2120,10 @@ function recapAppelsHtml(e){
  return `<div style="margin-top:12px"><div style="font-size:11.5px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">🎧 Appels (${lignes.length}) — clic pour réécouter</div>${items}</div>`;
 }
 
-function ouvrirAppelsRingover(t){
- const calls=(RINGOVER_CALLS[cle9Ring(t)]||[]).filter(x=>x.record||x.note||x.voicemail);
- if(!calls.length){toast('Aucun enregistrement pour ce numéro');return;}
- const html=calls.map(c=>{
+function afficherAppelsModal(titre,calls){
+ const liste=(calls||[]).filter(x=>x.record||x.note||x.voicemail);
+ if(!liste.length){toast('Aucun enregistrement disponible');return;}
+ const html=liste.map(c=>{
   const dd=c.start_time?new Date(c.start_time):null;
   const date=dd?dd.toLocaleDateString('fr-FR')+' à '+dd.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'';
   const dur=c.incall_duration?Math.floor(c.incall_duration/60)+'min '+(c.incall_duration%60)+'s':'';
@@ -2122,10 +2139,82 @@ function ouvrirAppelsRingover(t){
     ${audio}${resume}
   </div>`;
  }).join('');
- document.getElementById('ringover-num').textContent=telNorm(t);
+ document.getElementById('ringover-num').textContent=titre||'';
  document.getElementById('ringover-body').innerHTML=html;
  document.getElementById('ringover-modal').style.display='flex';
 }
+function ouvrirAppelsRingover(t){afficherAppelsModal(telNorm(t),RINGOVER_CALLS[cle9Ring(t)]||[]);}
+// ───────── Journal des appels (Brique 2 — vue manager Romain) ─────────
+let JOURNAL_APPELS=[];
+let APPELS_FILTRES=[];
+async function chargerAppels(){
+ const cont=document.getElementById('appels-list');
+ if(cont)cont.innerHTML='<div style="color:var(--ink-soft);padding:14px">Chargement des appels…</div>';
+ try{
+  const r=await api('/api/ringover-journal');
+  const d=await r.json();
+  if(d.erreur){if(cont)cont.innerHTML='<div style="color:var(--danger);padding:14px">'+d.erreur+'</div>';return;}
+  JOURNAL_APPELS=d.appels||[];
+  remplirFiltresAppels();
+  appliquerFiltreAppels();
+ }catch(e){if(cont)cont.innerHTML='<div style="color:var(--danger);padding:14px">Erreur : '+e.message+'</div>';}
+}
+function remplirFiltresAppels(){
+ const sdrs=[...new Set(JOURNAL_APPELS.map(a=>a.sdr).filter(Boolean))].sort();
+ const jours=[...new Set(JOURNAL_APPELS.map(a=>a.start_time?new Date(a.start_time).toLocaleDateString('fr-FR'):null).filter(Boolean))];
+ const fs=document.getElementById('filtre-appels-sdr'), fj=document.getElementById('filtre-appels-jour');
+ const selS=fs?fs.value:'', selJ=fj?fj.value:'';
+ if(fs)fs.innerHTML='<option value="">Tous les SDR</option>'+sdrs.map(x=>`<option ${x===selS?'selected':''}>${x}</option>`).join('');
+ if(fj)fj.innerHTML='<option value="">Tous les jours</option>'+jours.map(x=>`<option ${x===selJ?'selected':''}>${x}</option>`).join('');
+}
+function renderAppels(arr){
+ const cont=document.getElementById('appels-list');
+ if(!cont)return;
+ if(!arr.length){cont.innerHTML='<div style="color:var(--ink-soft);padding:14px">Aucun appel pour ce filtre.</div>';}
+ else cont.innerHTML=arr.map((a,idx)=>{
+  const dd=a.start_time?new Date(a.start_time):null;
+  const date=dd?dd.toLocaleDateString('fr-FR')+' '+dd.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'';
+  const dur=a.incall_duration?Math.floor(a.incall_duration/60)+'min '+(a.incall_duration%60)+'s':'—';
+  const sens=a.direction==='out'?'↗ sortant':(a.direction==='in'?'↘ entrant':'');
+  const tag=(a.tags&&a.tags[0])?`<span class="badge b-gmb">${a.tags[0]}</span>`:'';
+  const ico=a.record?'🎧':(a.voicemail?'📭':(a.note?'📝':'·'));
+  const ecoutable=a.record||a.note||a.voicemail;
+  const clic=ecoutable?`onclick="ouvrirAppelJournal(${idx})" style="cursor:pointer"`:'style="opacity:.55"';
+  return `<div ${clic} title="${ecoutable?'Réécouter + résumé IA':"Pas d'enregistrement"}" style="display:flex;gap:10px;align-items:center;padding:9px 10px;border-bottom:1px solid var(--line);font-size:13px">
+    <span style="font-size:16px;width:20px;text-align:center">${ico}</span>
+    <span style="min-width:140px"><b>${date}</b></span>
+    <span style="min-width:120px;color:var(--ink-soft)">${a.sdr||'?'}</span>
+    <span style="min-width:92px;color:var(--ink-soft)">${sens}</span>
+    <span style="min-width:70px;color:var(--ink-soft)">${dur}</span>
+    <span style="flex:1;min-width:120px">${a.numero||''}</span>
+    ${tag}
+  </div>`;
+ }).join('');
+ const cpt=document.getElementById('filtre-appels-compte');
+ if(cpt)cpt.textContent=arr.length+' appel'+(arr.length>1?'s':'');
+}
+function appliquerFiltreAppels(){
+ const s=(document.getElementById('filtre-appels-sdr')||{}).value||'';
+ const j=(document.getElementById('filtre-appels-jour')||{}).value||'';
+ const rec=!!(document.getElementById('filtre-appels-rec')||{}).checked;
+ APPELS_FILTRES=JOURNAL_APPELS.filter(a=>{
+  if(s&&a.sdr!==s)return false;
+  if(j&&(!a.start_time||new Date(a.start_time).toLocaleDateString('fr-FR')!==j))return false;
+  if(rec&&!a.record)return false;
+  return true;
+ });
+ renderAppels(APPELS_FILTRES);
+}
+function resetFiltreAppels(){
+ ['filtre-appels-sdr','filtre-appels-jour'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+ const rc=document.getElementById('filtre-appels-rec');if(rc)rc.checked=false;
+ renderAppels(JOURNAL_APPELS);
+}
+function ouvrirAppelJournal(idx){
+ const a=APPELS_FILTRES[idx];
+ if(a)afficherAppelsModal(telNorm(a.numero||'')||'Appel',[a]);
+}
+
 
 function telBtns(t){
  const n=telNorm(t);
