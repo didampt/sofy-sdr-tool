@@ -983,7 +983,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v134';
+const VERSION='v135';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1903,8 +1903,9 @@ function setStatutAppel(i,statut){
   e.traite_le=new Date().toISOString();
  }
  rerender(i);persister();majTraites();
- // Statut "Rappel demandé" → proposer de créer une tâche de rappel
- if(statut&&statut.indexOf('Rappel demandé')===0)ouvrirRappel(i);
+ // Statuts qui déclenchent la modale de rappel (le SDR choisit la date)
+ const STATUTS_RAPPEL=['Rappel demandé','Pas de réponse','Message vocal laissé','Absent'];
+ if(statut&&STATUTS_RAPPEL.some(p=>statut.indexOf(p)===0))ouvrirRappel(i);
 }
 // Compat : d'anciens appels peuvent encore référencer toggleTag
 function toggleTag(i,tag){setStatutAppel(i,tag);}
