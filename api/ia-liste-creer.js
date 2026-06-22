@@ -29,10 +29,18 @@ const DOM = ['971', '972', '973', '974', '976'];
 function cpPrefix(p) { const a = []; for (let i = 0; i < 100; i++) a.push(p + String(i).padStart(2, '0')); return a; }
 
 // ---------- PERSONNES (chemin métropole) ----------
+// Les 7 macro-secteurs Basile activables (les seuls slugs *_global valides). Filtrent les PERSONNES.
+const SECTEURS_BASILE = {
+  commerce: 'commerce_global', btp: 'btp_global', transport: 'transport_global',
+  hospitality: 'hospitality_global', agriculture: 'agriculture_global',
+  finance: 'finance_global', manufacturing: 'manufacturing_global'
+};
 function filtresPersonnes(c) {
   const f = {};
   if (Array.isArray(c.postes) && c.postes.length) f.result_role = { include: c.postes };
   f.result_country_code = { include: Array.isArray(c.pays) && c.pays.length ? c.pays : ['FR'] };
+  const slug = SECTEURS_BASILE[(c.secteur_basile || '').toLowerCase()];
+  if (slug) f.activity = { include: [slug] }; // filtre secteur sur les personnes (seul moyen qui marche)
   return f;
 }
 

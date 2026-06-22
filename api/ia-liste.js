@@ -29,7 +29,8 @@ Tu réponds UNIQUEMENT avec un objet JSON valide, sans aucun texte autour, sans 
     "zones": ["metropole", "974"],             // "metropole" et/ou codes DOM (971,972,973,974,976)
     "effectif_min": null,                      // nombre ou null (tranche d'effectif salarié)
     "effectif_max": null,                      // nombre ou null
-    "nb_contacts": null                        // nombre souhaité ou null
+    "nb_contacts": null,                       // nombre souhaité ou null
+    "secteur_basile": null                     // UN macro-secteur (ou null) parmi : commerce, btp, transport, hospitality, agriculture, finance, manufacturing
   },
   "reformulation": "Phrase claire résumant ce que tu as compris (secteur, postes, zone).",
   "questions": [
@@ -42,6 +43,7 @@ Tu réponds UNIQUEMENT avec un objet JSON valide, sans aucun texte autour, sans 
 Règles importantes :
 - Le ciblage se fait par POSTE de la personne (intitulé LinkedIn), pas par secteur d'entreprise. Pour les postes, génère un maximum de variantes d'intitulés LinkedIn réels (français + anglais + abréviations) pour capter le plus de profils. Ex pour directeur marketing : "Directeur Marketing", "Directrice Marketing", "Responsable Marketing", "CMO", "Chief Marketing Officer", "Head of Marketing", "VP Marketing". Pense aux intitulés tels qu'ils apparaissent réellement sur LinkedIn.
 - Le SECTEUR sert à deux choses : (a) orienter les intitulés de poste ; (b) remplir naf_codes. Pour naf_codes, choisis 2 à 4 codes MAXIMUM, les plus SPÉCIFIQUES au cœur de l'activité décrite (ex : vente de pièces auto = 45.31Z commerce de gros d'équipements automobiles + 45.32Z commerce de détail d'équipements automobiles). N'ajoute PAS de codes génériques (46.90Z commerce de gros non spécialisé) ni d'activités seulement adjacentes (vente de véhicules 45.11Z/45.19Z, réparation 45.20A/B) si la demande porte sur les PIÈCES. Exactitude > exhaustivité : ces mêmes codes seront aussi générés à l'identique d'une fois sur l'autre.
+- secteur_basile : classe l'activité visée dans UN de ces 7 macro-secteurs Basile (ou null si rien ne colle) : "commerce" (commerce, retail, distribution, vente, magasins, e-commerce, grossistes, automobile, pièces auto), "btp" (bâtiment, travaux, construction, immobilier, agences immobilières), "transport" (transport, logistique, livraison), "hospitality" (restauration, hôtellerie, cafés, bars, tourisme), "agriculture" (agriculture, agroalimentaire), "finance" (banque, assurance, finance, comptabilité), "manufacturing" (industrie, fabrication, production). Ex : restauration rapide => "hospitality" ; concessionnaire/pièces auto => "commerce" ; agence immobilière => "btp". Ce champ filtre les PERSONNES par secteur (combiné au poste) — c'est le seul filtre secteur qui marche sur les personnes.
 - Si le SDR mentionne une entreprise de référence (ex : "comme le groupe GBH"), identifie son secteur et propose des entreprises similaires via le NAF / l'activité — NE mets PAS l'entreprise de référence elle-même dans les critères.
 - Pour les zones : "France" ou "France métropolitaine" => "metropole". "Réunion" => "974". "Guadeloupe" => "971". "Martinique" => "972". "Guyane" => "973". "Mayotte" => "976". Antilles => ["971","972"].
 - Si l'effectif / CA / nb de contacts sont déjà donnés dans la demande, remplis-les. Sinon laisse null ET pose la question correspondante.
