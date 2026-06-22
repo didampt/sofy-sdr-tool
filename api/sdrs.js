@@ -70,7 +70,7 @@ export default async function handler(req, res) {
           actif = ${actif !== undefined ? !!actif : c.actif},
           ringover_numero = ${ringover_numero !== undefined ? normNumero(ringover_numero) : c.ringover_numero},
           slack_id = ${slack_id !== undefined ? (slack_id.trim() || null) : c.slack_id},
-          role = ${user.role === 'superadmin' && role !== undefined && ['sdr','admin','superadmin'].includes(role) ? role : c.role}
+          role = ${user.role === 'superadmin' && role !== undefined && ['sdr','ae','admin','superadmin'].includes(role) ? role : c.role}
         WHERE id = ${parseInt(id)}
         RETURNING id, nom, email, limite_credits, actif, ringover_numero, slack_id, role`;
       return res.status(200).json({ ok: true, sdr: rows[0] });
