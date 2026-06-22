@@ -48,6 +48,10 @@ function filtresPersonnes(c) {
   if (regionsDom.length && !veutMetropole) {
     f.result_region = { include: regionsDom };
   }
+  // Secteur : codes NAF exacts extraits par l'IA (ex ["45.31Z","45.20A"]). Wildcard non supporté.
+  if (Array.isArray(c.naf_codes) && c.naf_codes.length) {
+    f.naf_code = { include: c.naf_codes };
+  }
   return { filtres: f, veutMetropole, zones };
 }
 
@@ -138,7 +142,10 @@ export default async function handler(req, res) {
       return res.status(200).json({
         nb_personnes: r.data?.total || 0,
         nb_entreprises: null,
-        nb_contacts_estimes: r.data?.total || 0
+        nb_contacts_estimes: r.data?.total || 0,
+        _filtres: filtres,
+        _status: r.status,
+        _ok: r.data?.success !== false
       });
     }
 
