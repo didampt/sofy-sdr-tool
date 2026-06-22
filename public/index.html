@@ -1019,7 +1019,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v148';
+const VERSION='v149';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1257,11 +1257,26 @@ async function estimerListeIA(){
   const r=await api('/api/ia-liste-creer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'estimer',criteres:c})});
   const d=await r.json();
   if(d.erreur){toast('Erreur : '+d.erreur);if(btn){btn.disabled=false;btn.textContent='📊 Estimer';}return;}
-  ouvrirEstimationIA(d.nb_personnes||d.nb_contacts_estimes||0);
+  ouvrirEstimationIA(d.nb_personnes||d.nb_contacts_estimes||0, d._filtres||{});
  }catch(e){toast('Erreur réseau : '+e.message);}
  if(btn){btn.disabled=false;btn.textContent='📊 Estimer';}
 }
-function ouvrirEstimationIA(nbPersonnes){
+function _resumeFiltresBasile(f){
+ f=f||{}; const esc=s=>String(s).replace(/</g,'&lt;');
+ const list=o=>(o&&Array.isArray(o.include))?o.include:[];
+ const postes=list(f.result_role), pays=list(f.result_country_code), regions=list(f.result_region), naf=list(f.naf_code);
+ const ligne=(lbl,arr,vide)=>arr.length
+   ?`<div style="margin-top:3px"><b>${lbl}</b> (${arr.length}) : ${arr.slice(0,4).map(esc).join(', ')}${arr.length>4?` <span style="color:var(--ink-soft)">(+${arr.length-4})</span>`:''}</div>`
+   :`<div style="margin-top:3px"><b>${lbl} :</b> <span style="color:var(--danger)">${vide}</span></div>`;
+ return `<div style="background:#fff;border:1px solid var(--line);border-radius:8px;padding:11px 13px;margin-bottom:14px;font-size:12px;line-height:1.55;color:var(--ink-soft)">
+   <div style="font-weight:700;color:var(--ink);margin-bottom:5px">🔎 Filtres réellement envoyés à Basile</div>
+   ${ligne('Postes',postes,'aucun')}
+   <div style="margin-top:3px"><b>Pays :</b> ${pays.length?pays.map(esc).join(', '):'FR'}</div>
+   ${regions.length?`<div style="margin-top:3px"><b>Régions</b> (${regions.length}) : ${regions.slice(0,6).map(esc).join(', ')}</div>`:`<div style="margin-top:3px"><b>Régions :</b> <span style="color:var(--danger)">toute la France (pas de restriction géo)</span></div>`}
+   ${ligne('Secteur NAF',naf,'⚠️ aucun filtre secteur')}
+ </div>`;
+}
+function ouvrirEstimationIA(nbPersonnes, filtres){
  // On crée la 1re page (100 personnes max). Le coût waterfall s'applique à l'enrichissement de ces fiches.
  const aCreer=Math.min(nbPersonnes,100);
  const coutMin=(aCreer*0.09).toFixed(0), coutMax=(aCreer*0.66).toFixed(0);
@@ -1273,6 +1288,7 @@ function ouvrirEstimationIA(nbPersonnes){
    <div style="font-size:30px;font-weight:800">${nbPersonnes.toLocaleString('fr-FR')}</div>
    ${nbPersonnes>100?`<div style="font-size:12.5px;color:var(--ink-soft);margin-top:6px">La liste sera créée avec les <b>100 premières</b> (tu pourras en générer d'autres ensuite).</div>`:''}
   </div>
+  ${_resumeFiltresBasile(filtres)}
   <div style="background:#e6f1fb;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:12.5px;line-height:1.5;color:#0c447c">💡 Basile fournit l'identité, le poste et le <b>profil LinkedIn</b>. L'email et le mobile seront récupérés ensuite par l'enrichissement (Kaspr/FullEnrich/Dropcontact).</div>
   <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid var(--line);font-size:13px"><span style="color:var(--ink-soft)">Coût enrichissement estimé (${aCreer} fiches)</span><span style="font-weight:600">${coutMin} à ${coutMax} €</span></div>
   ${nbPersonnes===0?'<div style="background:#fcebeb;border-radius:8px;padding:11px 14px;margin-top:12px;font-size:13px;color:#a32d2d">Aucune personne trouvée. Élargis les postes ou la zone, puis recalcule.</div>':''}
