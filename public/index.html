@@ -992,7 +992,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v136';
+const VERSION='v137';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2068,6 +2068,19 @@ function aAppelRingover(t){
  const c=RINGOVER_CALLS[cle9Ring(t)];
  return !!(c&&c.some(x=>x.record||x.note||x.voicemail));
 }
+// Résumé IA du dernier appel Ringover trouvé sur les numéros de la fiche (le plus récent avec une note)
+function dernierResumeRingover(e){
+ const avecNote=[];
+ for(const t of numerosFiche(e)){
+  for(const c of (RINGOVER_CALLS[cle9Ring(t)]||[])){
+   if(c.note)avecNote.push(c);
+  }
+ }
+ if(!avecNote.length)return null;
+ avecNote.sort((a,b)=>new Date(b.start_time||0)-new Date(a.start_time||0));
+ // On retire la mention "Généré par IA…" et on nettoie les retours chariot
+ return avecNote[0].note.replace(/\r?\nGénéré par IA[^]*/i,'').replace(/\s+/g,' ').trim();
+}
 function ouvrirAppelsRingover(t){
  const calls=(RINGOVER_CALLS[cle9Ring(t)]||[]).filter(x=>x.record||x.note||x.voicemail);
  if(!calls.length){toast('Aucun enregistrement pour ce numéro');return;}
@@ -3104,11 +3117,14 @@ function ouvrirRdv(i,c){
  if(ent)params.set('company',ent);
  const tel=en.telephone||(e.gmb&&e.gmb.telephone)||'';
  if(tel)params.set('mobilephone',tel);
- // Champ "Décrivez votre besoin" (revops_message) = synthèse d'appel IA + note SDR
+ // Champ "Décrivez votre besoin" (revops_message) : résumé d'appel Ringover (prioritaire) + note SDR + synthèse IA
  const sc=e.score||{};
  const bouts=[];
- if(sc.synthese)bouts.push(sc.synthese);
+ // 🎧 Résumé du dernier appel Ringover (ce que le prospect a réellement dit) — en tête
+ const resumeRingover=dernierResumeRingover(e);
+ if(resumeRingover)bouts.push('Résumé du dernier appel : '+resumeRingover);
  if(e.notes_sdr)bouts.push('Note SDR : '+e.notes_sdr);
+ if(sc.synthese)bouts.push(sc.synthese);
  if(sc.signaux&&sc.signaux.length)bouts.push('Signaux : '+sc.signaux.join(' · '));
  const besoin=bouts.join('\n\n').slice(0,1500);
  if(besoin)params.set('revops_message',besoin);
