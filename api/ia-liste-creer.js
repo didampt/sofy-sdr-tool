@@ -80,7 +80,20 @@ function lireEntreprise(co) {
   };
 }
 
-const EXCLURE_ROLE = /commissaire aux comptes|commissaire|suppléant|suppleant/i;
+const EXCLURE_ROLE = /commissaire aux comptes|commissaire|suppl[ée]ant|^autre$/i;
+
+// Rang de priorité d'un mandataire (0 = plus haut) pour choisir LE dirigeant principal d'une entreprise.
+function rangDirigeant(r) {
+  r = (r || '').toLowerCase();
+  if (/p-?dg|président directeur général/.test(r)) return 0;
+  if (/président/.test(r)) return 1;
+  if (/g[ée]rant/.test(r)) return 2;
+  if (/directeur g[ée]n[ée]ral|directrice g[ée]n[ée]rale|^dg$/.test(r)) return 3;
+  if (/directeur|directrice/.test(r)) return 4;
+  return 8;
+}
+// Nombre de fiches demandé (clamp 1..100, défaut 20).
+function capContacts(c) { const n = parseInt(c && c.nb_contacts, 10); return (n && n > 0) ? Math.min(n, 100) : 20; }
 
 function dirigeantVersFiche(lead, infoSiren) {
   const d = lead.data || lead || {};
@@ -218,10 +231,19 @@ export default async function handler(req, res) {
       }
 
       if (mode === 'creer') {
-        const { sirens, infoBySiren } = await collecterSiren(domPrefixes, naf, key, 100, 100);
+        const cap = capContacts(criteres);
+        const unParEnt = criteres.un_par_entreprise !== false; // défaut : 1 dirigeant principal par entreprise
+        const { sirens, infoBySiren } = await collecterSiren(domPrefixes, naf, key, 120, 100);
         if (!sirens.length) return res.status(200).json({ fiches: [], nb: 0, mode_recherche: 'entreprise', message: 'Aucune entreprise trouvée pour ce secteur dans la zone.' });
-        let fiches = await dirigeantsParSiren(sirens, infoBySiren, key, 150);
-        fiches = regrouperParEntreprise(fiches).slice(0, 100);
+        let people = await dirigeantsParSiren(sirens, infoBySiren, key, 400);
+        if (unParEnt) {
+          const byCo = new Map();
+          for (const pf of people) { const k = (pf.nom || '').toLowerCase().trim(); if (!byCo.has(k)) byCo.set(k, []); byCo.get(k).push(pf); }
+          people = [];
+          for (const [, arr] of byCo) { arr.sort((x, y) => rangDirigeant(x._role) - rangDirigeant(y._role)); people.push(arr[0]); }
+        }
+        people = people.slice(0, cap);
+        let fiches = regrouperParEntreprise(people);
         fiches.forEach(f => { delete f._role; });
         return res.status(200).json({ fiches, nb: fiches.length, mode_recherche: 'entreprise' });
       }
@@ -246,9 +268,10 @@ export default async function handler(req, res) {
       const r = await basile('/people/find', { limit: 100, filters: filtres }, key);
       if (r.status === 402) return res.status(402).json({ erreur: 'Abonnement Basile requis (pagination)' });
       if (!r.data || r.data.success === false) return res.status(502).json({ erreur: 'Recherche Basile échouée', status: r.status });
+      const capP = capContacts(criteres);
       let fiches = (r.data.leads || []).map(leadVersFichePersonne)
         .filter(f => f.contacts[0] && f.contacts[0].enrich && f.contacts[0].enrich.linkedin);
-      fiches = regrouperParEntreprise(fiches);
+      fiches = regrouperParEntreprise(fiches).slice(0, capP);
       return res.status(200).json({ fiches, nb: fiches.length, mode_recherche: 'personne' });
     }
     return res.status(400).json({ erreur: 'mode inconnu (estimer|creer)' });
