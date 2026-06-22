@@ -512,7 +512,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
         </div>
         <!-- Étape A : le prompt -->
         <div id="ia-etape-prompt">
-          <div id="ia-banniere-maintenance" style="background:#fff4e5;border:1px solid #f0c98a;border-radius:12px;padding:14px 16px;margin-bottom:16px;font-size:13.5px;line-height:1.55;color:#8a5a00">
+          <div id="ia-banniere-maintenance" style="display:none;background:#fff4e5;border:1px solid #f0c98a;border-radius:12px;padding:14px 16px;margin-bottom:16px;font-size:13.5px;line-height:1.55;color:#8a5a00">
             🛠️ <b>Fonction temporairement indisponible.</b> Notre fournisseur de données effectue une maintenance sur sa recherche. La liste intelligente sera réactivée dès le rétablissement. En attendant, utilise une <b>liste Pappers</b> ou une <b>liste manuelle</b>.
           </div>
           <div class="qcard">
@@ -1024,7 +1024,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v152';
+const VERSION='v153';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1369,7 +1369,7 @@ async function creerListeIA(){
   if(btn)btn.textContent='⏳ Vérification doublons…';
   try{
    // On envoie un contact représentatif par fiche (le 1er) avec email + tel
-   const contacts=fiches.map(f=>{const c=(f.contacts||[])[0]||{};return {email:c.enrich?.email||null,telephone:c.enrich?.telephone||null,nom:c.nom||'',prenom:c.prenom||''};});
+   const contacts=fiches.map(f=>{const c=(f.contacts||[])[0]||{};return {email:c.enrich?.email||null,telephone:c.enrich?.telephone||null,nom:c.nom||'',prenom:c.prenom||'',siren:f.siren||''};});
    const rd=await api('/api/dedup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contacts})});
    const dd=await rd.json();
    const rez=dd.resultats||{};
@@ -1381,6 +1381,13 @@ async function creerListeIA(){
     if(r){
      if(r.hubspot){f.dedup_hubspot=r.hubspot;f.skip_enrich=true;} // déjà dans HubSpot → on bloquera l'enrichissement
      if(r.liste){f.dedup_liste=r.liste;}
+     if(r.siren_connu&&r.siren_connu.enrichi){ // même SIREN déjà extrait+enrichi → réutilise, pas de nouvel enrichissement
+      f.skip_enrich=true;f.deja_extrait=true;
+      const c0=(f.contacts||[])[0];
+      if(c0){c0.enrich=c0.enrich||{};
+       if(r.siren_connu.email&&!c0.enrich.email)c0.enrich.email=r.siren_connu.email;
+       if(r.siren_connu.telephone&&!c0.enrich.telephone)c0.enrich.telephone=r.siren_connu.telephone;}
+     }
     }
    });
   }catch(e){/* dédup non bloquante : si elle échoue, on crée quand même la liste */}
@@ -2664,6 +2671,7 @@ function ficheReal(e,i){
      ${e.deja_hubspot?'<span class="badge b-dup" title="Un contact de cette fiche existe déjà dans HubSpot">🔶 Déjà dans HubSpot</span>':''}
      ${e.dedup_hubspot?`<span class="badge b-dup" title="Déjà dans HubSpot (${e.dedup_hubspot.stage||'contact'}) — enrichissement bloqué pour économiser des crédits">♻️ Déjà HubSpot</span>`:''}
      ${e.dedup_liste?`<span class="badge b-dup" title="Déjà présent dans une autre liste">📋 Déjà en liste : ${(e.dedup_liste.nom||'').replace(/"/g,'&quot;').slice(0,30)}</span>`:''}
+     ${e.deja_extrait?'<span class="badge b-dup" title="Société déjà extraite et enrichie dans une liste précédente — email/tél réutilisés, pas de nouvel enrichissement">♻️ Déjà extrait</span>':''}
      ${e.lemlist_envoye?'<span class="badge b-new">✈️ Lemlist ✓</span>':''}${e.hubspot_envoye?'<span class="badge b-new">🤝 HubSpot ✓</span>':''}${e.sms_envoye?'<span class="badge b-new">💬 SMS ✓</span>':''}
      ${siteWeb?`<span class="badge b-new"><a href="${siteWeb.startsWith('http')?siteWeb:'https://'+siteWeb}" target="_blank" onclick="event.stopPropagation()" style="color:inherit">🌐 ${siteWeb.replace(/^https?:\/\/(www\.)?/,'').split('/')[0]}</a></span>`:''}
     </div>
@@ -3273,7 +3281,7 @@ async function pipelineFiche(i){
   // ── Garde-fou anti-gaspillage : fiche déjà connue dans HubSpot → on saute l'enrichissement payant ──
   // (sauf si le SDR a explicitement forcé via e.forcer_enrich)
   if(e.skip_enrich&&!e.forcer_enrich){
-   prog(i,100,'♻️ Déjà dans HubSpot — enrichissement ignoré (crédits économisés). Clique « Forcer » si besoin.');
+   prog(i,100,(e.deja_extrait?'♻️ Société déjà extraite (email/tél réutilisés) — enrichissement ignoré.':'♻️ Déjà dans HubSpot — enrichissement ignoré (crédits économisés).')+' Clique « Forcer » si besoin.');
    return {tentes:0,ok:0,skip:true};
   }
   // ── 1. GMB ──
