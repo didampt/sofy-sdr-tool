@@ -1014,7 +1014,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v144';
+const VERSION='v145';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1280,7 +1280,7 @@ function ouvrirEstimationIA(nbPersonnes){
 }
 // ⚠️ Liste intelligente désactivée temporairement (API Basile en panne côté fournisseur — MAJ cassée le 19/06).
 // Pour réactiver quand Basile aura corrigé : repasser IA_INDISPONIBLE à false.
-let IA_INDISPONIBLE=true;
+let IA_INDISPONIBLE=false;
 let CREATION_IA_EN_COURS=false;
 async function creerListeIA(){
  if(IA_INDISPONIBLE){toast('⏳ Liste intelligente temporairement indisponible (maintenance fournisseur).');return;}
@@ -2125,7 +2125,7 @@ function recapAppelsHtml(e){
  return `<div style="margin-top:12px"><div style="font-size:11.5px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">🎧 Appels (${lignes.length}) — clic pour réécouter</div>${items}</div>`;
 }
 
-function afficherAppelsModal(titre,calls){
+function afficherAppelsModal(titre,calls,numeroBrut){
  const liste=(calls||[]).filter(x=>x.record||x.note||x.voicemail);
  if(!liste.length){toast('Aucun enregistrement disponible');return;}
  const html=liste.map(c=>{
@@ -2145,10 +2145,24 @@ function afficherAppelsModal(titre,calls){
   </div>`;
  }).join('');
  document.getElementById('ringover-num').textContent=titre||'';
- document.getElementById('ringover-body').innerHTML=html;
+ document.getElementById('ringover-body').innerHTML='<div id="ringover-fiche-link"></div>'+html;
  document.getElementById('ringover-modal').style.display='flex';
+ if(numeroBrut)chercherFichePopup(numeroBrut);
 }
-function ouvrirAppelsRingover(t){afficherAppelsModal(telNorm(t),RINGOVER_CALLS[cle9Ring(t)]||[]);}
+function chercherFichePopup(numero){
+ const box=document.getElementById('ringover-fiche-link'); if(!box)return;
+ api('/api/fiche-par-numero?numero='+encodeURIComponent(numero)).then(r=>r.json()).then(d=>{
+  const b=document.getElementById('ringover-fiche-link');
+  if(!b||!d||!d.match)return;
+  const m=d.match, n9=String(numero).replace(/\D/g,'').slice(-9);
+  b.innerHTML=`<button class="btn" onclick="ouvrirFicheDepuisAppel(${m.liste_id},'${n9}')" style="background:var(--accent);color:#fff;border-color:var(--accent);margin-bottom:12px">\ud83d\udcc7 Ouvrir la fiche : ${m.entreprise}<span style="opacity:.85;font-weight:400"> \u00b7 ${m.liste_nom}</span></button>`;
+ }).catch(()=>{});
+}
+function ouvrirFicheDepuisAppel(listeId,n9){
+ const modal=document.getElementById('ringover-modal'); if(modal)modal.style.display='none';
+ ouvrirListe(listeId,null,n9);
+}
+function ouvrirAppelsRingover(t){afficherAppelsModal(telNorm(t),RINGOVER_CALLS[cle9Ring(t)]||[],t);}
 // ───────── Journal des appels (Brique 2 — vue manager Romain) ─────────
 let JOURNAL_APPELS=[];
 let APPELS_FILTRES=[];
@@ -2232,7 +2246,7 @@ function resetFiltreAppels(){
 }
 function ouvrirAppelJournal(idx){
  const a=APPELS_FILTRES[idx];
- if(a)afficherAppelsModal(telNorm(a.numero||'')||'Appel',[a]);
+ if(a)afficherAppelsModal(telNorm(a.numero||'')||'Appel',[a],a.numero);
 }
 // ═════════ TABLEAU DE BORD APPELS (Brique 2bis — vue manager) ═════════
 let PERIODE_GRAN='semaine';
