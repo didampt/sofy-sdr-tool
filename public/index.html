@@ -1024,7 +1024,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v154';
+const VERSION='v155';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1363,7 +1363,7 @@ async function creerListeIA(){
   const r=await api('/api/ia-liste-creer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'creer',criteres:IA_CRITERES})});
   const d=await r.json();
   if(d.erreur){toast('Erreur : '+d.erreur);CREATION_IA_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🚀 Générer la liste';}return;}
-  const fiches=d.fiches||[];
+  let fiches=d.fiches||[];
   if(!fiches.length){toast('Aucune fiche trouvée — essaie d\'affiner');CREATION_IA_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🚀 Générer la liste';}return;}
   // 1bis) Déduplication : marque les fiches déjà connues (HubSpot / listes Sofy) pour éviter de brûler des crédits
   if(btn)btn.textContent='⏳ Vérification doublons…';
@@ -1391,6 +1391,12 @@ async function creerListeIA(){
     }
    });
   }catch(e){/* dédup non bloquante : si elle échoue, on crée quand même la liste */}
+  // 1ter) Retire du résultat les sociétés déjà présentes dans une autre liste Sofy
+  const _dups=fiches.filter(f=>f.dedup_liste);
+  const nbDup=_dups.length;
+  const listesDup=[...new Set(_dups.map(f=>(f.dedup_liste&&f.dedup_liste.nom)||'').filter(Boolean))].slice(0,3).join(', ');
+  fiches=fiches.filter(f=>!f.dedup_liste);
+  if(!fiches.length){toast('Toutes les sociétés trouvées sont déjà dans d\'autres listes ('+nbDup+' doublon'+(nbDup>1?'s':'')+'). Rien à créer.');CREATION_IA_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🚀 Générer la liste';}return;}
   // 2) Crée la liste avec ces fiches (marquées)
   const nom='✨ '+(IA_PROMPT_INITIAL.slice(0,50))+(IA_PROMPT_INITIAL.length>50?'…':'');
   const sdr=state.user?state.user.nom:'';
@@ -1398,8 +1404,7 @@ async function creerListeIA(){
   const dc=await rc.json();
   if(dc.erreur){toast('Erreur création : '+dc.erreur);CREATION_IA_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🚀 Générer la liste';}return;}
   document.getElementById('estim-ia-modal').style.display='none';
-  const nbDup=fiches.filter(f=>f.dedup_liste).length;
-  toast('✨ Liste créée : '+fiches.length+' fiches'+(nbDup?(' · '+nbDup+' déjà en liste (grisée'+(nbDup>1?'s':'')+')'):''));
+  toast('✨ Liste créée : '+fiches.length+' fiche'+(fiches.length>1?'s':'')+(nbDup?(' · '+nbDup+' doublon'+(nbDup>1?'s':'')+' retiré'+(nbDup>1?'s':'')+(listesDup?(' (déjà dans : '+listesDup+')'):'')):''));
   setTimeout(()=>{CREATION_IA_EN_COURS=false;ouvrirListe(dc.id);},300);
  }catch(e){toast('Erreur réseau : '+e.message);CREATION_IA_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🚀 Générer la liste';}}
 }
