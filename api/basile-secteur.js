@@ -1,14 +1,18 @@
-// /api/basile-secteur.js — TEMPORAIRE — Le filtre "activity" sauve-t-il le ciblage secteur sur les PERSONNES ?
-// Tout en petit limit -> GRATUIT. Superadmin.
+// /api/basile-secteur.js — TEMPORAIRE — activity sur les personnes + recherche de l'endpoint d'autocomplétion.
 import { verifierToken } from './db.js';
-
 const BASE = 'https://api.basile.cc';
 async function post(path, body, key) {
-  try {
-    const r = await fetch(BASE + path, { method: 'POST', headers: { 'Authorization': key, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    const d = await r.json().catch(() => null);
-    return { status: r.status, data: d, total: (d && d.total != null) ? d.total : null };
-  } catch (e) { return { status: 0, data: null, total: null }; }
+  try { const r = await fetch(BASE + path, { method: 'POST', headers: { 'Authorization': key, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const d = await r.json().catch(() => null); return { status: r.status, data: d, total: (d && d.total != null) ? d.total : null }; }
+  catch (e) { return { status: 0, data: null, total: null }; }
+}
+async function get(path, key) {
+  try { const r = await fetch(BASE + path, { headers: { 'Authorization': key } }); const d = await r.json().catch(() => null); return { status: r.status, data: d }; }
+  catch (e) { return { status: 0, data: null }; }
+}
+function extraireIds(data) {
+  let arr = Array.isArray(data) ? data : (data && (data.suggestions || data.results || data.items || data.data || data.activities)) || [];
+  if (!Array.isArray(arr)) arr = [];
+  return arr.map(it => (typeof it === 'string') ? it : (it.id || it.value || it.concept_id || it.slug || it.key || JSON.stringify(it).slice(0, 50)));
 }
 
 export default async function handler(req, res) {
@@ -22,37 +26,26 @@ export default async function handler(req, res) {
   const fr = { include: ['FR'] };
   const out = [];
 
-  // ④ référence : Directeur Marketing seul
   const ref = await post('/people/find', { limit: 1, filters: { result_role: roleMkt, result_country_code: fr } }, key);
-  const refTotal = ref.total;
-  out.push({ label: '④ People: Dir. Marketing seul (référence)', type: 'personnes', status: ref.status, total: refTotal });
+  out.push({ label: '④ Dir. Marketing seul (référence)', type: 'personnes', status: ref.status, total: ref.total });
 
-  // ⑤ activity filtre-t-il les PERSONNES ? (id certifié btp_global)
-  const pBtp = await post('/people/find', { limit: 1, filters: { result_role: roleMkt, activity: { include: ['btp_global'] }, result_country_code: fr } }, key);
-  out.push({ label: '⑤ People: Dir. Marketing + activity=btp_global', type: 'personnes', status: pBtp.status, total: pBtp.total, note_cible: 'vs ④ (' + (refTotal != null ? refTotal.toLocaleString('fr-FR') : '?') + ') : si << alors activity FILTRE les personnes' });
+  const pHosp = await post('/people/find', { limit: 1, filters: { result_role: roleMkt, activity: { include: ['hospitality_global'] }, result_country_code: fr } }, key);
+  out.push({ label: '⑦ Dir. Marketing + activity=hospitality_global', type: 'personnes', status: pHosp.status, total: pHosp.total });
 
-  // ⑥ trouver l'ID concept "restauration" via des slugs plausibles, testés sur ENTREPRISES (où activity marche)
-  const guesses = ['restauration_global', 'food_global', 'restaurants_global', 'fast_food_global', 'hospitality_global', 'restauration_rapide_global'];
-  let best = null; const gr = [];
-  for (const g of guesses) {
-    const r = await post('/companies/find', { limit: 1, filters: { activity: { include: [g] } } }, key);
-    const t = r.total;
-    const plausible = (t != null && t > 5000 && t < 3000000);
-    gr.push(g + ' = ' + (t == null ? 'KO' : t.toLocaleString('fr-FR')) + (plausible ? ' ✓' : (t != null && t >= 3000000 ? ' (ignoré?)' : '')));
-    if (plausible && !best) best = g;
+  // ⑧ Trouver l'endpoint d'autocomplétion des activités (pattern /people/<type>/suggest)
+  const types = ['activities', 'activity', 'sectors', 'sector', 'industries', 'industry', 'naf', 'concepts'];
+  const trouve = [];
+  let bonChemin = null; let exemples = [];
+  for (const t of types) {
+    const sg = await get('/people/' + t + '/suggest?q=restauration', key);
+    if (sg.status === 200 && sg.data) {
+      const ids = extraireIds(sg.data);
+      trouve.push('/people/' + t + '/suggest = 200 ✓ (' + ids.length + ' ids)');
+      if (ids.length && !bonChemin) { bonChemin = '/people/' + t + '/suggest'; exemples = ids.slice(0, 8); }
+    } else { trouve.push('/people/' + t + '/suggest = ' + sg.status); }
   }
-  out.push({ label: '⑥ IDs activity "restauration" testés (entreprises)', type: 'concepts', status: 200, total: null, apercu: gr });
+  out.push({ label: '⑧ Recherche endpoint autocomplétion', type: 'endpoints', status: 200, total: null, apercu: trouve });
+  if (bonChemin) out.push({ label: '✅ Endpoint trouvé : ' + bonChemin + ' — IDs "restauration"', type: 'concepts', status: 200, total: exemples.length, apercu: exemples });
 
-  // ⑦ si un ID valide : Directeur Marketing + cet ID sur les PERSONNES
-  if (best) {
-    const pAct = await post('/people/find', { limit: 3, filters: { result_role: roleMkt, activity: { include: [best] }, result_country_code: fr } }, key);
-    out.push({ label: '⑦ People: Dir. Marketing + activity="' + best + '"', type: 'personnes', status: pAct.status, total: pAct.total, note_cible: 'vs ④ (' + (refTotal != null ? refTotal.toLocaleString('fr-FR') : '?') + ') : si << alors on PEUT cibler poste + secteur sur les personnes' });
-  } else {
-    out.push({ label: '⑦ People: Dir. Marketing + activity', type: 'personnes', status: 0, total: null, note_cible: 'aucun ID activity restauration plausible trouvé en ⑥' });
-  }
-
-  return res.status(200).json({
-    note: 'DÉCISIF : ⑤ et ⑦ comparés à ④. Si activity réduit fortement le total, le secteur filtre enfin les personnes (poste + secteur possible). Sinon, impossible avec Basile.',
-    out
-  });
+  return res.status(200).json({ note: '⑦ confirme : activity filtre les personnes. ⑧ cherche l\'endpoint qui donne les slugs précis (ex. restauration rapide).', out });
 }
