@@ -966,6 +966,11 @@ Spot-Hit</textarea>
           <span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">Trouve le bon champ géo pour cibler les DOM (compare codes pays ISO, région, et approche entreprise).</span>
         </div>
         <div id="geo-basile-res"></div>
+        <div class="save-bar" style="justify-content:flex-start;margin-top:14px">
+          <button class="btn" style="background:var(--paper)" onclick="testSecteurBasile()">🍔 Test secteur national (gratuit)</button>
+          <span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">Vérifie si la chaîne secteur (restauration rapide) sort de vrais décideurs ou juste des gérants.</span>
+        </div>
+        <div id="secteur-basile-res"></div>
       </div>
 </section>
 
@@ -1024,7 +1029,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v155';
+const VERSION='v156';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2277,6 +2282,22 @@ async function testGeoBasile(){
   }).join('');
   box.innerHTML=`<div style="margin-top:12px;font-size:13px;line-height:1.5;background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 14px">
     <div style="color:var(--ink-soft);font-size:12px;margin-bottom:4px">${esc(d.note||'')}</div>${lignes}</div>`;
+ }catch(e){box.innerHTML='<span style="color:var(--danger);font-size:13px">Erreur : '+e.message+'</span>';}
+}
+async function testSecteurBasile(){
+ const box=document.getElementById('secteur-basile-res'); if(!box)return;
+ box.innerHTML='<span style="color:var(--ink-soft);font-size:13px">🍔 Test secteur en cours… (gratuit)</span>';
+ try{
+  const r=await api('/api/basile-secteur'); const d=await r.json();
+  if(d.erreur){box.innerHTML='<span style="color:var(--danger);font-size:13px">'+d.erreur+'</span>';return;}
+  const esc=s=>String(s).replace(/</g,'&lt;');
+  const lignes=(d.out||[]).map(o=>{
+    const tot=o.total==null?'(total absent)':o.total.toLocaleString('fr-FR');
+    const cible=o.note_cible?`<div style="color:#0c447c;font-size:12px;margin-top:2px">🎯 ${esc(o.note_cible)}</div>`:'';
+    const ap=(o.apercu||[]).length?`<div style="color:var(--ink-soft);font-size:12px;margin-top:2px">${o.apercu.map(esc).join(' · ')}</div>`:'';
+    return `<div style="margin-top:8px"><b>${esc(o.label)}</b> → <span style="font-weight:700">${tot}</span> <span style="color:var(--ink-soft);font-size:11px">(${o.type}, http ${o.status})</span>${cible}${ap}</div>`;
+  }).join('');
+  box.innerHTML=`<div style="margin-top:12px;font-size:13px;line-height:1.5;background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 14px"><div style="color:var(--ink-soft);font-size:12px;margin-bottom:4px">${esc(d.note||'')}</div>${lignes}</div>`;
  }catch(e){box.innerHTML='<span style="color:var(--danger);font-size:13px">Erreur : '+e.message+'</span>';}
 }
 function ouvrirAppelsRingover(t){afficherAppelsModal(telNorm(t),RINGOVER_CALLS[cle9Ring(t)]||[],t);}
