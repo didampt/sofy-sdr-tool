@@ -956,21 +956,6 @@ Spot-Hit</textarea>
           <button class="btn" style="background:var(--paper)" id="btn-migrer-stats" onclick="migrerStats()">📊 Recalculer les stats des listes</button>
           <span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">À lancer une fois après une mise à jour, pour pré-calculer les statistiques des anciennes listes.</span>
         </div>
-        <div class="save-bar" style="justify-content:flex-start;margin-top:14px">
-          <button class="btn" style="background:var(--paper)" onclick="diagBasile()">🔬 Diagnostic Basile (filtre)</button>
-          <span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">Compare 2 filtres de poste opposés pour voir si Basile filtre vraiment les leads.</span>
-        </div>
-        <div id="diag-basile-res"></div>
-        <div class="save-bar" style="justify-content:flex-start;margin-top:14px">
-          <button class="btn" style="background:var(--paper)" onclick="testGeoBasile()">🌍 Test géo / DOM (gratuit)</button>
-          <span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">Trouve le bon champ géo pour cibler les DOM (compare codes pays ISO, région, et approche entreprise).</span>
-        </div>
-        <div id="geo-basile-res"></div>
-        <div class="save-bar" style="justify-content:flex-start;margin-top:14px">
-          <button class="btn" style="background:var(--paper)" onclick="testSecteurBasile()">🍔 Test secteur national (gratuit)</button>
-          <span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">Vérifie si la chaîne secteur (restauration rapide) sort de vrais décideurs ou juste des gérants.</span>
-        </div>
-        <div id="secteur-basile-res"></div>
       </div>
 </section>
 
@@ -1029,7 +1014,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v157';
+const VERSION='v158';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2249,56 +2234,6 @@ function chercherFichePopup(numero){
 function ouvrirFicheDepuisAppel(listeId,n9){
  const modal=document.getElementById('ringover-modal'); if(modal)modal.style.display='none';
  ouvrirListe(listeId,null,n9);
-}
-async function diagBasile(){
- const box=document.getElementById('diag-basile-res'); if(!box)return;
- box.innerHTML='<span style="color:var(--ink-soft);font-size:13px">🔬 Test en cours…</span>';
- try{
-  const r=await api('/api/basile-debug8'); const d=await r.json();
-  if(d.erreur){box.innerHTML='<span style="color:var(--danger);font-size:13px">'+d.erreur+'</span>';return;}
-  const o=d.out||{};
-  const A=(o.A_aucun_filtre||{}).postes||[], B=(o.B_poste_DC||{}).postes||[], C=(o.C_poste_dev||{}).postes||[];
-  const filtre=B.length&&C.length&&B.join('|')!==C.join('|');
-  box.innerHTML=`<div style="margin-top:12px;font-size:13px;line-height:1.6">
-    <div style="font-weight:700;color:${filtre?'var(--ok)':'var(--danger)'};margin-bottom:8px">${filtre?'✅ Le filtre Basile FONCTIONNE — les postes changent selon le filtre.':'❌ Basile ne filtre PAS — mêmes postes quel que soit le filtre.'}</div>
-    <div style="color:var(--ink-soft)"><b>Filtre « Directeur Commercial » →</b> ${B.length?B.join(', '):'(aucun lead)'}</div>
-    <div style="color:var(--ink-soft);margin-top:4px"><b>Filtre « Développeur » →</b> ${C.length?C.join(', '):'(aucun lead)'}</div>
-    <div style="color:var(--ink-soft);margin-top:4px"><b>Sans filtre →</b> ${A.length?A.slice(0,6).join(', '):'(aucun lead)'}</div>
-   </div>`;
- }catch(e){box.innerHTML='<span style="color:var(--danger);font-size:13px">Erreur : '+e.message+'</span>';}
-}
-async function testGeoBasile(){
- const box=document.getElementById('geo-basile-res'); if(!box)return;
- box.innerHTML='<span style="color:var(--ink-soft);font-size:13px">🌍 Tests géo en cours… (gratuit)</span>';
- try{
-  const r=await api('/api/basile-geo'); const d=await r.json();
-  if(d.erreur){box.innerHTML='<span style="color:var(--danger);font-size:13px">'+d.erreur+'</span>';return;}
-  const esc=s=>String(s).replace(/</g,'&lt;');
-  const lignes=(d.out||[]).map(o=>{
-    if(o.erreur)return `<div style="margin-top:8px"><b>${esc(o.label)}</b> — <span style="color:var(--danger)">${esc(o.erreur)}</span></div>`;
-    const tot=o.total==null?'(total absent)':o.total.toLocaleString('fr-FR');
-    const ap=(o.apercu||[]).length?`<div style="color:var(--ink-soft);font-size:12px;margin-top:2px">${o.apercu.map(esc).join(' · ')}</div>`:'';
-    return `<div style="margin-top:8px"><b>${esc(o.label)}</b> → <span style="font-weight:700">${tot}</span> <span style="color:var(--ink-soft);font-size:11px">(${o.type}, http ${o.status})</span>${ap}</div>`;
-  }).join('');
-  box.innerHTML=`<div style="margin-top:12px;font-size:13px;line-height:1.5;background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 14px">
-    <div style="color:var(--ink-soft);font-size:12px;margin-bottom:4px">${esc(d.note||'')}</div>${lignes}</div>`;
- }catch(e){box.innerHTML='<span style="color:var(--danger);font-size:13px">Erreur : '+e.message+'</span>';}
-}
-async function testSecteurBasile(){
- const box=document.getElementById('secteur-basile-res'); if(!box)return;
- box.innerHTML='<span style="color:var(--ink-soft);font-size:13px">🍔 Test secteur en cours… (gratuit)</span>';
- try{
-  const r=await api('/api/basile-secteur'); const d=await r.json();
-  if(d.erreur){box.innerHTML='<span style="color:var(--danger);font-size:13px">'+d.erreur+'</span>';return;}
-  const esc=s=>String(s).replace(/</g,'&lt;');
-  const lignes=(d.out||[]).map(o=>{
-    const tot=o.total==null?'(total absent)':o.total.toLocaleString('fr-FR');
-    const cible=o.note_cible?`<div style="color:#0c447c;font-size:12px;margin-top:2px">🎯 ${esc(o.note_cible)}</div>`:'';
-    const ap=(o.apercu||[]).length?`<div style="color:var(--ink-soft);font-size:12px;margin-top:2px">${o.apercu.map(esc).join(' · ')}</div>`:'';
-    return `<div style="margin-top:8px"><b>${esc(o.label)}</b> → <span style="font-weight:700">${tot}</span> <span style="color:var(--ink-soft);font-size:11px">(${o.type}, http ${o.status})</span>${cible}${ap}</div>`;
-  }).join('');
-  box.innerHTML=`<div style="margin-top:12px;font-size:13px;line-height:1.5;background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 14px"><div style="color:var(--ink-soft);font-size:12px;margin-bottom:4px">${esc(d.note||'')}</div>${lignes}</div>`;
- }catch(e){box.innerHTML='<span style="color:var(--danger);font-size:13px">Erreur : '+e.message+'</span>';}
 }
 function ouvrirAppelsRingover(t){afficherAppelsModal(telNorm(t),RINGOVER_CALLS[cle9Ring(t)]||[],t);}
 // ───────── Journal des appels (Brique 2 — vue manager Romain) ─────────
