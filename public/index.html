@@ -961,6 +961,11 @@ Spot-Hit</textarea>
           <span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">Compare 2 filtres de poste opposés pour voir si Basile filtre vraiment les leads.</span>
         </div>
         <div id="diag-basile-res"></div>
+        <div class="save-bar" style="justify-content:flex-start;margin-top:14px">
+          <button class="btn" style="background:var(--paper)" onclick="testGeoBasile()">🌍 Test géo / DOM (gratuit)</button>
+          <span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">Trouve le bon champ géo pour cibler les DOM (compare codes pays ISO, région, et approche entreprise).</span>
+        </div>
+        <div id="geo-basile-res"></div>
       </div>
 </section>
 
@@ -1019,7 +1024,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v149';
+const VERSION='v150';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2198,6 +2203,23 @@ async function diagBasile(){
     <div style="color:var(--ink-soft);margin-top:4px"><b>Filtre « Développeur » →</b> ${C.length?C.join(', '):'(aucun lead)'}</div>
     <div style="color:var(--ink-soft);margin-top:4px"><b>Sans filtre →</b> ${A.length?A.slice(0,6).join(', '):'(aucun lead)'}</div>
    </div>`;
+ }catch(e){box.innerHTML='<span style="color:var(--danger);font-size:13px">Erreur : '+e.message+'</span>';}
+}
+async function testGeoBasile(){
+ const box=document.getElementById('geo-basile-res'); if(!box)return;
+ box.innerHTML='<span style="color:var(--ink-soft);font-size:13px">🌍 Tests géo en cours… (gratuit)</span>';
+ try{
+  const r=await api('/api/basile-geo'); const d=await r.json();
+  if(d.erreur){box.innerHTML='<span style="color:var(--danger);font-size:13px">'+d.erreur+'</span>';return;}
+  const esc=s=>String(s).replace(/</g,'&lt;');
+  const lignes=(d.out||[]).map(o=>{
+    if(o.erreur)return `<div style="margin-top:8px"><b>${esc(o.label)}</b> — <span style="color:var(--danger)">${esc(o.erreur)}</span></div>`;
+    const tot=o.total==null?'(total absent)':o.total.toLocaleString('fr-FR');
+    const ap=(o.apercu||[]).length?`<div style="color:var(--ink-soft);font-size:12px;margin-top:2px">${o.apercu.map(esc).join(' · ')}</div>`:'';
+    return `<div style="margin-top:8px"><b>${esc(o.label)}</b> → <span style="font-weight:700">${tot}</span> <span style="color:var(--ink-soft);font-size:11px">(${o.type}, http ${o.status})</span>${ap}</div>`;
+  }).join('');
+  box.innerHTML=`<div style="margin-top:12px;font-size:13px;line-height:1.5;background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 14px">
+    <div style="color:var(--ink-soft);font-size:12px;margin-bottom:4px">${esc(d.note||'')}</div>${lignes}</div>`;
  }catch(e){box.innerHTML='<span style="color:var(--danger);font-size:13px">Erreur : '+e.message+'</span>';}
 }
 function ouvrirAppelsRingover(t){afficherAppelsModal(telNorm(t),RINGOVER_CALLS[cle9Ring(t)]||[],t);}
