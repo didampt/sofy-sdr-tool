@@ -892,9 +892,8 @@ Spot-Hit</textarea>
       <div class="eyebrow">Management</div>
       <h1>🎧 Journal des appels</h1>
       <p class="sub">Tous les appels récents de l'équipe (Ringover). Filtre par SDR ou par jour, clique sur un appel pour réécouter l'enregistrement et lire le résumé IA.</p>
-      <div id="appels-dashboard"></div>
-      <div class="map-card">
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+      <div class="map-card" style="margin-bottom:14px">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <select class="field" id="filtre-appels-sdr" onchange="appliquerFiltreAppels()" style="max-width:220px"><option value="">Tous les SDR</option></select>
           <select class="field" id="filtre-appels-jour" onchange="appliquerFiltreAppels()" style="max-width:200px"><option value="">Tous les jours</option></select>
           <label style="font-size:12.5px;color:var(--ink-soft);display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="filtre-appels-rec" onchange="appliquerFiltreAppels()"> Avec enregistrement seulement</label>
@@ -902,6 +901,9 @@ Spot-Hit</textarea>
           <button class="btn" onclick="exportAppelsCSV()" style="background:var(--paper)">⬇️ Exporter CSV</button>
           <span id="filtre-appels-compte" style="font-size:12.5px;color:var(--ink-soft)"></span>
         </div>
+      </div>
+      <div id="appels-dashboard"></div>
+      <div class="map-card">
         <div id="appels-list"><div style="color:var(--ink-soft);padding:14px">Chargement…</div></div>
       </div>
     </section>
@@ -1011,7 +1013,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v142';
+const VERSION='v143';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2159,7 +2161,6 @@ async function chargerAppels(){
   JOURNAL_APPELS=d.appels||[];
   remplirFiltresAppels();
   appliquerFiltreAppels();
-  renderDashboard();
  }catch(e){if(cont)cont.innerHTML='<div style="color:var(--danger);padding:14px">Erreur : '+e.message+'</div>';}
 }
 function remplirFiltresAppels(){
@@ -2207,11 +2208,12 @@ function appliquerFiltreAppels(){
   return true;
  });
  renderAppels(APPELS_FILTRES);
+ renderDashboard();
 }
 function resetFiltreAppels(){
  ['filtre-appels-sdr','filtre-appels-jour'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
  const rc=document.getElementById('filtre-appels-rec');if(rc)rc.checked=false;
- renderAppels(JOURNAL_APPELS);
+ appliquerFiltreAppels();
 }
 function ouvrirAppelJournal(idx){
  const a=APPELS_FILTRES[idx];
@@ -2266,8 +2268,8 @@ function _periodeMatrix(g){
 
 function renderDashboard(){
  const box=document.getElementById('appels-dashboard'); if(!box)return;
- const A=JOURNAL_APPELS||[];
- if(!A.length){box.innerHTML='';return;}
+ const A=(typeof APPELS_FILTRES!=='undefined'&&Array.isArray(APPELS_FILTRES))?APPELS_FILTRES:(JOURNAL_APPELS||[]);
+ if(!A.length){box.innerHTML='<div class="map-card" style="color:var(--ink-soft)">Aucun appel pour cette sélection.</div>';return;}
  const total=A.length, answered=A.filter(a=>a.is_answered).length, sansRep=total-answered;
  const dur=A.filter(a=>a.is_answered&&a.incall_duration>0).map(a=>a.incall_duration);
  const tmc=dur.length?dur.reduce((x,y)=>x+y,0)/dur.length:0;
