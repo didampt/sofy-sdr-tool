@@ -1,16 +1,14 @@
 // /api/ia-liste-creer.js — Orchestrateur de la "Liste intelligente".
-// ARCHITECTURE (validée par diagnostics réels) :
-//   Basile source LKI (LinkedIn) = personnes par POSTE + persona + profil LinkedIn.
-//   On cherche les PERSONNES directement (pas les entreprises d'abord).
-//   Email/téléphone NE sont PAS chez Basile -> récupérés ensuite par le waterfall Sofy (Kaspr part du profile_url).
+// DEUX CHEMINS (validés par diagnostics réels) :
+//   A) MÉTROPOLE / national  -> recherche PERSONNES par POSTE (result_role + result_country_code).
+//   B) ZONE DOM (971..976)   -> ENTREPRISE D'ABORD : companies/find (naf_code + headquarters_postal_code)
+//        -> on récupère les SIREN -> people/find (siren + result_is_current) -> dirigeants.
+//      Raison : Basile n'a quasi pas de PERSONNES en DOM (test géo), mais beaucoup d'ENTREPRISES.
+//      Les filtres region_code/department_code n'existent pas ; la géo fine se fait par CODE POSTAL.
 //
 // POST { mode, criteres }
-//   mode = 'estimer' -> comptage gratuit : { nb_personnes }
-//   mode = 'creer'   -> recherche réelle : { fiches:[...] } au format Sofy (avec LinkedIn, sans email/tel)
-//
-// Champs réels source LKI : people_first_name, people_last_name, current_job_title,
-//   current_job_functions [{function, sub_function}], current_seniority, current_company_name,
-//   current_company_profile_url, profile_url, location_city, location_region, location_country_code.
+//   mode='estimer' -> comptage gratuit (+ échantillon de dirigeants en mode DOM)
+//   mode='creer'   -> fiches au format Sofy
 
 const BASE = 'https://api.basile.cc';
 
@@ -25,38 +23,20 @@ async function basile(path, body, key) {
   return { status: r.status, data };
 }
 
-// Régions LinkedIn correspondant aux DOM (location_region renvoyé par Basile)
-const REGIONS_DOM = {
-  '971': ['Guadeloupe'],
-  '972': ['Martinique'],
-  '973': ['Guyane française', 'French Guiana', 'Guyane'],
-  '974': ['La Réunion', 'Réunion', 'Reunion'],
-  '976': ['Mayotte']
-};
+const DOM = ['971', '972', '973', '974', '976'];
 
-// Traduction des critères IA -> filtres Basile (PERSONNES, source LinkedIn)
+// Codes postaux d'un DOM (ex '971' -> 97100..97199). Basile n'accepte pas les wildcards -> on énumère.
+function cpPrefix(p) { const a = []; for (let i = 0; i < 100; i++) a.push(p + String(i).padStart(2, '0')); return a; }
+
+// ---------- PERSONNES (chemin métropole) ----------
 function filtresPersonnes(c) {
   const f = {};
-  if (Array.isArray(c.postes) && c.postes.length) {
-    f.result_role = { include: c.postes };
-  }
+  if (Array.isArray(c.postes) && c.postes.length) f.result_role = { include: c.postes };
   f.result_country_code = { include: Array.isArray(c.pays) && c.pays.length ? c.pays : ['FR'] };
-  const zones = Array.isArray(c.zones) ? c.zones : [];
-  const veutMetropole = zones.includes('metropole');
-  const regionsDom = [];
-  for (const z of zones) if (REGIONS_DOM[z]) regionsDom.push(...REGIONS_DOM[z]);
-  if (regionsDom.length && !veutMetropole) {
-    f.result_region = { include: regionsDom };
-  }
-  // Secteur : codes NAF exacts extraits par l'IA (ex ["45.31Z","45.20A"]). Wildcard non supporté.
-  if (Array.isArray(c.naf_codes) && c.naf_codes.length) {
-    f.naf_code = { include: c.naf_codes };
-  }
-  return { filtres: f, veutMetropole, zones };
+  return f;
 }
 
-// Mappe un lead Basile (source LKI) -> fiche Sofy
-function leadVersFiche(lead) {
+function leadVersFichePersonne(lead) {
   const d = lead.data || lead || {};
   const prenom = d.people_first_name || d.result_first_name || '';
   const nomContact = d.people_last_name || d.result_last_name || '';
@@ -70,53 +50,111 @@ function leadVersFiche(lead) {
   const entreprise = d.current_company_name || '';
   const linkedinEnt = d.current_company_profile_url || null;
   const ville = d.location_city || d.result_city || '';
-  const region = d.result_region || d.location_region || '';
-  const siren = d.siren || null;
 
-  const contact = {
-    prenom, nom: nomContact,
-    fonction: titre || persona || '',
-    source: 'basile',
-    enrich: {}
-  };
+  const contact = { prenom, nom: nomContact, fonction: titre || persona || '', source: 'basile', enrich: {} };
   if (linkedinPerso) contact.enrich.linkedin = linkedinPerso;
 
   return {
     nom: entreprise || (prenom + ' ' + nomContact).trim() || 'Sans nom',
-    ville,
-    code_postal: '',
-    region,
-    adresse: '',
-    naf: null, siren,
-    site_web: null,
-    linkedin_entreprise: linkedinEnt,
-    persona_ia: persona || null,
-    seniorite_basile: seniorite || null,
+    ville, code_postal: '', region: '', adresse: '', naf: null, siren: d.siren || null,
+    site_web: null, linkedin_entreprise: linkedinEnt,
+    persona_ia: persona || null, seniorite_basile: seniorite || null,
     activite: null, effectif: null, chiffre_affaires: null, nb_etablissements: null,
-    dirigeant: null, enseigne: null,
-    source: 'basile',
-    contacts: [contact],
-    _region_brut: region,
-    _pays_brut: d.location_country_code || d.result_country_code || ''
+    dirigeant: null, enseigne: null, source: 'basile',
+    contacts: [contact]
   };
 }
 
-// Post-filtrage géo : si on cible des DOM précis (sans métropole), garder seulement ces régions
-function gardeZone(fiche, veutMetropole, zones) {
-  const regionsDom = [];
-  for (const z of zones) if (REGIONS_DOM[z]) regionsDom.push(...REGIONS_DOM[z]);
-  if (veutMetropole || !regionsDom.length) return true;
-  const reg = (fiche._region_brut || '').toLowerCase();
-  return regionsDom.some(r => reg.includes(r.toLowerCase()));
+// ---------- ENTREPRISES (chemin DOM) ----------
+function nafFiltre(c) { return (Array.isArray(c.naf_codes) && c.naf_codes.length) ? { include: c.naf_codes } : null; }
+
+function listeEntreprises(data) { return (data && (data.companies || data.leads || data.results)) || []; }
+function lireEntreprise(co) {
+  const x = co.data || co || {};
+  return {
+    siren: x.siren || x.siren_number || null,
+    nom: x.company_name || x.name || x.denomination || x.legal_name || '',
+    ville: x.headquarters_city || x.city || x.headquarters_locality || '',
+    cp: x.headquarters_postal_code || x.postal_code || '',
+    naf: x.naf_code || x.naf || x.ape || null
+  };
 }
 
-// Regroupe les contacts par entreprise
+const EXCLURE_ROLE = /commissaire aux comptes|commissaire|suppléant|suppleant/i;
+
+function dirigeantVersFiche(lead, infoSiren) {
+  const d = lead.data || lead || {};
+  const prenom = d.people_first_name || d.result_first_name || '';
+  const nomContact = d.people_last_name || d.result_last_name || '';
+  const role = d.result_role || d.current_job_title || d.mandate_role || 'Dirigeant';
+  const linkedinPerso = d.profile_url || null;
+  const siren = d.siren || (infoSiren && infoSiren.siren) || null;
+  const info = infoSiren || {};
+  const entreprise = info.nom || d.current_company_name || '';
+
+  const contact = { prenom, nom: nomContact, fonction: role, source: 'basile', enrich: {} };
+  if (linkedinPerso) contact.enrich.linkedin = linkedinPerso;
+
+  return {
+    nom: entreprise || (prenom + ' ' + nomContact).trim() || 'Sans nom',
+    ville: info.ville || '', code_postal: info.cp || '', region: '', adresse: '',
+    naf: info.naf || null, siren, site_web: null, linkedin_entreprise: null,
+    persona_ia: null, seniorite_basile: null,
+    activite: null, effectif: null, chiffre_affaires: null, nb_etablissements: null,
+    dirigeant: null, enseigne: null, source: 'basile',
+    contacts: [contact],
+    _role: role
+  };
+}
+
+// Récupère des entreprises DOM (naf + code postal) et collecte SIREN + infos. cap = nb max de SIREN.
+async function collecterSiren(domPrefixes, naf, key, capSiren, limitParDom) {
+  const sirens = []; const infoBySiren = {}; let totalEnt = 0;
+  for (let i = 0; i < domPrefixes.length; i++) {
+    if (sirens.length >= capSiren) break;
+    const f = { headquarters_postal_code: { include: cpPrefix(domPrefixes[i]) } };
+    if (naf) f.naf_code = naf;
+    const r = await basile('/companies/find', { limit: limitParDom, filters: f }, key);
+    if (r.data && r.data.total != null) totalEnt += r.data.total;
+    for (const co of listeEntreprises(r.data)) {
+      const e = lireEntreprise(co);
+      if (e.siren && !infoBySiren[e.siren]) { infoBySiren[e.siren] = e; sirens.push(e.siren); }
+      if (sirens.length >= capSiren) break;
+    }
+  }
+  return { sirens, infoBySiren, totalEnt };
+}
+
+// people/find par paquets de SIREN -> dirigeants (current), hors commissaires.
+async function dirigeantsParSiren(sirens, infoBySiren, key, capFiches) {
+  let out = [];
+  const taille = 30;
+  for (let i = 0; i < sirens.length; i += taille) {
+    if (out.length >= capFiches) break;
+    const part = sirens.slice(i, i + taille);
+    const r = await basile('/people/find', { limit: 100, filters: { siren: { include: part }, result_is_current: true } }, key);
+    const leads = (r.data && r.data.leads) || [];
+    for (const l of leads) {
+      const d = l.data || l || {};
+      const fiche = dirigeantVersFiche(l, infoBySiren[d.siren]);
+      if (EXCLURE_ROLE.test(fiche._role)) continue;
+      out.push(fiche);
+      if (out.length >= capFiches) break;
+    }
+  }
+  return out;
+}
+
 function regrouperParEntreprise(fiches) {
   const parNom = new Map();
   for (const f of fiches) {
-    const cle = (f.nom || '').toLowerCase().trim();
+    const cle = (f.nom || '').toLowerCase().trim() || ('x' + Math.random());
     if (!parNom.has(cle)) parNom.set(cle, f);
-    else parNom.get(cle).contacts.push(...f.contacts);
+    else {
+      const exist = parNom.get(cle);
+      const dejaNoms = new Set(exist.contacts.map(c => (c.prenom + ' ' + c.nom).toLowerCase()));
+      for (const c of f.contacts) { const k = (c.prenom + ' ' + c.nom).toLowerCase(); if (!dejaNoms.has(k)) { exist.contacts.push(c); dejaNoms.add(k); } }
+    }
   }
   return [...parNom.values()];
 }
@@ -133,38 +171,86 @@ export default async function handler(req, res) {
   const { mode, criteres } = req.body || {};
   if (!criteres || typeof criteres !== 'object') return res.status(400).json({ erreur: 'criteres requis' });
 
-  const { filtres, veutMetropole, zones } = filtresPersonnes(criteres);
+  const zones = Array.isArray(criteres.zones) ? criteres.zones : [];
+  const veutMetropole = zones.includes('metropole');
+  const domPrefixes = zones.filter(z => DOM.includes(z));
+  const companyFirst = domPrefixes.length > 0 && !veutMetropole;
+  const naf = nafFiltre(criteres);
 
   try {
+    // ========================= CHEMIN DOM (entreprise d'abord) =========================
+    if (companyFirst) {
+      if (mode === 'estimer') {
+        // Comptage entreprises (1 appel/DOM, le 1er ramène un échantillon)
+        let totalEnt = 0; let sampleSirens = []; let sampleInfo = {};
+        for (let i = 0; i < domPrefixes.length; i++) {
+          const f = { headquarters_postal_code: { include: cpPrefix(domPrefixes[i]) } };
+          if (naf) f.naf_code = naf;
+          const r = await basile('/companies/find', { limit: i === 0 ? 20 : 1, filters: f }, key);
+          if (r.status === 401) return res.status(502).json({ erreur: 'Clé Basile refusée' });
+          if (r.data && r.data.total != null) totalEnt += r.data.total;
+          if (i === 0) {
+            for (const co of listeEntreprises(r.data)) {
+              const e = lireEntreprise(co);
+              if (e.siren && !sampleInfo[e.siren]) { sampleInfo[e.siren] = e; sampleSirens.push(e.siren); }
+              if (sampleSirens.length >= 8) break;
+            }
+          }
+        }
+        // Échantillon de dirigeants (validation de la chaîne, gratuit)
+        let echantillon = [];
+        if (sampleSirens.length) {
+          const fiches = await dirigeantsParSiren(sampleSirens, sampleInfo, key, 8);
+          echantillon = fiches.slice(0, 6).map(f => ({
+            nom: ((f.contacts[0].prenom || '') + ' ' + (f.contacts[0].nom || '')).trim() || '—',
+            role: f.contacts[0].fonction || '—',
+            entreprise: f.nom || '—',
+            ville: f.ville || ''
+          }));
+        }
+        return res.status(200).json({
+          mode_recherche: 'entreprise',
+          nb_entreprises: totalEnt,
+          nb_personnes: null,
+          echantillon_dirigeants: echantillon,
+          _filtres: { naf_code: naf || { include: [] }, zones_dom: domPrefixes }
+        });
+      }
+
+      if (mode === 'creer') {
+        const { sirens, infoBySiren } = await collecterSiren(domPrefixes, naf, key, 100, 100);
+        if (!sirens.length) return res.status(200).json({ fiches: [], nb: 0, mode_recherche: 'entreprise', message: 'Aucune entreprise trouvée pour ce secteur dans la zone.' });
+        let fiches = await dirigeantsParSiren(sirens, infoBySiren, key, 150);
+        fiches = regrouperParEntreprise(fiches).slice(0, 100);
+        fiches.forEach(f => { delete f._role; });
+        return res.status(200).json({ fiches, nb: fiches.length, mode_recherche: 'entreprise' });
+      }
+      return res.status(400).json({ erreur: 'mode inconnu (estimer|creer)' });
+    }
+
+    // ========================= CHEMIN MÉTROPOLE (personne par poste) =========================
+    const filtres = filtresPersonnes(criteres);
     if (mode === 'estimer') {
       const r = await basile('/people/find', { limit: 1, filters: filtres }, key);
       if (r.status === 401) return res.status(502).json({ erreur: 'Clé Basile refusée' });
       return res.status(200).json({
+        mode_recherche: 'personne',
         nb_personnes: r.data?.total || 0,
         nb_entreprises: null,
-        nb_contacts_estimes: r.data?.total || 0,
         _filtres: filtres,
         _status: r.status,
         _ok: r.data?.success !== false
       });
     }
-
     if (mode === 'creer') {
       const r = await basile('/people/find', { limit: 100, filters: filtres }, key);
       if (r.status === 402) return res.status(402).json({ erreur: 'Abonnement Basile requis (pagination)' });
       if (!r.data || r.data.success === false) return res.status(502).json({ erreur: 'Recherche Basile échouée', status: r.status });
-      let leads = r.data.leads || [];
-
-      let fiches = leads.map(leadVersFiche)
-        .filter(f => f.contacts[0] && f.contacts[0].enrich && f.contacts[0].enrich.linkedin)
-        .filter(f => gardeZone(f, veutMetropole, zones));
-
+      let fiches = (r.data.leads || []).map(leadVersFichePersonne)
+        .filter(f => f.contacts[0] && f.contacts[0].enrich && f.contacts[0].enrich.linkedin);
       fiches = regrouperParEntreprise(fiches);
-      fiches.forEach(f => { delete f._region_brut; delete f._pays_brut; });
-
-      return res.status(200).json({ fiches, nb: fiches.length });
+      return res.status(200).json({ fiches, nb: fiches.length, mode_recherche: 'personne' });
     }
-
     return res.status(400).json({ erreur: 'mode inconnu (estimer|creer)' });
   } catch (e) {
     return res.status(500).json({ erreur: 'Erreur orchestration Basile', detail: String(e.message || e).slice(0, 200) });
