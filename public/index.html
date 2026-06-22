@@ -1285,7 +1285,7 @@ function ouvrirEstimationIA(nbPersonnes){
 }
 // ⚠️ Liste intelligente désactivée temporairement (API Basile en panne côté fournisseur — MAJ cassée le 19/06).
 // Pour réactiver quand Basile aura corrigé : repasser IA_INDISPONIBLE à false.
-let IA_INDISPONIBLE=true;
+let IA_INDISPONIBLE=false;
 let CREATION_IA_EN_COURS=false;
 async function creerListeIA(){
  if(IA_INDISPONIBLE){toast('⏳ Liste intelligente temporairement indisponible (maintenance fournisseur).');return;}
