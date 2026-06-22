@@ -892,12 +892,14 @@ Spot-Hit</textarea>
       <div class="eyebrow">Management</div>
       <h1>🎧 Journal des appels</h1>
       <p class="sub">Tous les appels récents de l'équipe (Ringover). Filtre par SDR ou par jour, clique sur un appel pour réécouter l'enregistrement et lire le résumé IA.</p>
+      <div id="appels-dashboard"></div>
       <div class="map-card">
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
           <select class="field" id="filtre-appels-sdr" onchange="appliquerFiltreAppels()" style="max-width:220px"><option value="">Tous les SDR</option></select>
           <select class="field" id="filtre-appels-jour" onchange="appliquerFiltreAppels()" style="max-width:200px"><option value="">Tous les jours</option></select>
           <label style="font-size:12.5px;color:var(--ink-soft);display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="filtre-appels-rec" onchange="appliquerFiltreAppels()"> Avec enregistrement seulement</label>
           <button class="btn" onclick="resetFiltreAppels()" style="background:var(--paper)">↺ Réinitialiser</button>
+          <button class="btn" onclick="exportAppelsCSV()" style="background:var(--paper)">⬇️ Exporter CSV</button>
           <span id="filtre-appels-compte" style="font-size:12.5px;color:var(--ink-soft)"></span>
         </div>
         <div id="appels-list"><div style="color:var(--ink-soft);padding:14px">Chargement…</div></div>
@@ -1009,7 +1011,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v141';
+const VERSION='v142';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2157,6 +2159,7 @@ async function chargerAppels(){
   JOURNAL_APPELS=d.appels||[];
   remplirFiltresAppels();
   appliquerFiltreAppels();
+  renderDashboard();
  }catch(e){if(cont)cont.innerHTML='<div style="color:var(--danger);padding:14px">Erreur : '+e.message+'</div>';}
 }
 function remplirFiltresAppels(){
@@ -2214,6 +2217,182 @@ function ouvrirAppelJournal(idx){
  const a=APPELS_FILTRES[idx];
  if(a)afficherAppelsModal(telNorm(a.numero||'')||'Appel',[a]);
 }
+// ═════════ TABLEAU DE BORD APPELS (Brique 2bis — vue manager) ═════════
+let PERIODE_GRAN='semaine';
+const _PAL=['#2B4BF2','#0FA968','#E8A013','#E5484D','#7A5AF8','#12B5CB','#8A90A2'];
+function _fmtDur(s){s=Math.round(s||0);if(s<60)return s+'s';return Math.floor(s/60)+'min '+String(s%60).padStart(2,'0')+'s';}
+function _estRDV(a){return (a.tags||[]).some(t=>/rdv|rendez|meeting|d[eé]mo/i.test(t));}
+function _roleTag(r){return r==='ae'?' <span style="font-size:10px;color:var(--ink-soft)">AE</span>':(r==='admin'||r==='superadmin'?' <span style="font-size:10px;color:var(--ink-soft)">admin</span>':'');}
+
+function _statsAgents(A){
+ const m={};
+ A.forEach(a=>{
+  const k=a.sdr||'—';
+  if(!m[k])m[k]={nom:k,role:a.role||null,out:0,inb:0,tot:0,ans:0,durSum:0,durN:0,conv:0,rdv:0};
+  const o=m[k]; o.tot++;
+  if(a.direction==='in')o.inb++; else o.out++;
+  if(a.is_answered){o.ans++; if(a.incall_duration>0){o.durSum+=a.incall_duration;o.durN++;} if(a.incall_duration>=60)o.conv++;}
+  if(_estRDV(a))o.rdv++;
+  if(a.role&&!o.role)o.role=a.role;
+ });
+ return Object.values(m);
+}
+function _bucketKey(d,g){
+ d=new Date(d);
+ if(g==='jour')return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+ if(g==='mois')return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+ if(g==='annee')return String(d.getFullYear());
+ const t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));const day=t.getUTCDay()||7;t.setUTCDate(t.getUTCDate()+4-day);
+ const ys=new Date(Date.UTC(t.getUTCFullYear(),0,1));const wk=Math.ceil((((t-ys)/86400000)+1)/7);
+ return t.getUTCFullYear()+'-S'+String(wk).padStart(2,'0');
+}
+function _bucketLabel(k,g){
+ if(g==='jour'){const p=k.split('-');return p[2]+'/'+p[1];}
+ if(g==='mois'){const p=k.split('-');return p[1]+'/'+p[0];}
+ if(g==='annee')return k;
+ return 'S'+k.split('-S')[1];
+}
+function _periodeMatrix(g){
+ const A=JOURNAL_APPELS||[];const bset={};const ag={};
+ A.forEach(a=>{
+  if(!a.start_time)return;
+  const bk=_bucketKey(a.start_time,g);bset[bk]=1;
+  const k=a.sdr||'—';
+  if(!ag[k])ag[k]={nom:k,role:a.role||null,tot:0,b:{}};
+  ag[k].tot++;ag[k].b[bk]=(ag[k].b[bk]||0)+1; if(a.role&&!ag[k].role)ag[k].role=a.role;
+ });
+ return {buckets:Object.keys(bset).sort(),rows:Object.values(ag).sort((x,y)=>y.tot-x.tot),gran:g};
+}
+
+function renderDashboard(){
+ const box=document.getElementById('appels-dashboard'); if(!box)return;
+ const A=JOURNAL_APPELS||[];
+ if(!A.length){box.innerHTML='';return;}
+ const total=A.length, answered=A.filter(a=>a.is_answered).length, sansRep=total-answered;
+ const dur=A.filter(a=>a.is_answered&&a.incall_duration>0).map(a=>a.incall_duration);
+ const tmc=dur.length?dur.reduce((x,y)=>x+y,0)/dur.length:0;
+ const rdv=A.filter(_estRDV).length, txD=total?Math.round(answered/total*100):0;
+ const ag=_statsAgents(A).sort((x,y)=>y.tot-x.tot);
+
+ // ---- KPIs ----
+ const tile=(lab,val,sub,pend)=>`<div style="background:${pend?'transparent':'var(--card)'};border:1px ${pend?'dashed':'solid'} var(--line);border-radius:14px;padding:15px 16px">
+   <div style="font-size:13px;color:var(--ink-soft);margin-bottom:6px">${lab}</div>
+   <div style="font-size:24px;font-weight:700;color:${pend?'var(--ink-soft)':'var(--ink)'}">${val}</div>${sub?`<div style="font-size:11px;color:var(--ink-soft);margin-top:4px">${sub}</div>`:''}</div>`;
+ const kpis=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px">
+   ${tile('Appels (total)',total)}
+   ${tile('Décroché',txD+'%')}
+   ${tile('Sans réponse',sansRep)}
+   ${tile('TMC moyen',_fmtDur(tmc))}
+   ${tile('RDV pris',rdv)}
+   ${tile('SMS SoReach','—','source à connecter',true)}
+   ${tile('WhatsApp','—','source à connecter',true)}
+ </div>`;
+
+ // ---- Appels par SDR (empilé) ----
+ const maxTot=Math.max(1,...ag.map(a=>a.tot));
+ const rowsAppels=ag.map(a=>`<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px">
+   <span style="width:96px;font-size:13px;color:var(--ink-soft);flex:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.nom}${_roleTag(a.role)}</span>
+   <div style="flex:1;height:11px;background:var(--paper);border-radius:6px;overflow:hidden;display:flex">
+     <div style="width:${(a.out/maxTot*100).toFixed(1)}%;background:#2B4BF2"></div>
+     <div style="width:${(a.inb/maxTot*100).toFixed(1)}%;background:#0FA968"></div>
+   </div><span style="width:42px;text-align:right;font-size:13px;font-weight:600">${a.tot}</span></div>`).join('');
+ const cardAppels=`<div class="map-card" style="margin-bottom:14px">
+   <div style="font-size:16px;font-weight:700;margin-bottom:2px">Appels par SDR</div>
+   <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:12px;display:flex;gap:16px">
+     <span style="display:flex;align-items:center;gap:6px"><span style="width:9px;height:9px;border-radius:50%;background:#2B4BF2"></span>sortant</span>
+     <span style="display:flex;align-items:center;gap:6px"><span style="width:9px;height:9px;border-radius:50%;background:#0FA968"></span>entrant</span>
+   </div>${rowsAppels}</div>`;
+
+ // ---- Décroché + TMC par SDR (2 colonnes) ----
+ const maxDec=Math.max(1,...ag.map(a=>a.tot?a.ans/a.tot*100:0));
+ const rowsDec=ag.map(a=>{const p=a.tot?Math.round(a.ans/a.tot*100):0;return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px"><span style="width:96px;font-size:13px;color:var(--ink-soft);flex:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.nom}</span><div style="flex:1;height:11px;background:var(--paper);border-radius:6px;overflow:hidden"><div style="width:${(p/maxDec*100).toFixed(1)}%;height:100%;background:#0FA968"></div></div><span style="width:42px;text-align:right;font-size:13px;font-weight:600">${p}%</span></div>`;}).join('');
+ const maxTmc=Math.max(1,...ag.map(a=>a.durN?a.durSum/a.durN:0));
+ const rowsTmc=ag.map(a=>{const t=a.durN?a.durSum/a.durN:0;return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px"><span style="width:96px;font-size:13px;color:var(--ink-soft);flex:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.nom}</span><div style="flex:1;height:11px;background:var(--paper);border-radius:6px;overflow:hidden"><div style="width:${(t/maxTmc*100).toFixed(1)}%;height:100%;background:#7A5AF8"></div></div><span style="width:62px;text-align:right;font-size:13px;font-weight:600">${_fmtDur(t)}</span></div>`;}).join('');
+ const cardDecTmc=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:14px;margin-bottom:14px">
+   <div class="map-card"><div style="font-size:16px;font-weight:700;margin-bottom:2px">Taux de décroché par SDR</div><div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:12px">part des appels aboutis</div>${rowsDec}</div>
+   <div class="map-card"><div style="font-size:16px;font-weight:700;margin-bottom:2px">TMC par SDR</div><div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:12px">temps moyen de conversation</div>${rowsTmc}</div>
+ </div>`;
+
+ // ---- Tags (camembert) ----
+ const tc={}; A.forEach(a=>(a.tags||[]).forEach(t=>{tc[t]=(tc[t]||0)+1;}));
+ let tags=Object.entries(tc).map(([n,v])=>({n,v})).sort((x,y)=>y.v-x.v);
+ const totalTags=tags.reduce((s,t)=>s+t.v,0);
+ if(tags.length>6){const top=tags.slice(0,6);top.push({n:'Autres',v:tags.slice(6).reduce((s,t)=>s+t.v,0)});tags=top;}
+ let cardTags;
+ if(!totalTags){cardTags=`<div class="map-card" style="margin-bottom:14px"><div style="font-size:16px;font-weight:700;margin-bottom:2px">Répartition des tags</div><div style="font-size:12.5px;color:var(--ink-soft)">Aucun tag posé sur les appels pour l'instant.</div></div>`;}
+ else{
+  const C=339.292;let off=0;let segs='';
+  tags.forEach((t,i)=>{const len=t.v/totalTags*C;segs+=`<circle cx="70" cy="70" r="54" fill="none" stroke="${_PAL[i%_PAL.length]}" stroke-width="16" stroke-dasharray="${len.toFixed(1)} ${C}" stroke-dashoffset="${(-off).toFixed(1)}"/>`;off+=len;});
+  const leg=tags.map((t,i)=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px"><span style="width:9px;height:9px;border-radius:50%;background:${_PAL[i%_PAL.length]};flex:none"></span><span style="flex:1;font-size:13px">${t.n}</span><span style="font-size:13px;color:var(--ink-soft)">${t.v}</span><span style="width:42px;text-align:right;font-size:13px;font-weight:600">${Math.round(t.v/totalTags*100)}%</span></div>`).join('');
+  cardTags=`<div class="map-card" style="margin-bottom:14px"><div style="font-size:16px;font-weight:700;margin-bottom:2px">Répartition des tags</div><div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:14px">sur les appels taggés</div>
+   <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
+     <svg viewBox="0 0 140 140" width="140" height="140" style="flex:none"><g transform="rotate(-90 70 70)"><circle cx="70" cy="70" r="54" fill="none" stroke="var(--paper)" stroke-width="16"/>${segs}</g><text x="70" y="66" text-anchor="middle" style="font-size:22px;font-weight:700;fill:var(--ink)">${totalTags}</text><text x="70" y="84" text-anchor="middle" style="font-size:11px;fill:var(--ink-soft)">taggés</text></svg>
+     <div style="flex:1;min-width:200px">${leg}</div>
+   </div></div>`;
+ }
+
+ // ---- Heatmap créneaux ----
+ const jours=['Lun','Mar','Mer','Jeu','Ven'];const heures=[8,9,10,11,12,14,15,16,17,18];
+ const grid={};A.forEach(a=>{if(!a.start_time)return;const d=new Date(a.start_time);const wd=d.getDay();if(wd<1||wd>5)return;const hi=heures.indexOf(d.getHours());if(hi<0)return;const key=(wd-1)+'_'+hi;if(!grid[key])grid[key]={c:0,a:0};grid[key].c++;if(a.is_answered)grid[key].a++;});
+ let best=null;Object.entries(grid).forEach(([k,v])=>{if(v.c>=5){const r=v.a/v.c;if(!best||r>best.r)best={k,r,c:v.c};}});
+ let heat=`<div style="display:grid;grid-template-columns:38px repeat(${heures.length},1fr);gap:3px;align-items:center">`;
+ heat+='<div></div>'+heures.map(h=>`<div style="font-size:11px;color:var(--ink-soft);text-align:center">${h}h</div>`).join('');
+ jours.forEach((j,ji)=>{heat+=`<div style="font-size:12px;color:var(--ink-soft)">${j}</div>`;heures.forEach((h,hi)=>{const g=grid[ji+'_'+hi];if(!g||!g.c){heat+='<div style="height:28px;border-radius:4px;background:var(--paper)"></div>';}else{const r=g.a/g.c;const al=(0.12+r*0.8).toFixed(2);const txt=r>0.5?'#fff':'var(--ink-soft)';heat+=`<div title="${g.a}/${g.c} décrochés" style="height:28px;border-radius:4px;background:rgba(43,75,242,${al});display:flex;align-items:center;justify-content:center;font-size:11px;color:${txt}">${Math.round(r*100)}</div>`;}});});
+ heat+='</div>';
+ const bestTxt=best?`Meilleur créneau : <b>${jours[best.k.split('_')[0]]} ${heures[best.k.split('_')[1]]}h</b> (${Math.round(best.r*100)}% de décroché)`:'Pas encore assez de volume pour identifier un créneau.';
+ const cardHeat=`<div class="map-card" style="margin-bottom:14px"><div style="font-size:16px;font-weight:700;margin-bottom:2px">Créneaux les plus performants</div><div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:14px">taux de décroché par jour et par heure — plus c'est foncé, mieux on joint</div>${heat}<div style="font-size:12.5px;color:var(--ink-soft);margin-top:12px">⭐ ${bestTxt}</div></div>`;
+
+ // ---- Appels par période / utilisateur ----
+ const PM=_periodeMatrix(PERIODE_GRAN);window._PMAT=PM;
+ const shown=PM.buckets.slice(-8);
+ const opt=g=>`<option value="${g}" ${PERIODE_GRAN===g?'selected':''}>`;
+ const sel=`<select class="field" onchange="setPeriodeGran(this.value)" style="max-width:150px;padding:8px 12px">${opt('jour')}Jour</option>${opt('semaine')}Semaine</option>${opt('mois')}Mois</option>${opt('annee')}Année</option></select>`;
+ let thead=`<tr><th style="text-align:left;padding:7px 4px;font-size:11px;color:var(--ink-soft);font-weight:400">Utilisateur</th>`+shown.map(b=>`<th style="padding:7px 4px;font-size:11px;color:var(--ink-soft);font-weight:400;text-align:center">${_bucketLabel(b,PERIODE_GRAN)}</th>`).join('')+`<th style="padding:7px 4px;font-size:11px;color:var(--ink-soft);font-weight:400;text-align:center">Total</th></tr>`;
+ let tbody=PM.rows.map(r=>`<tr><td style="padding:7px 4px;font-size:13px;border-top:0.5px solid var(--line)">${r.nom}${_roleTag(r.role)}</td>`+shown.map(b=>`<td style="padding:7px 4px;font-size:13px;text-align:center;border-top:0.5px solid var(--line);color:var(--ink-soft)">${r.b[b]||0}</td>`).join('')+`<td style="padding:7px 4px;font-size:13px;text-align:center;border-top:0.5px solid var(--line);font-weight:600">${r.tot}</td></tr>`).join('');
+ const cardPeriode=`<div class="map-card" style="margin-bottom:14px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+   <div><div style="font-size:16px;font-weight:700">Appels par période / utilisateur</div><div style="font-size:12.5px;color:var(--ink-soft);margin-top:2px">SDR et AE · ${shown.length} dernières périodes</div></div>
+   <div style="display:flex;gap:8px;align-items:center">${sel}<button class="btn" onclick="exportPeriodeCSV()" style="background:var(--paper);padding:8px 12px">⬇️ CSV</button></div></div>
+   <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">${thead}${tbody}</table></div></div>`;
+
+ // ---- Score SDR ----
+ const sdrs=ag.filter(a=>a.role==='sdr');
+ let cardScore;
+ if(!sdrs.length){
+  cardScore=`<div class="map-card"><div style="font-size:16px;font-weight:700;margin-bottom:2px">Score SDR</div><div style="font-size:12.5px;color:var(--ink-soft)">Renseigne le rôle « SDR » et la ligne Ringover de chaque commercial dans <b>Paramètres</b> pour activer le score.</div></div>`;
+ }else{
+  const mR=Math.max(1,...sdrs.map(a=>a.rdv)), mD=Math.max(1,...sdrs.map(a=>a.tot?a.ans/a.tot:0)), mC=Math.max(1,...sdrs.map(a=>a.conv)), mT=Math.max(1,...sdrs.map(a=>a.durN?a.durSum/a.durN:0)), mV=Math.max(1,...sdrs.map(a=>a.tot));
+  const scored=sdrs.map(a=>{const dr=a.tot?a.ans/a.tot:0,tm=a.durN?a.durSum/a.durN:0;
+   const p={rdv:40*a.rdv/mR,dec:20*dr/mD,conv:20*a.conv/mC,tmc:10*tm/mT,vol:10*a.tot/mV};
+   return {nom:a.nom,score:Math.round(p.rdv+p.dec+p.conv+p.tmc+p.vol),p};}).sort((x,y)=>y.score-x.score);
+  const SC=['#0FA968','#2B4BF2','#7A5AF8','#E8A013','#8A90A2'];
+  const rows=scored.map((s,i)=>{const seg=[['rdv',SC[0]],['dec',SC[1]],['conv',SC[2]],['tmc',SC[3]],['vol',SC[4]]].map(([k,c])=>`<div style="width:${s.p[k].toFixed(1)}%;background:${c}"></div>`).join('');
+   const rk=i===0?'background:#0FA968;color:#fff':'background:var(--paper);color:var(--ink)';
+   return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:11px"><span style="width:22px;height:22px;border-radius:50%;${rk};display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex:none">${i+1}</span><span style="width:96px;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.nom}</span><div style="flex:1;height:12px;background:var(--paper);border-radius:6px;overflow:hidden;display:flex">${seg}</div><span style="width:30px;text-align:right;font-size:15px;font-weight:700">${s.score}</span></div>`;}).join('');
+  const legend=[['RDV pris · 40',SC[0]],['Décroché · 20',SC[1]],['Conversations · 20',SC[2]],['TMC · 10',SC[3]],['Volume · 10',SC[4]]].map(([t,c])=>`<span style="display:flex;align-items:center;gap:6px"><span style="width:9px;height:9px;border-radius:50%;background:${c}"></span>${t}</span>`).join('');
+  cardScore=`<div class="map-card"><div style="font-size:16px;font-weight:700;margin-bottom:2px">Score SDR <span style="font-size:12px;color:var(--ink-soft);font-weight:400">/ 100</span></div><div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:14px">composite pondéré, orienté résultats — relatif au meilleur de l'équipe</div>${rows}<div style="display:flex;flex-wrap:wrap;gap:12px 16px;padding-top:12px;border-top:0.5px solid var(--line);font-size:12px;color:var(--ink-soft)">${legend}</div></div>`;
+ }
+
+ box.innerHTML=kpis+cardAppels+cardDecTmc+cardTags+cardHeat+cardPeriode+cardScore;
+}
+function setPeriodeGran(v){PERIODE_GRAN=v;renderDashboard();}
+
+// ---- Export CSV ----
+function _csv(rows){return rows.map(r=>r.map(c=>{c=String(c==null?'':c);return /[",;\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c;}).join(';')).join('\n');}
+function _download(name,txt){const b=new Blob(['\ufeff'+txt],{type:'text/csv;charset=utf-8'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1500);}
+function exportAppelsCSV(){
+ const A=(APPELS_FILTRES&&APPELS_FILTRES.length)?APPELS_FILTRES:(JOURNAL_APPELS||[]);
+ if(!A.length){toast('Aucun appel à exporter');return;}
+ const rows=[['Date','Heure','SDR','Role','Sens','Duree_s','Decroche','Numero','Tags','Enregistrement']];
+ A.forEach(a=>{const d=a.start_time?new Date(a.start_time):null;rows.push([d?d.toLocaleDateString('fr-FR'):'',d?d.toLocaleTimeString('fr-FR'):'',a.sdr||'',a.role||'',a.direction==='in'?'entrant':(a.direction==='out'?'sortant':''),a.incall_duration||0,a.is_answered?'oui':'non',a.numero||'',(a.tags||[]).join('|'),a.record||a.voicemail||'']);});
+ _download('appels_sofy.csv',_csv(rows)); toast('Export CSV généré');
+}
+function exportPeriodeCSV(){
+ const PM=window._PMAT||_periodeMatrix(PERIODE_GRAN);
+ const rows=[['Utilisateur','Role',...PM.buckets.map(b=>_bucketLabel(b,PM.gran)),'Total']];
+ PM.rows.forEach(r=>rows.push([r.nom,r.role||'',...PM.buckets.map(b=>r.b[b]||0),r.tot]));
+ _download('appels_par_periode_sofy.csv',_csv(rows)); toast('Export CSV généré');
+}
+
 
 
 function telBtns(t){
@@ -3605,6 +3784,7 @@ async function chargerSdrs(){
     <td><input class="field" value="${s.slack_id||''}" placeholder="U07ABC123" id="ss${s.id}" title="Slack Member ID (profil Slack → Copier l'ID du membre) — pour les rappels en DM"></td>
     <td><select class="field" id="sg${s.id}" ${sup?'':'disabled title="Seul le superadmin change les rôles"'}>
       <option value="sdr" ${(!s.role||s.role==='sdr')?'selected':''}>SDR</option>
+      <option value="ae" ${s.role==='ae'?'selected':''}>AE (account executive)</option>
       <option value="admin" ${s.role==='admin'?'selected':''}>Admin (paramètres + stats)</option>
       <option value="superadmin" ${s.role==='superadmin'?'selected':''}>Superadmin</option>
     </select></td>
