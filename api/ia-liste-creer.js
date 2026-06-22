@@ -38,15 +38,15 @@ const REGIONS_DOM = {
 function filtresPersonnes(c) {
   const f = {};
   if (Array.isArray(c.postes) && c.postes.length) {
-    f.current_job_title = { include: c.postes };
+    f.result_role = { include: c.postes };
   }
-  f.location_country_code = { include: Array.isArray(c.pays) && c.pays.length ? c.pays : ['FR'] };
+  f.result_country_code = { include: Array.isArray(c.pays) && c.pays.length ? c.pays : ['FR'] };
   const zones = Array.isArray(c.zones) ? c.zones : [];
   const veutMetropole = zones.includes('metropole');
   const regionsDom = [];
   for (const z of zones) if (REGIONS_DOM[z]) regionsDom.push(...REGIONS_DOM[z]);
   if (regionsDom.length && !veutMetropole) {
-    f.location_region = { include: regionsDom };
+    f.result_region = { include: regionsDom };
   }
   return { filtres: f, veutMetropole, zones };
 }
@@ -56,7 +56,7 @@ function leadVersFiche(lead) {
   const d = lead.data || lead || {};
   const prenom = d.people_first_name || d.result_first_name || '';
   const nomContact = d.people_last_name || d.result_last_name || '';
-  const titre = d.current_job_title || '';
+  const titre = d.result_role || d.current_job_title || '';
   let persona = '';
   if (Array.isArray(d.current_job_functions) && d.current_job_functions.length) {
     persona = d.current_job_functions.map(x => x.function).filter(Boolean).join(', ');
@@ -66,7 +66,7 @@ function leadVersFiche(lead) {
   const entreprise = d.current_company_name || '';
   const linkedinEnt = d.current_company_profile_url || null;
   const ville = d.location_city || d.result_city || '';
-  const region = d.location_region || '';
+  const region = d.result_region || d.location_region || '';
   const siren = d.siren || null;
 
   const contact = {

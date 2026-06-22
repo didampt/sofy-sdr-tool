@@ -8,9 +8,9 @@ async function leads(filters, key){
       status:r.status,
       total:d?.total??null,
       nb_leads:(d?.leads||[]).length,
-      postes:(d?.leads||[]).map(l=>(l.data||{}).current_job_title||'(vide)'),
-      regions:(d?.leads||[]).map(l=>(l.data||{}).location_region||'(null)'),
-      villes:(d?.leads||[]).map(l=>(l.data||{}).location_city||'(null)')
+      postes:(d?.leads||[]).map(l=>{const x=l.data||{};return x.result_role||x.current_job_title||'(vide)';}),
+      regions:(d?.leads||[]).map(l=>{const x=l.data||{};return x.result_region||x.location_region||'(null)';}),
+      villes:(d?.leads||[]).map(l=>{const x=l.data||{};return x.result_city||x.location_city||'(null)';})
     };
   }catch(e){return {erreur:String(e.message||e).slice(0,80)};}
 }
@@ -25,11 +25,11 @@ export default async function handler(req,res){
   // A) AUCUN filtre (juste limit) — à quoi ressemblent les leads "bruts" ?
   out.A_aucun_filtre=await leads({},key);
   // B) Filtre poste très spécifique
-  out.B_poste_DC=await leads({current_job_title:{include:['Directeur Commercial']}},key);
+  out.B_poste_DC=await leads({result_role:{include:['Directeur Commercial']}},key);
   // C) Filtre poste exotique (devrait donner des leads différents SI le filtre marche)
-  out.C_poste_dev=await leads({current_job_title:{include:['Développeur']}},key);
+  out.C_poste_dev=await leads({result_role:{include:['Développeur']}},key);
   // D) Filtre ville Paris
-  out.D_ville_Paris=await leads({location_city:{include:['Paris']}},key);
+  out.D_ville_Paris=await leads({result_city:{include:['Paris']}},key);
 
   return res.status(200).json({
     note:'Compare les POSTES entre B et C. Si B montre des Directeurs Commerciaux et C des Développeurs, le filtre leads MARCHE (seul le total ment). Si A=B=C (mêmes leads), Basile ne filtre RIEN.',
