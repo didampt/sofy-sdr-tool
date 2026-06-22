@@ -1024,7 +1024,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v153';
+const VERSION='v154';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1380,7 +1380,7 @@ async function creerListeIA(){
     const r=rez[cle];
     if(r){
      if(r.hubspot){f.dedup_hubspot=r.hubspot;f.skip_enrich=true;} // déjà dans HubSpot → on bloquera l'enrichissement
-     if(r.liste){f.dedup_liste=r.liste;}
+     if(r.liste){f.dedup_liste=r.liste;f.skip_enrich=true;} // déjà dans une autre liste → grisée + pas de ré-enrichissement
      if(r.siren_connu&&r.siren_connu.enrichi){ // même SIREN déjà extrait+enrichi → réutilise, pas de nouvel enrichissement
       f.skip_enrich=true;f.deja_extrait=true;
       const c0=(f.contacts||[])[0];
@@ -1398,7 +1398,8 @@ async function creerListeIA(){
   const dc=await rc.json();
   if(dc.erreur){toast('Erreur création : '+dc.erreur);CREATION_IA_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🚀 Générer la liste';}return;}
   document.getElementById('estim-ia-modal').style.display='none';
-  toast('✨ Liste créée : '+fiches.length+' fiches');
+  const nbDup=fiches.filter(f=>f.dedup_liste).length;
+  toast('✨ Liste créée : '+fiches.length+' fiches'+(nbDup?(' · '+nbDup+' déjà en liste (grisée'+(nbDup>1?'s':'')+')'):''));
   setTimeout(()=>{CREATION_IA_EN_COURS=false;ouvrirListe(dc.id);},300);
  }catch(e){toast('Erreur réseau : '+e.message);CREATION_IA_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🚀 Générer la liste';}}
 }
@@ -2656,7 +2657,7 @@ function ficheReal(e,i){
  const s=e.score&&e.score.scores;
  const tel=premierTel(e);
  const open=!!(e._open||e._busy);
- return `<div class="fiche${e._busy?' fiche-busy':''}" id="fr${i}">
+ return `<div class="fiche${e._busy?' fiche-busy':''}${e.dedup_liste?' fiche-dup':''}" id="fr${i}"${e.dedup_liste?' style="opacity:.55"':''}>
   ${e._busy?`<div class="prog-wrap"><div class="prog-top"><span class="prog-label"><span class="spin"></span> <span id="progl${i}">${(e._prog&&e._prog.label)||'Démarrage…'}</span></span><span class="prog-pct" id="progp${i}">${(e._prog&&e._prog.pct)||0} %</span></div><div class="prog-bar"><span id="progb${i}" style="width:${(e._prog&&e._prog.pct)||0}%"></span></div></div>`:''}
   <div class="fiche-head" onclick="toggleFiche(${i})" title="Cliquer pour ${open?'replier':'déployer'} la fiche">
    <div style="flex:1;min-width:0">
@@ -2670,7 +2671,7 @@ function ficheReal(e,i){
      ${aEmail?'<span class="badge b-new">Nouveau ✓</span>':(e.detail_charge?'<span class="badge b-signal">À enrichir</span>':'<span class="badge b-dup">Détail non chargé</span>')}
      ${e.deja_hubspot?'<span class="badge b-dup" title="Un contact de cette fiche existe déjà dans HubSpot">🔶 Déjà dans HubSpot</span>':''}
      ${e.dedup_hubspot?`<span class="badge b-dup" title="Déjà dans HubSpot (${e.dedup_hubspot.stage||'contact'}) — enrichissement bloqué pour économiser des crédits">♻️ Déjà HubSpot</span>`:''}
-     ${e.dedup_liste?`<span class="badge b-dup" title="Déjà présent dans une autre liste">📋 Déjà en liste : ${(e.dedup_liste.nom||'').replace(/"/g,'&quot;').slice(0,30)}</span>`:''}
+     ${e.dedup_liste?`<span class="badge b-dup" title="Déjà présent dans une autre liste">📋 Existe déjà dans : ${(e.dedup_liste.nom||'').replace(/"/g,'&quot;').slice(0,30)}</span>`:''}
      ${e.deja_extrait?'<span class="badge b-dup" title="Société déjà extraite et enrichie dans une liste précédente — email/tél réutilisés, pas de nouvel enrichissement">♻️ Déjà extrait</span>':''}
      ${e.lemlist_envoye?'<span class="badge b-new">✈️ Lemlist ✓</span>':''}${e.hubspot_envoye?'<span class="badge b-new">🤝 HubSpot ✓</span>':''}${e.sms_envoye?'<span class="badge b-new">💬 SMS ✓</span>':''}
      ${siteWeb?`<span class="badge b-new"><a href="${siteWeb.startsWith('http')?siteWeb:'https://'+siteWeb}" target="_blank" onclick="event.stopPropagation()" style="color:inherit">🌐 ${siteWeb.replace(/^https?:\/\/(www\.)?/,'').split('/')[0]}</a></span>`:''}
