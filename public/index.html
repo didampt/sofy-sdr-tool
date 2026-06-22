@@ -976,7 +976,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v130';
+const VERSION='v131';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2054,7 +2054,7 @@ function gmbHtml(g){
 function contactHtml(c,i,j){
  const en=c.enrich;
  return `<div style="border-top:1px dashed var(--line);padding:10px 0 4px;margin-top:10px">
-  ${c.signal?`<div class="contact-line" style="color:var(--danger);font-weight:700">🔥 ${c.signal.emoji||'💙'} ${c.signal.interaction||'a réagi'}${c.signal.concurrent?` sur un post <b>${c.signal.concurrent}</b>`:''}${c.signal.post?` <a href="${c.signal.post}" target="_blank" style="font-weight:600">→ voir le post</a>`:''} · ${new Date(c.signal.date).toLocaleDateString('fr-FR')}</div>`:''}
+  ${c.signal?`<div class="contact-line" style="color:var(--danger);font-weight:700">🔥 ${c.signal.emoji||'💙'} ${c.signal.interaction||'a réagi'}${c.signal.concurrent?` sur un post <b>${c.signal.concurrent}</b>`:''}${c.signal.post?` <a href="${c.signal.post}" target="_blank" style="font-weight:600">→ voir le post</a>`:''}${c.signal.linkedin?` <a href="${c.signal.linkedin}" target="_blank" style="font-weight:600">→ voir le profil</a>`:''} · ${new Date(c.signal.date).toLocaleDateString('fr-FR')}</div>`:''}
   <div class="contact-line"><b>${(c.prenom+' '+c.nom).trim()}</b> — ${(en&&en.fonction)||c.fonction||'?'} <span class="badge b-gmb">${c.source}</span></div>
   ${en?`
    ${en.email?`<div class="contact-line">✉️ <b>${en.email}</b> <a class="act act-call" style="padding:4px 10px;font-size:12px" href="mailto:${en.email}" title="Écrire un email">📧</a> <button class="act act-copy" style="padding:4px 10px;font-size:12px" onclick="navigator.clipboard.writeText('${en.email}');toast('Email copié ✓')" title="Copier l'adresse">📋</button>${en.email_qualification?` <span class="badge b-new">${en.email_qualification}</span>`:''}</div>`:'<div class="contact-line" style="color:var(--ink-soft)">✉️ Email non trouvé (Dropcontact) — repli FullEnrich à venir</div>'}
