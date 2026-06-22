@@ -85,7 +85,8 @@ export default async function handler(req, res) {
   const items = contacts.slice(0, 200).map(c => ({
     cle: cleContact(c),
     email: normEmail(c.email),
-    tel: normaliserTel(c.telephone)
+    tel: normaliserTel(c.telephone),
+    siren: c.siren ? String(c.siren).replace(/\D/g, '') : ''
   }));
   for (const it of items) resultats[it.cle] = { hubspot: null, liste: null };
 
@@ -96,21 +97,31 @@ export default async function handler(req, res) {
       ? await sql`SELECT id, nom, entreprises FROM listes WHERE archivee = FALSE AND id <> ${liste_id_courante}`
       : await sql`SELECT id, nom, entreprises FROM listes WHERE archivee = FALSE`;
     // Construit un index { email/tel → {nom,id} } à partir des contacts existants
-    const indexEmail = new Map(), indexTel = new Map();
+    const indexEmail = new Map(), indexTel = new Map(), indexSiren = new Map();
     for (const l of rows) {
       const ents = Array.isArray(l.entreprises) ? l.entreprises : [];
       for (const e of ents) {
+        let sEmail = null, sTel = null;
         for (const ct of (e.contacts || [])) {
           const em = normEmail(ct.enrich?.email);
           const tl = normaliserTel(ct.enrich?.telephone);
           if (em && !indexEmail.has(em)) indexEmail.set(em, { nom: l.nom, id: l.id });
           if (tl && !indexTel.has(tl.e164)) indexTel.set(tl.e164, { nom: l.nom, id: l.id });
+          if (em && !sEmail) sEmail = em;
+          if (tl && !sTel) sTel = tl.national;
         }
+        const sir = e.siren ? String(e.siren).replace(/\D/g, '') : '';
+        if (sir && !indexSiren.has(sir)) indexSiren.set(sir, { nom: l.nom, id: l.id, enrichi: !!(sEmail || sTel), email: sEmail, telephone: sTel });
       }
     }
     for (const it of items) {
       let trouve = (it.email && indexEmail.get(it.email)) || (it.tel && indexTel.get(it.tel.e164)) || null;
       if (trouve) resultats[it.cle].liste = trouve;
+      if (it.siren && indexSiren.has(it.siren)) {
+        const m = indexSiren.get(it.siren);
+        if (!resultats[it.cle].liste) resultats[it.cle].liste = { nom: m.nom, id: m.id };
+        resultats[it.cle].siren_connu = { enrichi: m.enrichi, email: m.email || null, telephone: m.telephone || null };
+      }
     }
   } catch (e) { /* en cas d'erreur, on continue sans la dédup interne */ }
 
