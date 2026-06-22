@@ -35,9 +35,33 @@ const SECTEURS_BASILE = {
   hospitality: 'hospitality_global', agriculture: 'agriculture_global',
   finance: 'finance_global', manufacturing: 'manufacturing_global'
 };
+// Familles de postes -> intitulés FIGÉS (déterministe : même famille => mêmes intitulés => même comptage).
+const FAMILLES_POSTE = {
+  direction: ['Président', 'Présidente', 'Directeur Général', 'Directrice Générale', 'PDG', 'CEO', 'Chief Executive Officer', 'Fondateur', 'Fondatrice', 'Co-fondateur', 'Gérant', 'Gérante'],
+  commercial: ['Directeur Commercial', 'Directrice Commerciale', 'Directeur des Ventes', 'Directrice des Ventes', 'Responsable Commercial', 'Head of Sales', 'VP Sales', 'Sales Director'],
+  marketing: ['Directeur Marketing', 'Directrice Marketing', 'Responsable Marketing', 'Chief Marketing Officer', 'CMO', 'Head of Marketing', 'VP Marketing', 'Directeur Marketing Digital'],
+  communication: ['Directeur de la Communication', 'Directrice de la Communication', 'Responsable Communication', 'Head of Communications', 'Directeur Communication'],
+  digital: ['Directeur Digital', 'Directrice Digital', 'Responsable Digital', 'Chief Digital Officer', 'CDO', 'Head of Digital'],
+  relation_client: ['Directeur Relation Client', 'Directrice Relation Client', 'Directeur de la Relation Client', 'Responsable Relation Client', 'Directeur Service Client', 'Responsable Service Client', 'Head of Customer Relations'],
+  experience_client: ['Directeur Expérience Client', 'Directrice Expérience Client', "Directeur de l'Expérience Client", 'Chief Customer Officer', 'CCO', 'Head of Customer Experience', 'Customer Experience Director', 'VP Customer Experience'],
+  crm: ['Directeur CRM', 'Responsable CRM', 'Head of CRM', 'CRM Manager', 'Directeur Fidélisation'],
+  acquisition: ['Directeur Acquisition', 'Responsable Acquisition', 'Head of Acquisition', 'Directeur Marketing Automation', 'Head of Growth', 'Growth Manager']
+};
+function rolesDepuisFamilles(c) {
+  if (Array.isArray(c.familles_poste) && c.familles_poste.length) {
+    const out = [];
+    for (const fam of c.familles_poste) {
+      const arr = FAMILLES_POSTE[String(fam).toLowerCase().trim()];
+      if (arr) for (const t of arr) if (!out.includes(t)) out.push(t);
+    }
+    if (out.length) return out;
+  }
+  return Array.isArray(c.postes) ? c.postes : []; // repli si pas de familles
+}
 function filtresPersonnes(c) {
   const f = {};
-  if (Array.isArray(c.postes) && c.postes.length) f.result_role = { include: c.postes };
+  const roles = rolesDepuisFamilles(c);
+  if (roles.length) f.result_role = { include: roles };
   f.result_country_code = { include: Array.isArray(c.pays) && c.pays.length ? c.pays : ['FR'] };
   const slug = SECTEURS_BASILE[(c.secteur_basile || '').toLowerCase()];
   if (slug) f.activity = { include: [slug] }; // filtre secteur sur les personnes (seul moyen qui marche)
