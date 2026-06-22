@@ -1,8 +1,9 @@
-// /api/basile-secteur.js — TEMPORAIRE — Catalogue des secteurs "activity" disponibles (slugs *_global).
+// /api/basile-secteur.js — TEMPORAIRE — Peut-on filtrer les PERSONNES par taille d'entreprise (effectif) ?
+// On teste plusieurs noms de champ + structures. Tout en limit:1 => GRATUIT. Superadmin.
 import { verifierToken } from './db.js';
 const BASE = 'https://api.basile.cc';
-async function post(path, body, key) {
-  try { const r = await fetch(BASE + path, { method: 'POST', headers: { 'Authorization': key, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const d = await r.json().catch(() => null); return { status: r.status, total: (d && d.total != null) ? d.total : null }; }
+async function post(body, key) {
+  try { const r = await fetch(BASE + '/people/find', { method: 'POST', headers: { 'Authorization': key, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const d = await r.json().catch(() => null); return { status: r.status, total: (d && d.total != null) ? d.total : null }; }
   catch (e) { return { status: 0, total: null }; }
 }
 
@@ -13,33 +14,30 @@ export default async function handler(req, res) {
   const key = process.env.BASILE_API_KEY;
   if (!key) return res.status(500).json({ erreur: 'BASILE_API_KEY manquante' });
 
-  const candidats = [
-    'retail_global', 'ecommerce_global', 'commerce_global',
-    'automotive_global', 'auto_global', 'mobility_global',
-    'hospitality_global', 'food_global', 'restaurant_global',
-    'health_global', 'healthcare_global', 'medical_global', 'pharma_global',
-    'realestate_global', 'real_estate_global', 'construction_global', 'btp_global',
-    'finance_global', 'banking_global', 'insurance_global',
-    'manufacturing_global', 'industry_global', 'industrial_global',
-    'transport_global', 'logistics_global',
-    'education_global', 'beauty_global', 'wellness_global', 'sport_global', 'fitness_global',
-    'agriculture_global', 'agri_global', 'tech_global', 'it_global', 'software_global',
-    'media_global', 'telecom_global', 'energy_global', 'legal_global', 'consulting_global',
-    'tourism_global', 'travel_global', 'wholesale_global', 'services_global'
-  ];
+  const role = { include: ['Directeur Marketing', 'Directrice Marketing'] };
+  const fr = { include: ['FR'] };
+  const base = { result_role: role, result_country_code: fr };
 
-  const valides = []; const ignores = []; const ko = [];
-  for (const slug of candidats) {
-    const r = await post('/companies/find', { limit: 1, filters: { activity: { include: [slug] } } }, key);
-    if (r.total == null) ko.push(slug);
-    else if (r.total >= 5000000) ignores.push(slug + ' (' + r.total.toLocaleString('fr-FR') + ')');
-    else valides.push({ slug, total: r.total });
+  // Référence (sans filtre effectif)
+  const ref = await post({ limit: 1, filters: base }, key);
+  const refTotal = ref.total;
+  const out = [{ label: 'RÉFÉRENCE : Dir. Marketing seul', type: 'personnes', status: ref.status, total: refTotal }];
+
+  const bandes = ['201-500', '501-1000', '1001-5000', '5001-10000', '10001+'];
+  const noms = ['current_company_headcount', 'current_company_size', 'company_headcount', 'company_size', 'headcount', 'effectif', 'employee_count', 'current_company_employees'];
+
+  // a) structure "bandes" {include:[...]}
+  for (const n of noms) {
+    const r = await post({ limit: 1, filters: { ...base, [n]: { include: bandes } } }, key);
+    const flag = (r.total != null && refTotal != null) ? (r.total < refTotal ? ' ▼ FILTRE !' : ' = (ignoré)') : '';
+    out.push({ label: n + ' = {include:bandes}', type: 'personnes', status: r.status, total: r.total, note_cible: flag });
   }
-  valides.sort((a, b) => b.total - a.total);
+  // b) structure range {gte:200} sur les noms les plus probables
+  for (const n of ['current_company_headcount', 'company_size', 'headcount']) {
+    const r = await post({ limit: 1, filters: { ...base, [n]: { gte: 200 } } }, key);
+    const flag = (r.total != null && refTotal != null) ? (r.total < refTotal ? ' ▼ FILTRE !' : ' = (ignoré)') : '';
+    out.push({ label: n + ' = {gte:200}', type: 'personnes', status: r.status, total: r.total, note_cible: flag });
+  }
 
-  const out = [
-    { label: '✅ Secteurs activity VALIDES (' + valides.length + ')', type: 'concepts', status: 200, total: valides.length, apercu: valides.map(v => v.slug + ' = ' + v.total.toLocaleString('fr-FR')) },
-    { label: 'Récap', type: 'info', status: 200, total: null, apercu: [ko.length + ' slugs inconnus', ignores.length + ' slugs ignorés (renvoient toute la base)'] }
-  ];
-  return res.status(200).json({ note: 'Secteurs "activity" VALIDES = utilisables pour filtrer un poste par secteur sur les personnes.', out });
+  return res.status(200).json({ note: 'Compare chaque ligne à la RÉFÉRENCE (' + (refTotal != null ? refTotal.toLocaleString('fr-FR') : '?') + '). « ▼ FILTRE ! » = ce champ/structure filtre par effectif. « = ignoré » = ne marche pas.', out });
 }
