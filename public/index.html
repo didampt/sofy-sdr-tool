@@ -415,6 +415,15 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
   </div>
  </div>
 </div>
+<div id="ringover-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:903;align-items:center;justify-content:center;padding:20px">
+ <div class="wf-panel" style="width:min(560px,94vw);max-height:88vh;overflow:auto">
+  <div class="wf-head">🎧 Appels — <span id="ringover-num"></span></div>
+  <div style="padding:6px 24px 18px" id="ringover-body"></div>
+  <div class="wf-foot">
+   <button class="btn btn-primary" onclick="document.getElementById('ringover-modal').style.display='none'">Fermer</button>
+  </div>
+ </div>
+</div>
 <div id="login-overlay">
  <div class="login-card">
   <img src="/logo-full.png" alt="Sofy" onerror="this.style.display='none'">
@@ -983,7 +992,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v135';
+const VERSION='v136';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1886,6 +1895,7 @@ function showRealResults(total,c){
  // on lance la surveillance qui affichera la barre de progression.
  if(ENRICH_POLL){clearInterval(ENRICH_POLL);ENRICH_POLL=null;}
  if(!WF_LOCAL_EN_COURS){const box=document.getElementById('liste-prog');if(box)box.style.display='none';surveillerEnrich();}
+ chargerAppelsRingover();
 }
 
 function setStatutAppel(i,statut){
@@ -2033,6 +2043,55 @@ function waLink(t){
  const msg=`Bonjour${prenom?' '+prenom:''}, ${sdr?sdr+' de ':''}Sofy. On aide les pros à être plus visibles sur Google et à mieux communiquer avec leurs clients. Auriez-vous un moment cette semaine ?${numSdr?' Vous pouvez aussi me joindre au '+numSdr+'.':''}`;
  return `https://wa.me/${num}?text=${encodeURIComponent(msg)}`;
 }
+// ───────── Ringover : enregistrements & résumé IA sur la fiche (Brique 1) ─────────
+let RINGOVER_CALLS={};            // cle9(numéro) → [appels]
+let RINGOVER_LISTE_CHARGEE=null;  // liste dont les appels sont déjà chargés
+function cle9Ring(s){let d=String(s||'').replace(/\D/g,'');return d.length>9?d.slice(-9):d;}
+function numerosFiche(e){
+ const tels=[(e.gmb&&e.gmb.telephone),(e.ia&&e.ia.telephone),e.telephone_google];
+ for(const c of contactsDe(e)){if(c.enrich&&c.enrich.telephone)tels.push(c.enrich.telephone);}
+ return tels.filter(Boolean);
+}
+async function chargerAppelsRingover(){
+ if(!REAL.length)return;
+ const key=state.savedId||state.listeNom||'?';
+ if(RINGOVER_LISTE_CHARGEE===key)return;        // déjà chargé pour cette liste
+ const nums=[...new Set(REAL.flatMap(numerosFiche))];
+ if(!nums.length)return;
+ try{
+  const r=await api('/api/ringover-calls',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({numeros:nums})});
+  const d=await r.json();
+  if(d&&d.table){RINGOVER_CALLS=d.table;RINGOVER_LISTE_CHARGEE=key;rerender_all();}
+ }catch(e){/* le 🎧 est un bonus : on n'interrompt rien en cas d'échec */}
+}
+function aAppelRingover(t){
+ const c=RINGOVER_CALLS[cle9Ring(t)];
+ return !!(c&&c.some(x=>x.record||x.note||x.voicemail));
+}
+function ouvrirAppelsRingover(t){
+ const calls=(RINGOVER_CALLS[cle9Ring(t)]||[]).filter(x=>x.record||x.note||x.voicemail);
+ if(!calls.length){toast('Aucun enregistrement pour ce numéro');return;}
+ const html=calls.map(c=>{
+  const dd=c.start_time?new Date(c.start_time):null;
+  const date=dd?dd.toLocaleDateString('fr-FR')+' à '+dd.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'';
+  const dur=c.incall_duration?Math.floor(c.incall_duration/60)+'min '+(c.incall_duration%60)+'s':'';
+  const sens=c.direction==='out'?'sortant':(c.direction==='in'?'entrant':'');
+  const tags=(c.tags||[]).map(x=>`<span class="badge b-gmb">${x}</span>`).join(' ');
+  const audio=c.record?`<audio controls preload="none" src="${c.record}" style="width:100%;margin-top:8px"></audio>`
+   :(c.voicemail?`<audio controls preload="none" src="${c.voicemail}" style="width:100%;margin-top:8px"></audio><div style="font-size:12px;color:var(--ink-soft);margin-top:2px">📭 Message vocal</div>`
+   :`<div style="font-size:12.5px;color:var(--ink-soft);margin-top:6px">Pas d'enregistrement pour cet appel${c.is_answered?'':' (non décroché)'}.</div>`);
+  const resume=c.note?`<div style="background:var(--paper);border-radius:8px;padding:10px 12px;margin-top:8px;font-size:13px;line-height:1.5"><b>📝 Résumé IA Ringover</b><br>${c.note.replace(/</g,'&lt;').replace(/\r?\n/g,'<br>')}</div>`:'';
+  return `<div style="border-top:1px solid var(--line);padding:14px 0">
+    <div style="font-size:13px;color:var(--ink-soft)">${date}${sens?' · '+sens:''}${dur?' · '+dur:''}${c.sdr?' · SDR '+c.sdr:''}</div>
+    ${tags?'<div style="margin-top:6px">'+tags+'</div>':''}
+    ${audio}${resume}
+  </div>`;
+ }).join('');
+ document.getElementById('ringover-num').textContent=telNorm(t);
+ document.getElementById('ringover-body').innerHTML=html;
+ document.getElementById('ringover-modal').style.display='flex';
+}
+
 function telBtns(t){
  const n=telNorm(t);
  let h=` <a class="act act-call" style="padding:4px 10px;font-size:12px" href="tel:${n}" title="Appeler (extension Ringover click-to-call)">📞</a>`;
@@ -2040,6 +2099,7 @@ function telBtns(t){
   h+=` <a class="act act-lemlist" style="padding:4px 10px;font-size:12px" href="sms:${n}" title="Envoyer un SMS">💬</a>`;
   h+=` <a class="act" style="padding:4px 10px;font-size:12px;background:#25D366;color:#fff" href="${waLink(t)}" target="_blank" title="Ouvrir WhatsApp (depuis votre compte) avec un message prérempli">🟢 WA</a>`;
  }
+ if(aAppelRingover(t))h+=` <button class="act" style="padding:4px 10px;font-size:12px;background:#7C3AED;color:#fff" onclick="ouvrirAppelsRingover('${n}')" title="Réécouter l'appel + résumé IA (Ringover)">🎧</button>`;
  return h;
 }
 
