@@ -232,7 +232,7 @@ export default async function handler(req, res) {
             resume.hotleads = (resume.hotleads || 0) + 1;
             const concurrent = extraireConcurrent(p.post);
             const lienFiche = `${(process.env.APP_URL || 'https://sofy-sdr-tool.vercel.app').replace(/\/$/, '')}/?liste=${r2.liste_id}&fiche=${encodeURIComponent(r2.cle_fiche || '')}`;
-            await envoyerSlack(`🔥 *Nouveau Hot Lead* (LinkedIn) — ${p.nom}${p.occupation ? ' · ' + p.occupation.slice(0, 70) : ''}\n${sigT.emoji} ${sigT.label}${concurrent ? ' sur un post *' + concurrent + '*' : ' (concurrent surveillé)'}${p.post ? '\n' + p.post : ''}\n📂 <${lienFiche}|Ouvrir la fiche dans Sofy Scrap> — enrichissement auto au chargement`);
+            await envoyerSlack(`🔥 *Nouveau Hot Lead* (LinkedIn) — ${p.nom}${p.occupation ? ' · ' + p.occupation.slice(0, 70) : ''}\n${sigT.emoji} ${sigT.label}${concurrent ? ' sur un post *' + concurrent + '*' : ' (concurrent surveillé)'}${p.brut ? '\n👤 ' + p.brut : ''}${p.post ? '\n📝 ' + p.post : ''}\n📂 <${lienFiche}|Ouvrir la fiche dans Sofy Scrap> — enrichissement auto au chargement`);
           }
           continue;
         }
@@ -245,11 +245,11 @@ export default async function handler(req, res) {
         const ents = aSauver.get(m.liste.id) || m.liste.entreprises;
         const e = ents[m.ei];
         e.signal_hot = true;
-        const sig = { type: 'linkedin', interaction: sigT.label, emoji: sigT.emoji, source: nomAgent, detail, post: p.post || '', concurrent: extraireConcurrent(p.post), date: new Date().toISOString() };
+        const sig = { type: 'linkedin', interaction: sigT.label, emoji: sigT.emoji, source: nomAgent, detail, post: p.post || '', linkedin: p.brut || '', concurrent: extraireConcurrent(p.post), date: new Date().toISOString() };
         if (m.ci >= 0 && e.contacts && e.contacts[m.ci]) e.contacts[m.ci].signal = sig;
         else e.signal = sig;
         aSauver.set(m.liste.id, ents);
-        await envoyerSlack(`${sigT.emoji} *Signal LinkedIn* — ${m.contact || p.nom} (${m.entreprise})\n${sigT.label}${p.occupation ? ' · ' + p.occupation.slice(0,70) : ''}\nListe « ${m.liste.nom} » · SDR *${m.liste.sdr}*${p.post ? '\n' + p.post : ''}`);
+        await envoyerSlack(`${sigT.emoji} *Signal LinkedIn* — ${m.contact || p.nom} (${m.entreprise})\n${sigT.label}${p.occupation ? ' · ' + p.occupation.slice(0,70) : ''}\nListe « ${m.liste.nom} » · SDR *${m.liste.sdr}*${p.brut ? '\n👤 ' + p.brut : ''}${p.post ? '\n📝 ' + p.post : ''}`);
       }
     }
 
