@@ -956,6 +956,11 @@ Spot-Hit</textarea>
           <button class="btn" style="background:var(--paper)" id="btn-migrer-stats" onclick="migrerStats()">📊 Recalculer les stats des listes</button>
           <span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">À lancer une fois après une mise à jour, pour pré-calculer les statistiques des anciennes listes.</span>
         </div>
+        <div class="save-bar" style="justify-content:flex-start;margin-top:14px">
+          <button class="btn" style="background:var(--paper)" onclick="diagBasile()">🔬 Diagnostic Basile (filtre)</button>
+          <span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">Compare 2 filtres de poste opposés pour voir si Basile filtre vraiment les leads.</span>
+        </div>
+        <div id="diag-basile-res"></div>
       </div>
 </section>
 
@@ -1014,7 +1019,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v145';
+const VERSION='v146';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2161,6 +2166,23 @@ function chercherFichePopup(numero){
 function ouvrirFicheDepuisAppel(listeId,n9){
  const modal=document.getElementById('ringover-modal'); if(modal)modal.style.display='none';
  ouvrirListe(listeId,null,n9);
+}
+async function diagBasile(){
+ const box=document.getElementById('diag-basile-res'); if(!box)return;
+ box.innerHTML='<span style="color:var(--ink-soft);font-size:13px">🔬 Test en cours…</span>';
+ try{
+  const r=await api('/api/basile-debug8'); const d=await r.json();
+  if(d.erreur){box.innerHTML='<span style="color:var(--danger);font-size:13px">'+d.erreur+'</span>';return;}
+  const o=d.out||{};
+  const A=(o.A_aucun_filtre||{}).postes||[], B=(o.B_poste_DC||{}).postes||[], C=(o.C_poste_dev||{}).postes||[];
+  const filtre=B.length&&C.length&&B.join('|')!==C.join('|');
+  box.innerHTML=`<div style="margin-top:12px;font-size:13px;line-height:1.6">
+    <div style="font-weight:700;color:${filtre?'var(--ok)':'var(--danger)'};margin-bottom:8px">${filtre?'✅ Le filtre Basile FONCTIONNE — les postes changent selon le filtre.':'❌ Basile ne filtre PAS — mêmes postes quel que soit le filtre.'}</div>
+    <div style="color:var(--ink-soft)"><b>Filtre « Directeur Commercial » →</b> ${B.length?B.join(', '):'(aucun lead)'}</div>
+    <div style="color:var(--ink-soft);margin-top:4px"><b>Filtre « Développeur » →</b> ${C.length?C.join(', '):'(aucun lead)'}</div>
+    <div style="color:var(--ink-soft);margin-top:4px"><b>Sans filtre →</b> ${A.length?A.slice(0,6).join(', '):'(aucun lead)'}</div>
+   </div>`;
+ }catch(e){box.innerHTML='<span style="color:var(--danger);font-size:13px">Erreur : '+e.message+'</span>';}
 }
 function ouvrirAppelsRingover(t){afficherAppelsModal(telNorm(t),RINGOVER_CALLS[cle9Ring(t)]||[],t);}
 // ───────── Journal des appels (Brique 2 — vue manager Romain) ─────────
