@@ -130,7 +130,8 @@ function dirigeantVersFiche(lead, infoSiren) {
 }
 
 // Récupère des entreprises DOM (naf + code postal) et collecte SIREN + infos. cap = nb max de SIREN.
-async function collecterSiren(domPrefixes, naf, key, capSiren, limitParDom) {
+async function collecterSiren(domPrefixes, naf, key, capSiren, limitParDom, sirenExclus) {
+  sirenExclus = sirenExclus || new Set();
   const sirens = []; const infoBySiren = {}; let totalEnt = 0;
   for (let i = 0; i < domPrefixes.length; i++) {
     if (sirens.length >= capSiren) break;
@@ -140,7 +141,8 @@ async function collecterSiren(domPrefixes, naf, key, capSiren, limitParDom) {
     if (r.data && r.data.total != null) totalEnt += r.data.total;
     for (const co of listeEntreprises(r.data)) {
       const e = lireEntreprise(co);
-      if (e.siren && !infoBySiren[e.siren]) { infoBySiren[e.siren] = e; sirens.push(e.siren); }
+      const sn = e.siren ? String(e.siren).replace(/\D/g, '') : '';
+      if (e.siren && !infoBySiren[e.siren] && !sirenExclus.has(sn)) { infoBySiren[e.siren] = e; sirens.push(e.siren); }
       if (sirens.length >= capSiren) break;
     }
   }
@@ -182,7 +184,7 @@ function regrouperParEntreprise(fiches) {
 }
 
 export default async function handler(req, res) {
-  const { verifierToken } = await import('./db.js');
+  const { verifierToken, sql } = await import('./db.js');
   const user = verifierToken(req);
   if (!user) return res.status(401).json({ erreur: 'Non authentifié' });
   if (req.method !== 'POST') return res.status(405).json({ erreur: 'POST uniquement' });
@@ -202,6 +204,12 @@ export default async function handler(req, res) {
   try {
     // ========================= CHEMIN DOM (entreprise d'abord) =========================
     if (companyFirst) {
+      // SIREN déjà présents dans des listes existantes -> exclus pour ne sortir que du NEUF
+      let sirenExclus = new Set();
+      try {
+        const rowsEx = sql ? await sql`SELECT entreprises FROM listes WHERE archivee = FALSE` : [];
+        for (const row of rowsEx) { const ents = Array.isArray(row.entreprises) ? row.entreprises : []; for (const e of ents) { if (e.siren) sirenExclus.add(String(e.siren).replace(/\D/g, '')); } }
+      } catch (e) {}
       if (mode === 'estimer') {
         // Comptage entreprises (1 appel/DOM, le 1er ramène un échantillon)
         let totalEnt = 0; let sampleSirens = []; let sampleInfo = {};
@@ -214,7 +222,8 @@ export default async function handler(req, res) {
           if (i === 0) {
             for (const co of listeEntreprises(r.data)) {
               const e = lireEntreprise(co);
-              if (e.siren && !sampleInfo[e.siren]) { sampleInfo[e.siren] = e; sampleSirens.push(e.siren); }
+              const sn = e.siren ? String(e.siren).replace(/\D/g, '') : '';
+              if (e.siren && !sampleInfo[e.siren] && !sirenExclus.has(sn)) { sampleInfo[e.siren] = e; sampleSirens.push(e.siren); }
               if (sampleSirens.length >= 15) break;
             }
           }
@@ -243,9 +252,9 @@ export default async function handler(req, res) {
       if (mode === 'creer') {
         const cap = capContacts(criteres);
         const unParEnt = criteres.un_par_entreprise !== false; // défaut : 1 dirigeant principal par entreprise
-        const { sirens, infoBySiren } = await collecterSiren(domPrefixes, naf, key, 120, 100);
-        if (!sirens.length) return res.status(200).json({ fiches: [], nb: 0, mode_recherche: 'entreprise', message: 'Aucune entreprise trouvée pour ce secteur dans la zone.' });
-        let people = await dirigeantsParSiren(sirens, infoBySiren, key, 400);
+        const { sirens, infoBySiren } = await collecterSiren(domPrefixes, naf, key, Math.max(cap * 3, 60), 100, sirenExclus);
+        if (!sirens.length) return res.status(200).json({ fiches: [], nb: 0, mode_recherche: 'entreprise', message: 'Aucune nouvelle entreprise (toutes déjà présentes dans tes listes).' });
+        let people = await dirigeantsParSiren(sirens, infoBySiren, key, Math.max(cap * 4, 80));
         if (unParEnt) people = unParEntreprise(people);
         people = people.slice(0, cap);
         let fiches = regrouperParEntreprise(people);
