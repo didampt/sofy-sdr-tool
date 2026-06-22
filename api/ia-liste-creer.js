@@ -95,6 +95,15 @@ function rangDirigeant(r) {
 // Nombre de fiches demandé (clamp 1..100, défaut 20).
 function capContacts(c) { const n = parseInt(c && c.nb_contacts, 10); return (n && n > 0) ? Math.min(n, 100) : 20; }
 
+// Garde UN seul dirigeant (le mieux classé) par entreprise.
+function unParEntreprise(people) {
+  const byCo = new Map();
+  for (const pf of people) { const k = (pf.nom || '').toLowerCase().trim(); if (!byCo.has(k)) byCo.set(k, []); byCo.get(k).push(pf); }
+  const out = [];
+  for (const [, arr] of byCo) { arr.sort((x, y) => rangDirigeant(x._role) - rangDirigeant(y._role)); out.push(arr[0]); }
+  return out;
+}
+
 function dirigeantVersFiche(lead, infoSiren) {
   const d = lead.data || lead || {};
   const prenom = d.people_first_name || d.result_first_name || '';
@@ -206,15 +215,16 @@ export default async function handler(req, res) {
             for (const co of listeEntreprises(r.data)) {
               const e = lireEntreprise(co);
               if (e.siren && !sampleInfo[e.siren]) { sampleInfo[e.siren] = e; sampleSirens.push(e.siren); }
-              if (sampleSirens.length >= 8) break;
+              if (sampleSirens.length >= 15) break;
             }
           }
         }
         // Échantillon de dirigeants (validation de la chaîne, gratuit)
         let echantillon = [];
         if (sampleSirens.length) {
-          const fiches = await dirigeantsParSiren(sampleSirens, sampleInfo, key, 8);
-          echantillon = fiches.slice(0, 6).map(f => ({
+          let dirigeants = await dirigeantsParSiren(sampleSirens, sampleInfo, key, 40);
+          if (criteres.un_par_entreprise !== false) dirigeants = unParEntreprise(dirigeants);
+          echantillon = dirigeants.slice(0, 6).map(f => ({
             nom: ((f.contacts[0].prenom || '') + ' ' + (f.contacts[0].nom || '')).trim() || '—',
             role: f.contacts[0].fonction || '—',
             entreprise: f.nom || '—',
@@ -236,12 +246,7 @@ export default async function handler(req, res) {
         const { sirens, infoBySiren } = await collecterSiren(domPrefixes, naf, key, 120, 100);
         if (!sirens.length) return res.status(200).json({ fiches: [], nb: 0, mode_recherche: 'entreprise', message: 'Aucune entreprise trouvée pour ce secteur dans la zone.' });
         let people = await dirigeantsParSiren(sirens, infoBySiren, key, 400);
-        if (unParEnt) {
-          const byCo = new Map();
-          for (const pf of people) { const k = (pf.nom || '').toLowerCase().trim(); if (!byCo.has(k)) byCo.set(k, []); byCo.get(k).push(pf); }
-          people = [];
-          for (const [, arr] of byCo) { arr.sort((x, y) => rangDirigeant(x._role) - rangDirigeant(y._role)); people.push(arr[0]); }
-        }
+        if (unParEnt) people = unParEntreprise(people);
         people = people.slice(0, cap);
         let fiches = regrouperParEntreprise(people);
         fiches.forEach(f => { delete f._role; });
