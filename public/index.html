@@ -894,7 +894,8 @@ Spot-Hit</textarea>
       <p class="sub">Tous les appels récents de l'équipe (Ringover). Filtre par SDR ou par jour, clique sur un appel pour réécouter l'enregistrement et lire le résumé IA.</p>
       <div class="map-card" style="margin-bottom:14px">
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-          <select class="field" id="filtre-appels-sdr" onchange="appliquerFiltreAppels()" style="max-width:220px"><option value="">Tous les SDR</option></select>
+          <span style="font-size:12.5px;color:var(--ink-soft)">Utilisateurs :</span>
+          <div id="filtre-appels-sdr-chips" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"></div>
           <select class="field" id="filtre-appels-jour" onchange="appliquerFiltreAppels()" style="max-width:200px"><option value="">Tous les jours</option></select>
           <label style="font-size:12.5px;color:var(--ink-soft);display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="filtre-appels-rec" onchange="appliquerFiltreAppels()"> Avec enregistrement seulement</label>
           <button class="btn" onclick="resetFiltreAppels()" style="background:var(--paper)">↺ Réinitialiser</button>
@@ -1013,7 +1014,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v143';
+const VERSION='v144';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2151,6 +2152,8 @@ function ouvrirAppelsRingover(t){afficherAppelsModal(telNorm(t),RINGOVER_CALLS[c
 // ───────── Journal des appels (Brique 2 — vue manager Romain) ─────────
 let JOURNAL_APPELS=[];
 let APPELS_FILTRES=[];
+let APPELS_PAGE=50;
+let FILTRE_SDR=new Set();
 async function chargerAppels(){
  const cont=document.getElementById('appels-list');
  if(cont)cont.innerHTML='<div style="color:var(--ink-soft);padding:14px">Chargement des appels…</div>';
@@ -2158,24 +2161,33 @@ async function chargerAppels(){
   const r=await api('/api/ringover-journal');
   const d=await r.json();
   if(d.erreur){if(cont)cont.innerHTML='<div style="color:var(--danger);padding:14px">'+d.erreur+'</div>';return;}
-  JOURNAL_APPELS=d.appels||[];
+  const _all=d.appels||[]; const _reg=_all.filter(a=>a.role);
+  JOURNAL_APPELS=_reg.length?_reg:_all;
   remplirFiltresAppels();
   appliquerFiltreAppels();
  }catch(e){if(cont)cont.innerHTML='<div style="color:var(--danger);padding:14px">Erreur : '+e.message+'</div>';}
 }
 function remplirFiltresAppels(){
- const sdrs=[...new Set(JOURNAL_APPELS.map(a=>a.sdr).filter(Boolean))].sort();
- const jours=[...new Set(JOURNAL_APPELS.map(a=>a.start_time?new Date(a.start_time).toLocaleDateString('fr-FR'):null).filter(Boolean))];
- const fs=document.getElementById('filtre-appels-sdr'), fj=document.getElementById('filtre-appels-jour');
- const selS=fs?fs.value:'', selJ=fj?fj.value:'';
- if(fs)fs.innerHTML='<option value="">Tous les SDR</option>'+sdrs.map(x=>`<option ${x===selS?'selected':''}>${x}</option>`).join('');
+ const jmap={};
+ JOURNAL_APPELS.forEach(a=>{if(a.start_time){const d=new Date(a.start_time);const k=d.toLocaleDateString('fr-FR');if(!(k in jmap))jmap[k]=d.getTime();}});
+ const jours=Object.keys(jmap).sort((x,y)=>jmap[y]-jmap[x]);
+ const fj=document.getElementById('filtre-appels-jour');
+ const selJ=fj?fj.value:'';
  if(fj)fj.innerHTML='<option value="">Tous les jours</option>'+jours.map(x=>`<option ${x===selJ?'selected':''}>${x}</option>`).join('');
+ renderSdrChips();
 }
+function renderSdrChips(){
+ const el=document.getElementById('filtre-appels-sdr-chips'); if(!el)return;
+ const users=[...new Set(JOURNAL_APPELS.map(a=>a.sdr).filter(Boolean))].sort();
+ if(!users.length){el.innerHTML='<span style="font-size:12.5px;color:var(--ink-soft)">Aucun utilisateur renseigné</span>';return;}
+ el.innerHTML=users.map(u=>`<button class="chip${FILTRE_SDR.has(u)?' sel':''}" style="padding:6px 12px;font-size:13px" data-u="${u.replace(/"/g,'&quot;')}" onclick="toggleSdr(this.dataset.u)">${u}</button>`).join('');
+}
+function toggleSdr(u){ if(FILTRE_SDR.has(u))FILTRE_SDR.delete(u); else FILTRE_SDR.add(u); renderSdrChips(); appliquerFiltreAppels(); }
 function renderAppels(arr){
  const cont=document.getElementById('appels-list');
  if(!cont)return;
  if(!arr.length){cont.innerHTML='<div style="color:var(--ink-soft);padding:14px">Aucun appel pour ce filtre.</div>';}
- else cont.innerHTML=arr.map((a,idx)=>{
+ else cont.innerHTML=arr.slice(0,APPELS_PAGE).map((a,idx)=>{
   const dd=a.start_time?new Date(a.start_time):null;
   const date=dd?dd.toLocaleDateString('fr-FR')+' '+dd.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'';
   const dur=a.incall_duration?Math.floor(a.incall_duration/60)+'min '+(a.incall_duration%60)+'s':'—';
@@ -2193,26 +2205,29 @@ function renderAppels(arr){
     <span style="flex:1;min-width:120px">${a.numero||''}</span>
     ${tag}
   </div>`;
- }).join('');
+ }).join('')+(arr.length>APPELS_PAGE?'<div style="text-align:center;padding:14px"><button class="btn" onclick="voirPlusAppels()" style="background:var(--paper)">Voir plus ('+(arr.length-APPELS_PAGE)+' restants)</button></div>':'');
  const cpt=document.getElementById('filtre-appels-compte');
- if(cpt)cpt.textContent=arr.length+' appel'+(arr.length>1?'s':'');
+ if(cpt)cpt.textContent=arr.length+' appel'+(arr.length>1?'s':'')+(arr.length>APPELS_PAGE?' · '+Math.min(APPELS_PAGE,arr.length)+' affichés':'');
 }
+function voirPlusAppels(){APPELS_PAGE+=50;renderAppels(APPELS_FILTRES);}
 function appliquerFiltreAppels(){
- const s=(document.getElementById('filtre-appels-sdr')||{}).value||'';
  const j=(document.getElementById('filtre-appels-jour')||{}).value||'';
  const rec=!!(document.getElementById('filtre-appels-rec')||{}).checked;
  APPELS_FILTRES=JOURNAL_APPELS.filter(a=>{
-  if(s&&a.sdr!==s)return false;
+  if(FILTRE_SDR.size&&!FILTRE_SDR.has(a.sdr))return false;
   if(j&&(!a.start_time||new Date(a.start_time).toLocaleDateString('fr-FR')!==j))return false;
   if(rec&&!a.record)return false;
   return true;
  });
+ APPELS_PAGE=50;
  renderAppels(APPELS_FILTRES);
  renderDashboard();
 }
 function resetFiltreAppels(){
- ['filtre-appels-sdr','filtre-appels-jour'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+ FILTRE_SDR.clear();
+ const fj=document.getElementById('filtre-appels-jour');if(fj)fj.value='';
  const rc=document.getElementById('filtre-appels-rec');if(rc)rc.checked=false;
+ renderSdrChips();
  appliquerFiltreAppels();
 }
 function ouvrirAppelJournal(idx){
@@ -2294,7 +2309,7 @@ function renderDashboard(){
  const maxTot=Math.max(1,...ag.map(a=>a.tot));
  const rowsAppels=ag.map(a=>`<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px">
    <span style="width:96px;font-size:13px;color:var(--ink-soft);flex:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.nom}${_roleTag(a.role)}</span>
-   <div style="flex:1;height:11px;background:var(--paper);border-radius:6px;overflow:hidden;display:flex">
+   <div title="${a.out} sortants · ${a.inb} entrants" style="flex:1;height:11px;background:var(--paper);border-radius:6px;overflow:hidden;display:flex;cursor:default">
      <div style="width:${(a.out/maxTot*100).toFixed(1)}%;background:#2B4BF2"></div>
      <div style="width:${(a.inb/maxTot*100).toFixed(1)}%;background:#0FA968"></div>
    </div><span style="width:42px;text-align:right;font-size:13px;font-weight:600">${a.tot}</span></div>`).join('');
@@ -2324,7 +2339,7 @@ function renderDashboard(){
  if(!totalTags){cardTags=`<div class="map-card" style="margin-bottom:14px"><div style="font-size:16px;font-weight:700;margin-bottom:2px">Répartition des tags</div><div style="font-size:12.5px;color:var(--ink-soft)">Aucun tag posé sur les appels pour l'instant.</div></div>`;}
  else{
   const C=339.292;let off=0;let segs='';
-  tags.forEach((t,i)=>{const len=t.v/totalTags*C;segs+=`<circle cx="70" cy="70" r="54" fill="none" stroke="${_PAL[i%_PAL.length]}" stroke-width="16" stroke-dasharray="${len.toFixed(1)} ${C}" stroke-dashoffset="${(-off).toFixed(1)}"/>`;off+=len;});
+  tags.forEach((t,i)=>{const len=t.v/totalTags*C;segs+=`<circle cx="70" cy="70" r="54" fill="none" stroke="${_PAL[i%_PAL.length]}" stroke-width="16" stroke-dasharray="${len.toFixed(1)} ${C}" stroke-dashoffset="${(-off).toFixed(1)}"><title>${t.n} : ${t.v} (${Math.round(t.v/totalTags*100)}%)</title></circle>`;off+=len;});
   const leg=tags.map((t,i)=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px"><span style="width:9px;height:9px;border-radius:50%;background:${_PAL[i%_PAL.length]};flex:none"></span><span style="flex:1;font-size:13px">${t.n}</span><span style="font-size:13px;color:var(--ink-soft)">${t.v}</span><span style="width:42px;text-align:right;font-size:13px;font-weight:600">${Math.round(t.v/totalTags*100)}%</span></div>`).join('');
   cardTags=`<div class="map-card" style="margin-bottom:14px"><div style="font-size:16px;font-weight:700;margin-bottom:2px">Répartition des tags</div><div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:14px">sur les appels taggés</div>
    <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
@@ -2336,13 +2351,13 @@ function renderDashboard(){
  // ---- Heatmap créneaux ----
  const jours=['Lun','Mar','Mer','Jeu','Ven'];const heures=[8,9,10,11,12,14,15,16,17,18];
  const grid={};A.forEach(a=>{if(!a.start_time)return;const d=new Date(a.start_time);const wd=d.getDay();if(wd<1||wd>5)return;const hi=heures.indexOf(d.getHours());if(hi<0)return;const key=(wd-1)+'_'+hi;if(!grid[key])grid[key]={c:0,a:0};grid[key].c++;if(a.is_answered)grid[key].a++;});
- let best=null;Object.entries(grid).forEach(([k,v])=>{if(v.c>=5){const r=v.a/v.c;if(!best||r>best.r)best={k,r,c:v.c};}});
+ const slots=Object.entries(grid).filter(([k,v])=>v.c>=5).map(([k,v])=>({j:jours[k.split('_')[0]],h:heures[k.split('_')[1]],r:v.a/v.c})).sort((x,y)=>y.r-x.r);const top3=slots.slice(0,3);
  let heat=`<div style="display:grid;grid-template-columns:38px repeat(${heures.length},1fr);gap:3px;align-items:center">`;
  heat+='<div></div>'+heures.map(h=>`<div style="font-size:11px;color:var(--ink-soft);text-align:center">${h}h</div>`).join('');
- jours.forEach((j,ji)=>{heat+=`<div style="font-size:12px;color:var(--ink-soft)">${j}</div>`;heures.forEach((h,hi)=>{const g=grid[ji+'_'+hi];if(!g||!g.c){heat+='<div style="height:28px;border-radius:4px;background:var(--paper)"></div>';}else{const r=g.a/g.c;const al=(0.12+r*0.8).toFixed(2);const txt=r>0.5?'#fff':'var(--ink-soft)';heat+=`<div title="${g.a}/${g.c} décrochés" style="height:28px;border-radius:4px;background:rgba(43,75,242,${al});display:flex;align-items:center;justify-content:center;font-size:11px;color:${txt}">${Math.round(r*100)}</div>`;}});});
+ jours.forEach((j,ji)=>{heat+=`<div style="font-size:12px;color:var(--ink-soft)">${j}</div>`;heures.forEach((h,hi)=>{const g=grid[ji+'_'+hi];if(!g||!g.c){heat+='<div style="height:28px;border-radius:4px;background:var(--paper)"></div>';}else{const r=g.a/g.c;const bg=r<0.25?'#9DBEFF':(r<0.45?'#E8A013':'#E5484D');const txt=r>=0.45?'#FFFFFF':(r<0.25?'#15347A':'#4A3200');heat+=`<div title="${g.a}/${g.c} décrochés (${Math.round(r*100)}%)" style="height:28px;border-radius:4px;background:${bg};display:flex;align-items:center;justify-content:center;font-size:11px;color:${txt}">${Math.round(r*100)}</div>`;}});});
  heat+='</div>';
- const bestTxt=best?`Meilleur créneau : <b>${jours[best.k.split('_')[0]]} ${heures[best.k.split('_')[1]]}h</b> (${Math.round(best.r*100)}% de décroché)`:'Pas encore assez de volume pour identifier un créneau.';
- const cardHeat=`<div class="map-card" style="margin-bottom:14px"><div style="font-size:16px;font-weight:700;margin-bottom:2px">Créneaux les plus performants</div><div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:14px">taux de décroché par jour et par heure — plus c'est foncé, mieux on joint</div>${heat}<div style="font-size:12.5px;color:var(--ink-soft);margin-top:12px">⭐ ${bestTxt}</div></div>`;
+ const bestTxt=top3.length?("Meilleurs créneaux : <b>"+top3.map(s=>s.j+" "+s.h+"h").join(", ")+"</b> (jusqu'à "+Math.round(top3[0].r*100)+"% de décroché)"):"Pas encore assez de volume pour identifier un créneau.";
+ const cardHeat=`<div class="map-card" style="margin-bottom:14px"><div style="font-size:16px;font-weight:700;margin-bottom:2px">Créneaux les plus performants</div><div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:14px">taux de décroché par jour et par heure</div>${heat}<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--ink-soft)"><span style="display:flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:3px;background:#9DBEFF"></span>&lt; 25%</span><span style="display:flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:3px;background:#E8A013"></span>25–45%</span><span style="display:flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:3px;background:#E5484D"></span>&gt; 45%</span></div><div style="font-size:12.5px;color:var(--ink-soft);margin-top:10px">⭐ ${bestTxt}</div></div>`;
 
  // ---- Appels par période / utilisateur ----
  const PM=_periodeMatrix(PERIODE_GRAN);window._PMAT=PM;
