@@ -1029,7 +1029,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v156';
+const VERSION='v157';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1280,7 +1280,8 @@ async function estimerListeIA(){
 function _resumeFiltresBasile(f){
  f=f||{}; const esc=s=>String(s).replace(/</g,'&lt;');
  const list=o=>(o&&Array.isArray(o.include))?o.include:[];
- const postes=list(f.result_role), pays=list(f.result_country_code), regions=list(f.result_region), naf=list(f.naf_code);
+ const postes=list(f.result_role), pays=list(f.result_country_code), act=list(f.activity);
+ const SECT={commerce_global:'Commerce / retail',btp_global:'BTP / immobilier',transport_global:'Transport / logistique',hospitality_global:'Restauration / hôtellerie',agriculture_global:'Agriculture',finance_global:'Finance / banque / assurance',manufacturing_global:'Industrie'};
  const ligne=(lbl,arr,vide)=>arr.length
    ?`<div style="margin-top:3px"><b>${lbl}</b> (${arr.length}) : ${arr.slice(0,4).map(esc).join(', ')}${arr.length>4?` <span style="color:var(--ink-soft)">(+${arr.length-4})</span>`:''}</div>`
    :`<div style="margin-top:3px"><b>${lbl} :</b> <span style="color:var(--danger)">${vide}</span></div>`;
@@ -1288,8 +1289,7 @@ function _resumeFiltresBasile(f){
    <div style="font-weight:700;color:var(--ink);margin-bottom:5px">🔎 Filtres réellement envoyés à Basile</div>
    ${ligne('Postes',postes,'aucun')}
    <div style="margin-top:3px"><b>Pays :</b> ${pays.length?pays.map(esc).join(', '):'FR'}</div>
-   ${regions.length?`<div style="margin-top:3px"><b>Régions</b> (${regions.length}) : ${regions.slice(0,6).map(esc).join(', ')}</div>`:`<div style="margin-top:3px"><b>Régions :</b> <span style="color:var(--danger)">toute la France (pas de restriction géo)</span></div>`}
-   ${ligne('Secteur NAF',naf,'⚠️ aucun filtre secteur')}
+   ${act.length?`<div style="margin-top:3px"><b>Secteur :</b> ${esc(SECT[act[0]]||act[0])}</div>`:`<div style="margin-top:3px"><b>Secteur :</b> <span style="color:var(--danger)">aucun (tous secteurs confondus)</span></div>`}
  </div>`;
 }
 function ouvrirEstimationIA(d){
