@@ -1,18 +1,9 @@
-// /api/basile-secteur.js — TEMPORAIRE — activity sur les personnes + recherche de l'endpoint d'autocomplétion.
+// /api/basile-secteur.js — TEMPORAIRE — Catalogue des secteurs "activity" disponibles (slugs *_global).
 import { verifierToken } from './db.js';
 const BASE = 'https://api.basile.cc';
 async function post(path, body, key) {
-  try { const r = await fetch(BASE + path, { method: 'POST', headers: { 'Authorization': key, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const d = await r.json().catch(() => null); return { status: r.status, data: d, total: (d && d.total != null) ? d.total : null }; }
-  catch (e) { return { status: 0, data: null, total: null }; }
-}
-async function get(path, key) {
-  try { const r = await fetch(BASE + path, { headers: { 'Authorization': key } }); const d = await r.json().catch(() => null); return { status: r.status, data: d }; }
-  catch (e) { return { status: 0, data: null }; }
-}
-function extraireIds(data) {
-  let arr = Array.isArray(data) ? data : (data && (data.suggestions || data.results || data.items || data.data || data.activities)) || [];
-  if (!Array.isArray(arr)) arr = [];
-  return arr.map(it => (typeof it === 'string') ? it : (it.id || it.value || it.concept_id || it.slug || it.key || JSON.stringify(it).slice(0, 50)));
+  try { const r = await fetch(BASE + path, { method: 'POST', headers: { 'Authorization': key, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const d = await r.json().catch(() => null); return { status: r.status, total: (d && d.total != null) ? d.total : null }; }
+  catch (e) { return { status: 0, total: null }; }
 }
 
 export default async function handler(req, res) {
@@ -22,30 +13,33 @@ export default async function handler(req, res) {
   const key = process.env.BASILE_API_KEY;
   if (!key) return res.status(500).json({ erreur: 'BASILE_API_KEY manquante' });
 
-  const roleMkt = { include: ['Directeur Marketing', 'Directrice Marketing'] };
-  const fr = { include: ['FR'] };
-  const out = [];
+  const candidats = [
+    'retail_global', 'ecommerce_global', 'commerce_global',
+    'automotive_global', 'auto_global', 'mobility_global',
+    'hospitality_global', 'food_global', 'restaurant_global',
+    'health_global', 'healthcare_global', 'medical_global', 'pharma_global',
+    'realestate_global', 'real_estate_global', 'construction_global', 'btp_global',
+    'finance_global', 'banking_global', 'insurance_global',
+    'manufacturing_global', 'industry_global', 'industrial_global',
+    'transport_global', 'logistics_global',
+    'education_global', 'beauty_global', 'wellness_global', 'sport_global', 'fitness_global',
+    'agriculture_global', 'agri_global', 'tech_global', 'it_global', 'software_global',
+    'media_global', 'telecom_global', 'energy_global', 'legal_global', 'consulting_global',
+    'tourism_global', 'travel_global', 'wholesale_global', 'services_global'
+  ];
 
-  const ref = await post('/people/find', { limit: 1, filters: { result_role: roleMkt, result_country_code: fr } }, key);
-  out.push({ label: '④ Dir. Marketing seul (référence)', type: 'personnes', status: ref.status, total: ref.total });
-
-  const pHosp = await post('/people/find', { limit: 1, filters: { result_role: roleMkt, activity: { include: ['hospitality_global'] }, result_country_code: fr } }, key);
-  out.push({ label: '⑦ Dir. Marketing + activity=hospitality_global', type: 'personnes', status: pHosp.status, total: pHosp.total });
-
-  // ⑧ Trouver l'endpoint d'autocomplétion des activités (pattern /people/<type>/suggest)
-  const types = ['activities', 'activity', 'sectors', 'sector', 'industries', 'industry', 'naf', 'concepts'];
-  const trouve = [];
-  let bonChemin = null; let exemples = [];
-  for (const t of types) {
-    const sg = await get('/people/' + t + '/suggest?q=restauration', key);
-    if (sg.status === 200 && sg.data) {
-      const ids = extraireIds(sg.data);
-      trouve.push('/people/' + t + '/suggest = 200 ✓ (' + ids.length + ' ids)');
-      if (ids.length && !bonChemin) { bonChemin = '/people/' + t + '/suggest'; exemples = ids.slice(0, 8); }
-    } else { trouve.push('/people/' + t + '/suggest = ' + sg.status); }
+  const valides = []; const ignores = []; const ko = [];
+  for (const slug of candidats) {
+    const r = await post('/companies/find', { limit: 1, filters: { activity: { include: [slug] } } }, key);
+    if (r.total == null) ko.push(slug);
+    else if (r.total >= 5000000) ignores.push(slug + ' (' + r.total.toLocaleString('fr-FR') + ')');
+    else valides.push({ slug, total: r.total });
   }
-  out.push({ label: '⑧ Recherche endpoint autocomplétion', type: 'endpoints', status: 200, total: null, apercu: trouve });
-  if (bonChemin) out.push({ label: '✅ Endpoint trouvé : ' + bonChemin + ' — IDs "restauration"', type: 'concepts', status: 200, total: exemples.length, apercu: exemples });
+  valides.sort((a, b) => b.total - a.total);
 
-  return res.status(200).json({ note: '⑦ confirme : activity filtre les personnes. ⑧ cherche l\'endpoint qui donne les slugs précis (ex. restauration rapide).', out });
+  const out = [
+    { label: '✅ Secteurs activity VALIDES (' + valides.length + ')', type: 'concepts', status: 200, total: valides.length, apercu: valides.map(v => v.slug + ' = ' + v.total.toLocaleString('fr-FR')) },
+    { label: 'Récap', type: 'info', status: 200, total: null, apercu: [ko.length + ' slugs inconnus', ignores.length + ' slugs ignorés (renvoient toute la base)'] }
+  ];
+  return res.status(200).json({ note: 'Secteurs "activity" VALIDES = utilisables pour filtrer un poste par secteur sur les personnes.', out });
 }
