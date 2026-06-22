@@ -992,7 +992,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v138';
+const VERSION='v139';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2081,6 +2081,28 @@ function dernierResumeRingover(e){
  // On retire la mention "Généré par IA…" et on nettoie les retours chariot
  return avecNote[0].note.replace(/\r?\nGénéré par IA[^]*/i,'').replace(/\s+/g,' ').trim();
 }
+// Récap des appels Ringover d'une fiche, affiché sous le bloc-notes (lecture seule, clic = ouvre le popup)
+function recapAppelsHtml(e){
+ const lignes=[];
+ for(const t of numerosFiche(e)){
+  for(const c of (RINGOVER_CALLS[cle9Ring(t)]||[])){
+   if(c.record||c.note||c.voicemail)lignes.push({t,c});
+  }
+ }
+ if(!lignes.length)return '';
+ lignes.sort((a,b)=>new Date(b.c.start_time||0)-new Date(a.c.start_time||0));
+ const items=lignes.map(({t,c})=>{
+  const dd=c.start_time?new Date(c.start_time):null;
+  const date=dd?dd.toLocaleDateString('fr-FR')+' à '+dd.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'';
+  const dur=c.incall_duration?Math.floor(c.incall_duration/60)+'min '+(c.incall_duration%60)+'s':'';
+  const sens=c.direction==='out'?'sortant':(c.direction==='in'?'entrant':'');
+  const tag=(c.tags&&c.tags[0])?' · '+c.tags[0]:'';
+  const ico=c.record?'🎧':(c.voicemail?'📭':'📝');
+  return `<div onclick="ouvrirAppelsRingover('${telNorm(t)}')" style="cursor:pointer;font-size:12.5px;color:var(--ink);padding:6px 9px;border-radius:7px;background:var(--paper);margin-top:5px;border:1px solid var(--line)" title="Ouvrir le lecteur + le résumé IA">${ico} <b>${date}</b>${sens?' · '+sens:''}${dur?' · '+dur:''}${c.sdr?' · SDR '+c.sdr:''}${tag}</div>`;
+ }).join('');
+ return `<div style="margin-top:12px"><div style="font-size:11.5px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">🎧 Appels (${lignes.length}) — clic pour réécouter</div>${items}</div>`;
+}
+
 function ouvrirAppelsRingover(t){
  const calls=(RINGOVER_CALLS[cle9Ring(t)]||[]).filter(x=>x.record||x.note||x.voicemail);
  if(!calls.length){toast('Aucun enregistrement pour ce numéro');return;}
@@ -2346,6 +2368,7 @@ function ficheReal(e,i){
      </select>
     </div>
     <textarea class="note-area" id="note${i}" placeholder="Note libre : objection entendue, bon interlocuteur, ressenti terrain…" onchange="sauverNote(${i},this.value)">${(e.notes_sdr||'').replace(/</g,'&lt;').replace(/"/g,'&quot;')}</textarea>
+    ${recapAppelsHtml(e)}
    </div>
    <div class="act-row" style="border-top:1px solid var(--line);padding-top:12px;margin-top:16px">
     <button class="act act-call" onclick="lancerFiche(${i})" title="Pipeline complet sur cette fiche">🚀 Fiche</button>
