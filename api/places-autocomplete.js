@@ -68,7 +68,7 @@ export default async function handler(req, res) {
 
     // ── Mode recherche : on renvoie une liste de suggestions ──
     if (q && q.trim().length >= 3) {
-      const d = await gPlaces(`https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(q.trim())}&language=fr&region=fr&key=${key}`);
+      const d = await gPlaces(`https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(q.trim())}&language=fr&key=${key}`);
       const resultats = (d.results || []).slice(0, 5).map(x => ({
         place_id: x.place_id,
         nom: x.name,

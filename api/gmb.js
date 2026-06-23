@@ -116,7 +116,7 @@ async function gPlaces(url) {
 }
 
 async function textSearch(q, key) {
-  const data = await gPlaces(`https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(q)}&language=fr&region=fr&key=${key}`);
+  const data = await gPlaces(`https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(q)}&language=fr&key=${key}`);
   if (['REQUEST_DENIED', 'OVER_QUERY_LIMIT', 'INVALID_REQUEST'].includes(data.status || '')) {
     throw Object.assign(new Error('Google Places : ' + data.status), { google: data.error_message || '' });
   }
@@ -144,17 +144,20 @@ export default async function handler(req, res) {
 
   try {
     // ── 1. Pool de candidats : recherches nom/enseigne + recherche par catégorie locale ──
+    const DOM_NOM = { '971': 'Guadeloupe', '972': 'Martinique', '973': 'Guyane', '974': 'La Réunion', '976': 'Mayotte' };
+    const terr = DOM_NOM[(cp || '').slice(0, 3)] || ''; // DOM → on ajoute le territoire à la requête (plus de biais métropole)
+    const qCat = (motCle && ville) ? [motCle, ville, terr].filter(Boolean).join(' ') : null;
     const requetes = [];
-    if (enseigne) requetes.push(`${enseigne} ${ville}`.trim());
-    requetes.push(`${nom} ${ville}`.trim());
-    if (motCle && ville) requetes.push(`${motCle} ${ville}`); // sert aussi pour les concurrents
+    if (enseigne) requetes.push([enseigne, ville, terr].filter(Boolean).join(' '));
+    requetes.push([nom, ville, terr].filter(Boolean).join(' '));
+    if (qCat) requetes.push(qCat); // sert aussi pour les concurrents
 
     const vus = new Set();
     const candidats = [];
     let resultatsCategorie = [];
     for (const q of requetes) {
       const results = await textSearch(q, key);
-      if (motCle && q === `${motCle} ${ville}`) resultatsCategorie = results;
+      if (qCat && q === qCat) resultatsCategorie = results;
       for (const r of results) {
         if (vus.has(r.place_id)) continue;
         vus.add(r.place_id);
