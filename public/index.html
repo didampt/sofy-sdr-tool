@@ -672,6 +672,10 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
       <h1>✅ Mes tâches</h1>
       <p class="sub">Vos rappels, triés par échéance. Un clic sur « Ouvrir la fiche » vous emmène sur le prospect et retire la tâche.</p>
       <div id="taches-stats" style="display:flex;gap:12px;margin-bottom:22px"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+        <input class="field" id="taches-search" placeholder="🔎 Filtrer (entreprise, contact, note, date…)" oninput="rendreTaches()" style="flex:1;min-width:220px">
+        <label id="taches-team-wrap" style="display:none;font-size:13px;align-items:center;gap:6px;cursor:pointer;white-space:nowrap"><input type="checkbox" id="taches-team" onchange="chargerTaches()"> 👥 Toute l'équipe</label>
+      </div>
       <div id="taches-liste"><p style="color:var(--ink-soft)">Chargement…</p></div>
     </section>
 
@@ -1020,7 +1024,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v163';
+const VERSION='v164';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -4049,14 +4053,19 @@ async function chargerArchives(){
 }
 let TACHES_GROUPES={retard:[],aujourdhui:[],avenir:[]};
 let TACHES_FILTRE='tous';
+let TACHES_INDEX={},TACHES_TEAM=false;
 async function chargerTaches(){
  const zone=document.getElementById('taches-liste');
  const statsZone=document.getElementById('taches-stats');
  try{
-  const r=await api('/api/taches');
+  const team=!!(document.getElementById('taches-team')||{}).checked;
+  TACHES_TEAM=team;
+  const tw=document.getElementById('taches-team-wrap'); if(tw)tw.style.display=(state.user&&['admin','superadmin'].includes(state.user.role))?'inline-flex':'none';
+  const r=await api('/api/taches'+(team?'?all=1':''));
   const d=await r.json();
   if(d.erreur){zone.innerHTML='<p style="color:var(--ink-soft)">'+d.erreur+'</p>';return;}
   const taches=d.taches||[];
+  TACHES_INDEX={}; taches.forEach(t=>{TACHES_INDEX[t.id]=t;});
   majBadgeTaches(taches);
   if(!taches.length){statsZone.innerHTML='';zone.innerHTML='<p style="color:var(--ink-soft)">Aucun rappel en attente. Les rappels apparaissent ici quand vous mettez le statut « 🔁 Rappel demandé » sur une fiche.</p>';return;}
   const maintenant=new Date();
@@ -4097,16 +4106,15 @@ function filtrerTaches(cat){
  rendreTaches();
 }
 function rendreTaches(){
- const {retard,aujourdhui,avenir}=TACHES_GROUPES;
+ const nq=((document.getElementById('taches-search')||{}).value||'').toLowerCase().trim();
+ const match=t=>{ if(!nq)return true; const dd=t.date_rappel?new Date(t.date_rappel).toLocaleDateString('fr-FR'):''; return [t.entreprise_nom,t.contact_nom,t.description,dd,t.sdr].join(' ').toLowerCase().includes(nq); };
+ const retard=TACHES_GROUPES.retard.filter(match), aujourdhui=TACHES_GROUPES.aujourdhui.filter(match), avenir=TACHES_GROUPES.avenir.filter(match);
  const f=TACHES_FILTRE;
  let html='';
  if((f==='tous'||f==='retard')&&retard.length)html+=sectionTaches('En retard',retard,'var(--danger)');
  if((f==='tous'||f==='aujourdhui')&&aujourdhui.length)html+=sectionTaches("Aujourd'hui",aujourdhui,'var(--ink-soft)');
  if((f==='tous'||f==='avenir')&&avenir.length)html+=sectionTaches('À venir',avenir,'var(--ink-soft)');
- if(!html){
-  const noms={retard:'en retard',aujourdhui:"pour aujourd'hui",avenir:'à venir'};
-  html=`<p style="color:var(--ink-soft)">Aucune tâche ${noms[f]||''}.</p>`;
- }
+ if(!html){ html=`<p style="color:var(--ink-soft)">Aucune tâche ${nq?'pour « '+nq+' »':'à afficher'}.</p>`; }
  document.getElementById('taches-liste').innerHTML=html;
 }
 function sectionTaches(titre,taches,coul){
@@ -4117,13 +4125,18 @@ function sectionTaches(titre,taches,coul){
   return `<div class="fiche" style="${enRetard?'border-left:3px solid var(--danger)':''}">
    <div class="fiche-top" style="grid-template-columns:1fr auto;align-items:center;gap:14px">
     <div>
-     <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
+     <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;flex-wrap:wrap">
       <span style="font-size:13px;font-weight:600;color:${enRetard?'var(--danger)':'var(--ink-soft)'}">${enRetard?'⏰':'🕒'} ${quand}</span>
+      ${TACHES_TEAM&&t.sdr?`<span class="badge b-gmb">👤 ${String(t.sdr).replace(/</g,'&lt;')}</span>`:''}
      </div>
      <div class="lead-name">${(t.entreprise_nom||'Fiche').replace(/</g,'&lt;')}${t.contact_nom?' — '+t.contact_nom.replace(/</g,'&lt;'):''}</div>
      ${t.description?`<div class="lead-meta">${t.description.replace(/</g,'&lt;')}</div>`:''}
     </div>
-    <button class="act act-call" onclick="ouvrirTache(${t.id},${t.liste_id||'null'},'${(t.entreprise_nom||'').replace(/'/g,"\\'").replace(/"/g,'')}')">📂 Ouvrir la fiche</button>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+     <button class="act act-call" onclick="ouvrirTache(${t.id})">📂 Ouvrir</button>
+     <button class="act" style="background:var(--ok);color:#fff" onclick="tacheFait(${t.id})" title="Marquer comme faite">✅ Fait</button>
+     <button class="act" style="background:#fff;color:var(--danger)" onclick="tacheSupprimer(${t.id})" title="Supprimer ce rappel">🗑️</button>
+    </div>
    </div></div>`;
  }).join('');
  return `<div style="font-size:12px;font-weight:600;color:${coul};text-transform:uppercase;letter-spacing:.06em;margin:18px 0 8px">${titre}</div>${lignes}`;
@@ -4135,12 +4148,23 @@ function formatRappel(d){
  if(d.toDateString()===demain.toDateString())return `Demain ${h}`;
  return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})+' '+h;
 }
-async function ouvrirTache(id,listeId,terme){
- // Marque la tâche faite (disparaît) puis ouvre la fiche ciblée
- try{await api('/api/taches',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,faite:true})});}catch(e){}
- if(listeId){
-  ouvrirListe(listeId,null,terme||'');
- }else{toast('Tâche terminée ✓');chargerTaches();}
+async function ouvrirTache(id){
+ const t=TACHES_INDEX[id]||{};
+ // Marque la tâche faite (toutes les occurrences de la fiche) puis ouvre la fiche ciblée
+ try{await api('/api/taches',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(t.fiche_cle?{fiche_cle:t.fiche_cle,sdr:t.sdr,faite:true}:{id,faite:true})});}catch(e){}
+ if(t.liste_id){ ouvrirListe(t.liste_id,null,t.entreprise_nom||''); }
+ else{toast('Tâche terminée ✓');chargerTaches();}
+}
+async function tacheFait(id){
+ const t=TACHES_INDEX[id]||{};
+ try{await api('/api/taches',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(t.fiche_cle?{fiche_cle:t.fiche_cle,sdr:t.sdr,faite:true}:{id,faite:true})});}catch(e){}
+ toast('✅ Tâche faite'); chargerTaches();
+}
+async function tacheSupprimer(id){
+ const t=TACHES_INDEX[id]||{};
+ if(!await confirmSofy('🗑️ Supprimer la tâche','Supprimer ce rappel ? (toutes ses occurrences sur cette fiche)','Supprimer'))return;
+ try{await api('/api/taches',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify(t.fiche_cle?{fiche_cle:t.fiche_cle,sdr:t.sdr}:{id})});}catch(e){}
+ toast('🗑️ Tâche supprimée'); chargerTaches();
 }
 function majBadgeTaches(taches){
  const b=document.getElementById('taches-badge');
