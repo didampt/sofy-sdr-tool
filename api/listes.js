@@ -254,10 +254,13 @@ export default async function handler(req, res) {
         await sql`UPDATE listes SET sdr = ${assigner_a.trim()} WHERE id = ${parseInt(id)}`;
         return res.status(200).json({ ok: true, assigne: assigner_a.trim() });
       }
-      // Archiver / désarchiver une liste (réservé admin/superadmin)
+      // Archiver / désarchiver : admin = toutes les listes ; SDR = uniquement SES propres listes
       if (archiver !== undefined) {
-        if (!['admin', 'superadmin'].includes(user.role)) {
-          return res.status(403).json({ erreur: 'Seuls les administrateurs peuvent archiver une liste' });
+        const adminA = ['admin', 'superadmin'].includes(user.role);
+        if (!adminA) {
+          const rows = await sql`SELECT sdr FROM listes WHERE id = ${parseInt(id)}`;
+          if (!rows.length) return res.status(404).json({ erreur: 'Liste introuvable' });
+          if (rows[0].sdr !== user.nom) return res.status(403).json({ erreur: 'Vous ne pouvez archiver que vos propres listes' });
         }
         await sql`UPDATE listes SET archivee = ${!!archiver} WHERE id = ${parseInt(id)}`;
         return res.status(200).json({ ok: true, archivee: !!archiver });
