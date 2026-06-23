@@ -1020,7 +1020,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v162';
+const VERSION='v163';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1687,7 +1687,7 @@ async function recupererMapsUrl(i){
  try{
   const r=await api('/api/gmb-url?url='+encodeURIComponent(lien)+'&liste_id='+(state.savedId||''));
   const d=await r.json();
-  if(r.status===404){ rerender(i); toast("ℹ️ Lien Maps enregistré (cliquable sur la fiche). Cette fiche n'est pas disponible dans l'API Google — saisis le site / le téléphone à la main."); return; }
+  if(r.status===404){ e.gmb=null; persister(); rerender(i); toast("ℹ️ Lien Maps enregistré (cliquable sur la fiche). Ancien GMB retiré. Cette fiche n'est pas dans l'API Google — saisis le site / le téléphone à la main."); return; }
   if(!r.ok||d.erreur){if(msg){msg.style.color='var(--danger)';msg.textContent='❌ '+(d.erreur||('Erreur '+r.status))+(d.detail?'  ▸ diag: '+d.detail:'');}return;}
   const pf=d.prefill||{};
   if(pf.nom)e.nom=pf.nom; if(pf.ville)e.ville=pf.ville; if(pf.code_postal)e.code_postal=pf.code_postal; if(pf.adresse)e.adresse=pf.adresse;
@@ -1698,6 +1698,12 @@ async function recupererMapsUrl(i){
   persister();rerender(i);
   toast('✅ '+(pf.nom||'Fiche rattachée')+(d.gmb&&typeof d.gmb.note_moyenne==='number'?` · ${String(d.gmb.note_moyenne).replace('.',',')}★ (${d.gmb.total_avis} avis)`:' (sans note Google)'));
  }catch(err){if(msg){msg.style.color='var(--danger)';msg.textContent='❌ '+err.message;}}
+}
+function retirerGmb(i){
+ const e=REAL[i];
+ e.gmb=null; e.maps_url=null;
+ persister(); rerender(i);
+ toast('🗑️ GMB et lien Maps retirés. Tu peux coller un nouveau lien ou saisir le site à la main.');
 }
 // ── Ajout manuel d'une fiche dans la liste ouverte ──
 function ouvrirAjoutFiche(){
@@ -2711,6 +2717,7 @@ function ficheReal(e,i){
      <button class="btn" onclick="recupererMapsUrl(${i})" style="background:var(--paper);white-space:nowrap">📍 Récupérer</button>
     </div>
     <div id="edit-mapsmsg${i}" style="font-size:12px;color:var(--ink-soft);margin-bottom:12px"></div>
+    ${(e.gmb||e.maps_url)?`<button class="btn" onclick="retirerGmb(${i})" style="background:var(--paper);color:var(--danger);margin-bottom:12px">🗑️ Retirer le GMB / lien Maps actuel</button>`:''}
     <label style="display:block;font-size:12.5px;font-weight:600;margin-bottom:4px">Nom de la société</label>
     <input class="field" id="edit-nom${i}" placeholder="Nom officiel (Pappers)" value="${(e.nom||'').replace(/"/g,'&quot;')}" style="width:100%;margin-bottom:10px">
     <div class="row3" style="grid-template-columns:1fr 1fr;margin-bottom:10px">
