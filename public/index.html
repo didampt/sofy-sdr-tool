@@ -1020,7 +1020,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v159';
+const VERSION='v160';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1675,6 +1675,25 @@ async function choisirGoogleEdit(i,placeId){
   document.getElementById('edit-google'+i).value=d.nom||'';
   toast('✅ Champs mis à jour depuis Google');
  }catch(e){toast('Erreur réseau : '+e.message);box.style.display='none';}
+}
+async function recupererMapsUrl(i){
+ const url=(document.getElementById('edit-mapsurl'+i)||{}).value||'';
+ const msg=document.getElementById('edit-mapsmsg'+i);
+ if(!/^https?:\/\//.test(url.trim())){if(msg){msg.style.color='var(--danger)';msg.textContent='Colle un lien Google Maps valide (https://…).';}return;}
+ if(msg){msg.style.color='var(--ink-soft)';msg.textContent='⏳ Récupération de la fiche Google…';}
+ try{
+  const r=await api('/api/gmb-url?url='+encodeURIComponent(url.trim())+'&liste_id='+(state.savedId||''));
+  const d=await r.json();
+  if(!r.ok||d.erreur){if(msg){msg.style.color='var(--danger)';msg.textContent='❌ '+(d.erreur||('Erreur '+r.status));}return;}
+  const e=REAL[i],pf=d.prefill||{};
+  if(pf.nom)e.nom=pf.nom; if(pf.ville)e.ville=pf.ville; if(pf.code_postal)e.code_postal=pf.code_postal; if(pf.adresse)e.adresse=pf.adresse;
+  if(pf.site_web){e.site_web=pf.site_web.replace(/^https?:\/\//,'').replace(/^www\./,'').split('/')[0];e.site_source='sdr';}
+  if(pf.telephone)e.telephone_google=pf.telephone;
+  if(pf.place_id)e.place_id=pf.place_id;
+  if(d.gmb){e.gmb=d.gmb;e.gmb._sig=enseigneDe(e)+'|'+domaineDe(e);}
+  persister();rerender(i);
+  toast('✅ '+(pf.nom||'Fiche rattachée')+(d.gmb&&typeof d.gmb.note_moyenne==='number'?` · ${String(d.gmb.note_moyenne).replace('.',',')}★ (${d.gmb.total_avis} avis)`:' (sans note Google)'));
+ }catch(err){if(msg){msg.style.color='var(--danger)';msg.textContent='❌ '+err.message;}}
 }
 // ── Ajout manuel d'une fiche dans la liste ouverte ──
 function ouvrirAjoutFiche(){
@@ -2653,7 +2672,7 @@ function ficheReal(e,i){
     <div class="lead-name">${(e.tags_sdr&&e.tags_sdr.length)?`<span title="Traité par ${e.traite_par||'?'}${e.traite_le?' le '+new Date(e.traite_le).toLocaleDateString('fr-FR'):''}" style="margin-right:2px">✅</span>`:''}${estHL?'🔥 ':''}${titre} <span onclick="event.stopPropagation();ouvrirEdition(${i})" title="Corriger cette fiche" style="cursor:pointer;font-size:14px;opacity:.5;font-weight:normal">✏️</span></div>
     <div class="lead-meta">${(!estHL&&contacts.length&&contacts[0].nom)?e.nom+' · ':''}${e.enseigne&&e.enseigne!==e.nom?'Enseigne : '+e.enseigne+' · ':''}${e.persona_ia?'🎯 '+e.persona_ia+' · ':''}${e.naf||''}${e.nb_etablissements?' · '+e.nb_etablissements+' établissement'+(e.nb_etablissements>1?'s':''):''}${e.effectif?' · '+String(e.effectif).replace(/ salariés?$/i,'')+' salariés':''}${ca?' · CA '+ca:''}${(e.ville||e.region)?' · '+(e.ville||e.region):''}</div>
     <div class="badges">
-     ${e.gmb&&e.gmb.trouve?`<span class="badge b-gmb">GMB ${String(e.gmb.note_moyenne).replace('.',',')} ★ (${e.gmb.total_avis} avis)</span>`:''}
+     ${e.gmb&&e.gmb.trouve&&typeof e.gmb.note_moyenne==='number'?`<span class="badge b-gmb">GMB ${String(e.gmb.note_moyenne).replace('.',',')} ★ (${e.gmb.total_avis} avis)</span>`:''}
      ${(()=>{const s=e.source_hotlead||(e.signal&&e.signal.source)||'';if(!s&&!e.signal_hot)return '';const estRB2B=s==='RB2B';return `<span class="badge b-source">${estRB2B?'📍 source sofy.fr':'💼 source LinkedIn'}</span>`;})()}
      ${e.signal_hot?`<span class="badge b-signal">${(e.signal&&e.signal.emoji)?e.signal.emoji:'🔥'} ${(e.signal&&e.signal.interaction)?e.signal.interaction:'Signal détecté'}${(e.signal&&e.signal.concurrent)?' · '+e.signal.concurrent:''}</span>`:''}
      ${e.enrichi_par?(e.score?`<span class="badge b-new">✅ Enrichi par ${e.enrichi_par}</span>`:(e.enrich_lock_ts&&(Date.now()-e.enrich_lock_ts<5*60*1000)?`<span class="badge b-gmb">🔄 En cours par ${e.enrichi_par}</span>`:'')):''}
@@ -2681,6 +2700,12 @@ function ficheReal(e,i){
      <input class="field" id="edit-google${i}" placeholder="Ex : Garage Dupont Bordeaux…" style="width:100%" autocomplete="off" oninput="rechercheGoogleEdit(${i},this.value)">
      <div id="edit-google-results${i}" style="display:none;position:absolute;left:0;right:0;top:40px;background:#fff;border:1px solid var(--line);border-radius:10px;z-index:10;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.12);max-height:240px;overflow-y:auto"></div>
     </div>
+    <label style="display:block;font-size:12.5px;font-weight:600;margin-bottom:5px">📍 …ou coller un lien Google Maps <span style="font-weight:400;color:var(--ink-soft)">(si la recherche ne trouve pas — utile pour les DOM)</span></label>
+    <div style="display:flex;gap:8px;margin-bottom:6px">
+     <input class="field" id="edit-mapsurl${i}" placeholder="https://maps.app.goo.gl/…" style="flex:1" autocomplete="off">
+     <button class="btn" onclick="recupererMapsUrl(${i})" style="background:var(--paper);white-space:nowrap">📍 Récupérer</button>
+    </div>
+    <div id="edit-mapsmsg${i}" style="font-size:12px;color:var(--ink-soft);margin-bottom:12px"></div>
     <label style="display:block;font-size:12.5px;font-weight:600;margin-bottom:4px">Nom de la société</label>
     <input class="field" id="edit-nom${i}" placeholder="Nom officiel (Pappers)" value="${(e.nom||'').replace(/"/g,'&quot;')}" style="width:100%;margin-bottom:10px">
     <div class="row3" style="grid-template-columns:1fr 1fr;margin-bottom:10px">
