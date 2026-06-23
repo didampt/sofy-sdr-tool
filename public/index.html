@@ -456,7 +456,6 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
     <button class="nav-btn" data-view="params" onclick="nav('params',this);chargerSdrs();chargerTarifs()">⚙️ Paramètres</button>
     <button class="nav-btn" data-view="settings" onclick="nav('settings',this);chargerHotleads()">🔌 Connexions</button>
     <div class="user-badge" id="user-badge" style="display:none"><span id="user-nom"></span><button onclick="deconnexion(true)">Déconnexion</button></div>
-    <div class="demo-pill">PAPPERS + GMB + IA ✓</div>
     <div style="text-align:center;font-size:11px;color:#6B7390;margin-top:8px">Sofy Scrap <span id="ver-side"></span></div>
   </aside>
 
@@ -896,7 +895,14 @@ Spot-Hit</textarea>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <span style="font-size:12.5px;color:var(--ink-soft)">Utilisateurs :</span>
           <div id="filtre-appels-sdr-chips" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"></div>
-          <select class="field" id="filtre-appels-jour" onchange="appliquerFiltreAppels()" style="max-width:200px"><option value="">Tous les jours</option></select>
+          <div id="appels-per-chips" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <button class="chip" data-per="jour" onclick="setPeriodeAppels('jour',this)">Aujourd'hui</button>
+            <button class="chip" data-per="hier" onclick="setPeriodeAppels('hier',this)">Hier</button>
+            <button class="chip" data-per="7j" onclick="setPeriodeAppels('7j',this)">7 jours</button>
+            <button class="chip" data-per="30j" onclick="setPeriodeAppels('30j',this)">30 jours</button>
+            <button class="chip" data-per="tout" onclick="setPeriodeAppels('tout',this)">Tout</button>
+          </div>
+          <select class="field" id="filtre-appels-jour" onchange="appliquerFiltreAppels()" style="max-width:170px" title="Filtrer sur un jour précis"><option value="">— jour précis —</option></select>
           <label style="font-size:12.5px;color:var(--ink-soft);display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="filtre-appels-rec" onchange="appliquerFiltreAppels()"> Avec enregistrement seulement</label>
           <button class="btn" onclick="resetFiltreAppels()" style="background:var(--paper)">↺ Réinitialiser</button>
           <button class="btn" onclick="exportAppelsCSV()" style="background:var(--paper)">⬇️ Exporter CSV</button>
@@ -1014,7 +1020,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v158';
+const VERSION='v159';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2297,12 +2303,33 @@ function renderAppels(arr){
  if(cpt)cpt.textContent=arr.length+' appel'+(arr.length>1?'s':'')+(arr.length>APPELS_PAGE?' · '+Math.min(APPELS_PAGE,arr.length)+' affichés':'');
 }
 function voirPlusAppels(){APPELS_PAGE+=50;renderAppels(APPELS_FILTRES);}
+let PERIODE_APPELS='jour';   // période active du journal (défaut : aujourd'hui)
+function bornesPeriode(p){
+ const now=Date.now();
+ const t0=new Date(); t0.setHours(0,0,0,0); const d0=t0.getTime();
+ if(p==='jour')return [d0, now];
+ if(p==='hier')return [d0-86400000, d0-1];
+ if(p==='7j')return [now-7*86400000, now];
+ if(p==='30j')return [now-30*86400000, now];
+ return null; // tout
+}
+function setPeriodeAppels(p){
+ PERIODE_APPELS=p;
+ const fj=document.getElementById('filtre-appels-jour'); if(fj)fj.value=''; // période et jour précis s'excluent
+ appliquerFiltreAppels();
+}
+function _syncChipsPeriode(jourPrecis){
+ document.querySelectorAll('#appels-per-chips .chip').forEach(c=>c.classList.toggle('sel', !jourPrecis && c.dataset.per===PERIODE_APPELS));
+}
 function appliquerFiltreAppels(){
  const j=(document.getElementById('filtre-appels-jour')||{}).value||'';
  const rec=!!(document.getElementById('filtre-appels-rec')||{}).checked;
+ const bornes=j?null:bornesPeriode(PERIODE_APPELS);
+ _syncChipsPeriode(j);
  APPELS_FILTRES=JOURNAL_APPELS.filter(a=>{
   if(FILTRE_SDR.size&&!FILTRE_SDR.has(a.sdr))return false;
   if(j&&(!a.start_time||new Date(a.start_time).toLocaleDateString('fr-FR')!==j))return false;
+  if(bornes){const t=a.start_time?new Date(a.start_time).getTime():0; if(t<bornes[0]||t>bornes[1])return false;}
   if(rec&&!a.record)return false;
   return true;
  });
@@ -2312,6 +2339,7 @@ function appliquerFiltreAppels(){
 }
 function resetFiltreAppels(){
  FILTRE_SDR.clear();
+ PERIODE_APPELS='jour';
  const fj=document.getElementById('filtre-appels-jour');if(fj)fj.value='';
  const rc=document.getElementById('filtre-appels-rec');if(rc)rc.checked=false;
  renderSdrChips();
