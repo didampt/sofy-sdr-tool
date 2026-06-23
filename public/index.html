@@ -449,7 +449,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
     <button class="nav-btn" data-view="results" onclick="nav('results',this)">📞 Résultats</button>
     <button class="nav-btn" data-view="taches" onclick="nav('taches',this);chargerTaches()">✅ Tâches <span id="taches-badge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:2px"></span></button>
     <button class="nav-btn" data-view="history" onclick="nav('history',this);chargerHistorique()">🗂 Historique</button>
-    <button class="nav-btn" id="nav-archives" data-view="archives" style="display:none" onclick="nav('archives',this);chargerArchives()">🗄️ Archives</button>
+    <button class="nav-btn" id="nav-archives" data-view="archives" onclick="nav('archives',this);chargerArchives()">🗄️ Archives</button>
     <button class="nav-btn" data-view="mapping" onclick="nav('mapping',this);chargerEnvois();chargerConcurrents()">⚙️ Envois & mapping</button>
     <button class="nav-btn" data-view="stats" onclick="nav('stats',this);chargerStats()">📊 Statistiques</button>
     <button class="nav-btn" data-view="appels" onclick="nav('appels',this);chargerAppels()">🎧 Appels</button>
@@ -1024,7 +1024,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v164';
+const VERSION='v165';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -4011,6 +4011,8 @@ function rendreLigneListe(l,champRecherche){
  const qcol=q===null?'#94A3B8':(q>=60?'#14532d':(q>=40?'#B45309':'#991B1B'));
  const admin=state.user&&['admin','superadmin'].includes(state.user.role);
  const superA=state.user&&state.user.role==='superadmin';
+ const estMien=state.user&&l.sdr===state.user.nom;
+ const peutArchiver=admin||estMien;
  const champ=champRecherche||'hist-search';
  const pastilles=st?`<div style="margin-top:8px">
    <span class="stat-pill">${st.pct_complete}% complété</span>
@@ -4032,7 +4034,7 @@ function rendreLigneListe(l,champRecherche){
    <button class="act ${l.veille?'act-call':'act-copy'}" onclick="basculerVeille(${l.id},${l.veille?'false':'true'})" title="${l.veille?'Veille active — cliquer pour arrêter':'Surveiller les signaux LinkedIn (60 j)'}">${l.veille?'🔔 Veille ON':'🔕 Veille'}</button>
    <button class="act act-copy" onclick="ouvrirListe(${l.id},null,document.getElementById('${champ}').value.trim())">📂 Ouvrir (gratuit)</button>
    ${(admin&&cr.auto!=='hotleads')?`<button class="act act-copy" onclick="transfererListe(${l.id},'${(l.nom||'').replace(/'/g,"\\'")}')">👤 Transférer</button>`:''}
-   ${(admin&&cr.auto!=='hotleads')?`<button class="act act-copy" onclick="archiverListe(${l.id},'${(l.nom||'').replace(/'/g,"\\'")}',${l.archivee?'false':'true'})">${l.archivee?'♻️ Désarchiver':'🗄️ Archiver'}</button>`:''}
+   ${(peutArchiver&&cr.auto!=='hotleads')?`<button class="act act-copy" onclick="archiverListe(${l.id},'${(l.nom||'').replace(/'/g,"\\'")}',${l.archivee?'false':'true'})">${l.archivee?'♻️ Désarchiver':'🗄️ Archiver'}</button>`:''}
    ${(superA&&cr.auto!=='hotleads')?`<button class="act act-export" style="color:#991B1B;border-color:#FCA5A5" onclick="supprimerListe(${l.id},'${(l.nom||'').replace(/'/g,"\\'")}')">🗑️</button>`:''}
    <button class="act act-export" onclick="majListe(${l.id})">↻ Mettre à jour</button>
   </div>
@@ -4178,7 +4180,7 @@ async function chargerHistorique(){
  const q=document.getElementById('hist-search').value.trim();
  // Affiche l'onglet Archives pour admin/superadmin
  const na=document.getElementById('nav-archives');
- if(na)na.style.display=(state.user&&['admin','superadmin'].includes(state.user.role))?'':'none';
+ if(na)na.style.display='';  // Archives visible pour tous (chacun voit SES listes archivées)
  try{
   const r=await api('/api/listes'+(q?'?q='+encodeURIComponent(q):''));
   const d=await r.json();
