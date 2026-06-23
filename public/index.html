@@ -1020,7 +1020,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v160';
+const VERSION='v161';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1684,7 +1684,7 @@ async function recupererMapsUrl(i){
  try{
   const r=await api('/api/gmb-url?url='+encodeURIComponent(url.trim())+'&liste_id='+(state.savedId||''));
   const d=await r.json();
-  if(!r.ok||d.erreur){if(msg){msg.style.color='var(--danger)';msg.textContent='❌ '+(d.erreur||('Erreur '+r.status));}return;}
+  if(!r.ok||d.erreur){if(msg){msg.style.color='var(--danger)';msg.textContent='❌ '+(d.erreur||('Erreur '+r.status))+(d.detail?'  ▸ diag: '+d.detail+(d.cid&&d.cid!=='aucun'?' · cid:'+d.cid:'')+(typeof d.candidats!=='undefined'?' · candidats:'+d.candidats:''):'');}return;}
   const e=REAL[i],pf=d.prefill||{};
   if(pf.nom)e.nom=pf.nom; if(pf.ville)e.ville=pf.ville; if(pf.code_postal)e.code_postal=pf.code_postal; if(pf.adresse)e.adresse=pf.adresse;
   if(pf.site_web){e.site_web=pf.site_web.replace(/^https?:\/\//,'').replace(/^www\./,'').split('/')[0];e.site_source='sdr';}
