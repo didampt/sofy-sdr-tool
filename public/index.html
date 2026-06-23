@@ -1020,7 +1020,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v161';
+const VERSION='v162';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1680,12 +1680,16 @@ async function recupererMapsUrl(i){
  const url=(document.getElementById('edit-mapsurl'+i)||{}).value||'';
  const msg=document.getElementById('edit-mapsmsg'+i);
  if(!/^https?:\/\//.test(url.trim())){if(msg){msg.style.color='var(--danger)';msg.textContent='Colle un lien Google Maps valide (https://…).';}return;}
+ const lien=url.trim();
+ const e=REAL[i];
+ e.maps_url=lien; persister();   // on garde TOUJOURS le lien (cliquable sur la fiche)
  if(msg){msg.style.color='var(--ink-soft)';msg.textContent='⏳ Récupération de la fiche Google…';}
  try{
-  const r=await api('/api/gmb-url?url='+encodeURIComponent(url.trim())+'&liste_id='+(state.savedId||''));
+  const r=await api('/api/gmb-url?url='+encodeURIComponent(lien)+'&liste_id='+(state.savedId||''));
   const d=await r.json();
-  if(!r.ok||d.erreur){if(msg){msg.style.color='var(--danger)';msg.textContent='❌ '+(d.erreur||('Erreur '+r.status))+(d.detail?'  ▸ diag: '+d.detail+(d.cid&&d.cid!=='aucun'?' · cid:'+d.cid:'')+(typeof d.candidats!=='undefined'?' · candidats:'+d.candidats:''):'');}return;}
-  const e=REAL[i],pf=d.prefill||{};
+  if(r.status===404){ rerender(i); toast("ℹ️ Lien Maps enregistré (cliquable sur la fiche). Cette fiche n'est pas disponible dans l'API Google — saisis le site / le téléphone à la main."); return; }
+  if(!r.ok||d.erreur){if(msg){msg.style.color='var(--danger)';msg.textContent='❌ '+(d.erreur||('Erreur '+r.status))+(d.detail?'  ▸ diag: '+d.detail:'');}return;}
+  const pf=d.prefill||{};
   if(pf.nom)e.nom=pf.nom; if(pf.ville)e.ville=pf.ville; if(pf.code_postal)e.code_postal=pf.code_postal; if(pf.adresse)e.adresse=pf.adresse;
   if(pf.site_web){e.site_web=pf.site_web.replace(/^https?:\/\//,'').replace(/^www\./,'').split('/')[0];e.site_source='sdr';}
   if(pf.telephone)e.telephone_google=pf.telephone;
@@ -2673,6 +2677,7 @@ function ficheReal(e,i){
     <div class="lead-meta">${(!estHL&&contacts.length&&contacts[0].nom)?e.nom+' · ':''}${e.enseigne&&e.enseigne!==e.nom?'Enseigne : '+e.enseigne+' · ':''}${e.persona_ia?'🎯 '+e.persona_ia+' · ':''}${e.naf||''}${e.nb_etablissements?' · '+e.nb_etablissements+' établissement'+(e.nb_etablissements>1?'s':''):''}${e.effectif?' · '+String(e.effectif).replace(/ salariés?$/i,'')+' salariés':''}${ca?' · CA '+ca:''}${(e.ville||e.region)?' · '+(e.ville||e.region):''}</div>
     <div class="badges">
      ${e.gmb&&e.gmb.trouve&&typeof e.gmb.note_moyenne==='number'?`<span class="badge b-gmb">GMB ${String(e.gmb.note_moyenne).replace('.',',')} ★ (${e.gmb.total_avis} avis)</span>`:''}
+     ${e.maps_url?`<span class="badge b-new"><a href="${e.maps_url}" target="_blank" onclick="event.stopPropagation()" style="color:inherit">📍 Google Maps</a></span>`:''}
      ${(()=>{const s=e.source_hotlead||(e.signal&&e.signal.source)||'';if(!s&&!e.signal_hot)return '';const estRB2B=s==='RB2B';return `<span class="badge b-source">${estRB2B?'📍 source sofy.fr':'💼 source LinkedIn'}</span>`;})()}
      ${e.signal_hot?`<span class="badge b-signal">${(e.signal&&e.signal.emoji)?e.signal.emoji:'🔥'} ${(e.signal&&e.signal.interaction)?e.signal.interaction:'Signal détecté'}${(e.signal&&e.signal.concurrent)?' · '+e.signal.concurrent:''}</span>`:''}
      ${e.enrichi_par?(e.score?`<span class="badge b-new">✅ Enrichi par ${e.enrichi_par}</span>`:(e.enrich_lock_ts&&(Date.now()-e.enrich_lock_ts<5*60*1000)?`<span class="badge b-gmb">🔄 En cours par ${e.enrichi_par}</span>`:'')):''}
