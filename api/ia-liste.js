@@ -78,7 +78,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const r = await fetch(ANTHRO, {
+    const appel = () => fetch(ANTHRO, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -93,9 +93,19 @@ export default async function handler(req, res) {
         messages: [{ role: 'user', content: contenu }]
       })
     });
-    const data = await r.json();
+    // Relance auto : 529 (surcharge) / 429 (débit) / coupure réseau → on patiente et on réessaie (3 tentatives)
+    let r, data, tentative = 0;
+    while (true) {
+      tentative++;
+      try { r = await appel(); }
+      catch (netErr) { if (tentative < 3) { await new Promise(s => setTimeout(s, 700 * tentative)); continue; } throw netErr; }
+      data = await r.json().catch(() => ({}));
+      if ((r.status === 529 || r.status === 429) && tentative < 3) { await new Promise(s => setTimeout(s, 700 * tentative)); continue; }
+      break;
+    }
     if (!r.ok) {
-      return res.status(502).json({ erreur: 'Erreur IA', detail: JSON.stringify(data.error || data).slice(0, 200) });
+      const surcharge = (r.status === 529 || r.status === 429);
+      return res.status(surcharge ? 503 : 502).json({ erreur: surcharge ? 'Le service IA est momentanément saturé. Réessaie dans quelques secondes.' : 'Erreur IA', detail: JSON.stringify(data.error || data).slice(0, 200) });
     }
 
     // Extraire le texte renvoyé par Claude
