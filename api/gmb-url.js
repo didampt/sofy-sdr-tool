@@ -47,19 +47,34 @@ export default async function handler(req, res) {
     const mn = full.match(/\/maps\/place\/([^/@]+)/);
     if (mn) { try { nom = decodeURIComponent(mn[1].replace(/\+/g, ' ')).trim(); } catch (_) { nom = mn[1].replace(/\+/g, ' ').trim(); } }
 
-    // 3) Retrouver le place_id (sans biais métropole : on s'appuie sur les coordonnées du lien)
+    // 3) Retrouver le place_id — la recherche TEXTE rate certains établissements (ex KDOPAYS).
+    //    On s'appuie d'abord sur les COORDONNÉES précises du lien (Nearby Search), bien plus fiable.
     let placeId = null;
-    const biais = (lat && lng) ? `&locationbias=point:${lat},${lng}` : '';
-    if (nom) {
-      const fp = await g(`https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${encodeURIComponent(nom)}&inputtype=textquery&fields=place_id${biais}&language=fr&key=${key}`);
-      if (fp.candidates && fp.candidates[0]) placeId = fp.candidates[0].place_id;
-      if (!placeId) { // repli : textsearch autour des coordonnées
-        const loc = (lat && lng) ? `&location=${lat},${lng}&radius=30000` : '';
-        const ts = await g(`https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(nom)}${loc}&language=fr&key=${key}`);
-        if (ts.results && ts.results[0]) placeId = ts.results[0].place_id;
-      }
+    const norm = x => (x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+    const diag = [];
+    const essaye = async (label, u, pick) => {
+      if (placeId) return;
+      const d = await g(u);
+      diag.push(label + ':' + (d.status || '?') + (d.error_message ? '(' + d.error_message + ')' : ''));
+      const id = pick(d);
+      if (id) placeId = id;
+    };
+    if (lat && lng) {
+      // a) le plus proche des coordonnées, filtré par le nom
+      if (nom) await essaye('nearby_kw', `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&rankby=distance&keyword=${encodeURIComponent(nom)}&language=fr&key=${key}`, d => (d.results && d.results[0]) ? d.results[0].place_id : null);
+      // b) tout établissement dans 80 m → meilleur match de nom, sinon le plus proche
+      await essaye('nearby_radius', `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=80&language=fr&key=${key}`, d => {
+        const arr = d.results || []; if (!arr.length) return null;
+        const cible = norm(nom);
+        const m = cible ? arr.find(r => norm(r.name).includes(cible) || cible.includes(norm(r.name))) : null;
+        return (m || arr[0]).place_id;
+      });
     }
-    if (!placeId) return res.status(404).json({ erreur: "Impossible d'identifier l'établissement depuis ce lien. Ouvre la fiche dans Google Maps et copie le lien de partage de la fiche (pas une recherche)." });
+    // c) replis sans coordonnées : recherche par nom
+    if (nom) await essaye('findplace', `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${encodeURIComponent(nom)}&inputtype=textquery&fields=place_id&language=fr&key=${key}`, d => (d.candidates && d.candidates[0]) ? d.candidates[0].place_id : null);
+    if (nom) await essaye('textsearch', `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(nom)}&language=fr&key=${key}`, d => (d.results && d.results[0]) ? d.results[0].place_id : null);
+
+    if (!placeId) return res.status(404).json({ erreur: "Établissement introuvable via l'API Google (nom : " + (nom || '?') + ").", detail: diag.join(' · '), coords: (lat && lng) ? (lat + ',' + lng) : 'aucune' });
 
     // 4) Détails de la fiche
     const champs = 'name,formatted_address,formatted_phone_number,website,address_components,rating,user_ratings_total,reviews,business_status';
