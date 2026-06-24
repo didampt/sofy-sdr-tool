@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   if (!apiKey) return res.status(500).json({ erreur: 'LEMLIST_API_KEY manquante dans Vercel' });
   if (sql) await ensureSchema();
 
-  const { produit, contact = {}, variables = {} } = req.body || {};
+  const { produit, contact = {}, variables = {}, proprietaire } = req.body || {};
   if (!contact.email) return res.status(400).json({ erreur: 'contact.email requis' });
 
   try {
@@ -28,11 +28,18 @@ export default async function handler(req, res) {
       return res.status(400).json({ erreur: "Aucune campagne configurée — renseigne les IDs de campagnes Lemlist dans ⚙️ Envois (carte Connexion réelle)" });
     }
 
+    let ownerEmail = null;
+    if (sql && proprietaire) {
+      const me = await sql`SELECT email_envoi FROM sdrs WHERE nom = ${proprietaire} LIMIT 1`;
+      ownerEmail = me.length ? (me[0].email_envoi || null) : null;
+    }
+
     const corps = {
       firstName: contact.prenom || '',
       lastName: contact.nom || '',
       companyName: variables.companyName || '',
-      ...variables
+      ...variables,
+      ...(ownerEmail ? { contactOwner: ownerEmail } : {})
     };
     const r = await fetch(`https://api.lemlist.com/api/campaigns/${encodeURIComponent(campagne)}/leads/${encodeURIComponent(contact.email)}?deduplicate=true`, {
       method: 'POST',
@@ -46,7 +53,7 @@ export default async function handler(req, res) {
     if (!r.ok) {
       return res.status(502).json({ erreur: 'Lemlist', detail: data.message || data.error || JSON.stringify(data).slice(0, 200) });
     }
-    return res.status(200).json({ ok: true, campagne, lead: data._id || contact.email });
+    return res.status(200).json({ ok: true, campagne, owner: ownerEmail, lead: data._id || contact.email });
   } catch (err) {
     return res.status(500).json({ erreur: 'Erreur serveur', detail: err.message });
   }

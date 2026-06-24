@@ -33,7 +33,7 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
-      const rows = await sql`SELECT id, nom, email, limite_credits, actif, role, ringover_numero, slack_id, (password_hash IS NOT NULL) AS mdp_defini FROM sdrs ORDER BY nom`;
+      const rows = await sql`SELECT id, nom, email, email_envoi, limite_credits, actif, role, ringover_numero, slack_id, (password_hash IS NOT NULL) AS mdp_defini FROM sdrs ORDER BY nom`;
       return res.status(200).json({ sdrs: rows });
     }
 
@@ -49,7 +49,7 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'PUT') {
-      const { id, nom, email, limite_credits, actif, ringover_numero, role, slack_id } = req.body || {};
+      const { id, nom, email, email_envoi, limite_credits, actif, ringover_numero, role, slack_id } = req.body || {};
       if (!id) return res.status(400).json({ erreur: 'id requis' });
       const cur = await sql`SELECT * FROM sdrs WHERE id = ${parseInt(id)}`;
       if (!cur.length) return res.status(404).json({ erreur: 'SDR introuvable' });
@@ -66,13 +66,14 @@ export default async function handler(req, res) {
       const rows = await sql`UPDATE sdrs SET
           nom = ${nom !== undefined ? nom.trim() : c.nom},
           email = ${email !== undefined ? email.trim() : c.email},
+          email_envoi = ${email_envoi !== undefined ? (email_envoi.trim() || null) : c.email_envoi},
           limite_credits = ${lim},
           actif = ${actif !== undefined ? !!actif : c.actif},
           ringover_numero = ${ringover_numero !== undefined ? normNumero(ringover_numero) : c.ringover_numero},
           slack_id = ${slack_id !== undefined ? (slack_id.trim() || null) : c.slack_id},
           role = ${user.role === 'superadmin' && role !== undefined && ['sdr','ae','admin','superadmin'].includes(role) ? role : c.role}
         WHERE id = ${parseInt(id)}
-        RETURNING id, nom, email, limite_credits, actif, ringover_numero, slack_id, role`;
+        RETURNING id, nom, email, email_envoi, limite_credits, actif, ringover_numero, slack_id, role`;
       return res.status(200).json({ ok: true, sdr: rows[0] });
     }
 
