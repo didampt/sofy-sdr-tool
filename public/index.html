@@ -1058,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v175';
+const VERSION='v176';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2119,7 +2119,7 @@ async function creerRappel(){
  const note=document.getElementById('rappel-note').value.trim();
  try{
   const r=await api('/api/taches',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({liste_id:state.savedId,fiche_cle:RAPPEL_CTX.fiche_cle,entreprise_nom:RAPPEL_CTX.entreprise,contact_nom:RAPPEL_CTX.contact,description:note,date_rappel:new Date(val).toISOString()})});
+   body:JSON.stringify({liste_id:(RAPPEL_CTX.liste_id||state.savedId),fiche_cle:RAPPEL_CTX.fiche_cle,entreprise_nom:RAPPEL_CTX.entreprise,contact_nom:RAPPEL_CTX.contact,description:note,date_rappel:new Date(val).toISOString()})});
   const d=await r.json();
   if(d.ok){toast('🔁 Rappel planifié ✓');document.getElementById('rappel-modal').style.display='none';}
   else toast('Erreur : '+(d.erreur||'création impossible'));
@@ -4419,6 +4419,30 @@ function filtrerTaches(cat){
  rendreCompteursTaches();
  rendreTaches();
 }
+function ficheDepuisTache(id){var t=TACHES_INDEX[id]||{};if(t.liste_id){ouvrirListe(t.liste_id,null,t.entreprise_nom||'');}else{toast('Fiche non rattachée à une liste');}}
+function tacheAppeler(id){var t=TACHES_INDEX[id]||{};if(t.telephone){window.location.href='tel:'+String(t.telephone).replace(/[^+0-9]/g,'');return;}ficheDepuisTache(id);}
+function tacheLinkedin(id){var t=TACHES_INDEX[id]||{};if(t.linkedin){window.open(String(t.linkedin).indexOf('http')===0?t.linkedin:'https://'+t.linkedin,'_blank');return;}ficheDepuisTache(id);}
+function tacheEmail(id){var t=TACHES_INDEX[id]||{};var em=(t.fiche_cle&&t.fiche_cle.indexOf('@')>=0)?t.fiche_cle:'';if(!em){ficheDepuisTache(id);return;}window.location.href='mailto:'+em;}
+function tacheRdvDepuisTache(id){
+ var t=TACHES_INDEX[id]||{};
+ var nom=(t.contact_nom||'').trim();var sp=nom.indexOf(' ');
+ var prenom=sp>0?nom.slice(0,sp):nom;var nfam=sp>0?nom.slice(sp+1):'';
+ var pr=new URLSearchParams();
+ if(prenom)pr.set('firstname',prenom);
+ if(nfam)pr.set('lastname',nfam);
+ if(t.fiche_cle&&t.fiche_cle.indexOf('@')>=0)pr.set('email',t.fiche_cle);
+ if(t.entreprise_nom)pr.set('company',t.entreprise_nom);
+ window.open('https://go.sofy.fr/meetings/mbouly/demo-sdr'+(pr.toString()?'?'+pr.toString():''),'_blank');
+}
+function nouvelleTacheDepuisTache(id){
+ var t=TACHES_INDEX[id]||{};
+ RAPPEL_CTX={i:null,entreprise:t.entreprise_nom||'',contact:t.contact_nom||'',fiche_cle:t.fiche_cle||('tache-'+id),liste_id:t.liste_id||null};
+ document.getElementById('rappel-dest').textContent=(t.entreprise_nom||'').slice(0,40);
+ var d=new Date();d.setDate(d.getDate()+1);d.setHours(10,0,0,0);
+ document.getElementById('rappel-date').value=isoLocal(d);
+ document.getElementById('rappel-note').value='';
+ document.getElementById('rappel-modal').style.display='flex';
+}
 function rendreTaches(){
  const nq=((document.getElementById('taches-search')||{}).value||'').toLowerCase().trim();
  const match=t=>{ if(!nq)return true; const dd=t.date_rappel?new Date(t.date_rappel).toLocaleDateString('fr-FR'):''; return [t.entreprise_nom,t.contact_nom,t.description,dd,t.sdr].join(' ').toLowerCase().includes(nq); };
@@ -4436,22 +4460,25 @@ function sectionTaches(titre,taches,coul){
   const d=t.date_rappel?new Date(t.date_rappel):null;
   const quand=d?formatRappel(d):'Sans date';
   const enRetard=d&&d<new Date();
-  return `<div class="fiche" style="${enRetard?'border-left:3px solid var(--danger)':''}">
-   <div class="fiche-top" style="grid-template-columns:1fr auto;align-items:center;gap:14px">
-    <div>
-     <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;flex-wrap:wrap">
-      <span style="font-size:13px;font-weight:600;color:${enRetard?'var(--danger)':'var(--ink-soft)'}">${enRetard?'⏰':'🕒'} ${quand}</span>
-      ${TACHES_TEAM&&t.sdr?`<span class="badge b-gmb">👤 ${String(t.sdr).replace(/</g,'&lt;')}</span>`:''}
-     </div>
-     <div class="lead-name">${(t.entreprise_nom||'Fiche').replace(/</g,'&lt;')}${t.contact_nom?' — '+t.contact_nom.replace(/</g,'&lt;'):''}</div>
-     ${t.description?`<div class="lead-meta">${t.description.replace(/</g,'&lt;')}</div>`:''}
+  return `<div class="fiche" style="${enRetard?'border-left:3px solid var(--danger);':''}padding:12px 14px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;flex-wrap:wrap">
+     <span style="font-size:13px;font-weight:600;color:${enRetard?'var(--danger)':'var(--ink-soft)'}">${enRetard?'⏰':'🕒'} ${quand}</span>
+     ${TACHES_TEAM&&t.sdr?`<span class="badge b-gmb">👤 ${String(t.sdr).replace(/</g,'&lt;')}</span>`:''}
     </div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
-     <button class="act act-call" onclick="ouvrirTache(${t.id})">📂 Ouvrir</button>
+    <div class="lead-name">${(t.entreprise_nom||'Fiche').replace(/</g,'&lt;')}${t.contact_nom?' — '+t.contact_nom.replace(/</g,'&lt;'):''}</div>
+    ${t.description?`<div class="lead-meta">${t.description.replace(/</g,'&lt;')}</div>`:''}
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
+     <button class="act act-call" onclick="tacheAppeler(${t.id})">📞 Appeler</button>
+     <button class="act act-copy" onclick="tacheLinkedin(${t.id})">💼 LinkedIn</button>
+     <button class="act act-copy" onclick="tacheEmail(${t.id})">✉️ Email</button>
+     <button class="act act-copy" onclick="tacheRdvDepuisTache(${t.id})">🤝 RDV</button>
+     <button class="act act-copy" onclick="nouvelleTacheDepuisTache(${t.id})">➕ Tâche</button>
+     <span style="flex:1"></span>
+     <button class="act act-export" onclick="ouvrirTache(${t.id})">📂 Ouvrir</button>
      <button class="act" style="background:var(--ok);color:#fff" onclick="tacheFait(${t.id})" title="Marquer comme faite">✅ Fait</button>
      <button class="act" style="background:#fff;color:var(--danger)" onclick="tacheSupprimer(${t.id})" title="Supprimer ce rappel">🗑️</button>
     </div>
-   </div></div>`;
+   </div>`;
  }).join('');
  return `<div style="font-size:12px;font-weight:600;color:${coul};text-transform:uppercase;letter-spacing:.06em;margin:18px 0 8px">${titre}</div>${lignes}`;
 }
