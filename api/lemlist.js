@@ -23,7 +23,7 @@ export default async function handler(req, res) {
       const rows = await sql`SELECT valeur FROM config WHERE cle = 'lemlist'`;
       cfg = rows.length ? rows[0].valeur : {};
     }
-    const campagne = (cfg.routage !== false && produit && cfg['camp_' + produit]) || cfg.camp_defaut;
+    const campagne = (produit && cfg['camp_' + produit]) || cfg.camp_defaut;
     if (!campagne) {
       return res.status(400).json({ erreur: "Aucune campagne configurée — renseigne les IDs de campagnes Lemlist dans ⚙️ Envois (carte Connexion réelle)" });
     }
