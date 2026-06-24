@@ -1024,7 +1024,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v165';
+const VERSION='v166';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -3538,7 +3538,7 @@ async function envoyerLemlist(i){
  const prod=produitDominant(e);
  if(!confirm(`✈️ Envoyer ${c.prenom} ${c.nom} (${c.enrich.email}) en séquence Lemlist ?\nCampagne : ${prod?prod.toUpperCase()+' (produit dominant)':'par défaut'}`))return;
  const r=await api('/api/lemlist',{method:'POST',headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({liste_id:state.savedId,produit:prod,contact:{email:c.enrich.email,prenom:c.prenom,nom:c.nom},variables:varsLemlist(e,c)})});
+  body:JSON.stringify({liste_id:state.savedId,produit:prod,proprietaire:e.traite_par||state.user.nom,contact:{email:c.enrich.email,prenom:c.prenom,nom:c.nom},variables:varsLemlist(e,c)})});
  const d=await r.json();
  if(!d.ok){toast('Lemlist : '+(d.erreur||'')+(d.detail?' — '+d.detail:''));return;}
  e.lemlist_envoye=true;rerender(i);persister();
@@ -3950,10 +3950,11 @@ async function chargerSdrs(){
   const d=await r.json();
   if(d.erreur){t.innerHTML='<tr><td colspan="6">'+d.erreur+'</td></tr>';return;}
   const sup=state.user&&state.user.role==='superadmin';
-  t.innerHTML='<tr><th>Nom</th><th>Email</th><th>☎️ Ringover</th><th>💬 Slack ID</th><th>Rôle</th><th>Limite € / mois</th><th>Mot de passe</th><th>Actif</th><th></th></tr>'+
+  t.innerHTML='<tr><th>Nom</th><th>Email</th><th>✈️ Email Lemlist</th><th>☎️ Ringover</th><th>💬 Slack ID</th><th>Rôle</th><th>Limite € / mois</th><th>Mot de passe</th><th>Actif</th><th></th></tr>'+
    (d.sdrs||[]).map(s=>`<tr>
     <td><input class="field" value="${s.nom}" id="sn${s.id}"></td>
     <td><input class="field" value="${s.email||''}" placeholder="email@sofy.fr" id="se${s.id}"></td>
+    <td><input class="field" value="${s.email_envoi||''}" placeholder="franck@getsofy.fr" id="sx${s.id}" title="Adresse expéditeur Lemlist (Dynamic Senders)"></td>
     <td><input class="field" value="${s.ringover_numero||''}" placeholder="07 12 34 56 78" id="sr${s.id}" title="Ligne Ringover du SDR/AE — l'indicatif +33 (ou DOM) est ajouté automatiquement"></td>
     <td><input class="field" value="${s.slack_id||''}" placeholder="U07ABC123" id="ss${s.id}" title="Slack Member ID (profil Slack → Copier l'ID du membre) — pour les rappels en DM"></td>
     <td><select class="field" id="sg${s.id}" ${sup?'':'disabled title="Seul le superadmin change les rôles"'}>
@@ -3986,7 +3987,7 @@ async function ajouterSdr(){
 async function majSdr(id){
  const limite=document.getElementById('sl'+id).value;
  const r=await api('/api/sdrs',{method:'PUT',headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({id,nom:document.getElementById('sn'+id).value,email:document.getElementById('se'+id).value,
+  body:JSON.stringify({id,nom:document.getElementById('sn'+id).value,email:document.getElementById('se'+id).value,email_envoi:(document.getElementById('sx'+id)||{}).value,
    limite_credits:limite===''?null:limite,actif:document.getElementById('sa'+id).checked,
    ringover_numero:(document.getElementById('sr'+id)||{}).value,
    slack_id:(document.getElementById('ss'+id)||{}).value,
