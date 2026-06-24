@@ -399,7 +399,8 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
  <div class="wf-panel" style="width:min(460px,94vw)">
   <div class="wf-head">✈️ Séquence Lemlist — <span id="lem-dest"></span></div>
   <div style="padding:6px 24px 4px">
-   <div class="hint" style="margin-bottom:10px">Vers quelle séquence envoyer ce lead ?</div>
+   <div id="lem-contacts" style="margin-bottom:6px"></div>
+   <div class="hint" style="margin-bottom:10px">Vers quelle séquence envoyer ?</div>
    <div id="lem-choix"></div>
   </div>
   <div class="wf-foot">
@@ -1037,7 +1038,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v170';
+const VERSION='v171';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -3544,12 +3545,20 @@ function varsLemlist(e,c){
  };
 }
 let LEM_CTX=null;
+function renderLemContacts(){
+ const cands=(LEM_CTX&&LEM_CTX.cands)||[];
+ const box=document.getElementById('lem-contacts');
+ if(!box)return;
+ if(cands.length<=1){box.innerHTML='';return;}
+ box.innerHTML='<div class="hint" style="margin-bottom:4px">Contacts a envoyer ('+cands.length+') — decoche ceux a exclure :</div>'+cands.map(function(c,k){return '<label style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;cursor:pointer;border-bottom:1px solid #eef0f6"><input type="checkbox" class="lem-chk" data-k="'+k+'" checked style="margin-top:3px"><span><b>'+((((c.prenom||'')+' '+(c.nom||'')).trim())||'(sans nom)')+'</b>'+(c.fonction?' · '+c.fonction:'')+'<br><span class="hint">'+c.enrich.email+'</span></span></label>';}).join('');
+}
 function ouvrirChoixLemlist(i){
  const e=REAL[i];
- const c=contactsDe(e).find(x=>x.enrich&&x.enrich.email);
- if(!c){toast("Aucun email sur cette fiche — lance 🚀 Fiche d'abord");return;}
- LEM_CTX={i,c};
- document.getElementById('lem-dest').textContent=((c.prenom||'')+' '+(c.nom||'')).trim()+' · '+c.enrich.email;
+ const cands=contactsDe(e).filter(x=>x.enrich&&x.enrich.email);
+ if(!cands.length){toast("Aucun email sur cette fiche — lance 🚀 Fiche d'abord");return;}
+ LEM_CTX={i,cands};
+ document.getElementById('lem-dest').textContent=cands.length>1?(cands.length+' contacts'):(((cands[0].prenom||'')+' '+(cands[0].nom||'')).trim()+' · '+cands[0].enrich.email);
+ renderLemContacts();
  const dom=produitDominant(e);
  const labels={soview:'Soview',soconnect:'SoConnect',soreach:'SoReach'};
  const z=document.getElementById('lem-choix');
@@ -3570,14 +3579,25 @@ function ouvrirChoixLemlist(i){
 }
 async function confirmerLemlist(produit){
  if(!LEM_CTX)return;
- const i=LEM_CTX.i,e=REAL[i],c=LEM_CTX.c;
+ const i=LEM_CTX.i,e=REAL[i],cands=LEM_CTX.cands;
+ const chk=[].slice.call(document.querySelectorAll('#lem-contacts .lem-chk'));
+ const sel=chk.length?chk.filter(function(x){return x.checked;}).map(function(x){return cands[+x.getAttribute('data-k')];}):cands;
+ if(!sel.length){toast('Coche au moins un contact');return;}
  document.getElementById('lemlist-modal').style.display='none';
- const r=await api('/api/lemlist',{method:'POST',headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({liste_id:state.savedId,produit:produit||null,proprietaire:e.traite_par||state.user.nom,sms:(e.score&&e.score.sms)||'',contact:{email:c.enrich.email,prenom:c.prenom,nom:c.nom},variables:varsLemlist(e,c)})});
- const d=await r.json();
- if(!d.ok){toast('Lemlist : '+(d.erreur||'')+(d.detail?' — '+d.detail:''));return;}
- e.lemlist_envoye=true;rerender(i);persister();
- toast('✈️ '+((c.prenom||'')+' '+(c.nom||'')).trim()+' → '+(produit||'défaut')+(d.maj?' ✓ (lead mis à jour)':' ✓ (envoyé)'));
+ let envoyes=0,majs=0,erreurs=0,dernErr='';
+ for(const c of sel){
+  try{
+   const r=await api('/api/lemlist',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({liste_id:state.savedId,produit:produit||null,proprietaire:e.traite_par||state.user.nom,sms:(e.score&&e.score.sms)||'',contact:{email:c.enrich.email,prenom:c.prenom,nom:c.nom},variables:varsLemlist(e,c)})});
+   const d=await r.json();
+   if(!d.ok){erreurs++;dernErr=(d.erreur||'')+(d.detail?' — '+d.detail:'');continue;}
+   if(d.maj)majs++;else envoyes++;
+  }catch(e2){erreurs++;dernErr=e2.message;}
+ }
+ if(envoyes||majs){e.lemlist_envoye=true;rerender(i);persister();}
+ let msg='✈️ '+(produit||'défaut')+' : '+envoyes+' envoyé(s), '+majs+' mis à jour';
+ if(erreurs)msg+=' · '+erreurs+' échec(s)'+(dernErr?' ('+dernErr+')':'');
+ toast(msg);
 }
 async function envoyerLemlist(i){
  const e=REAL[i];
