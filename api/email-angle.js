@@ -1,4 +1,4 @@
-// /api/email-angle.js — Réécrit l'email de prospection selon l'angle (module) choisi par le SDR, via Opus 4.8.
+// /api/email-angle.js — Réécrit l'email de prospection selon l'angle (module) choisi par le SDR, via Sonnet 4.6.
 // POST { entreprise:{…}, sdr:"…", produit:"soview|soconnect|soreach|generique" } → { ok, email:{objet,corps} }
 import { verifierToken } from './db.js';
 export const config = { maxDuration: 60 };
@@ -43,7 +43,7 @@ Reponds UNIQUEMENT avec un objet JSON, sans texte ni backticks :
   const call = () => fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: 'claude-opus-4-8', max_tokens: 1200, messages: [{ role: 'user', content: prompt }] })
+    body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1200, messages: [{ role: 'user', content: prompt }] })
   });
 
   try {
