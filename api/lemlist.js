@@ -67,7 +67,7 @@ export default async function handler(req, res) {
     if (rep.ok) { maj = true; try { data = JSON.parse(txt); } catch (_) {} }
 
     if (!maj) {
-      rep = await fetch(urlEmail + '?deduplicate=true', { method: 'POST', headers, body: JSON.stringify(corps) });
+      rep = await fetch(urlEmail, { method: 'POST', headers, body: JSON.stringify(corps) });
       txt = await rep.text();
       diag.postEmail = { status: rep.status, body: (txt || '').slice(0, 200) };
       if (rep.ok) { ajoute = true; try { data = JSON.parse(txt); } catch (_) {} }
@@ -88,7 +88,7 @@ export default async function handler(req, res) {
     }
 
     if (!maj && !ajoute) {
-      const dt = 'PATCH ' + diag.patchEmail.status + (diag.postEmail ? ' · POST ' + diag.postEmail.status : '') + (diag.patchId ? ' · PATCH#2 ' + diag.patchId : '');
+      const dt = 'PATCH ' + diag.patchEmail.status + (diag.postEmail ? ' · POST ' + diag.postEmail.status + (diag.postEmail.body ? ': ' + diag.postEmail.body : '') : '') + (diag.patchId ? ' · PATCH#2 ' + diag.patchId : '');
       return res.status(502).json({ erreur: 'Lemlist a refusé le lead', detail: dt, diag });
     }
 
