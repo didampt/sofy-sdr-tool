@@ -70,6 +70,12 @@ export default async function handler(req, res) {
       rep = await fetch(urlEmail, { method: 'POST', headers, body: JSON.stringify(corps) });
       txt = await rep.text();
       diag.postEmail = { status: rep.status, body: (txt || '').slice(0, 200) };
+      // Lemlist refuse le proprietaire (SDR pas reconnu comme utilisateur Lemlist) -> on ajoute le lead sans proprietaire
+      if (!rep.ok && /owner/i.test(txt || '')) {
+        rep = await fetch(urlEmail, { method: 'POST', headers, body: JSON.stringify(corpsMaj) });
+        txt = await rep.text();
+        diag.postSansOwner = { status: rep.status, body: (txt || '').slice(0, 200) };
+      }
       if (rep.ok) { ajoute = true; try { data = JSON.parse(txt); } catch (_) {} }
     }
 
