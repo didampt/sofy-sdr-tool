@@ -81,6 +81,13 @@ export async function ensureSchema() {
   )`;
   await sql`CREATE TABLE IF NOT EXISTS veille_etat (cle TEXT PRIMARY KEY, deja_vus JSONB DEFAULT '[]', maj TIMESTAMPTZ DEFAULT NOW())`;
   await sql`CREATE TABLE IF NOT EXISTS config (cle TEXT PRIMARY KEY, valeur JSONB NOT NULL DEFAULT '{}')`;
+  await sql`CREATE TABLE IF NOT EXISTS lemlist_events (
+    id SERIAL PRIMARY KEY,
+    recu_le TIMESTAMPTZ DEFAULT NOW(),
+    type TEXT,
+    email TEXT,
+    brut JSONB
+  )`;
   await sql`CREATE TABLE IF NOT EXISTS taches (
     id SERIAL PRIMARY KEY,
     sdr TEXT NOT NULL,
