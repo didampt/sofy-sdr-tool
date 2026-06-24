@@ -1058,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v174';
+const VERSION='v175';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2856,7 +2856,7 @@ function ficheReal(e,i){
      <textarea class="note-area" id="note${i}" placeholder="Note libre : objection entendue, bon interlocuteur, ressenti terrain…" style="flex:1;margin:0"></textarea>
      <button class="act act-call" style="white-space:nowrap" onclick="ajouterNoteFiche(${i})">➕ Ajouter</button>
     </div>
-    <div id="acttl${i}">${timelineHtml(e,i)}</div>
+    <div id="acttl${i}" style="max-height:300px;overflow-y:auto;margin-top:2px">${timelineHtml(e,i)}</div>
    </div>
    <div class="act-row" style="border-top:1px solid var(--line);padding-top:12px;margin-top:16px">
     <button class="act act-call" onclick="lancerFiche(${i})" title="Pipeline complet sur cette fiche">🚀 Fiche</button>
@@ -3680,7 +3680,7 @@ function callToActivite(c){
  const dir=c.direction==='in'?'entrant':(c.direction==='out'?'sortant':'');
  const dur=c.incall_duration?(' · '+Math.floor(c.incall_duration/60)+' min '+(c.incall_duration%60)+' s'):'';
  const statut=c.is_answered?'Répondu':'Pas de réponse';
- return {source:'ringover',type:'appel',titre:('Appel '+dir+dur).trim(),detail:statut,auteur:c.sdr||'',ts:c.start_time,record:c.record||c.voicemail||null};
+ return {source:'ringover',type:'appel',titre:('Appel '+dir+dur).trim(),detail:statut,auteur:c.sdr||'',ts:c.start_time,record:c.record||c.voicemail||null,resume:(c.note&&c.note.trim())||null};
 }
 function icoActivite(a){
  var svg=function(pp){return '<svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round">'+pp+'</svg>';};
@@ -3715,9 +3715,10 @@ function ligneActivite(a){
  var src=({lemlist:'Lemlist',ringover:'Ringover',sms:'SoReach'})[a.source]||'';
  var audio=a.record?('<audio controls preload="metadata" src="/api/ringover-record?url='+encodeURIComponent(a.record)+'" style="width:100%;margin-top:6px;height:34px"></audio>'):'';
  var detail=a.detail?('<div style="font-size:13px;color:var(--ink-soft);margin-top:2px">'+escapeHtml(a.detail)+'</div>'):'';
+ var resume=a.resume?('<div style="font-size:12.5px;color:var(--ink);margin-top:6px;padding:8px 10px;background:var(--paper);border:1px solid var(--line);border-radius:8px;white-space:pre-wrap">🎧 Résumé IA : '+escapeHtml(a.resume)+'</div>'):'';
  return '<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 2px;border-bottom:1px solid #f1f2f7">'+
    '<span style="flex-shrink:0;width:26px;height:26px;display:flex;align-items:center;justify-content:center;color:#6b7280">'+icoActivite(a)+'</span>'+
-   '<div style="flex:1;min-width:0"><div style="font-size:14px">'+escapeHtml(a.titre)+(src?(' <span style="font-size:11px;color:#9aa1b1;border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin-left:6px">'+src+'</span>'):'')+'</div>'+detail+audio+'</div>'+
+   '<div style="flex:1;min-width:0"><div style="font-size:14px">'+escapeHtml(a.titre)+(src?(' <span style="font-size:11px;color:#9aa1b1;border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin-left:6px">'+src+'</span>'):'')+'</div>'+detail+resume+audio+'</div>'+
    '<div style="flex-shrink:0;text-align:right;white-space:nowrap"><div style="font-size:13px;font-weight:600">'+heure+'</div><div style="font-size:12px;color:#9aa1b1">'+escapeHtml(a.auteur||'systeme')+'</div></div>'+
   '</div>';
 }
