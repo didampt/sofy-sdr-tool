@@ -88,6 +88,19 @@ export async function ensureSchema() {
     email TEXT,
     brut JSONB
   )`;
+  await sql`CREATE TABLE IF NOT EXISTS activites (
+    id SERIAL PRIMARY KEY,
+    fiche_cle TEXT,
+    source TEXT,
+    type TEXT,
+    titre TEXT,
+    detail TEXT,
+    auteur TEXT,
+    ref TEXT UNIQUE,
+    ts TIMESTAMPTZ,
+    cree_le TIMESTAMPTZ DEFAULT NOW()
+  )`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_activites_cle ON activites (fiche_cle, ts DESC)`;
   await sql`CREATE TABLE IF NOT EXISTS taches (
     id SERIAL PRIMARY KEY,
     sdr TEXT NOT NULL,
