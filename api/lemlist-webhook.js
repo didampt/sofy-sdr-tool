@@ -75,13 +75,22 @@ export default async function handler(req, res) {
     } catch (e) { return res.status(500).json({ erreur: e.message }); }
   }
 
-  // 1ter) Lister les utilisateurs Lemlist (pour recuperer l'email de login de chaque SDR = contactOwner)
+  // 1ter) Lister les utilisateurs Lemlist AVEC leur email (= contactOwner pour chaque SDR)
   if (req.method === 'GET' && q.team) {
     if (!process.env.LEMLIST_API_KEY) return res.status(500).json({ erreur: 'LEMLIST_API_KEY manquante' });
     try {
-      const r = await fetch('https://api.lemlist.com/api/team', { headers: { 'Authorization': authHeader() } });
-      const txt = await r.text(); let data = txt; try { data = JSON.parse(txt); } catch (_) {}
-      return res.status(200).json({ status: r.status, team: data });
+      const headers = { 'Authorization': authHeader() };
+      const t = await fetch('https://api.lemlist.com/api/team', { headers });
+      const team = await t.json().catch(() => ({}));
+      const ids = (team && team.userIds) || [];
+      const users = await Promise.all(ids.map(async (id) => {
+        try {
+          const u = await fetch('https://api.lemlist.com/api/users/' + encodeURIComponent(id), { headers });
+          const ud = await u.json().catch(() => ({}));
+          return { id, email: ud.email || ud.login || null, nom: ((ud.firstName || '') + ' ' + (ud.lastName || '')).trim() || null };
+        } catch (e) { return { id, erreur: e.message }; }
+      }));
+      return res.status(200).json({ users });
     } catch (e) { return res.status(500).json({ erreur: e.message }); }
   }
 
