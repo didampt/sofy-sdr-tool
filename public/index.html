@@ -786,9 +786,9 @@ Spot-Hit</textarea>
           <input class="field" id="cfg-lem-soreach" placeholder="Campagne SoReach (cam_…)">
         </div>
         <div class="row3" style="margin-top:10px">
+          <input class="field" id="cfg-lem-generique" placeholder="Campagne Générique (cam_…)">
           <input class="field" id="cfg-lem-defaut" placeholder="Campagne par défaut (si pas de score)">
           <div class="toggle-row" style="margin:0"><input type="checkbox" id="cfg-lem-routage" checked><label for="cfg-lem-routage">Routage auto par produit dominant</label></div>
-          <span></span>
         </div>
         <div class="map-sub">HubSpot — transaction (Paramètres HubSpot → Objets → Transactions → Pipelines : les IDs y sont affichés)</div>
         <div class="row3">
@@ -1058,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v178';
+const VERSION='v179';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -3595,13 +3595,13 @@ function ouvrirChoixLemlist(i){
  document.getElementById('lem-dest').textContent=cands.length>1?(cands.length+' contacts'):(((cands[0].prenom||'')+' '+(cands[0].nom||'')).trim()+' · '+cands[0].enrich.email);
  renderLemContacts();
  const dom=e.angle||produitDominant(e);
- const labels={soview:'Soview',soconnect:'SoConnect',soreach:'SoReach'};
+ const labels={soview:'Soview',soconnect:'SoConnect',soreach:'SoReach',generique:'Générique'};
  const z=document.getElementById('lem-choix');
  z.innerHTML='<div class="hint">Chargement des campagnes…</div>';
  document.getElementById('lemlist-modal').style.display='flex';
  (async()=>{
   let cfg={};try{const r=await api('/api/config');const d=await r.json();cfg=(d.config&&d.config.lemlist)||{};}catch(_){}
-  let html=['soview','soconnect','soreach'].map(p=>{
+  let html=['soview','soconnect','soreach','generique'].map(p=>{
    const ok=!!cfg['camp_'+p];
    const reco=p===dom?' <span class="badge b-signal">recommandé</span>':'';
    const non=ok?'':' <span class="hint">(non configurée)</span>';
@@ -4044,6 +4044,7 @@ async function chargerEnvois(){
   document.getElementById('cfg-lem-soview').value=lem.camp_soview||'';
   document.getElementById('cfg-lem-soconnect').value=lem.camp_soconnect||'';
   document.getElementById('cfg-lem-soreach').value=lem.camp_soreach||'';
+  document.getElementById('cfg-lem-generique').value=lem.camp_generique||'';
   document.getElementById('cfg-lem-defaut').value=lem.camp_defaut||'';
   document.getElementById('cfg-lem-routage').checked=lem.routage!==false;
   document.getElementById('cfg-hub-pipeline').value=hub.pipeline||'';
@@ -4070,6 +4071,7 @@ async function sauverEnvois(){
  const lem={camp_soview:document.getElementById('cfg-lem-soview').value.trim(),
   camp_soconnect:document.getElementById('cfg-lem-soconnect').value.trim(),
   camp_soreach:document.getElementById('cfg-lem-soreach').value.trim(),
+  camp_generique:document.getElementById('cfg-lem-generique').value.trim(),
   camp_defaut:document.getElementById('cfg-lem-defaut').value.trim(),
   routage:document.getElementById('cfg-lem-routage').checked};
  const hub={pipeline:document.getElementById('cfg-hub-pipeline').value.trim(),
