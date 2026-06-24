@@ -1058,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v182';
+const VERSION='v183';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -3874,7 +3874,9 @@ async function choisirAngle(i,produit){
  if(e.emails_angle[produit]){ e.score=e.score||{}; e.score.email=e.emails_angle[produit]; e.angle=produit; rerender(i); persister(); toast('Angle : '+nomModule(produit)); return; }
  var ok=await confirmSofy('✍️ Réécrire l’email — '+nomModule(produit),'L’IA analyse la fiche et rédige un email ultra-personnalisé pour '+nomModule(produit)+'.\n\nCoût : ≈ '+COUT_EMAIL_OPUS_EUR+' € (1 génération IA).','Générer l’email');
  if(!ok)return;
- e._busy=true; e._prog={label:'✍️ Rédaction ('+nomModule(produit)+')…',pct:55}; rerender(i);
+ e._busy=true; rerender(i);
+ if(!e.score||!e.score.scores){ e._prog={label:'🎯 Analyse de la fiche…',pct:35}; rerender(i); try{ await scorer(i); }catch(_){} }
+ e._prog={label:'✍️ Rédaction ('+nomModule(produit)+')…',pct:65}; rerender(i);
  var ctrl=new AbortController(); var to=setTimeout(function(){ctrl.abort();},75000);
  try{
   var r=await api('/api/email-angle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({entreprise:donneesPourScore(e),sdr:(state.user&&state.user.nom)||'',produit:produit}),signal:ctrl.signal});
