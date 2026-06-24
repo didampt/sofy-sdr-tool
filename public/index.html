@@ -1058,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v180';
+const VERSION='v181';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -3852,7 +3852,7 @@ async function ajouterNoteFiche(i){
   }else{ if(ta)ta.disabled=false; toast('Note non enregistrée'+((d&&d.erreur)?(' : '+d.erreur):'')); }
  }catch(_){ if(ta)ta.disabled=false; toast('Note non enregistrée'); }
 }
-var COUT_EMAIL_OPUS_EUR='0,06';
+var COUT_EMAIL_OPUS_EUR='0,01';
 function nomModule(p){return ({soview:'Soview',soconnect:'SoConnect',soreach:'SoReach SMS/RCS',generique:'Générique'})[p]||p;}
 function tagsAngleHtml(e,i){
  var dom=produitDominant(e);
@@ -3872,7 +3872,7 @@ async function choisirAngle(i,produit){
  e.emails_angle=e.emails_angle||{};
  if((e.angle||produitDominant(e))===produit && e.score && e.score.email && e.emails_angle[produit])return;
  if(e.emails_angle[produit]){ e.score=e.score||{}; e.score.email=e.emails_angle[produit]; e.angle=produit; rerender(i); persister(); toast('Angle : '+nomModule(produit)); return; }
- var ok=await confirmSofy('✍️ Réécrire l’email — '+nomModule(produit),'L’IA Opus 4.8 analyse la fiche et rédige un email ultra-personnalisé pour '+nomModule(produit)+'.\n\nCoût : 1 crédit Opus 4.8 (≈ '+COUT_EMAIL_OPUS_EUR+' €).','Générer l’email');
+ var ok=await confirmSofy('✍️ Réécrire l’email — '+nomModule(produit),'L’IA analyse la fiche et rédige un email ultra-personnalisé pour '+nomModule(produit)+'.\n\nCoût : ≈ '+COUT_EMAIL_OPUS_EUR+' € (1 génération IA).','Générer l’email');
  if(!ok)return;
  e._busy=true; e._prog={label:'✍️ Rédaction ('+nomModule(produit)+')…',pct:55}; rerender(i);
  var ctrl=new AbortController(); var to=setTimeout(function(){ctrl.abort();},75000);
