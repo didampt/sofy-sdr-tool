@@ -1058,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v173';
+const VERSION='v174';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2653,10 +2653,10 @@ function toggleFiche(i){
  const e=REAL[i];
  // #5 Si on DÉPLIE une fiche traitée par un AUTRE SDR (pas encore rouverte) → confirmation
  if(!e._open && doitConfirmerReouverture(e)){
-  confirmReouverture(e).then(ok=>{ if(ok){e._reouvert=true;e._open=true;rerender(i);} });
+  confirmReouverture(e).then(ok=>{ if(ok){e._reouvert=true;e._open=true;rerender(i);chargerActiviteDB(i);} });
   return;
  }
- e._open=!e._open;rerender(i);
+ e._open=!e._open;rerender(i);if(e._open)chargerActiviteDB(i);
 }
 function doitConfirmerReouverture(e){
  const moi=state.user?state.user.nom:'?';
@@ -2820,7 +2820,6 @@ function ficheReal(e,i){
       <div style="white-space:pre-wrap;margin-top:12px">${e.score.email.corps}</div>
      </div>
      <div class="cta-row">
-      <button class="btn-cta" style="background:var(--paper);color:var(--ink);border:1.5px solid var(--line)" onclick="ouvrirActivite(${i})">🕒 Activité</button>
       <button class="btn-cta btn-cta-dark" onclick="copierEmail(${i})">Copier l'email</button>
       <button class="btn-cta btn-cta-blue" onclick="ouvrirChoixLemlist(${i})">✈️ Envoyer via Lemlist</button>
      </div>
@@ -2829,23 +2828,35 @@ function ficheReal(e,i){
      </div>`:`
      <div class="hint" style="margin-bottom:10px">Lance 🎯 Scorer (ou 🚀 Fiche) pour générer la synthèse d'appel et l'email personnalisé.</div>
      <div class="cta-row">
-      <button class="btn-cta" style="background:var(--paper);color:var(--ink);border:1.5px solid var(--line)" onclick="ouvrirActivite(${i})">🕒 Activité</button>
       <button class="btn-cta btn-cta-blue" onclick="ouvrirChoixLemlist(${i})">✈️ Envoyer via Lemlist</button>
       <button class="btn-cta btn-cta-coral" onclick="prendreRdv(${i})">🤝 RDV pris — réserver pour un AE</button>
      </div>`}
     </div>
    </div>
    <div class="note-box">
-    <div class="col-title">📝 Bloc-notes SDR <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--ink-soft)">— issue d'appel & retours (analysé dans les Statistiques)</span></div>
-    <div class="note-tags">
-     <label style="font-size:12.5px;font-weight:600;color:var(--ink-soft);margin-right:8px">📋 Statut de l'appel :</label>
-     <select class="field" style="max-width:280px;display:inline-block" onchange="setStatutAppel(${i},this.value)">
+    <div class="col-title">📝 Bloc-notes SDR &amp; activité <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--ink-soft)">— issue d'appel, notes & historique</span></div>
+    <div class="note-tags" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+     <label style="font-size:12.5px;font-weight:600;color:var(--ink-soft)">📋 Statut :</label>
+     <select class="field" style="max-width:250px;display:inline-block" onchange="setStatutAppel(${i},this.value)">
       <option value="">— Choisir un statut —</option>
       ${STATUTS_APPEL.map(s=>`<option value="${s.v}"${(e.statut_appel===s.v)?' selected':''}>${s.e} ${s.v}</option>`).join('')}
      </select>
+     <span style="flex:1;min-width:8px"></span>
+     <select class="field" style="font-size:12px;max-width:130px;padding:7px 9px" onchange="setActFiltre(${i},'periode',this.value)">
+      <option value="">Toute période</option><option value="7"${(e._actf&&e._actf.periode==='7')?' selected':''}>7 jours</option><option value="30"${(e._actf&&e._actf.periode==='30')?' selected':''}>30 jours</option>
+     </select>
+     <select class="field" style="font-size:12px;max-width:140px;padding:7px 9px" onchange="setActFiltre(${i},'type',this.value)">
+      ${['','appel','email','sms','rdv','note','sequence','autre'].map(v=>`<option value="${v}"${(((e._actf&&e._actf.type)||'')===v)?' selected':''}>${({'':'Tous types',appel:'Appels',email:'Emails',sms:'SMS',rdv:'RDV',note:'Notes',sequence:'Séquence',autre:'Autres'})[v]}</option>`).join('')}
+     </select>
+     <select class="field" style="font-size:12px;max-width:130px;padding:7px 9px" onchange="setActFiltre(${i},'user',this.value)">
+      ${(function(){var us=[...new Set(timelineFiche(e).map(function(a){return a.auteur||'système';}).filter(Boolean))].sort();return '<option value="">Tous</option>'+us.map(function(u){return '<option value="'+u.replace(/"/g,'&quot;')+'"'+(((e._actf&&e._actf.user)===u)?' selected':'')+'>'+u+'</option>';}).join('');})()}
+     </select>
     </div>
-    <textarea class="note-area" id="note${i}" placeholder="Note libre : objection entendue, bon interlocuteur, ressenti terrain…" onchange="sauverNote(${i},this.value)">${(e.notes_sdr||'').replace(/</g,'&lt;').replace(/"/g,'&quot;')}</textarea>
-    ${recapAppelsHtml(e)}
+    <div style="display:flex;gap:8px;align-items:stretch;margin-top:4px">
+     <textarea class="note-area" id="note${i}" placeholder="Note libre : objection entendue, bon interlocuteur, ressenti terrain…" style="flex:1;margin:0"></textarea>
+     <button class="act act-call" style="white-space:nowrap" onclick="ajouterNoteFiche(${i})">➕ Ajouter</button>
+    </div>
+    <div id="acttl${i}">${timelineHtml(e,i)}</div>
    </div>
    <div class="act-row" style="border-top:1px solid var(--line);padding-top:12px;margin-top:16px">
     <button class="act act-call" onclick="lancerFiche(${i})" title="Pipeline complet sur cette fiche">🚀 Fiche</button>
@@ -3783,6 +3794,61 @@ async function ajouterNote(){
  }catch(_){ toast('Note non enregistrée'); }
  ta.disabled=false;
 }
+function timelineFiche(e){
+ var arr=[];
+ (e._act||[]).forEach(function(a){arr.push({source:a.source,type:famTypeAct(a),titre:a.titre,detail:a.detail,auteur:a.auteur,ts:a.ts,record:null});});
+ var seen={};
+ numerosFiche(e).forEach(function(t){var k=cle9Ring(t);if(!k||seen[k])return;seen[k]=1;(RINGOVER_CALLS[k]||[]).forEach(function(c){arr.push(callToActivite(c));});});
+ return arr;
+}
+function timelineHtml(e,i){
+ var f=e._actf||{};
+ var data=timelineFiche(e).filter(function(a){return a.ts;});
+ if(f.periode){var lim=Date.now()-(+f.periode)*864e5;data=data.filter(function(a){return new Date(a.ts).getTime()>=lim;});}
+ if(f.type)data=data.filter(function(a){return a.type===f.type;});
+ if(f.user)data=data.filter(function(a){return (a.auteur||'système')===f.user;});
+ data.sort(function(a,b){return new Date(b.ts)-new Date(a.ts);});
+ if(!data.length){
+  var loading=(!e._actLoaded&&ficheEmails(e).length>0);
+  return '<div class="hint" style="padding:10px 0">'+(loading?'Chargement de l’activité…':(timelineFiche(e).length?'Aucune activité pour ces filtres.':'Aucune activité pour l’instant — appels, notes, séquence et SMS apparaîtront ici.'))+'</div>';
+ }
+ var groups=[],idx={};
+ data.forEach(function(a){var d=new Date(a.ts);var k=d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate();if(idx[k]===undefined){idx[k]=groups.length;groups.push({label:labelJourAct(d),items:[]});}groups[idx[k]].items.push(a);});
+ return groups.map(function(g){return '<div style="margin-top:10px"><div style="font-size:12px;font-weight:700;color:var(--ink-soft);padding:6px 0;border-bottom:1px solid var(--line)">'+g.label+'</div>'+g.items.map(ligneActivite).join('')+'</div>';}).join('');
+}
+function setActFiltre(i,key,val){var e=REAL[i];e._actf=e._actf||{};e._actf[key]=val;var box=document.getElementById('acttl'+i);if(box)box.innerHTML=timelineHtml(e,i);}
+async function chargerActiviteDB(i){
+ var e=REAL[i];
+ if(e._actLoaded||e._actLoading)return;
+ var emails=ficheEmails(e);
+ if(!emails.length){e._actLoaded=true;return;}
+ e._actLoading=true;
+ try{
+  var r=await api('/api/activite?emails='+encodeURIComponent(emails.join(',')));
+  var d=await r.json();
+  e._act=(d&&d.activites)?d.activites:[];
+ }catch(_){ e._act=e._act||[]; }
+ e._actLoaded=true; e._actLoading=false;
+ if(e._open)rerender(i);
+}
+async function ajouterNoteFiche(i){
+ var e=REAL[i];
+ var ta=document.getElementById('note'+i);
+ var txt=((ta&&ta.value)||'').trim();
+ if(!txt)return;
+ var email=ficheEmails(e)[0]||'';
+ if(!email){toast("Cette fiche n'a pas d'email — ajoute un contact pour rattacher la note.");return;}
+ if(ta)ta.disabled=true;
+ try{
+  var r=await api('/api/activite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email,source:'note',type:'note',titre:'Note',detail:txt})});
+  var d=await r.json();
+  if(d&&d.ok){
+   e._act=e._act||[]; e._actLoaded=true;
+   e._act.unshift({source:'note',type:'note',titre:'Note',detail:txt,auteur:(state.user&&state.user.nom)||'',ts:(d.activite&&d.activite.ts)||new Date().toISOString()});
+   rerender(i); toast('📝 Note ajoutée');
+  }else{ if(ta)ta.disabled=false; toast('Note non enregistrée'+((d&&d.erreur)?(' : '+d.erreur):'')); }
+ }catch(_){ if(ta)ta.disabled=false; toast('Note non enregistrée'); }
+}
 function prendreRdv(i){
  const e=REAL[i];
  // Contacts candidats (avec au moins un nom ou un email)
@@ -3827,7 +3893,11 @@ function ouvrirRdv(i,c){
  // 🎧 Résumé du dernier appel Ringover (ce que le prospect a réellement dit) — en tête
  const resumeRingover=dernierResumeRingover(e);
  if(resumeRingover)bouts.push('Résumé du dernier appel : '+resumeRingover);
- if(e.notes_sdr)bouts.push('Note SDR : '+e.notes_sdr);
+ var _notes=timelineFiche(e).filter(function(a){return a.type==='note';}).slice(0,5).map(function(a){return '- '+a.detail;});
+ if(_notes.length)bouts.push('Notes SDR :\n'+_notes.join('\n'));
+ else if(e.notes_sdr)bouts.push('Note SDR : '+e.notes_sdr);
+ var _act=timelineFiche(e).filter(function(a){return a.type!=='note';}).slice(0,6).map(function(a){return '- '+new Date(a.ts).toLocaleDateString('fr-FR')+' : '+a.titre+(a.detail?(' ('+a.detail+')'):'');});
+ if(_act.length)bouts.push('Activité récente :\n'+_act.join('\n'));
  if(sc.synthese)bouts.push(sc.synthese);
  if(sc.signaux&&sc.signaux.length)bouts.push('Signaux : '+sc.signaux.join(' · '));
  const besoin=bouts.join('\n\n').slice(0,1500);
