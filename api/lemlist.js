@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   if (!apiKey) return res.status(500).json({ erreur: 'LEMLIST_API_KEY manquante dans Vercel' });
   if (sql) await ensureSchema();
 
-  const { produit, contact = {}, variables = {}, proprietaire } = req.body || {};
+  const { produit, contact = {}, variables = {}, proprietaire, liste_id } = req.body || {};
   if (!contact.email) return res.status(400).json({ erreur: 'contact.email requis' });
 
   try {
@@ -53,6 +53,26 @@ export default async function handler(req, res) {
     if (!r.ok) {
       return res.status(502).json({ erreur: 'Lemlist', detail: data.message || data.error || JSON.stringify(data).slice(0, 200) });
     }
+    // deduplicate=true n ajoute pas / ne met pas a jour un lead existant -> PATCH pour rafraichir note, LinkedIn et variables
+    let maj = false;
+    try {
+      const { contactOwner, ...corpsMaj } = corps;
+      const auth = 'Basic ' + Buffer.from(':' + apiKey).toString('base64');
+      let pr = await fetch(`https://api.lemlist.com/api/campaigns/${encodeURIComponent(campagne)}/leads/${encodeURIComponent(contact.email)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': auth },
+        body: JSON.stringify(corpsMaj)
+      });
+      maj = pr.ok;
+      if (!pr.ok && data._id) {
+        pr = await fetch(`https://api.lemlist.com/api/campaigns/${encodeURIComponent(campagne)}/leads/${encodeURIComponent(data._id)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'Authorization': auth },
+          body: JSON.stringify(corpsMaj)
+        });
+        maj = pr.ok;
+      }
+    } catch (e) { /* la mise a jour ne bloque pas l envoi */ }
     try {
       const cle = contact.email;
       const ent = variables.companyName || '';
@@ -75,7 +95,7 @@ export default async function handler(req, res) {
         }
       }
     } catch (e) { /* la programmation ne bloque pas l envoi */ }
-    return res.status(200).json({ ok: true, campagne, owner: ownerEmail, lead: data._id || contact.email });
+    return res.status(200).json({ ok: true, campagne, owner: ownerEmail, lead: data._id || contact.email, maj });
   } catch (err) {
     return res.status(500).json({ erreur: 'Erreur serveur', detail: err.message });
   }
