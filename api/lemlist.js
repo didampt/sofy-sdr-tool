@@ -54,6 +54,7 @@ export default async function handler(req, res) {
     if (variables.companyName) contactBody.companyName = variables.companyName;
     if (variables.phone) contactBody.phone = variables.phone;
     if (variables.linkedinUrl) contactBody.linkedinUrl = variables.linkedinUrl;
+    if (ownerEmail) contactBody.contactOwner = ownerEmail;
     try {
       const cr = await fetch('https://api.lemlist.com/api/contacts', { method: 'POST', headers, body: JSON.stringify(contactBody) });
       diag.contact = cr.status;
