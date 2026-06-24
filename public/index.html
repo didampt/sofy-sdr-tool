@@ -1058,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v177';
+const VERSION='v178';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2827,8 +2827,9 @@ function ficheReal(e,i){
      <div class="cta-row" style="margin-top:0">
       <button class="btn-cta btn-cta-coral" onclick="prendreRdv(${i})">🤝 RDV pris — réserver pour un AE</button>
      </div>`:`
-     <div class="hint" style="margin-bottom:10px">Lance 🎯 Scorer (ou 🚀 Fiche) pour générer la synthèse d'appel et l'email personnalisé.</div>
-     <div class="cta-row">
+     <div class="hint" style="margin-bottom:10px">Pas de scoring sur cette fiche — lance 🎯 Scorer pour l'analyse complète, ou choisis un angle ci-dessous (l'IA rédige l'email ; 🎯 Générique = toute la suite Sofy).</div>
+     ${tagsAngleHtml(e,i)}
+     <div class="cta-row" style="margin-top:12px">
       <button class="btn-cta btn-cta-blue" onclick="ouvrirChoixLemlist(${i})">✈️ Envoyer via Lemlist</button>
       <button class="btn-cta btn-cta-coral" onclick="prendreRdv(${i})">🤝 RDV pris — réserver pour un AE</button>
      </div>`}
