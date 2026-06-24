@@ -8,6 +8,34 @@ import { sql, ensureSchema } from './db.js';
 
 function authHeader() { return 'Basic ' + Buffer.from(':' + process.env.LEMLIST_API_KEY).toString('base64'); }
 
+async function envoyerDM(slackId, texte) {
+  const token = process.env.SLACK_BOT_TOKEN;
+  if (!token || !slackId) return;
+  try {
+    await fetch('https://slack.com/api/chat.postMessage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ channel: slackId, text: texte })
+    });
+  } catch (_) {}
+}
+
+// Trouve le SDR proprietaire du lead (celui qui l'a pousse en sequence) et lui envoie une alerte Slack
+async function alerterSdr(email, titre, b, campagne) {
+  try {
+    const own = await sql`SELECT auteur FROM activites WHERE fiche_cle = ${email} AND type = 'sequenceAdded' AND auteur IS NOT NULL ORDER BY ts DESC LIMIT 1`;
+    const sdrNom = (own.length && own[0].auteur) || b.sendUserName || b.userName || null;
+    if (!sdrNom) return;
+    const s = await sql`SELECT slack_id FROM sdrs WHERE nom = ${sdrNom} AND slack_id IS NOT NULL AND slack_id <> '' LIMIT 1`;
+    if (!s.length) return;
+    const qui = [b.firstName || b.leadFirstName, b.lastName || b.leadLastName].filter(Boolean).join(' ');
+    const ent = b.companyName || b.company || '';
+    const url = process.env.APP_URL || 'https://sofy-sdr-tool.vercel.app';
+    const txt = `🔥 *${titre}* — ${qui || email}${ent ? ' · ' + ent : ''}\nCampagne : ${campagne || '—'}\n👉 Le lead reagit, recontacte-le a chaud : ${url}`;
+    await envoyerDM(s[0].slack_id, txt);
+  } catch (_) {}
+}
+
 // Libellés FR pour la chronologie
 const LIBELLES = {
   contacted: "Contacté", hooked: "A ouvert un message", attracted: "A cliqué / invitation acceptée", warmed: "A répondu",
@@ -34,6 +62,14 @@ const STOP = [
   'interested', 'emailsInterested', 'linkedinInterested', 'aircallInterested', 'apiInterested', 'manualInterested',
   'notInterested', 'emailsNotInterested', 'linkedinNotInterested', 'aircallNotInterested', 'apiNotInterested', 'manualNotInterested',
   'emailsUnsubscribed', 'stopped'
+];
+
+// Le lead a REAGI -> on alerte le SDR sur Slack pour qu'il recontacte a chaud
+const ALERTE = [
+  'emailsOpened', 'emailsClicked', 'emailsReplied', 'emailsInterested',
+  'linkedinOpened', 'linkedinReplied', 'linkedinInviteAccepted', 'linkedinInterested',
+  'whatsappReplied', 'smsReplied',
+  'interested', 'aircallInterested', 'manualInterested'
 ];
 
 export default async function handler(req, res) {
@@ -122,6 +158,12 @@ export default async function handler(req, res) {
         const auteur = b.userName || b.sendUserName || null;
         const detail = b.campaignName || null;
         const titre = LIBELLES[type] || type;
+        // 1ere occurrence de ce signal pour ce lead ? (alerter une seule fois, pas a chaque ouverture)
+        let premiereFois = false;
+        if (ALERTE.includes(type)) {
+          const v = await sql`SELECT 1 FROM activites WHERE fiche_cle = ${email} AND type = ${type} LIMIT 1`;
+          premiereFois = (v.length === 0);
+        }
         await sql`INSERT INTO activites (fiche_cle, source, type, titre, detail, auteur, ref, ts)
           VALUES (${email}, 'lemlist', ${type}, ${titre}, ${detail}, ${auteur}, ${ref}, ${ts})
           ON CONFLICT (ref) DO NOTHING`;
@@ -130,6 +172,8 @@ export default async function handler(req, res) {
           await sql`UPDATE sms_programmes SET statut = 'cancelled' WHERE email = ${email} AND statut = 'pending'`;
           await sql`UPDATE taches SET faite = TRUE WHERE fiche_cle = ${email} AND faite = FALSE`;
         }
+        // Signal d'engagement -> alerte Slack immediate au SDR (1ere fois seulement)
+        if (premiereFois) await alerterSdr(email, titre, b, detail);
       }
     } catch (e) { /* on repond 200 quoi qu il arrive */ }
     return res.status(200).json({ ok: true });
