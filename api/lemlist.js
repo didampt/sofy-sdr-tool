@@ -53,6 +53,28 @@ export default async function handler(req, res) {
     if (!r.ok) {
       return res.status(502).json({ erreur: 'Lemlist', detail: data.message || data.error || JSON.stringify(data).slice(0, 200) });
     }
+    try {
+      const cle = contact.email;
+      const ent = variables.companyName || '';
+      const ctc = [contact.prenom, contact.nom].filter(Boolean).join(' ');
+      const sdrTache = proprietaire || user.nom;
+      if (sql && cle && sdrTache) {
+        const dej = await sql`SELECT id FROM taches WHERE sdr = ${sdrTache} AND fiche_cle = ${cle} AND faite = FALSE LIMIT 1`;
+        if (!dej.length) {
+          await sql`INSERT INTO taches (sdr, liste_id, fiche_cle, entreprise_nom, contact_nom, description, date_rappel)
+            VALUES (${sdrTache}, ${liste_id || null}, ${cle}, ${ent || null}, ${ctc || null}, ${'Rappel - pas de reponse a la sequence ' + (produit || '')}, NOW() + INTERVAL '5 days')`;
+        }
+      }
+      const smsTxt = (req.body && req.body.sms) || '';
+      const tel = variables.phone || '';
+      if (sql && produit === 'soreach' && tel && smsTxt.trim()) {
+        const dejaSms = await sql`SELECT id FROM sms_programmes WHERE email = ${contact.email} AND statut = 'pending' LIMIT 1`;
+        if (!dejaSms.length) {
+          await sql`INSERT INTO sms_programmes (cle, liste_id, sdr, email, telephone, message, envoyer_le)
+            VALUES (${cle}, ${liste_id || null}, ${sdrTache}, ${contact.email}, ${tel}, ${smsTxt.trim()}, NOW() + INTERVAL '7 days')`;
+        }
+      }
+    } catch (e) { /* la programmation ne bloque pas l envoi */ }
     return res.status(200).json({ ok: true, campagne, owner: ownerEmail, lead: data._id || contact.email });
   } catch (err) {
     return res.status(500).json({ erreur: 'Erreur serveur', detail: err.message });

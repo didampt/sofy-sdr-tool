@@ -114,6 +114,18 @@ export async function ensureSchema() {
     dernier_echec TIMESTAMPTZ,
     bloque_jusqu TIMESTAMPTZ
   )`;
+  await sql`CREATE TABLE IF NOT EXISTS sms_programmes (
+    id SERIAL PRIMARY KEY,
+    cle TEXT,
+    liste_id INTEGER,
+    sdr TEXT,
+    email TEXT,
+    telephone TEXT NOT NULL,
+    message TEXT NOT NULL,
+    envoyer_le TIMESTAMPTZ NOT NULL,
+    statut TEXT DEFAULT 'pending',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`;
   // Index pour la montée en charge (tri/filtre fréquents)
   await sql`CREATE INDEX IF NOT EXISTS idx_listes_created ON listes (created_at DESC)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_listes_sdr ON listes (sdr)`;
@@ -121,6 +133,7 @@ export async function ensureSchema() {
   await sql`CREATE INDEX IF NOT EXISTS idx_listes_hash ON listes (criteres_hash)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_taches_sdr_faite ON taches (sdr, faite)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_taches_rappel ON taches (date_rappel) WHERE faite = FALSE`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_sms_prog ON sms_programmes (statut, envoyer_le)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_conso_liste ON consommations (liste_id)`;
   await sql`INSERT INTO tarifs (api, prix) VALUES ('soreach', 0.07) ON CONFLICT (api) DO NOTHING`;
   ready = true;
@@ -361,4 +374,41 @@ export async function etatVerrouEnrich(listeId) {
   const ageMs = Date.now() - new Date(r[0].maj).getTime();
   if (ageMs >= ENRICH_PERIME_MS) return { actif: false, perime: true }; // onglet mort
   return { actif: true, ...r[0], age_sec: Math.round(ageMs / 1000) };
+}
+
+// ── Envoi SMS SoReach (api.sofy.fr) — source unique : bouton manuel + cron ──
+function formatNumeroSms(brut) {
+  let n = String(brut || '').replace(/[\s.\-()]/g, '');
+  if (n.startsWith('+')) n = n.slice(1);
+  if (n.startsWith('00')) n = n.slice(2);
+  if (n.startsWith('0')) {
+    const dom = { '0690': '590', '0691': '590', '0696': '596', '0697': '596', '0694': '594', '0692': '262', '0693': '262' };
+    const p4 = n.slice(0, 4);
+    if (dom[p4]) return dom[p4] + n.slice(1);
+    return '33' + n.slice(1);
+  }
+  return n;
+}
+export async function envoyerSmsSofy({ to, message, user, liste_id }) {
+  const keyId = process.env.SOFY_API_KEY_ID, keySecret = process.env.SOFY_API_KEY_SECRET;
+  if (!keyId || !keySecret) return { ok: false, status: 0, detail: 'SOFY_API_KEY_ID/SECRET manquante' };
+  const dest = formatNumeroSms(to);
+  if (!/^\d{10,14}$/.test(dest)) return { ok: false, status: 0, detail: 'Numero invalide : ' + dest };
+  const estDom = /^(590|596|594|262)/.test(dest);
+  const stop = estDom ? 'STOP au 36789' : 'STOP au 36229';
+  const corps = String(message || '').replace(/\s*STOP au \d{5}\.?\s*$/i, '').trim() + ' ' + stop;
+  try {
+    const r = await fetch('https://api.sofy.fr/v1/sms', {
+      method: 'POST',
+      headers: { 'accept': 'application/json', 'Content-Type': 'application/json', 'X-API-KEY-ID': keyId, 'X-API-KEY-SECRET': keySecret },
+      body: JSON.stringify({ from: 'Sofy', to: dest, body: corps, shortenUrls: true, isTransactional: false })
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) return { ok: false, status: r.status, detail: JSON.stringify(data).slice(0, 300) };
+    const lg = corps.length, nbSms = lg <= 160 ? 1 : Math.ceil(lg / 153);
+    await loggerConso(user, 'soreach', nbSms, liste_id);
+    return { ok: true, id: data.id || null, statut: data.status || 'pending', destinataire: dest, credits: nbSms, caracteres: lg };
+  } catch (err) {
+    return { ok: false, status: 0, detail: err.message };
+  }
 }
