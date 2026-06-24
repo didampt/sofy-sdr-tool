@@ -1058,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v183';
+const VERSION='v184';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2036,7 +2036,7 @@ function trierReal(){
   if(m==='etab')return nbEtab(b)-nbEtab(a);
   return 0;
  });
- document.getElementById('fiches').innerHTML=REAL.map((x,k)=>ficheReal(x,k)).join('');
+ document.getElementById('fiches').innerHTML=ordreFiches().map(k=>ficheReal(REAL[k],k)).join('');
 }
 function showRealResults(total,c){
  c=c||criteresActuels();
@@ -2058,12 +2058,13 @@ function showRealResults(total,c){
  document.getElementById('k-new').textContent=REAL.filter(e=>!e.deja_hubspot).length;
  document.getElementById('k-sig').textContent=REAL.filter(e=>e.signal_hot).length||'0';
  const kt=document.getElementById('k-traites');if(kt)kt.textContent=REAL.filter(e=>e.tags_sdr&&e.tags_sdr.length).length;
- document.getElementById('fiches').innerHTML=REAL.length?REAL.map((e,i)=>ficheReal(e,i)).join(''):'<p style="color:var(--ink-soft)">Aucune entreprise ne correspond à ces critères. Élargis les filtres (effectif ou CA).</p>';
+ document.getElementById('fiches').innerHTML=REAL.length?ordreFiches().map(i=>ficheReal(REAL[i],i)).join(''):'<p style="color:var(--ink-soft)">Aucune entreprise ne correspond à ces critères. Élargis les filtres (effectif ou CA).</p>';
  // Cas B : si une liste est ouverte alors qu'un enrichissement tourne (cet onglet ou un autre),
  // on lance la surveillance qui affichera la barre de progression.
  if(ENRICH_POLL){clearInterval(ENRICH_POLL);ENRICH_POLL=null;}
  if(!WF_LOCAL_EN_COURS){const box=document.getElementById('liste-prog');if(box)box.style.display='none';surveillerEnrich();}
  chargerAppelsRingover();
+ chargerEngagement();
 }
 
 function setStatutAppel(i,statut){
@@ -2220,6 +2221,28 @@ function numerosFiche(e){
  for(const c of contactsDe(e)){if(c.enrich&&c.enrich.telephone)tels.push(c.enrich.telephone);}
  return tels.filter(Boolean);
 }
+var ENGAGEMENT={}, ENGAGEMENT_LISTE='';
+async function chargerEngagement(){
+ if(!REAL.length)return;
+ const key=state.savedId||state.listeNom||'?';
+ if(ENGAGEMENT_LISTE===key)return;
+ const mails=[...new Set(REAL.flatMap(ficheEmails))];
+ if(!mails.length)return;
+ try{
+  const r=await api('/api/engagement',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({emails:mails})});
+  const d=await r.json();
+  if(d&&d.engagements){ENGAGEMENT=d.engagements;ENGAGEMENT_LISTE=key;rerender_all();}
+ }catch(e){/* le 🔥 est un bonus : on n'interrompt rien */}
+}
+function engagementDe(e){
+ const em=ficheEmails(e); let best=null;
+ for(let k=0;k<em.length;k++){const g=ENGAGEMENT[em[k]];if(g&&(!best||new Date(g.ts)>new Date(best.ts)))best=g;}
+ return best;
+}
+function poidsEngagement(e){const g=engagementDe(e);return g?new Date(g.ts).getTime():0;}
+function ordreFiches(){const w=REAL.map(poidsEngagement);return REAL.map((x,k)=>k).sort(function(a,b){return w[b]-w[a];});}
+function tempsRelEngag(ts){const d=new Date(ts),x=(Date.now()-d.getTime())/1000;if(x<60)return 'à l’instant';if(x<3600)return 'il y a '+Math.floor(x/60)+' min';if(x<86400)return 'il y a '+Math.floor(x/3600)+' h';return 'il y a '+Math.floor(x/86400)+' j';}
+function badgeEngagement(e){const g=engagementDe(e);if(!g)return '';return '<span class="badge" title="Réaction Lemlist" style="background:#FEF2F2;border-color:#FECACA;color:#B91C1C;font-weight:700">🔥 '+escapeHtml(g.titre)+' · '+tempsRelEngag(g.ts)+'</span>';}
 async function chargerAppelsRingover(){
  if(!REAL.length)return;
  const key=state.savedId||state.listeNom||'?';
@@ -2719,6 +2742,7 @@ function ficheReal(e,i){
     <div class="lead-name">${(e.tags_sdr&&e.tags_sdr.length)?`<span title="Traité par ${e.traite_par||'?'}${e.traite_le?' le '+new Date(e.traite_le).toLocaleDateString('fr-FR'):''}" style="margin-right:4px;font-size:12px;font-weight:700;color:var(--ok)">✅ ${e.traite_par||'?'}</span>`:''}${estHL?'🔥 ':''}${titre} <span onclick="event.stopPropagation();ouvrirEdition(${i})" title="Corriger cette fiche" style="cursor:pointer;font-size:14px;opacity:.5;font-weight:normal">✏️</span></div>
     <div class="lead-meta">${(!estHL&&contacts.length&&contacts[0].nom)?e.nom+' · ':''}${e.enseigne&&e.enseigne!==e.nom?'Enseigne : '+e.enseigne+' · ':''}${e.persona_ia?'🎯 '+e.persona_ia+' · ':''}${e.naf||''}${e.nb_etablissements?' · '+e.nb_etablissements+' établissement'+(e.nb_etablissements>1?'s':''):''}${e.effectif?' · '+String(e.effectif).replace(/ salariés?$/i,'')+' salariés':''}${ca?' · CA '+ca:''}${(e.ville||e.region)?' · '+(e.ville||e.region):''}</div>
     <div class="badges">
+     ${badgeEngagement(e)}
      ${e.gmb&&e.gmb.trouve&&typeof e.gmb.note_moyenne==='number'?`<span class="badge b-gmb">GMB ${String(e.gmb.note_moyenne).replace('.',',')} ★ (${e.gmb.total_avis} avis)</span>`:''}
      ${e.maps_url?`<span class="badge b-new"><a href="${e.maps_url}" target="_blank" onclick="event.stopPropagation()" style="color:inherit">📍 Google Maps</a></span>`:''}
      ${(()=>{const s=e.source_hotlead||(e.signal&&e.signal.source)||'';if(!s&&!e.signal_hot)return '';const estRB2B=s==='RB2B';return `<span class="badge b-source">${estRB2B?'📍 source sofy.fr':'💼 source LinkedIn'}</span>`;})()}
@@ -3552,7 +3576,7 @@ async function verifierHubspot(){
   if(n){rerender_all();persister();toast('⚠️ '+n+' fiche'+(n>1?'s':'')+' déjà dans HubSpot (marquée'+(n>1?'s':'')+')');}
  }catch(_){}
 }
-function rerender_all(){const c=document.getElementById('fiches');if(c)c.innerHTML=REAL.map((x,k)=>ficheReal(x,k)).join('');}
+function rerender_all(){const c=document.getElementById('fiches');if(c)c.innerHTML=ordreFiches().map(k=>ficheReal(REAL[k],k)).join('');}
 
 /* ───────── ENVOIS : LEMLIST / HUBSPOT / SMS ───────── */
 function produitDominant(e){
