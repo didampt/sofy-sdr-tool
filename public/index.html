@@ -1037,7 +1037,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v169';
+const VERSION='v170';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2695,7 +2695,7 @@ function ficheReal(e,i){
   ${e._busy?`<div class="prog-wrap"><div class="prog-top"><span class="prog-label"><span class="spin"></span> <span id="progl${i}">${(e._prog&&e._prog.label)||'Démarrage…'}</span></span><span class="prog-pct" id="progp${i}">${(e._prog&&e._prog.pct)||0} %</span></div><div class="prog-bar"><span id="progb${i}" style="width:${(e._prog&&e._prog.pct)||0}%"></span></div></div>`:''}
   <div class="fiche-head" onclick="toggleFiche(${i})" title="Cliquer pour ${open?'replier':'déployer'} la fiche">
    <div style="flex:1;min-width:0">
-    <div class="lead-name">${(e.tags_sdr&&e.tags_sdr.length)?`<span title="Traité par ${e.traite_par||'?'}${e.traite_le?' le '+new Date(e.traite_le).toLocaleDateString('fr-FR'):''}" style="margin-right:2px">✅</span>`:''}${estHL?'🔥 ':''}${titre} <span onclick="event.stopPropagation();ouvrirEdition(${i})" title="Corriger cette fiche" style="cursor:pointer;font-size:14px;opacity:.5;font-weight:normal">✏️</span></div>
+    <div class="lead-name">${(e.tags_sdr&&e.tags_sdr.length)?`<span title="Traité par ${e.traite_par||'?'}${e.traite_le?' le '+new Date(e.traite_le).toLocaleDateString('fr-FR'):''}" style="margin-right:4px;font-size:12px;font-weight:700;color:var(--ok)">✅ ${e.traite_par||'?'}</span>`:''}${estHL?'🔥 ':''}${titre} <span onclick="event.stopPropagation();ouvrirEdition(${i})" title="Corriger cette fiche" style="cursor:pointer;font-size:14px;opacity:.5;font-weight:normal">✏️</span></div>
     <div class="lead-meta">${(!estHL&&contacts.length&&contacts[0].nom)?e.nom+' · ':''}${e.enseigne&&e.enseigne!==e.nom?'Enseigne : '+e.enseigne+' · ':''}${e.persona_ia?'🎯 '+e.persona_ia+' · ':''}${e.naf||''}${e.nb_etablissements?' · '+e.nb_etablissements+' établissement'+(e.nb_etablissements>1?'s':''):''}${e.effectif?' · '+String(e.effectif).replace(/ salariés?$/i,'')+' salariés':''}${ca?' · CA '+ca:''}${(e.ville||e.region)?' · '+(e.ville||e.region):''}</div>
     <div class="badges">
      ${e.gmb&&e.gmb.trouve&&typeof e.gmb.note_moyenne==='number'?`<span class="badge b-gmb">GMB ${String(e.gmb.note_moyenne).replace('.',',')} ★ (${e.gmb.total_avis} avis)</span>`:''}
