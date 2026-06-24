@@ -106,6 +106,11 @@ export default async function handler(req, res) {
         const ent = variables.companyName || '';
         const ctc = [contact.prenom, contact.nom].filter(Boolean).join(' ');
         const sdrTache = proprietaire || user.nom;
+        if (sql && cle) {
+          await sql`INSERT INTO activites (fiche_cle, source, type, titre, detail, auteur, ref, ts)
+            VALUES (${cle}, 'lemlist', 'sequenceAdded', ${'Ajoute a la sequence ' + (produit || 'Lemlist')}, ${ent || null}, ${sdrTache || null}, ${'add:' + cle + ':' + (produit || 'def')}, NOW())
+            ON CONFLICT (ref) DO NOTHING`;
+        }
         if (sql && cle && sdrTache) {
           const dej = await sql`SELECT id FROM taches WHERE sdr = ${sdrTache} AND fiche_cle = ${cle} AND faite = FALSE LIMIT 1`;
           if (!dej.length) {
