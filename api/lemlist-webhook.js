@@ -1,12 +1,10 @@
 // /api/lemlist-webhook.js — réception des événements Lemlist
-// PHASE CAPTURE : on enregistre le format brut pour écrire le parseur ensuite.
-//   GET ?register=1&k=voir2026  -> enregistre le webhook chez Lemlist (POST /api/hooks) avec un secret
-//   GET ?voir=1&k=voir2026      -> renvoie les 20 derniers événements bruts reçus (pour analyse)
-//   POST (appelé par Lemlist)   -> stocke l'événement brut dans lemlist_events (répond toujours 200)
+// PHASE CAPTURE (sans clé, temporaire) : on enregistre le format brut pour écrire le parseur ensuite.
+//   GET ?register=1  -> enregistre le webhook chez Lemlist (POST /api/hooks) avec un secret
+//   GET ?voir=1      -> renvoie les 20 derniers événements bruts reçus (pour analyse)
+//   POST (Lemlist)   -> stocke l'événement brut dans lemlist_events (répond toujours 200)
 import crypto from 'crypto';
 import { sql, ensureSchema } from './db.js';
-
-const CLE = 'voir2026';
 
 export default async function handler(req, res) {
   if (sql) await ensureSchema();
@@ -14,7 +12,6 @@ export default async function handler(req, res) {
 
   // 1) Enregistrement one-shot du webhook chez Lemlist
   if (req.method === 'GET' && q.register) {
-    if ((q.k || '') !== CLE) return res.status(403).json({ erreur: 'cle invalide' });
     const apiKey = process.env.LEMLIST_API_KEY;
     if (!apiKey) return res.status(500).json({ erreur: 'LEMLIST_API_KEY manquante' });
     if (sql) {
@@ -47,7 +44,6 @@ export default async function handler(req, res) {
 
   // 2) Voir les derniers événements bruts (debug temporaire)
   if (req.method === 'GET' && q.voir) {
-    if ((q.k || '') !== CLE) return res.status(403).json({ erreur: 'cle invalide' });
     if (!sql) return res.status(500).json({ erreur: 'pas de base' });
     const rows = await sql`SELECT id, recu_le, type, email, brut FROM lemlist_events ORDER BY id DESC LIMIT 20`;
     return res.status(200).json({ count: rows.length, events: rows });
