@@ -1058,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v176';
+const VERSION='v177';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2813,12 +2813,13 @@ function ficheReal(e,i){
      </div>`:''}
     </div>
     <div>
-     <div class="col-title">Email personnalisé ${e.score&&e.score.email?'prêt à envoyer':''}</div>
+     <div class="col-title">Email personnalisé ${e.score&&e.score.email?'· '+nomModule(e.angle||produitDominant(e)||'generique'):''}</div>
      ${e.score&&e.score.email?`
      <div class="email-box">
       <div><b>Objet :</b> ${e.score.email.objet}</div>
       <div style="white-space:pre-wrap;margin-top:12px">${e.score.email.corps}</div>
      </div>
+     ${tagsAngleHtml(e,i)}
      <div class="cta-row">
       <button class="btn-cta btn-cta-dark" onclick="copierEmail(${i})">Copier l'email</button>
       <button class="btn-cta btn-cta-blue" onclick="ouvrirChoixLemlist(${i})">✈️ Envoyer via Lemlist</button>
@@ -3592,7 +3593,7 @@ function ouvrirChoixLemlist(i){
  LEM_CTX={i,cands};
  document.getElementById('lem-dest').textContent=cands.length>1?(cands.length+' contacts'):(((cands[0].prenom||'')+' '+(cands[0].nom||'')).trim()+' · '+cands[0].enrich.email);
  renderLemContacts();
- const dom=produitDominant(e);
+ const dom=e.angle||produitDominant(e);
  const labels={soview:'Soview',soconnect:'SoConnect',soreach:'SoReach'};
  const z=document.getElementById('lem-choix');
  z.innerHTML='<div class="hint">Chargement des campagnes…</div>';
@@ -3850,6 +3851,38 @@ async function ajouterNoteFiche(i){
   }else{ if(ta)ta.disabled=false; toast('Note non enregistrée'+((d&&d.erreur)?(' : '+d.erreur):'')); }
  }catch(_){ if(ta)ta.disabled=false; toast('Note non enregistrée'); }
 }
+var COUT_EMAIL_OPUS_EUR='0,06';
+function nomModule(p){return ({soview:'Soview',soconnect:'SoConnect',soreach:'SoReach SMS/RCS',generique:'Générique'})[p]||p;}
+function tagsAngleHtml(e,i){
+ var dom=produitDominant(e);
+ var actif=e.angle||dom;
+ var mods=[['soview','⭐ Soview'],['soconnect','💬 SoConnect'],['soreach','📱 SoReach SMS/RCS'],['generique','🎯 Générique']];
+ var tags=mods.map(function(m){
+  var on=(actif===m[0]);
+  var st=on?'background:var(--accent);color:#fff;border:1.5px solid var(--accent)':'background:#fff;color:var(--ink);border:1.5px solid var(--line)';
+  var reco=(m[0]===dom&&m[0]!=='generique')?'<span style="position:absolute;top:-8px;right:6px;font-size:10px;font-weight:700;background:var(--ok);color:#fff;border-radius:10px;padding:1px 6px">reco</span>':'';
+  return '<button class="act" style="position:relative;'+st+'" onclick="choisirAngle('+i+',\''+m[0]+'\')">'+m[1]+reco+'</button>';
+ }).join('');
+ return '<div style="margin-top:12px"><div style="font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:6px">🎯 Angle d’attaque — l’IA réécrit l’email :</div><div style="display:flex;flex-wrap:wrap;gap:8px">'+tags+'</div></div>';
+}
+async function choisirAngle(i,produit){
+ var e=REAL[i];
+ if(!e||e._busy)return;
+ e.emails_angle=e.emails_angle||{};
+ if((e.angle||produitDominant(e))===produit && e.score && e.score.email && e.emails_angle[produit])return;
+ if(e.emails_angle[produit]){ e.score=e.score||{}; e.score.email=e.emails_angle[produit]; e.angle=produit; rerender(i); persister(); toast('Angle : '+nomModule(produit)); return; }
+ var ok=await confirmSofy('✍️ Réécrire l’email — '+nomModule(produit),'L’IA Opus 4.8 analyse la fiche et rédige un email ultra-personnalisé pour '+nomModule(produit)+'.\n\nCoût : 1 crédit Opus 4.8 (≈ '+COUT_EMAIL_OPUS_EUR+' €).','Générer l’email');
+ if(!ok)return;
+ e._busy=true; e._prog={label:'✍️ Rédaction ('+nomModule(produit)+')…',pct:55}; rerender(i);
+ try{
+  var r=await api('/api/email-angle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({entreprise:e,sdr:(state.user&&state.user.nom)||'',produit:produit})});
+  var d=await r.json();
+  if(d&&d.ok&&d.email){ e.emails_angle[produit]=d.email; e.score=e.score||{}; e.score.email=d.email; e.angle=produit; }
+  else{ toast('Génération impossible'+((d&&d.erreur)?(' : '+d.erreur):'')); }
+ }catch(_){ toast('Génération impossible (réseau)'); }
+ e._busy=false; e._prog=null; rerender(i); persister();
+}
+
 function prendreRdv(i){
  const e=REAL[i];
  // Contacts candidats (avec au moins un nom ou un email)
