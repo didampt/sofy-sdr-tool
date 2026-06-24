@@ -75,6 +75,16 @@ export default async function handler(req, res) {
     } catch (e) { return res.status(500).json({ erreur: e.message }); }
   }
 
+  // 1ter) Lister les utilisateurs Lemlist (pour recuperer l'email de login de chaque SDR = contactOwner)
+  if (req.method === 'GET' && q.team) {
+    if (!process.env.LEMLIST_API_KEY) return res.status(500).json({ erreur: 'LEMLIST_API_KEY manquante' });
+    try {
+      const r = await fetch('https://api.lemlist.com/api/team', { headers: { 'Authorization': authHeader() } });
+      const txt = await r.text(); let data = txt; try { data = JSON.parse(txt); } catch (_) {}
+      return res.status(200).json({ status: r.status, team: data });
+    } catch (e) { return res.status(500).json({ erreur: e.message }); }
+  }
+
   // 2) Voir les derniers événements bruts (debug)
   if (req.method === 'GET' && q.voir) {
     if (!sql) return res.status(500).json({ erreur: 'pas de base' });
