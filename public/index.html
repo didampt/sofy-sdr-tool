@@ -408,6 +408,22 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
   </div>
  </div>
 </div>
+<div id="activite-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:901;align-items:center;justify-content:center;padding:16px">
+ <div class="wf-panel" style="width:min(640px,96vw);max-height:88vh;display:flex;flex-direction:column">
+  <div class="wf-head">🕒 Activité — <span id="act-dest"></span></div>
+  <div style="padding:10px 22px 8px;border-bottom:1px solid var(--line)">
+   <div style="display:flex;flex-wrap:wrap;gap:8px">
+    <select id="act-f-periode" class="field" style="padding:8px 12px;min-width:150px;flex:1" onchange="renderActivite()"><option value="">Toute la période</option><option value="7">7 derniers jours</option><option value="30">30 derniers jours</option></select>
+    <select id="act-f-type" class="field" style="padding:8px 12px;min-width:150px;flex:1" onchange="renderActivite()"><option value="">Tous les types</option><option value="appel">Appels</option><option value="email">Emails (Lemlist)</option><option value="sms">SMS SoReach</option><option value="sequence">Séquence</option><option value="autre">Autres</option></select>
+    <select id="act-f-user" class="field" style="padding:8px 12px;min-width:150px;flex:1" onchange="renderActivite()"><option value="">Tous les utilisateurs</option></select>
+   </div>
+  </div>
+  <div id="act-body" style="padding:4px 22px 14px;overflow-y:auto;flex:1"></div>
+  <div class="wf-foot">
+   <button class="btn" style="background:var(--paper)" onclick="document.getElementById('activite-modal').style.display='none'">Fermer</button>
+  </div>
+ </div>
+</div>
 <div id="rappel-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:901;align-items:center;justify-content:center;padding:20px">
  <div class="wf-panel" style="width:min(460px,94vw)">
   <div class="wf-head">🔁 Planifier un rappel — <span id="rappel-dest"></span></div>
@@ -1038,7 +1054,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v171';
+const VERSION='v172';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2800,6 +2816,7 @@ function ficheReal(e,i){
       <div style="white-space:pre-wrap;margin-top:12px">${e.score.email.corps}</div>
      </div>
      <div class="cta-row">
+      <button class="btn-cta" style="background:var(--paper);color:var(--ink);border:1.5px solid var(--line)" onclick="ouvrirActivite(${i})">🕒 Activité</button>
       <button class="btn-cta btn-cta-dark" onclick="copierEmail(${i})">Copier l'email</button>
       <button class="btn-cta btn-cta-blue" onclick="ouvrirChoixLemlist(${i})">✈️ Envoyer via Lemlist</button>
      </div>
@@ -2808,6 +2825,7 @@ function ficheReal(e,i){
      </div>`:`
      <div class="hint" style="margin-bottom:10px">Lance 🎯 Scorer (ou 🚀 Fiche) pour générer la synthèse d'appel et l'email personnalisé.</div>
      <div class="cta-row">
+      <button class="btn-cta" style="background:var(--paper);color:var(--ink);border:1.5px solid var(--line)" onclick="ouvrirActivite(${i})">🕒 Activité</button>
       <button class="btn-cta btn-cta-blue" onclick="ouvrirChoixLemlist(${i})">✈️ Envoyer via Lemlist</button>
       <button class="btn-cta btn-cta-coral" onclick="prendreRdv(${i})">🤝 RDV pris — réserver pour un AE</button>
      </div>`}
@@ -3611,6 +3629,129 @@ async function envoyerLemlist(i){
  if(!d.ok){toast('Lemlist : '+(d.erreur||'')+(d.detail?' — '+d.detail:''));return;}
  e.lemlist_envoye=true;rerender(i);persister();
  toast('✈️ '+c.prenom+' '+c.nom+' → séquence '+(prod||'défaut')+' ✓');
+}
+let ACT_DATA=[]; let ACT_CTX=null;
+function escapeHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,function(m){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m];});}
+function ficheEmails(e){
+ const out=[];
+ (contactsDe(e)||[]).forEach(function(c){if(c&&c.enrich&&c.enrich.email)out.push(c.enrich.email);});
+ if(e.enrich&&e.enrich.email)out.push(e.enrich.email);
+ if(e.dirigeant&&e.dirigeant.enrich&&e.dirigeant.enrich.email)out.push(e.dirigeant.enrich.email);
+ return [...new Set(out.map(function(x){return String(x).toLowerCase();}))];
+}
+function ficheTels(e){
+ const out=[];
+ if(e.gmb&&e.gmb.telephone)out.push(e.gmb.telephone);
+ if(e.ia&&e.ia.telephone)out.push(e.ia.telephone);
+ if(e.telephone_google)out.push(e.telephone_google);
+ if(e.enrich&&e.enrich.telephone)out.push(e.enrich.telephone);
+ (contactsDe(e)||[]).forEach(function(c){if(c&&c.enrich&&c.enrich.telephone)out.push(c.enrich.telephone);});
+ if(e.dirigeant&&e.dirigeant.enrich&&e.dirigeant.enrich.telephone)out.push(e.dirigeant.enrich.telephone);
+ return [...new Set(out.filter(Boolean))];
+}
+function famTypeAct(a){
+ const so=(a.source||'').toLowerCase();
+ const t=(a.type||'').toLowerCase();
+ if(so==='ringover'||t.indexOf('appel')>=0||t.indexOf('call')>=0||t.indexOf('aircall')>=0)return 'appel';
+ if(so==='sms'||t.indexOf('sms')===0)return 'sms';
+ if(t.indexOf('repl')>=0||t==='warmed'||t.indexOf('open')>=0||t.indexOf('click')>=0||t.indexOf('email')>=0||t.indexOf('interest')>=0||t.indexOf('unsub')>=0)return 'email';
+ if(t==='sequenceadded'||t.indexOf('contacted')>=0||t.indexOf('hooked')>=0||t.indexOf('attracted')>=0)return 'sequence';
+ return so==='lemlist'?'email':'autre';
+}
+function normActivite(a){return {source:a.source||'lemlist',type:famTypeAct(a),titre:a.titre||a.type||'Activité',detail:a.detail||'',auteur:a.auteur||'',ts:a.ts,record:null};}
+function callToActivite(c){
+ const dir=c.direction==='in'?'entrant':(c.direction==='out'?'sortant':'');
+ const dur=c.incall_duration?(' · '+Math.floor(c.incall_duration/60)+' min '+(c.incall_duration%60)+' s'):'';
+ const statut=c.is_answered?'Répondu':'Pas de réponse';
+ return {source:'ringover',type:'appel',titre:('Appel '+dir+dur).trim(),detail:statut,auteur:c.sdr||'',ts:c.start_time,record:c.record||c.voicemail||null};
+}
+function icoActivite(a){
+ var svg=function(pp){return '<svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round">'+pp+'</svg>';};
+ var t=((a.type||'')+' '+(a.titre||'')).toLowerCase();
+ if(a.type==='appel')return svg('<path d="M3 5a2 2 0 0 1 2-2h2l2 5-2 1a11 11 0 0 0 5 5l1-2 5 2v2a2 2 0 0 1-2 2A16 16 0 0 1 3 5z"/>');
+ if(a.type==='sms')return svg('<path d="M21 11a8 8 0 0 1-8 8H7l-4 3V11a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8z"/>');
+ if(t.indexOf('repond')>=0||t.indexOf('repl')>=0||t.indexOf('\u00e9pond')>=0)return svg('<path d="M9 7l-5 5 5 5"/><path d="M4 12h11a4 4 0 0 1 4 4v1"/>');
+ if(t.indexOf('ouvert')>=0||t.indexOf('open')>=0)return svg('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>');
+ if(a.type==='sequence'||t.indexOf('sequence')>=0||t.indexOf('\u00e9quence')>=0||t.indexOf('ajout')>=0)return svg('<path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/>');
+ if(t.indexOf('note')>=0)return svg('<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h6"/>');
+ return svg('<circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/>');
+}
+function majFiltreUsersAct(){
+ var sel=document.getElementById('act-f-user'); if(!sel)return;
+ var cur=sel.value;
+ var users=[...new Set(ACT_DATA.map(function(a){return a.auteur||'systeme';}).filter(Boolean))].sort();
+ sel.innerHTML='<option value="">Tous les utilisateurs</option>'+users.map(function(u){return '<option value="'+escapeHtml(u)+'"'+(u===cur?' selected':'')+'>'+escapeHtml(u)+'</option>';}).join('');
+}
+function labelJourAct(d){
+ var j=new Date(d); j.setHours(0,0,0,0);
+ var auj=new Date(); auj.setHours(0,0,0,0);
+ var diff=Math.round((auj-j)/864e5);
+ var dd=d.toLocaleDateString('fr-FR',{day:'numeric',month:'long'});
+ if(diff===0)return "Aujourd'hui · "+dd;
+ if(diff===1)return "Hier · "+dd;
+ return dd+(j.getFullYear()!==auj.getFullYear()?(' '+j.getFullYear()):'');
+}
+function ligneActivite(a){
+ var t=new Date(a.ts);
+ var heure=t.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+ var src=({lemlist:'Lemlist',ringover:'Ringover',sms:'SoReach'})[a.source]||'';
+ var audio=a.record?('<audio controls preload="metadata" src="/api/ringover-record?url='+encodeURIComponent(a.record)+'" style="width:100%;margin-top:6px;height:34px"></audio>'):'';
+ var detail=a.detail?('<div style="font-size:13px;color:var(--ink-soft);margin-top:2px">'+escapeHtml(a.detail)+'</div>'):'';
+ return '<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 2px;border-bottom:1px solid #f1f2f7">'+
+   '<span style="flex-shrink:0;width:26px;height:26px;display:flex;align-items:center;justify-content:center;color:#6b7280">'+icoActivite(a)+'</span>'+
+   '<div style="flex:1;min-width:0"><div style="font-size:14px">'+escapeHtml(a.titre)+(src?(' <span style="font-size:11px;color:#9aa1b1;border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin-left:6px">'+src+'</span>'):'')+'</div>'+detail+audio+'</div>'+
+   '<div style="flex-shrink:0;text-align:right;white-space:nowrap"><div style="font-size:13px;font-weight:600">'+heure+'</div><div style="font-size:12px;color:#9aa1b1">'+escapeHtml(a.auteur||'systeme')+'</div></div>'+
+  '</div>';
+}
+function renderActivite(){
+ var box=document.getElementById('act-body'); if(!box)return;
+ var fp=document.getElementById('act-f-periode').value;
+ var ft=document.getElementById('act-f-type').value;
+ var fu=document.getElementById('act-f-user').value;
+ var data=ACT_DATA.filter(function(a){return a.ts;});
+ if(fp){var lim=Date.now()-(+fp)*864e5;data=data.filter(function(a){return new Date(a.ts).getTime()>=lim;});}
+ if(ft)data=data.filter(function(a){return a.type===ft;});
+ if(fu)data=data.filter(function(a){return (a.auteur||'systeme')===fu;});
+ data.sort(function(a,b){return new Date(b.ts)-new Date(a.ts);});
+ if(!data.length){box.innerHTML='<div class="hint" style="padding:14px 0">'+(ACT_DATA.length?'Aucune activité pour ces filtres.':'Aucune activité enregistrée pour cette fiche.')+'</div>';return;}
+ var groups=[]; var idx={};
+ data.forEach(function(a){
+  var d=new Date(a.ts); var key=d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate();
+  if(idx[key]===undefined){idx[key]=groups.length;groups.push({label:labelJourAct(d),items:[]});}
+  groups[idx[key]].items.push(a);
+ });
+ box.innerHTML=groups.map(function(g){
+  return '<div style="margin-top:12px"><div style="font-size:12px;font-weight:700;color:var(--ink-soft);padding:6px 0;border-bottom:1px solid var(--line)">'+g.label+'</div>'+g.items.map(ligneActivite).join('')+'</div>';
+ }).join('');
+}
+async function ouvrirActivite(i){
+ var e=REAL[i]; ACT_CTX={i}; ACT_DATA=[];
+ var nom=enseigneDe(e)||e.nom||'';
+ var c0=(contactsDe(e)||[])[0];
+ document.getElementById('act-dest').textContent=nom+(c0&&c0.nom?(' · '+[c0.prenom,c0.nom].filter(Boolean).join(' ')):'');
+ document.getElementById('act-f-periode').value='';
+ document.getElementById('act-f-type').value='';
+ document.getElementById('act-f-user').innerHTML='<option value="">Tous les utilisateurs</option>';
+ document.getElementById('act-body').innerHTML='<div class="hint" style="padding:14px 0">Chargement…</div>';
+ document.getElementById('activite-modal').style.display='flex';
+ var emails=ficheEmails(e), tels=ficheTels(e);
+ try{
+  if(emails.length){
+   var r=await api('/api/activite?emails='+encodeURIComponent(emails.join(',')));
+   var d=await r.json();
+   if(d.activites)ACT_DATA=ACT_DATA.concat(d.activites.map(normActivite));
+  }
+ }catch(_){}
+ majFiltreUsersAct(); renderActivite();
+ if(tels.length){
+  try{
+   var rc=await api('/api/ringover-calls',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({numeros:tels})});
+   var dc=await rc.json();
+   var calls=[];
+   if(dc.table)Object.keys(dc.table).forEach(function(k){dc.table[k].forEach(function(c){calls.push(callToActivite(c));});});
+   if(calls.length){ACT_DATA=ACT_DATA.concat(calls); majFiltreUsersAct(); renderActivite();}
+  }catch(_){}
+ }
 }
 function prendreRdv(i){
  const e=REAL[i];
