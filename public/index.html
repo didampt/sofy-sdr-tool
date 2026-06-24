@@ -1024,7 +1024,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v166';
+const VERSION='v167';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -3538,7 +3538,7 @@ async function envoyerLemlist(i){
  const prod=produitDominant(e);
  if(!confirm(`✈️ Envoyer ${c.prenom} ${c.nom} (${c.enrich.email}) en séquence Lemlist ?\nCampagne : ${prod?prod.toUpperCase()+' (produit dominant)':'par défaut'}`))return;
  const r=await api('/api/lemlist',{method:'POST',headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({liste_id:state.savedId,produit:prod,proprietaire:e.traite_par||state.user.nom,contact:{email:c.enrich.email,prenom:c.prenom,nom:c.nom},variables:varsLemlist(e,c)})});
+  body:JSON.stringify({liste_id:state.savedId,produit:prod,proprietaire:e.traite_par||state.user.nom,sms:(e.score&&e.score.sms)||'',contact:{email:c.enrich.email,prenom:c.prenom,nom:c.nom},variables:varsLemlist(e,c)})});
  const d=await r.json();
  if(!d.ok){toast('Lemlist : '+(d.erreur||'')+(d.detail?' — '+d.detail:''));return;}
  e.lemlist_envoye=true;rerender(i);persister();
