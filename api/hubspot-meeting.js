@@ -1,5 +1,5 @@
-// /api/hubspot-meeting.js — RDV (meeting) HubSpot d'un contact, par email. Avec diagnostics.
-// GET ?email=a@x.fr[&debug=1] -> { ok:true, meeting:{iso,titre} } | { ok:false, raison, diag? }
+// /api/hubspot-meeting.js — RDV (meeting) HubSpot d'une fiche. Teste TOUS les emails de la fiche.
+// GET ?emails=a@x.fr,b@y.fr[&debug=1]  (ou ?email=a@x.fr) -> { ok:true, meeting:{iso,titre} } | { ok:false, raison, diag? }
 import { verifierToken } from './db.js';
 
 export const config = { maxDuration: 30 };
@@ -16,40 +16,47 @@ export default async function handler(req, res) {
   const user = verifierToken(req);
   if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
   const token = process.env.HUBSPOT_API_KEY;
-  const email = String(req.query.email || '').trim().toLowerCase();
   const debug = req.query.debug === '1';
+  const emails = String(req.query.emails || req.query.email || '')
+    .split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
   if (!token) return res.status(200).json({ ok: false, raison: 'HubSpot non configuré' });
-  if (!email) return res.status(400).json({ erreur: 'email requis' });
+  if (!emails.length) return res.status(400).json({ erreur: 'email requis' });
 
-  const diag = { email };
+  const diag = { emails, parContact: [] };
   const out = (o) => res.status(200).json(debug ? { ...o, diag } : o);
 
   try {
-    // 1) contact par email
-    const cs = await hs('https://api.hubapi.com/crm/v3/objects/contacts/search', token, {
-      method: 'POST',
-      body: JSON.stringify({ filterGroups: [{ filters: [{ propertyName: 'email', operator: 'EQ', value: email }] }], properties: ['email'], limit: 1 })
-    });
-    diag.contactSearchStatus = cs.status;
-    if (!cs.ok) return out({ ok: false, raison: 'Recherche contact refusée (HTTP ' + cs.status + ') — scope contacts ?' });
-    if (!cs.body || !cs.body.total) return out({ ok: false, raison: 'Contact introuvable dans HubSpot pour ' + email + ' — le RDV a peut-être été pris avec un autre email' });
-    const cid = cs.body.results[0].id;
-    diag.contactId = cid;
+    let allIds = [];
+    let auMoinsUnContact = false;
+    for (const email of emails) {
+      const cs = await hs('https://api.hubapi.com/crm/v3/objects/contacts/search', token, {
+        method: 'POST',
+        body: JSON.stringify({ filterGroups: [{ filters: [{ propertyName: 'email', operator: 'EQ', value: email }] }], properties: ['email'], limit: 1 })
+      });
+      if (!cs.ok) { diag.parContact.push({ email, etape: 'search', status: cs.status }); continue; }
+      if (!cs.body || !cs.body.total) { diag.parContact.push({ email, trouve: false }); continue; }
+      auMoinsUnContact = true;
+      const cid = cs.body.results[0].id;
+      const as = await hs(`https://api.hubapi.com/crm/v4/objects/contacts/${cid}/associations/meetings?limit=100`, token);
+      if (!as.ok) {
+        diag.parContact.push({ email, cid, assocStatus: as.status });
+        if (as.status === 403) return out({ ok: false, raison: 'Lecture des RDV refusée (HTTP 403) — il manque le scope « crm.objects.meetings.read » sur la clé HubSpot' });
+        continue;
+      }
+      const ids = ((as.body && as.body.results) || []).map(x => x.toObjectId || x.id).filter(Boolean);
+      diag.parContact.push({ email, cid, nbAssoc: ids.length });
+      allIds = allIds.concat(ids);
+    }
+    allIds = [...new Set(allIds)];
+    diag.totalAssoc = allIds.length;
 
-    // 2) meetings associés au contact (v4)
-    const as = await hs(`https://api.hubapi.com/crm/v4/objects/contacts/${cid}/associations/meetings?limit=100`, token);
-    diag.assocStatus = as.status;
-    if (!as.ok) return out({ ok: false, raison: 'Lecture des RDV refusée (HTTP ' + as.status + ') — il manque sans doute le scope « crm.objects.meetings.read » sur la clé HubSpot' });
-    const ids = ((as.body && as.body.results) || []).map(x => x.toObjectId || x.id).filter(Boolean);
-    diag.nbAssoc = ids.length;
-    if (!ids.length) return out({ ok: false, raison: 'Contact trouvé mais aucun RDV (meeting) associé côté HubSpot' });
+    if (!auMoinsUnContact) return out({ ok: false, raison: 'Aucun des emails de la fiche n’existe comme contact dans HubSpot' });
+    if (!allIds.length) return out({ ok: false, raison: 'Contacts trouvés, mais aucun RDV (meeting) associé côté HubSpot' });
 
-    // 3) détail des meetings
     const mr = await hs('https://api.hubapi.com/crm/v3/objects/meetings/batch/read', token, {
       method: 'POST',
-      body: JSON.stringify({ properties: ['hs_meeting_start_time', 'hs_meeting_title', 'hs_timestamp'], inputs: ids.slice(0, 100).map(id => ({ id })) })
+      body: JSON.stringify({ properties: ['hs_meeting_start_time', 'hs_meeting_title', 'hs_timestamp'], inputs: allIds.slice(0, 100).map(id => ({ id })) })
     });
-    diag.meetingReadStatus = mr.status;
     if (!mr.ok) return out({ ok: false, raison: 'Lecture du détail des RDV refusée (HTTP ' + mr.status + ')' });
     const list = ((mr.body && mr.body.results) || []).map(m => {
       const p = m.properties || {};
