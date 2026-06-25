@@ -1058,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v190';
+const VERSION='v191';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2625,6 +2625,14 @@ function exportPeriodeCSV(){
 
 
 
+function manqueMobile(en){return !(en&&en.telephone&&estMobile(en.telephone));}
+function poserMobile(c,mob,src){
+ if(!mob)return false;
+ c.enrich=c.enrich||{};
+ if(!c.enrich.telephone){c.enrich.telephone=mob;c.enrich.tel_source=src;return true;}
+ if(!estMobile(c.enrich.telephone)){if(!c.enrich.telephone_fixe)c.enrich.telephone_fixe=c.enrich.telephone;c.enrich.telephone=mob;c.enrich.tel_source=src;return true;}
+ return false;
+}
 function telBtns(t){
  const n=telNorm(t);
  let h=` <a class="act act-call" style="padding:4px 10px;font-size:12px" href="tel:${n}" title="Appeler (extension Ringover click-to-call)">📞</a>`;
@@ -2658,12 +2666,12 @@ function contactHtml(c,i,j){
   <div class="contact-line"><b>${(c.prenom+' '+c.nom).trim()}</b> — ${(en&&en.fonction)||c.fonction||'?'} <span class="badge b-gmb">${c.source}</span></div>
   ${en?`
    ${en.email?`<div class="contact-line">✉️ <b>${en.email}</b> <a class="act act-call" style="padding:4px 10px;font-size:12px" href="mailto:${en.email}" title="Écrire un email">📧</a> <button class="act act-copy" style="padding:4px 10px;font-size:12px" onclick="navigator.clipboard.writeText('${en.email}');toast('Email copié ✓')" title="Copier l'adresse">📋</button>${en.email_qualification?` <span class="badge b-new">${en.email_qualification}</span>`:''}</div>`:'<div class="contact-line" style="color:var(--ink-soft)">✉️ Email non trouvé (Dropcontact) — repli FullEnrich à venir</div>'}
-   ${en.telephone?`<div class="contact-line">📱 <b>${en.telephone}</b>${telBtns(en.telephone)}${en.tel_source==='fullenrich'?' <span class="badge b-gmb">FullEnrich</span>':''}</div>`:''}
+   ${en.telephone?`<div class="contact-line">${estMobile(en.telephone)?'📱':'☎️'} <b>${en.telephone}</b>${telBtns(en.telephone)}${(function(){var so=en.tel_source||en.telephone_source;return so?' <span class="badge b-gmb">'+(({fullenrich:'FullEnrich',kaspr:'Kaspr',lemlist:'Lemlist'})[so]||so)+'</span>':'';})()}</div>`:''}${(en.telephone_fixe&&en.telephone_fixe!==en.telephone)?`<div class="contact-line">☎️ <b>${en.telephone_fixe}</b> <span class="badge b-gmb">fixe</span>${telBtns(en.telephone_fixe)}</div>`:''}
    ${en.linkedin?`<div class="contact-line">💼 <a href="${en.linkedin.startsWith('http')?en.linkedin:'https://'+en.linkedin}" target="_blank">Profil LinkedIn ✓</a></div>`:''}`
   :`<button class="act act-lemlist" id="enrbtn${i}_${j}" onclick="enrichir(${i},${j})" style="margin-top:4px">✉️ Enrichir ce contact</button>`}
   ${en&&(!en.email||!en.telephone)?`<button class="act act-copy" style="margin-top:4px" id="febtn${i}_${j}" onclick="lancerFE(${i},${j})" title="Cascade 15+ sources : email de repli + mobile">${en.fe_fait?'↻ FullEnrich (re-tenter)':'🔁 FullEnrich'}</button>`:''}
-  ${en&&!en.telephone?`<button class="act act-copy" style="margin-top:4px" onclick="lancerKaspr(${i},${j})" title="Mobile FR via le profil LinkedIn (1 crédit tél. + 1 crédit export). * = URL LinkedIn demandée au lancement">${en.kaspr_fait?'↻ Kaspr (re-tenter)':'📱 Kaspr'}</button>`:''}
-  ${en&&(!en.email||!en.telephone)?`<button class="act act-copy" style="margin-top:4px" onclick="lancerLemlist(${i},${j})" title="Waterfall niveau 4 — Lemlist (Prospeo, RocketReach, Cognism…). Facturé uniquement si trouvé : 5 crédits/email (≈0,05 $) + 20 crédits/mobile (≈0,20 $).">${en.lemlist_fait?'↻ Lemlist (re-tenter)':'🔵 Lemlist (≈'+(((!en.email?5:0)+(!en.telephone?20:0))/100).toFixed(2)+' $)'}</button>`:''}
+  ${en&&manqueMobile(en)?`<button class="act act-copy" style="margin-top:4px" onclick="lancerKaspr(${i},${j})" title="Mobile FR via le profil LinkedIn (1 crédit tél. + 1 crédit export). * = URL LinkedIn demandée au lancement">${en.kaspr_fait?'↻ Kaspr (re-tenter)':'📱 Kaspr'}</button>`:''}
+  ${en&&(!en.email||manqueMobile(en))?`<button class="act act-copy" style="margin-top:4px" onclick="lancerLemlist(${i},${j})" title="Waterfall niveau 4 — Lemlist (Prospeo, RocketReach, Cognism…). Facturé uniquement si trouvé : 5 crédits/email (≈0,05 $) + 20 crédits/mobile (≈0,20 $).">${en.lemlist_fait?'↻ Lemlist (re-tenter)':'🔵 Lemlist (≈'+(((!en.email?5:0)+(manqueMobile(en)?20:0))/100).toFixed(2)+' $)'}</button>`:''}
  </div>`;
 }
 
@@ -3175,7 +3183,7 @@ async function enrichirKaspr(i,j){
   const k=d.resultat||{};
   c.enrich=c.enrich||{};
   let gain=false;
-  if(k.telephone&&!c.enrich.telephone){c.enrich.telephone=k.telephone;c.enrich.telephone_source='kaspr';gain=true;}
+  if(k.telephone&&poserMobile(c,k.telephone,'kaspr'))gain=true;
   if(k.email&&!c.enrich.email){c.enrich.email=k.email;c.enrich.email_source='kaspr';gain=true;}
   if(k.fonction&&!c.enrich.fonction)c.enrich.fonction=k.fonction;
   c.enrich.kaspr_fait=true;
@@ -3201,7 +3209,7 @@ async function enrichirLemlist(i,j){
    const nomEnt=(e.enseigne_ia||e.enseigne||e.nom||'').trim();
    const lk=c.linkedin||(c.enrich&&c.enrich.linkedin)||'';
    const r=await api('/api/lemlist-enrich',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({findEmail:!c.enrich.email,findPhone:!c.enrich.telephone,contact:{prenom:c.prenom,nom:c.nom,linkedin:lk,email:c.enrich.email||'',fonction:(c.enrich&&c.enrich.fonction)||c.fonction||''},entreprise:{nom:nomEnt,site:domaineDe(e)}})});
+    body:JSON.stringify({findEmail:!c.enrich.email,findPhone:manqueMobile(c.enrich),contact:{prenom:c.prenom,nom:c.nom,linkedin:lk,email:c.enrich.email||'',fonction:(c.enrich&&c.enrich.fonction)||c.fonction||''},entreprise:{nom:nomEnt,site:domaineDe(e)}})});
    try{d=await r.json();}catch(_){toast('Lemlist : réponse invalide ('+r.status+')');return false;}
   }
   let essais=0;
@@ -3218,7 +3226,7 @@ async function enrichirLemlist(i,j){
   const re=d.resultat||{};
   let gain=false;
   if(re.email&&!c.enrich.email){c.enrich.email=re.email;c.enrich.email_source='lemlist';c.enrich.email_qualification='Lemlist';gain=true;}
-  if(re.telephone&&!c.enrich.telephone){c.enrich.telephone=re.telephone;c.enrich.tel_source='lemlist';gain=true;}
+  if(re.telephone&&poserMobile(c,re.telephone,'lemlist'))gain=true;
   if(re.linkedin&&!c.enrich.linkedin){c.enrich.linkedin=re.linkedin;gain=true;}
   if(j===0||j===undefined)e.enrich=c.enrich;
   rerender(i);persister();
@@ -3499,7 +3507,7 @@ async function pipelineFiche(i){
   let kasprTente=false,kasprGain=false;
   for(let j=0;j<cs.length;j++){
    const c=cs[j];let en2=c.enrich||{};
-   if(en2.telephone||en2.kaspr_fait)continue;
+   if((en2.telephone&&estMobile(en2.telephone))||en2.kaspr_fait)continue;
    if((!en2.linkedin)&&!c.linkedin_ia_fait&&c.nom){
     await chercherLinkedin(i,j);en2=c.enrich||{};
    }
