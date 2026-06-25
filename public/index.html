@@ -1058,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v186';
+const VERSION='v187';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2755,7 +2755,7 @@ function ficheReal(e,i){
      ${e.maps_url?`<span class="badge b-new"><a href="${e.maps_url}" target="_blank" onclick="event.stopPropagation()" style="color:inherit">📍 Google Maps</a></span>`:''}
      ${(()=>{const s=e.source_hotlead||(e.signal&&e.signal.source)||'';if(!s&&!e.signal_hot)return '';const estRB2B=s==='RB2B';return `<span class="badge b-source">${estRB2B?'📍 source sofy.fr':'💼 source LinkedIn'}</span>`;})()}
      ${e.signal_hot?`<span class="badge b-signal">${(e.signal&&e.signal.emoji)?e.signal.emoji:'🔥'} ${(e.signal&&e.signal.interaction)?e.signal.interaction:'Signal détecté'}${(e.signal&&e.signal.concurrent)?' · '+e.signal.concurrent:''}</span>`:''}
-     ${(function(){var sg=sigLk(e);return (sg&&sg.post)?`<span class="badge b-new"><a href="${sg.post}" target="_blank" onclick="event.stopPropagation()" style="color:inherit">🔗 Voir le post</a></span>`:'';})()}
+     ${(function(){var sg=sigLk(e);var pu=postSig(sg);return pu?`<span class="badge b-new"><a href="${pu}" target="_blank" onclick="event.stopPropagation()" style="color:inherit">🔗 Voir le post</a></span>`:'';})()}
      ${e.enrichi_par?(e.score?`<span class="badge b-new">✅ Enrichi par ${e.enrichi_par}</span>`:(e.enrich_lock_ts&&(Date.now()-e.enrich_lock_ts<5*60*1000)?`<span class="badge b-gmb">🔄 En cours par ${e.enrichi_par}</span>`:'')):''}
      ${aEmail?'<span class="badge b-new">Nouveau ✓</span>':(e.detail_charge?'<span class="badge b-signal">À enrichir</span>':'<span class="badge b-dup">Détail non chargé</span>')}
      ${e.deja_hubspot?'<span class="badge b-dup" title="Un contact de cette fiche existe déjà dans HubSpot">🔶 Déjà dans HubSpot</span>':''}
@@ -3749,7 +3749,7 @@ function labelJourAct(d){
  if(diff===1)return "Hier · "+dd;
  return dd+(j.getFullYear()!==auj.getFullYear()?(' '+j.getFullYear()):'');
 }
-function ligneActivite(a){
+function ligneActivite(a,i){
  var t=new Date(a.ts);
  var heure=t.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
  var src=({lemlist:'Lemlist',ringover:'Ringover',sms:'SoReach'})[a.source]||'';
@@ -3759,7 +3759,7 @@ function ligneActivite(a){
  return '<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 2px;border-bottom:1px solid #f1f2f7">'+
    '<span style="flex-shrink:0;width:26px;height:26px;display:flex;align-items:center;justify-content:center;color:#6b7280">'+icoActivite(a)+'</span>'+
    '<div style="flex:1;min-width:0"><div style="font-size:14px">'+escapeHtml(a.titre)+(src?(' <span style="font-size:11px;color:#9aa1b1;border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin-left:6px">'+src+'</span>'):'')+'</div>'+detail+resume+audio+'</div>'+
-   '<div style="flex-shrink:0;text-align:right;white-space:nowrap"><div style="font-size:13px;font-weight:600">'+heure+'</div><div style="font-size:12px;color:#9aa1b1">'+escapeHtml(a.auteur||'systeme')+'</div></div>'+
+   '<div style="flex-shrink:0;text-align:right;white-space:nowrap"><div style="font-size:13px;font-weight:600">'+heure+'</div><div style="font-size:12px;color:#9aa1b1">'+escapeHtml(a.auteur||'systeme')+'</div>'+((a.type==='note'&&a.id&&i!=null)?'<div onclick="editerNote('+i+','+a.id+')" title="Modifier la note" style="cursor:pointer;font-size:12px;color:var(--accent);font-weight:700;margin-top:2px">✏️ modifier</div>':'')+'</div>'+
   '</div>';
 }
 function renderActivite(){
@@ -3837,7 +3837,7 @@ async function ajouterNote(){
 }
 function timelineFiche(e){
  var arr=[];
- (e._act||[]).forEach(function(a){arr.push({source:a.source,type:famTypeAct(a),titre:a.titre,detail:a.detail,auteur:a.auteur,ts:a.ts,record:null});});
+ (e._act||[]).forEach(function(a){arr.push({id:a.id,source:a.source,type:famTypeAct(a),titre:a.titre,detail:a.detail,auteur:a.auteur,ts:a.ts,record:null});});
  var seen={};
  numerosFiche(e).forEach(function(t){var k=cle9Ring(t);if(!k||seen[k])return;seen[k]=1;(RINGOVER_CALLS[k]||[]).forEach(function(c){arr.push(callToActivite(c));});});
  return arr;
@@ -3855,14 +3855,13 @@ function timelineHtml(e,i){
  }
  var groups=[],idx={};
  data.forEach(function(a){var d=new Date(a.ts);var k=d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate();if(idx[k]===undefined){idx[k]=groups.length;groups.push({label:labelJourAct(d),items:[]});}groups[idx[k]].items.push(a);});
- return groups.map(function(g){return '<div style="margin-top:10px"><div style="font-size:12px;font-weight:700;color:var(--ink-soft);padding:6px 0;border-bottom:1px solid var(--line)">'+g.label+'</div>'+g.items.map(ligneActivite).join('')+'</div>';}).join('');
+ return groups.map(function(g){return '<div style="margin-top:10px"><div style="font-size:12px;font-weight:700;color:var(--ink-soft);padding:6px 0;border-bottom:1px solid var(--line)">'+g.label+'</div>'+g.items.map(function(a){return ligneActivite(a,i);}).join('')+'</div>';}).join('');
 }
 function setActFiltre(i,key,val){var e=REAL[i];e._actf=e._actf||{};e._actf[key]=val;var box=document.getElementById('acttl'+i);if(box)box.innerHTML=timelineHtml(e,i);}
 async function chargerActiviteDB(i){
  var e=REAL[i];
  if(e._actLoaded||e._actLoading)return;
- var emails=ficheEmails(e);
- if(!emails.length){e._actLoaded=true;return;}
+ var emails=clesFiche(e);
  e._actLoading=true;
  try{
   var r=await api('/api/activite?emails='+encodeURIComponent(emails.join(',')));
@@ -3872,20 +3871,34 @@ async function chargerActiviteDB(i){
  e._actLoaded=true; e._actLoading=false;
  if(e._open)rerender(i);
 }
+function cleFiche(e){var em=ficheEmails(e)[0]; if(em)return em; var base=String(e.siren||e.nom||e.enseigne||'fiche').toLowerCase().replace(/\s+/g,' ').trim(); return 'fiche:'+(state.savedId||'x')+':'+base;}
+function clesFiche(e){var ems=ficheEmails(e); return ems.length?ems:[cleFiche(e)];}
+async function editerNote(i,id){
+ var e=REAL[i]; var a=(e._act||[]).filter(function(x){return x.id===id;})[0];
+ var actuel=(a&&(a.detail||a.titre))||'';
+ var v=prompt('Modifier la note :',actuel);
+ if(v===null)return; v=v.trim(); if(!v)return;
+ try{
+  var r=await api('/api/activite',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,detail:v})});
+  var d=await r.json();
+  if(d&&d.ok){ if(a)a.detail=v; rerender(i); toast('📝 Note modifiée'); }
+  else{ toast('Modification refusée'+((d&&d.erreur)?(' : '+d.erreur):'')); }
+ }catch(_){ toast('Modification impossible'); }
+}
 async function ajouterNoteFiche(i){
  var e=REAL[i];
  var ta=document.getElementById('note'+i);
  var txt=((ta&&ta.value)||'').trim();
  if(!txt)return;
- var email=ficheEmails(e)[0]||'';
- if(!email){toast("Cette fiche n'a pas d'email — ajoute un contact pour rattacher la note.");return;}
+ var cle=cleFiche(e);
  if(ta)ta.disabled=true;
  try{
-  var r=await api('/api/activite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email,source:'note',type:'note',titre:'Note',detail:txt})});
+  var r=await api('/api/activite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:cle,source:'note',type:'note',titre:'Note',detail:txt})});
   var d=await r.json();
   if(d&&d.ok){
    e._act=e._act||[]; e._actLoaded=true;
-   e._act.unshift({source:'note',type:'note',titre:'Note',detail:txt,auteur:(state.user&&state.user.nom)||'',ts:(d.activite&&d.activite.ts)||new Date().toISOString()});
+   e._act.unshift({id:(d.activite&&d.activite.id)||null,source:'note',type:'note',titre:'Note',detail:txt,auteur:(state.user&&state.user.nom)||'',ts:(d.activite&&d.activite.ts)||new Date().toISOString()});
+   if(ta){ta.value='';ta.disabled=false;}
    rerender(i); toast('📝 Note ajoutée');
   }else{ if(ta)ta.disabled=false; toast('Note non enregistrée'+((d&&d.erreur)?(' : '+d.erreur):'')); }
  }catch(_){ if(ta)ta.disabled=false; toast('Note non enregistrée'); }
@@ -3896,7 +3909,10 @@ function sigLk(e){
  if(!s){var cs=contactsDe(e)||[];for(var k=0;k<cs.length;k++){var g=cs[k]&&cs[k].signal;if(g&&(g.type==='linkedin'||g.interaction||g.concurrent||g.post)){s=g;break;}}}
  return s;
 }
-function sigPourEmail(e){var s=sigLk(e);return s?{interaction:s.interaction||'',concurrent:s.concurrent||'',post:s.post||''}:null;}
+function postSig(s){return (s&&s.post)?s.post:((s&&s.detail&&(String(s.detail).match(/https?:\/\/[^\s]+/)||[])[0])||'');}
+function concDuPost(u){if(!u)return '';var m=String(u).match(/\/posts\/([a-z0-9\-]+?)[_\/]/i)||String(u).match(/\/company\/([a-z0-9\-]+)/i);if(!m)return '';return m[1].replace(/-\d+$/,'').replace(/-/g,' ').trim().split(' ').map(function(w){return w.charAt(0).toUpperCase()+w.slice(1);}).join(' ');}
+function concSig(s){return (s&&s.concurrent)?s.concurrent:concDuPost(postSig(s));}
+function sigPourEmail(e){var s=sigLk(e);if(!s)return null;return {interaction:s.interaction||'',concurrent:concSig(s),post:postSig(s)};}
 function produitConcurrent(nom){
  if(!nom)return null;
  var n=String(nom).toLowerCase().replace(/[^a-z]/g,'');
@@ -3911,7 +3927,7 @@ function produitConcurrent(nom){
 }
 function nomModule(p){return ({soview:'Soview',soconnect:'SoConnect',soreach:'SoReach SMS/RCS',generique:'Générique'})[p]||p;}
 function tagsAngleHtml(e,i){
- var dom=(function(){var sg=sigLk(e);var pc=(sg&&sg.concurrent)?produitConcurrent(sg.concurrent):null;return pc||produitDominant(e);})();
+ var dom=(function(){var sg=sigLk(e);var c=concSig(sg);var pc=c?produitConcurrent(c):null;return pc||produitDominant(e);})();
  var actif=e.angle||dom;
  var mods=[['soview','⭐ Soview'],['soconnect','💬 SoConnect'],['soreach','📱 SoReach SMS/RCS'],['generique','🎯 Générique']];
  var tags=mods.map(function(m){
