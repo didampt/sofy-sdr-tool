@@ -1058,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v198';
+const VERSION='v199';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -3873,10 +3873,12 @@ async function enregistrerActivite(e,c,source,titre,detail){
  try{
   var r=await api('/api/activite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:cle,source:source,type:source,titre:titre,detail:detail||''})});
   var d=await r.json().catch(function(){return {};});
+  console.log('📝 enregistrerActivite → clé="'+cle+'" · http='+r.status+' · ok='+(d&&d.ok)+' · id='+(d&&d.activite&&d.activite.id));
+  if(!r.ok||!(d&&d.ok)){ toast('⚠️ Note NON enregistrée en base ('+r.status+(d&&d.erreur?' : '+d.erreur:'')+')'); }
   e._act=e._act||[]; e._actLoaded=true;
   e._act.unshift({id:(d&&d.activite&&d.activite.id)||null,source:source,type:source,titre:titre,detail:detail||'',auteur:(state.user&&state.user.nom)||'',ts:(d&&d.activite&&d.activite.ts)||new Date().toISOString()});
   var idx=REAL.indexOf(e); if(idx>=0)rerender(idx);
- }catch(_){}
+ }catch(err){ console.error('enregistrerActivite ERREUR',err); toast('⚠️ Note non enregistrée (réseau)'); }
 }
 async function syntheseHubspot(i){
  const e=REAL[i];
@@ -3993,6 +3995,7 @@ async function chargerActiviteDB(i){
   var r=await api('/api/activite?emails='+encodeURIComponent(emails.join(',')));
   var d=await r.json();
   e._act=(d&&d.activites)?d.activites:[];
+  console.log('🔄 chargerActiviteDB · clés='+JSON.stringify(emails)+' · reçues='+((d&&d.activites)?d.activites.length:0));
  }catch(_){ e._act=e._act||[]; }
  e._actLoaded=true; e._actLoading=false;
  if(e._open)rerender(i);
