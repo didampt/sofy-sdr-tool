@@ -799,13 +799,6 @@ Spot-Hit</textarea>
         <div class="save-bar"><button class="btn btn-primary" onclick="sauverEnvois()">💾 Enregistrer</button></div>
       </div>
 
-      <div class="map-card" style="border:2px solid var(--accent)">
-        <h2>🤝 AE & liens de réservation RDV</h2>
-        <div class="role">Liens HubSpot Meetings proposés au SDR quand il clique « 🤝 RDV pris ». Une ligne par AE, au format : <b>Nom | lien</b>. Pour ajouter un AE, ajoute une ligne.</div>
-        <textarea class="field" id="cfg-aes" rows="5" style="width:100%;font-family:monospace;font-size:12px;line-height:1.5" placeholder="Round robin (tous les AE) | https://go.sofy.fr/meetings/mbouly/demo-sdr"></textarea>
-        <div class="save-bar"><button class="btn btn-primary" onclick="sauverAes()">💾 Enregistrer les AE</button></div>
-      </div>
-
       <div class="map-card">
         <h2>✈️ Lemlist — envoi en séquence</h2>
         <div class="role">Déclenché quand le SDR ne joint pas le contact. Le lead part dans la campagne choisie avec toutes ses variables de personnalisation.</div>
@@ -1065,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v195';
+const VERSION='v197';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2906,6 +2899,7 @@ function ficheReal(e,i){
     <div style="display:flex;gap:8px;align-items:stretch;margin-top:4px">
      <textarea class="note-area" id="note${i}" placeholder="Note libre : objection entendue, bon interlocuteur, ressenti terrain…" style="flex:1;margin:0"></textarea>
      <button class="act act-call" style="white-space:nowrap" onclick="ajouterNoteFiche(${i})">➕ Ajouter</button>
+     <button class="act act-copy" style="white-space:nowrap" onclick="syntheseHubspot(${i})" title="Résumé IA de toutes les notes + appels de la fiche → écrit une note sur la fiche HubSpot du contact">🧠 Synthèse → HubSpot</button>
     </div>
     <div id="acttl${i}" style="max-height:300px;overflow-y:auto;margin-top:2px">${timelineHtml(e,i)}</div>
    </div>
@@ -3884,6 +3878,47 @@ async function enregistrerActivite(e,c,source,titre,detail){
   var idx=REAL.indexOf(e); if(idx>=0)rerender(idx);
  }catch(_){}
 }
+async function syntheseHubspot(i){
+ const e=REAL[i];
+ var items=timelineFiche(e).slice().sort(function(a,b){return new Date(a.ts)-new Date(b.ts);});
+ var lignes=items.map(function(a){var dt=new Date(a.ts).toLocaleDateString('fr-FR');return '['+dt+'] '+(a.titre||a.type||'')+(a.detail?(' — '+a.detail):'');});
+ var hist=lignes.join('\n');
+ if(!hist.trim()){toast('Aucune note ni appel à synthétiser sur cette fiche.');return;}
+ var ent=(e.enseigne_ia||e.enseigne||e.nom||'');
+ toast('🧠 Synthèse IA en cours…');
+ try{
+  var r=await api('/api/synthese',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({historique:hist,entreprise:ent})});
+  var d=await r.json();
+  if(!d||!d.synthese){toast((d&&d.erreur)||'Synthèse impossible');return;}
+  apercuSynthese(i,d.synthese);
+ }catch(_){toast('Synthèse impossible (réseau)');}
+}
+function apercuSynthese(i,texte){
+ const m=document.getElementById('confirm-modal');
+ document.getElementById('cm-titre').textContent='🧠 Synthèse IA → note HubSpot';
+ document.getElementById('cm-corps').innerHTML='Vérifie / édite la synthèse, puis envoie-la comme note sur la fiche HubSpot du contact :<textarea id="cm-synth" class="field" rows="12" style="width:100%;margin-top:10px;font-size:13px;line-height:1.5"></textarea>';
+ document.getElementById('cm-synth').value=texte;
+ const ok=document.getElementById('cm-ok');ok.style.display='';ok.textContent='📤 Envoyer vers HubSpot';
+ ok.onclick=function(){m.style.display='none';ok.textContent='OK';envoyerSyntheseHubspot(i,document.getElementById('cm-synth').value);};
+ const an=document.getElementById('cm-annuler');an.textContent='Annuler';an.onclick=function(){m.style.display='none';ok.textContent='OK';};
+ m.style.display='flex';
+}
+async function envoyerSyntheseHubspot(i,texte){
+ const e=REAL[i];
+ texte=(texte||'').trim(); if(!texte)return;
+ var emails=ficheEmails(e);
+ if(e.rdv_contact_email)emails=[e.rdv_contact_email].concat(emails.filter(function(x){return x!==e.rdv_contact_email;}));
+ if(!emails.length){toast('Aucun email de contact — impossible d’écrire la note dans HubSpot.');return;}
+ toast('📤 Envoi de la note vers HubSpot…');
+ try{
+  var r=await api('/api/hubspot-note',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({emails:emails,note:texte})});
+  var d=await r.json();
+  if(d&&d.ok){
+   await enregistrerActivite(e,null,'note','🧠 Synthèse IA (envoyée à HubSpot)',texte);
+   toast('✅ Note ajoutée dans HubSpot'+(d.contactEmail?(' · '+d.contactEmail):''));
+  }else{ toast((d&&d.raison)||'Échec de l’écriture dans HubSpot'); }
+ }catch(_){toast('Échec de l’écriture dans HubSpot (réseau)');}
+}
 async function recupererRdvHubspot(i){
  var e=REAL[i];
  var emails=ficheEmails(e);
@@ -3893,6 +3928,7 @@ async function recupererRdvHubspot(i){
   var r=await api('/api/hubspot-meeting?debug=1&emails='+encodeURIComponent(emails.join(',')));
   var d=await r.json();
   if(d&&d.ok&&d.meeting&&d.meeting.iso){
+   e.rdv_contact_email=d.contactEmail||e.rdv_contact_email;
    var dt=new Date(d.meeting.iso);
    var jour=dt.toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
    var heure=dt.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
@@ -4070,14 +4106,7 @@ var AES_DEFAUT=[
 ];
 var AES_RDV=AES_DEFAUT.slice();
 var AES_CHARGE=false;
-async function chargerAes(){ if(AES_CHARGE)return; try{var r=await api('/api/config');var d=await r.json();var a=(d.config&&d.config.aes);if(Array.isArray(a)&&a.length)AES_RDV=a;}catch(_){} AES_CHARGE=true; }
-function parseAes(txt){ return String(txt||'').split('\n').map(function(l){return l.trim();}).filter(Boolean).map(function(l){var pp=l.split('|');return {nom:(pp[0]||'').trim(),lien:(pp.slice(1).join('|')||'').trim()};}).filter(function(a){return a.nom&&/^https?:\/\//.test(a.lien);}); }
-async function sauverAes(){
- var aes=parseAes(document.getElementById('cfg-aes').value);
- if(!aes.length){toast('Format attendu : Nom | https://…  (une ligne par AE)');return;}
- var r=await api('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({cle:'aes',valeur:aes})});
- var d=await r.json(); if(d.ok){AES_RDV=aes;AES_CHARGE=true;toast('🤝 '+aes.length+' AE enregistrés ✓');}else toast(d.erreur||'Erreur');
-}
+async function chargerAes(){ try{var r=await api('/api/sdrs');var d=await r.json();var arr=((d&&d.sdrs)||[]).filter(function(u){return u.lien_rdv&&/^https?:\/\//.test(u.lien_rdv);}).map(function(u){return {nom:u.nom,lien:u.lien_rdv,role:u.role};}); arr.sort(function(a,b){return (/demo-sdr/.test(b.lien)?1:0)-(/demo-sdr/.test(a.lien)?1:0);}); AES_RDV=arr.length?arr:AES_DEFAUT.slice();}catch(_){AES_RDV=AES_DEFAUT.slice();} AES_CHARGE=true; }
 async function prendreRdv(i){
  const e=REAL[i];
  await chargerAes();
@@ -4089,7 +4118,7 @@ function choisirAeRdv(i,c){
  const m=document.getElementById('confirm-modal');
  document.getElementById('cm-titre').textContent='🤝 RDV pris — quel AE ?';
  document.getElementById('cm-corps').innerHTML='Choisis l\'AE qui prend le RDV :<div id="cm-aes" style="margin-top:12px;display:flex;flex-direction:column;gap:8px"></div>';
- document.getElementById('cm-aes').innerHTML=AES_RDV.map(function(a,k){return '<button class="act act-copy" style="text-align:left;padding:10px" onclick="window._aeChoix('+i+','+k+')"><b>'+escapeHtml(a.nom)+'</b></button>';}).join('');
+ document.getElementById('cm-aes').innerHTML=AES_RDV.map(function(a,k){var lbl=(/demo-sdr/.test(a.lien||'')?'Round robin (équipe) — ':'')+escapeHtml(a.nom);return '<button class="act act-copy" style="text-align:left;padding:10px" onclick="window._aeChoix('+i+','+k+')"><b>'+lbl+'</b></button>';}).join('');
  window._aeChoix=function(fi,fk){m.style.display='none';document.getElementById('cm-ok').style.display='';ouvrirRdv(fi,c,AES_RDV[fk]);};
  document.getElementById('cm-ok').style.display='none';
  const an=document.getElementById('cm-annuler');an.textContent='Annuler';
@@ -4264,9 +4293,6 @@ async function chargerEnvois(){
   document.getElementById('cfg-hub-pipeline').value=hub.pipeline||'';
   document.getElementById('cfg-hub-stage').value=hub.stage||'';
   document.getElementById('cfg-hub-owner').value=hub.owner||'';
-  var _aes=(d.config&&d.config.aes);if(!Array.isArray(_aes)||!_aes.length)_aes=AES_DEFAUT;
-  AES_RDV=_aes;AES_CHARGE=true;
-  var _ta=document.getElementById('cfg-aes');if(_ta)_ta.value=_aes.map(function(a){return a.nom+' | '+a.lien;}).join('\n');
  }catch(_){}
 }
 async function chargerHotleads(){
@@ -4514,13 +4540,14 @@ async function chargerSdrs(){
   const d=await r.json();
   if(d.erreur){t.innerHTML='<tr><td colspan="6">'+d.erreur+'</td></tr>';return;}
   const sup=state.user&&state.user.role==='superadmin';
-  t.innerHTML='<tr><th>Nom</th><th>Email</th><th>✈️ Email Lemlist</th><th>☎️ Ringover</th><th>💬 Slack ID</th><th>Rôle</th><th>Limite € / mois</th><th>Mot de passe</th><th>Actif</th><th></th></tr>'+
+  t.innerHTML='<tr><th>Nom</th><th>Email</th><th>✈️ Email Lemlist</th><th>☎️ Ringover</th><th>💬 Slack ID</th><th>📅 Lien RDV</th><th>Rôle</th><th>Limite € / mois</th><th>Mot de passe</th><th>Actif</th><th></th></tr>'+
    (d.sdrs||[]).map(s=>`<tr>
     <td><input class="field" value="${s.nom}" id="sn${s.id}"></td>
     <td><input class="field" value="${s.email||''}" placeholder="email@sofy.fr" id="se${s.id}"></td>
     <td><input class="field" value="${s.email_envoi||''}" placeholder="franck@getsofy.fr" id="sx${s.id}" title="Adresse expéditeur Lemlist (Dynamic Senders)"></td>
     <td><input class="field" value="${s.ringover_numero||''}" placeholder="07 12 34 56 78" id="sr${s.id}" title="Ligne Ringover du SDR/AE — l'indicatif +33 (ou DOM) est ajouté automatiquement"></td>
     <td><input class="field" value="${s.slack_id||''}" placeholder="U07ABC123" id="ss${s.id}" title="Slack Member ID (profil Slack → Copier l'ID du membre) — pour les rappels en DM"></td>
+    <td><input class="field" value="${s.lien_rdv||''}" placeholder="https://go.sofy.fr/meetings/…" id="srdv${s.id}" title="Lien de réservation HubSpot Meetings de cet AE (proposé au clic « RDV pris »)"></td>
     <td><select class="field" id="sg${s.id}" ${sup?'':'disabled title="Seul le superadmin change les rôles"'}>
       <option value="sdr" ${(!s.role||s.role==='sdr')?'selected':''}>SDR</option>
       <option value="ae" ${s.role==='ae'?'selected':''}>AE (account executive)</option>
@@ -4555,6 +4582,7 @@ async function majSdr(id){
    limite_credits:limite===''?null:limite,actif:document.getElementById('sa'+id).checked,
    ringover_numero:(document.getElementById('sr'+id)||{}).value,
    slack_id:(document.getElementById('ss'+id)||{}).value,
+   lien_rdv:(document.getElementById('srdv'+id)||{}).value,
    role:(document.getElementById('sg'+id)||{}).value,
    password:document.getElementById('sp'+id).value||undefined})});
  const d=await r.json();
