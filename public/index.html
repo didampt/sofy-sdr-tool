@@ -1058,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v201';
+const VERSION='v202';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -4166,21 +4166,9 @@ function ouvrirRdv(i,c,ae){
  if(ent)params.set('company',ent);
  const tel=en.telephone||(e.gmb&&e.gmb.telephone)||'';
  if(tel)params.set('mobilephone',tel);
- // Champ "Décrivez votre besoin" (revops_message) : résumé d'appel Ringover (prioritaire) + note SDR + synthèse IA
- const sc=e.score||{};
- const bouts=[];
- // 🎧 Résumé du dernier appel Ringover (ce que le prospect a réellement dit) — en tête
- const resumeRingover=dernierResumeRingover(e);
- if(resumeRingover)bouts.push('Résumé du dernier appel : '+resumeRingover);
- var _notes=timelineFiche(e).filter(function(a){return a.type==='note';}).slice(0,5).map(function(a){return '- '+a.detail;});
- if(_notes.length)bouts.push('Notes SDR :\n'+_notes.join('\n'));
- else if(e.notes_sdr)bouts.push('Note SDR : '+e.notes_sdr);
- var _act=timelineFiche(e).filter(function(a){return a.type!=='note';}).slice(0,6).map(function(a){return '- '+new Date(a.ts).toLocaleDateString('fr-FR')+' : '+a.titre+(a.detail?(' ('+a.detail+')'):'');});
- if(_act.length)bouts.push('Activité récente :\n'+_act.join('\n'));
- if(sc.synthese)bouts.push(sc.synthese);
- if(sc.signaux&&sc.signaux.length)bouts.push('Signaux : '+sc.signaux.join(' · '));
- const besoin=bouts.join('\n\n').slice(0,1500);
- if(besoin)params.set('revops_message',besoin);
+ // Le champ "Décrivez votre besoin" (revops_message) n'est PLUS pré-rempli :
+ // il apparaissait dans l'invitation Google du RDV et exposait les notes internes au client.
+ // Les notes/appels remontent désormais dans HubSpot via « 🧠 Synthèse → HubSpot ».
  const sep=base.indexOf('?')>=0?'&':'?';
  const url=base+(params.toString()?sep+params.toString():'');
  window.open(url,'_blank');
