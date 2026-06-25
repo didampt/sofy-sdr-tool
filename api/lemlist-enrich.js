@@ -50,9 +50,11 @@ export default async function handler(req, res) {
     if (!c.linkedin && !c.email && !(c.nom && (ent.site || ent.nom))) {
       return res.status(200).json({ erreur: 'Pas assez d’infos (nom + société/domaine, ou LinkedIn, ou email)' });
     }
+    const wantEmail = b.findEmail !== false;
+    const wantPhone = b.findPhone !== false;
     const params = new URLSearchParams();
-    params.set('findEmail', 'true');
-    params.set('findPhone', 'true');
+    if (wantEmail || (!wantEmail && !wantPhone)) params.set('findEmail', 'true');
+    if (wantPhone) params.set('findPhone', 'true');
     if (c.prenom) params.set('firstName', c.prenom);
     if (c.nom) params.set('lastName', c.nom);
     if (c.linkedin) params.set('linkedinUrl', c.linkedin.startsWith('http') ? c.linkedin : 'https://' + c.linkedin);
