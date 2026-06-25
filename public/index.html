@@ -1058,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v187';
+const VERSION='v188';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2753,7 +2753,7 @@ function ficheReal(e,i){
      ${badgeEngagement(e)}
      ${e.gmb&&e.gmb.trouve&&typeof e.gmb.note_moyenne==='number'?`<span class="badge b-gmb">GMB ${String(e.gmb.note_moyenne).replace('.',',')} ★ (${e.gmb.total_avis} avis)</span>`:''}
      ${e.maps_url?`<span class="badge b-new"><a href="${e.maps_url}" target="_blank" onclick="event.stopPropagation()" style="color:inherit">📍 Google Maps</a></span>`:''}
-     ${(()=>{const s=e.source_hotlead||(e.signal&&e.signal.source)||'';if(!s&&!e.signal_hot)return '';const estRB2B=s==='RB2B';return `<span class="badge b-source">${estRB2B?'📍 source sofy.fr':'💼 source LinkedIn'}</span>`;})()}
+     ${(()=>{var sf=sourceFiche(e);return sf?`<span class="badge ${sf.cls}">${sf.label}</span>`:'';})()}
      ${e.signal_hot?`<span class="badge b-signal">${(e.signal&&e.signal.emoji)?e.signal.emoji:'🔥'} ${(e.signal&&e.signal.interaction)?e.signal.interaction:'Signal détecté'}${(e.signal&&e.signal.concurrent)?' · '+e.signal.concurrent:''}</span>`:''}
      ${(function(){var sg=sigLk(e);var pu=postSig(sg);return pu?`<span class="badge b-new"><a href="${pu}" target="_blank" onclick="event.stopPropagation()" style="color:inherit">🔗 Voir le post</a></span>`:'';})()}
      ${e.enrichi_par?(e.score?`<span class="badge b-new">✅ Enrichi par ${e.enrichi_par}</span>`:(e.enrich_lock_ts&&(Date.now()-e.enrich_lock_ts<5*60*1000)?`<span class="badge b-gmb">🔄 En cours par ${e.enrichi_par}</span>`:'')):''}
@@ -2858,13 +2858,13 @@ function ficheReal(e,i){
       <button class="btn-cta btn-cta-blue" onclick="ouvrirChoixLemlist(${i})">✈️ Envoyer via Lemlist</button>
      </div>
      <div class="cta-row" style="margin-top:0">
-      <button class="btn-cta btn-cta-coral" onclick="prendreRdv(${i})">🤝 RDV pris — réserver pour un AE</button>
+      <button class="btn-cta btn-cta-coral" onclick="prendreRdv(${i})">🤝 RDV pris — réserver pour un AE</button>${(e.tags_sdr||[]).includes('🤝 RDV pris')?`<button class="btn-cta btn-cta-dark" onclick="recupererRdvHubspot(${i})">📅 Date du RDV (HubSpot)</button>`:''}
      </div>`:`
      <div class="hint" style="margin-bottom:10px">Pas de scoring sur cette fiche — lance 🎯 Scorer pour l'analyse complète, ou choisis un angle ci-dessous (l'IA rédige l'email ; 🎯 Générique = toute la suite Sofy).</div>
      ${tagsAngleHtml(e,i)}
      <div class="cta-row" style="margin-top:12px">
       <button class="btn-cta btn-cta-blue" onclick="ouvrirChoixLemlist(${i})">✈️ Envoyer via Lemlist</button>
-      <button class="btn-cta btn-cta-coral" onclick="prendreRdv(${i})">🤝 RDV pris — réserver pour un AE</button>
+      <button class="btn-cta btn-cta-coral" onclick="prendreRdv(${i})">🤝 RDV pris — réserver pour un AE</button>${(e.tags_sdr||[]).includes('🤝 RDV pris')?`<button class="btn-cta btn-cta-dark" onclick="recupererRdvHubspot(${i})">📅 Date du RDV (HubSpot)</button>`:''}
      </div>`}
     </div>
    </div>
@@ -3813,9 +3813,35 @@ async function ouvrirActivite(i){
  }
 }
 async function enregistrerActivite(e,c,source,titre,detail){
- var email=(c&&c.enrich&&c.enrich.email)||ficheEmails(e)[0]||'';
- if(!email)return;
- try{ await api('/api/activite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email,source:source,type:source,titre:titre,detail:detail||''})}); }catch(_){}
+ var cle=(c&&c.enrich&&c.enrich.email)||cleFiche(e);
+ try{
+  var r=await api('/api/activite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:cle,source:source,type:source,titre:titre,detail:detail||''})});
+  var d=await r.json().catch(function(){return {};});
+  e._act=e._act||[]; e._actLoaded=true;
+  e._act.unshift({id:(d&&d.activite&&d.activite.id)||null,source:source,type:source,titre:titre,detail:detail||'',auteur:(state.user&&state.user.nom)||'',ts:(d&&d.activite&&d.activite.ts)||new Date().toISOString()});
+  var idx=REAL.indexOf(e); if(idx>=0)rerender(idx);
+ }catch(_){}
+}
+async function recupererRdvHubspot(i){
+ var e=REAL[i];
+ var email=ficheEmails(e)[0]||'';
+ if(!email){toast('Aucun email de contact sur cette fiche — RDV HubSpot introuvable.');return;}
+ toast('🔎 Recherche du RDV dans HubSpot…');
+ try{
+  var r=await api('/api/hubspot-meeting?email='+encodeURIComponent(email));
+  var d=await r.json();
+  if(d&&d.ok&&d.meeting&&d.meeting.iso){
+   var dt=new Date(d.meeting.iso);
+   var jour=dt.toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+   var heure=dt.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+   await enregistrerActivite(e,null,'rdv','RDV confirmé','📅 '+jour+' à '+heure+(d.meeting.titre?(' · '+d.meeting.titre):''));
+   toast('📅 RDV récupéré : '+jour+' à '+heure);
+  }else if(d&&d.ok){
+   toast('Aucun RDV trouvé dans HubSpot (le prospect ne l’a peut-être pas encore réservé).');
+  }else{
+   toast('RDV HubSpot indisponible'+((d&&d.erreur)?(' : '+d.erreur):'')+'.');
+  }
+ }catch(_){ toast('Erreur lors de la récupération du RDV.'); }
 }
 async function ajouterNote(){
  if(!ACT_CTX)return;
@@ -3870,6 +3896,19 @@ async function chargerActiviteDB(i){
  }catch(_){ e._act=e._act||[]; }
  e._actLoaded=true; e._actLoading=false;
  if(e._open)rerender(i);
+}
+function sourceFiche(e){
+ if(e.signal_hot||e.source_hotlead){
+  var sr=e.source_hotlead||(e.signal&&e.signal.source)||'';
+  return {label:(sr==='RB2B'?'📍 source sofy.fr':'💼 source LinkedIn'),cls:'b-source'};
+ }
+ var cr=state.criteres||{};
+ var cs=((contactsDe(e)[0]||{}).source)||e.source||'';
+ if(cr.manuelle||cs==='manuelle'||cs==='sdr'||e.telephone_google)return {label:'✍️ Ajout manuel',cls:'b-source'};
+ if(cr.ia)return {label:'🤖 Liste intelligente',cls:'b-source'};
+ if(cs==='linkedin'||(e.signal&&e.signal.type==='linkedin'))return {label:'💼 source LinkedIn',cls:'b-source'};
+ if(e.siren||cs==='pappers')return {label:'🏢 Pappers',cls:'b-source'};
+ return null;
 }
 function cleFiche(e){var em=ficheEmails(e)[0]; if(em)return em; var base=String(e.siren||e.nom||e.enseigne||'fiche').toLowerCase().replace(/\s+/g,' ').trim(); return 'fiche:'+(state.savedId||'x')+':'+base;}
 function clesFiche(e){var ems=ficheEmails(e); return ems.length?ems:[cleFiche(e)];}
