@@ -1,5 +1,6 @@
-// /api/hubspot-meeting.js — RDV (meeting) HubSpot d'une fiche. Teste TOUS les emails de la fiche.
-// GET ?emails=a@x.fr,b@y.fr[&debug=1]  (ou ?email=a@x.fr) -> { ok:true, meeting:{iso,titre} } | { ok:false, raison, diag? }
+// /api/hubspot-meeting.js — RDV (meeting) HubSpot d'une fiche. Teste TOUS les emails, renvoie le contact + lien HubSpot.
+// GET ?emails=a@x.fr,b@y.fr[&debug=1]
+//   -> { ok:true, meeting:{iso,titre}, contactEmail, contactId, hubspotUrl } | { ok:false, raison, diag? }
 import { verifierToken } from './db.js';
 
 export const config = { maxDuration: 30 };
@@ -10,6 +11,18 @@ async function hs(url, token, opts = {}) {
   const r = await fetch(url, { ...opts, headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, ...(opts.headers || {}) } });
   let body = null; try { body = await r.json(); } catch (_) { body = null; }
   return { ok: r.ok, status: r.status, body };
+}
+
+async function portalId(token) {
+  try {
+    const a = await hs('https://api.hubapi.com/account-info/v3/details', token);
+    if (a.ok && a.body && a.body.portalId) return a.body.portalId;
+  } catch (_) {}
+  try {
+    const b = await hs('https://api.hubapi.com/integrations/v1/me', token);
+    if (b.ok && b.body && b.body.portalId) return b.body.portalId;
+  } catch (_) {}
+  return null;
 }
 
 export default async function handler(req, res) {
@@ -27,7 +40,9 @@ export default async function handler(req, res) {
 
   try {
     let allIds = [];
+    const idToContact = {};   // meetingId -> { email, cid }
     let auMoinsUnContact = false;
+
     for (const email of emails) {
       const cs = await hs('https://api.hubapi.com/crm/v3/objects/contacts/search', token, {
         method: 'POST',
@@ -45,6 +60,7 @@ export default async function handler(req, res) {
       }
       const ids = ((as.body && as.body.results) || []).map(x => x.toObjectId || x.id).filter(Boolean);
       diag.parContact.push({ email, cid, nbAssoc: ids.length });
+      for (const id of ids) { if (!idToContact[id]) idToContact[id] = { email, cid }; }
       allIds = allIds.concat(ids);
     }
     allIds = [...new Set(allIds)];
@@ -60,7 +76,7 @@ export default async function handler(req, res) {
     if (!mr.ok) return out({ ok: false, raison: 'Lecture du détail des RDV refusée (HTTP ' + mr.status + ')' });
     const list = ((mr.body && mr.body.results) || []).map(m => {
       const p = m.properties || {};
-      return { start: toMs(p.hs_meeting_start_time) || toMs(p.hs_timestamp), titre: p.hs_meeting_title || 'RDV' };
+      return { id: m.id, start: toMs(p.hs_meeting_start_time) || toMs(p.hs_timestamp), titre: p.hs_meeting_title || 'RDV' };
     }).filter(m => m.start);
     diag.nbMeetingsDates = list.length;
     if (!list.length) return out({ ok: false, raison: 'RDV trouvé(s) mais sans date exploitable' });
@@ -68,7 +84,11 @@ export default async function handler(req, res) {
     const now = Date.now();
     const futurs = list.filter(m => m.start >= now).sort((a, b) => a.start - b.start);
     const choisi = futurs[0] || list.sort((a, b) => b.start - a.start)[0];
-    return out({ ok: true, meeting: { iso: new Date(choisi.start).toISOString(), titre: choisi.titre } });
+    const ci = idToContact[choisi.id] || {};
+    const pid = await portalId(token);
+    const hubspotUrl = (pid && ci.cid) ? `https://app.hubspot.com/contacts/${pid}/contact/${ci.cid}` : null;
+
+    return out({ ok: true, meeting: { iso: new Date(choisi.start).toISOString(), titre: choisi.titre }, contactEmail: ci.email || null, contactId: ci.cid || null, hubspotUrl });
   } catch (e) {
     diag.exception = String(e.message || e).slice(0, 150);
     return out({ ok: false, raison: 'Erreur HubSpot : ' + String(e.message || e).slice(0, 150) });
