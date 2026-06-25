@@ -1058,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v185';
+const VERSION='v186';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2755,6 +2755,7 @@ function ficheReal(e,i){
      ${e.maps_url?`<span class="badge b-new"><a href="${e.maps_url}" target="_blank" onclick="event.stopPropagation()" style="color:inherit">📍 Google Maps</a></span>`:''}
      ${(()=>{const s=e.source_hotlead||(e.signal&&e.signal.source)||'';if(!s&&!e.signal_hot)return '';const estRB2B=s==='RB2B';return `<span class="badge b-source">${estRB2B?'📍 source sofy.fr':'💼 source LinkedIn'}</span>`;})()}
      ${e.signal_hot?`<span class="badge b-signal">${(e.signal&&e.signal.emoji)?e.signal.emoji:'🔥'} ${(e.signal&&e.signal.interaction)?e.signal.interaction:'Signal détecté'}${(e.signal&&e.signal.concurrent)?' · '+e.signal.concurrent:''}</span>`:''}
+     ${(function(){var sg=sigLk(e);return (sg&&sg.post)?`<span class="badge b-new"><a href="${sg.post}" target="_blank" onclick="event.stopPropagation()" style="color:inherit">🔗 Voir le post</a></span>`:'';})()}
      ${e.enrichi_par?(e.score?`<span class="badge b-new">✅ Enrichi par ${e.enrichi_par}</span>`:(e.enrich_lock_ts&&(Date.now()-e.enrich_lock_ts<5*60*1000)?`<span class="badge b-gmb">🔄 En cours par ${e.enrichi_par}</span>`:'')):''}
      ${aEmail?'<span class="badge b-new">Nouveau ✓</span>':(e.detail_charge?'<span class="badge b-signal">À enrichir</span>':'<span class="badge b-dup">Détail non chargé</span>')}
      ${e.deja_hubspot?'<span class="badge b-dup" title="Un contact de cette fiche existe déjà dans HubSpot">🔶 Déjà dans HubSpot</span>':''}
@@ -3890,9 +3891,27 @@ async function ajouterNoteFiche(i){
  }catch(_){ if(ta)ta.disabled=false; toast('Note non enregistrée'); }
 }
 var COUT_EMAIL_OPUS_EUR='0,01';
+function sigLk(e){
+ var s=(e.signal&&(e.signal.type==='linkedin'||e.signal.interaction||e.signal.concurrent||e.signal.post))?e.signal:null;
+ if(!s){var cs=contactsDe(e)||[];for(var k=0;k<cs.length;k++){var g=cs[k]&&cs[k].signal;if(g&&(g.type==='linkedin'||g.interaction||g.concurrent||g.post)){s=g;break;}}}
+ return s;
+}
+function sigPourEmail(e){var s=sigLk(e);return s?{interaction:s.interaction||'',concurrent:s.concurrent||'',post:s.post||''}:null;}
+function produitConcurrent(nom){
+ if(!nom)return null;
+ var n=String(nom).toLowerCase().replace(/[^a-z]/g,'');
+ if(!n)return null;
+ var V=['partoo','guestsuite','custplace','trustfolio','skeepers','localranker','digitaleo','solocal','google','gmb'];
+ var C=['simio','alcmeon','greenbureau'];
+ var R=['smspartner','smsfactor','esendex','brevo','octopush','allmysms','spothit'];
+ if(V.some(function(x){return n.indexOf(x)>=0;}))return 'soview';
+ if(C.some(function(x){return n.indexOf(x)>=0;}))return 'soconnect';
+ if(R.some(function(x){return n.indexOf(x)>=0;}))return 'soreach';
+ return null;
+}
 function nomModule(p){return ({soview:'Soview',soconnect:'SoConnect',soreach:'SoReach SMS/RCS',generique:'Générique'})[p]||p;}
 function tagsAngleHtml(e,i){
- var dom=produitDominant(e);
+ var dom=(function(){var sg=sigLk(e);var pc=(sg&&sg.concurrent)?produitConcurrent(sg.concurrent):null;return pc||produitDominant(e);})();
  var actif=e.angle||dom;
  var mods=[['soview','⭐ Soview'],['soconnect','💬 SoConnect'],['soreach','📱 SoReach SMS/RCS'],['generique','🎯 Générique']];
  var tags=mods.map(function(m){
@@ -3916,7 +3935,7 @@ async function choisirAngle(i,produit){
  e._prog={label:'✍️ Rédaction ('+nomModule(produit)+')…',pct:65}; rerender(i);
  var ctrl=new AbortController(); var to=setTimeout(function(){ctrl.abort();},75000);
  try{
-  var r=await api('/api/email-angle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({entreprise:donneesPourScore(e),sdr:(state.user&&state.user.nom)||'',produit:produit}),signal:ctrl.signal});
+  var r=await api('/api/email-angle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({entreprise:donneesPourScore(e),sdr:(state.user&&state.user.nom)||'',produit:produit,signal:sigPourEmail(e)}),signal:ctrl.signal});
   var d=await r.json();
   if(d&&d.ok&&d.email){ e.emails_angle[produit]=d.email; e.score=e.score||{}; e.score.email=d.email; e.angle=produit; }
   else{ toast('Génération impossible'+((d&&d.erreur)?(' : '+d.erreur):'')); }
