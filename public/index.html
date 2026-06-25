@@ -1058,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v191';
+const VERSION='v192';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -3882,7 +3882,7 @@ async function recupererRdvHubspot(i){
  if(!email){toast('Aucun email de contact sur cette fiche — RDV HubSpot introuvable.');return;}
  toast('🔎 Recherche du RDV dans HubSpot…');
  try{
-  var r=await api('/api/hubspot-meeting?email='+encodeURIComponent(email));
+  var r=await api('/api/hubspot-meeting?debug=1&email='+encodeURIComponent(email));
   var d=await r.json();
   if(d&&d.ok&&d.meeting&&d.meeting.iso){
    var dt=new Date(d.meeting.iso);
@@ -3890,10 +3890,9 @@ async function recupererRdvHubspot(i){
    var heure=dt.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
    await enregistrerActivite(e,null,'rdv','RDV confirmé','📅 '+jour+' à '+heure+(d.meeting.titre?(' · '+d.meeting.titre):''));
    toast('📅 RDV récupéré : '+jour+' à '+heure);
-  }else if(d&&d.ok){
-   toast('Aucun RDV trouvé dans HubSpot (le prospect ne l’a peut-être pas encore réservé).');
   }else{
-   toast('RDV HubSpot indisponible'+((d&&d.erreur)?(' : '+d.erreur):'')+'.');
+   toast((d&&(d.raison||d.erreur))||'Aucun RDV trouvé dans HubSpot.');
+   if(d&&d.diag)console.log('🔎 RDV HubSpot — diagnostic :',d.diag);
   }
  }catch(_){ toast('Erreur lors de la récupération du RDV.'); }
 }
