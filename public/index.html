@@ -1058,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v202';
+const VERSION='v203';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2141,7 +2141,7 @@ function persister(supprimees){
   const payload={id:state.savedId,entreprises:REAL};
   if(Array.isArray(supprimees)&&supprimees.length)payload.supprimees=supprimees;
   api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify(payload,(k,v)=>(k==='_busy'||k==='_open'||k==='_prog')?undefined:v)}).catch(()=>{});
+   body:JSON.stringify(payload,(k,v)=>(k==='_busy'||k==='_open'||k==='_prog'||k==='_act'||k==='_actLoaded'||k==='_actLoading'||k==='_actf')?undefined:v)}).catch(()=>{});
  }
 }
 
@@ -3987,7 +3987,7 @@ function timelineHtml(e,i){
 function setActFiltre(i,key,val){var e=REAL[i];e._actf=e._actf||{};e._actf[key]=val;var box=document.getElementById('acttl'+i);if(box)box.innerHTML=timelineHtml(e,i);}
 async function chargerActiviteDB(i){
  var e=REAL[i];
- if(e._actLoaded||e._actLoading)return;
+ if(e._actLoading)return;
  var emails=clesFiche(e);
  e._actLoading=true;
  try{
