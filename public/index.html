@@ -799,6 +799,13 @@ Spot-Hit</textarea>
         <div class="save-bar"><button class="btn btn-primary" onclick="sauverEnvois()">💾 Enregistrer</button></div>
       </div>
 
+      <div class="map-card" style="border:2px solid var(--accent)">
+        <h2>🤝 AE & liens de réservation RDV</h2>
+        <div class="role">Liens HubSpot Meetings proposés au SDR quand il clique « 🤝 RDV pris ». Une ligne par AE, au format : <b>Nom | lien</b>. Pour ajouter un AE, ajoute une ligne.</div>
+        <textarea class="field" id="cfg-aes" rows="5" style="width:100%;font-family:monospace;font-size:12px;line-height:1.5" placeholder="Round robin (tous les AE) | https://go.sofy.fr/meetings/mbouly/demo-sdr"></textarea>
+        <div class="save-bar"><button class="btn btn-primary" onclick="sauverAes()">💾 Enregistrer les AE</button></div>
+      </div>
+
       <div class="map-card">
         <h2>✈️ Lemlist — envoi en séquence</h2>
         <div class="role">Déclenché quand le SDR ne joint pas le contact. Le lead part dans la campagne choisie avec toutes ses variables de personnalisation.</div>
@@ -1058,7 +1065,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v194';
+const VERSION='v195';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -4056,7 +4063,40 @@ async function choisirAngle(i,produit){
  e._busy=false; e._prog=null; rerender(i); persister();
 }
 
-function prendreRdv(i){
+var AES_DEFAUT=[
+ {nom:'Round robin (tous les AE)',lien:'https://go.sofy.fr/meetings/mbouly/demo-sdr'},
+ {nom:'Étienne',lien:'https://go.sofy.fr/meetings/habera/demo-etienne?uuid=c4a8a637-d163-417e-89c5-73ba9604c0eb'},
+ {nom:'Sarah',lien:'https://go.sofy.fr/meetings/selmoubarak-grenet/demo-sarah?uuid=cfef7c9b-9d1f-449c-b7af-82694e485cf0'}
+];
+var AES_RDV=AES_DEFAUT.slice();
+var AES_CHARGE=false;
+async function chargerAes(){ if(AES_CHARGE)return; try{var r=await api('/api/config');var d=await r.json();var a=(d.config&&d.config.aes);if(Array.isArray(a)&&a.length)AES_RDV=a;}catch(_){} AES_CHARGE=true; }
+function parseAes(txt){ return String(txt||'').split('\n').map(function(l){return l.trim();}).filter(Boolean).map(function(l){var pp=l.split('|');return {nom:(pp[0]||'').trim(),lien:(pp.slice(1).join('|')||'').trim()};}).filter(function(a){return a.nom&&/^https?:\/\//.test(a.lien);}); }
+async function sauverAes(){
+ var aes=parseAes(document.getElementById('cfg-aes').value);
+ if(!aes.length){toast('Format attendu : Nom | https://…  (une ligne par AE)');return;}
+ var r=await api('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({cle:'aes',valeur:aes})});
+ var d=await r.json(); if(d.ok){AES_RDV=aes;AES_CHARGE=true;toast('🤝 '+aes.length+' AE enregistrés ✓');}else toast(d.erreur||'Erreur');
+}
+async function prendreRdv(i){
+ const e=REAL[i];
+ await chargerAes();
+ const cands=contactsDe(e).filter(x=>x.nom||(x.enrich&&x.enrich.email));
+ if(cands.length>1){ choisirContactRdv(i,cands); return; }
+ choisirAeRdv(i,cands[0]||contactsDe(e)[0]||{});
+}
+function choisirAeRdv(i,c){
+ const m=document.getElementById('confirm-modal');
+ document.getElementById('cm-titre').textContent='🤝 RDV pris — quel AE ?';
+ document.getElementById('cm-corps').innerHTML='Choisis l\'AE qui prend le RDV :<div id="cm-aes" style="margin-top:12px;display:flex;flex-direction:column;gap:8px"></div>';
+ document.getElementById('cm-aes').innerHTML=AES_RDV.map(function(a,k){return '<button class="act act-copy" style="text-align:left;padding:10px" onclick="window._aeChoix('+i+','+k+')"><b>'+escapeHtml(a.nom)+'</b></button>';}).join('');
+ window._aeChoix=function(fi,fk){m.style.display='none';document.getElementById('cm-ok').style.display='';ouvrirRdv(fi,c,AES_RDV[fk]);};
+ document.getElementById('cm-ok').style.display='none';
+ const an=document.getElementById('cm-annuler');an.textContent='Annuler';
+ an.onclick=function(){m.style.display='none';document.getElementById('cm-ok').style.display='';};
+ m.style.display='flex';
+}
+function _prendreRdv_OLD(i){
  const e=REAL[i];
  // Contacts candidats (avec au moins un nom ou un email)
  const cands=contactsDe(e).filter(x=>x.nom||(x.enrich&&x.enrich.email));
@@ -4074,19 +4114,20 @@ function choisirContactRdv(i,cands){
   const sub=[en.email,en.telephone,c.fonction].filter(Boolean).join(' · ')||'pas de détail';
   return `<button class="act act-copy" style="text-align:left;padding:10px" onclick="window._rdvChoix(${i},${k})"><b>${((c.prenom||'')+' '+(c.nom||'')).trim()||'Contact '+(k+1)}</b><br><span style="font-size:12px;color:var(--ink-soft)">${sub}</span></button>`;
  }).join('');
- window._rdvChoix=(fi,fk)=>{m.style.display='none';ouvrirRdv(fi,cands[fk]);};
+ window._rdvChoix=(fi,fk)=>{m.style.display='none';choisirAeRdv(fi,cands[fk]);};
  document.getElementById('cm-ok').style.display='none';
  const an=document.getElementById('cm-annuler');an.textContent='Annuler';
  an.onclick=()=>{m.style.display='none';document.getElementById('cm-ok').style.display='';};
  m.style.display='flex';
 }
-function ouvrirRdv(i,c){
+function ouvrirRdv(i,c,ae){
+ const ae0=ae||AES_RDV[0]||{};
  const e=REAL[i];
  c=c||{};
  const ent=e.enseigne_ia||e.enseigne||e.nom||'';
  const en=c.enrich||{};
  // Préremplissage du lien round-robin AE (champs connus)
- const base='https://go.sofy.fr/meetings/mbouly/demo-sdr';
+ const base=ae0.lien||'https://go.sofy.fr/meetings/mbouly/demo-sdr';
  const params=new URLSearchParams();
  if(c.prenom)params.set('firstname',c.prenom);
  if(c.nom)params.set('lastname',c.nom);
@@ -4109,7 +4150,8 @@ function ouvrirRdv(i,c){
  if(sc.signaux&&sc.signaux.length)bouts.push('Signaux : '+sc.signaux.join(' · '));
  const besoin=bouts.join('\n\n').slice(0,1500);
  if(besoin)params.set('revops_message',besoin);
- const url=base+(params.toString()?'?'+params.toString():'');
+ const sep=base.indexOf('?')>=0?'&':'?';
+ const url=base+(params.toString()?sep+params.toString():'');
  window.open(url,'_blank');
  // Marque la fiche RDV pris (prioritaire : efface un statut d'appel contradictoire)
  e.hubspot_envoye=true;
@@ -4118,8 +4160,8 @@ function ouvrirRdv(i,c){
  e.traite_par=state.user?state.user.nom:'?';
  e.traite_le=new Date().toISOString();
  rerender(i);persister();majTraites();
- enregistrerActivite(e,c,'rdv','RDV pris','Réservation AE ouverte'+(ent?(' · '+ent):''));
- toast('📅 Page de réservation ouverte'+(c.prenom?' pour '+c.prenom:'')+' — champs préremplis');
+ enregistrerActivite(e,c,'rdv','RDV pris','Réservation ouverte'+(ae0.nom?(' · AE : '+ae0.nom):'')+(ent?(' · '+ent):''));
+ toast('📅 Réservation '+(ae0.nom?('('+ae0.nom+') '):'')+'ouverte'+(c.prenom?' pour '+c.prenom:'')+' — champs préremplis');
 }
 async function envoyerHubspot(i){
  const e=REAL[i];
@@ -4222,6 +4264,9 @@ async function chargerEnvois(){
   document.getElementById('cfg-hub-pipeline').value=hub.pipeline||'';
   document.getElementById('cfg-hub-stage').value=hub.stage||'';
   document.getElementById('cfg-hub-owner').value=hub.owner||'';
+  var _aes=(d.config&&d.config.aes);if(!Array.isArray(_aes)||!_aes.length)_aes=AES_DEFAUT;
+  AES_RDV=_aes;AES_CHARGE=true;
+  var _ta=document.getElementById('cfg-aes');if(_ta)_ta.value=_aes.map(function(a){return a.nom+' | '+a.lien;}).join('\n');
  }catch(_){}
 }
 async function chargerHotleads(){
