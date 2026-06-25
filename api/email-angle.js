@@ -17,9 +17,21 @@ export default async function handler(req, res) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ erreur: 'ANTHROPIC_API_KEY manquante' });
 
-  const { entreprise = {}, sdr = '', produit = 'generique' } = req.body || {};
+  const { entreprise = {}, sdr = '', produit = 'generique', signal = null } = req.body || {};
   if (!entreprise.nom) return res.status(400).json({ erreur: 'entreprise requise' });
   const mod = MODULES[produit] || MODULES.generique;
+
+  // Signal LinkedIn (like / commentaire sur un post concurrent ou Sofy) -> accroche n°1 de l'email
+  let blocSignal = '';
+  if (signal && (signal.interaction || signal.concurrent)) {
+    const conc = signal.concurrent || '';
+    const inter = signal.interaction || 'a interagi avec';
+    const estSofy = /sofy/i.test(conc);
+    const consigne = estSofy
+      ? 'C\'est NOTRE publication (Sofy). Ouvre l\'email en rebondissant dessus avec finesse, ex : "J\'ai vu que vous aviez aime notre publication sur ...".'
+      : '"' + conc + '" est un concurrent de Sofy. Ouvre l\'email en le mentionnant, ex : "J\'ai vu que vous avez like le post de ' + conc + ', qui parle de ...", puis enchaine sur le besoin que ' + conc + ' adresse. Deduis le domaine de ' + conc + ' (avis Google & visibilite locale / messagerie & relation client / SMS-RCS) et oriente vers le module Sofy correspondant.';
+    blocSignal = '\n\nSIGNAL LINKEDIN — C\'EST L\'ACCROCHE N°1 DE L\'EMAIL :\nLe lead ' + inter + ' un post de "' + (conc || 'un acteur du secteur') + '" sur LinkedIn.\n' + consigne + '\nTu n\'as PAS le texte du post : reste sur le theme de ' + (conc || 'ce post') + ', n\'invente pas de citation.';
+  }
 
   const prompt = `Tu es le meilleur copywriter commercial de Sofy (sofy.fr). Tu ecris un email de prospection B2B ultra-percutant, accrocheur et personnalise.
 
@@ -27,7 +39,7 @@ ANGLE IMPOSE — le SDR a choisi ce module, l'email DOIT etre centre dessus :
 ${mod}
 
 Donnees reelles collectees sur le prospect (n'invente AUCUN chiffre, utilise uniquement ce qui est present) :
-${JSON.stringify(entreprise, null, 1)}
+${JSON.stringify(entreprise, null, 1)}${blocSignal}
 
 Consignes :
 - Objet court (max ~6 mots), intriguant, sans le mot "Sofy", qui donne envie d'ouvrir.
