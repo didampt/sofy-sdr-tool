@@ -1058,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v197';
+const VERSION='v198';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -3869,7 +3869,7 @@ async function ouvrirActivite(i){
  }
 }
 async function enregistrerActivite(e,c,source,titre,detail){
- var cle=(c&&c.enrich&&c.enrich.email)||cleFiche(e);
+ var cle=cleFiche(e);
  try{
   var r=await api('/api/activite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:cle,source:source,type:source,titre:titre,detail:detail||''})});
   var d=await r.json().catch(function(){return {};});
@@ -4010,8 +4010,9 @@ function sourceFiche(e){
  if(e.siren||cs==='pappers')return {label:'🏢 Pappers',cls:'b-source'};
  return null;
 }
-function cleFiche(e){var em=ficheEmails(e)[0]; if(em)return em; var base=String(e.siren||e.nom||e.enseigne||'fiche').toLowerCase().replace(/\s+/g,' ').trim(); return 'fiche:'+(state.savedId||'x')+':'+base;}
-function clesFiche(e){var ems=ficheEmails(e); return ems.length?ems:[cleFiche(e)];}
+function cleStable(e){ if(e&&e.siren)return 'siren:'+String(e.siren).replace(/\s/g,''); var base=String((e&&(e.nom||e.enseigne))||'').toLowerCase().replace(/\s+/g,' ').trim(); return base?('nom:'+base):('fiche:'+(state.savedId||'x')); }
+function cleFiche(e){ return cleStable(e); }
+function clesFiche(e){ var ems=ficheEmails(e).slice(); var st=cleStable(e); if(ems.indexOf(st)<0)ems.push(st); var anc='fiche:'+(state.savedId||'x')+':'+String((e&&(e.siren||e.nom||e.enseigne))||'fiche').toLowerCase().replace(/\s+/g,' ').trim(); if(ems.indexOf(anc)<0)ems.push(anc); return ems.length?ems:[st]; }
 async function editerNote(i,id){
  var e=REAL[i]; var a=(e._act||[]).filter(function(x){return x.id===id;})[0];
  var actuel=(a&&(a.detail||a.titre))||'';
