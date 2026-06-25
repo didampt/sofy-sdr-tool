@@ -1058,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v193';
+const VERSION='v194';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -3803,12 +3803,13 @@ function labelJourAct(d){
  if(diff===1)return "Hier · "+dd;
  return dd+(j.getFullYear()!==auj.getFullYear()?(' '+j.getFullYear()):'');
 }
+function lienify(s){return escapeHtml(s).replace(/(https?:\/\/[^\s]+)/g,function(u){return '<a href="'+u+'" target="_blank" style="color:var(--accent)">'+u+'</a>';});}
 function ligneActivite(a,i){
  var t=new Date(a.ts);
  var heure=t.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
  var src=({lemlist:'Lemlist',ringover:'Ringover',sms:'SoReach'})[a.source]||'';
  var audio=a.record?('<audio controls preload="metadata" src="/api/ringover-record?url='+encodeURIComponent(a.record)+'" style="width:100%;margin-top:6px;height:34px"></audio>'):'';
- var detail=a.detail?('<div style="font-size:13px;color:var(--ink-soft);margin-top:2px">'+escapeHtml(a.detail)+'</div>'):'';
+ var detail=a.detail?('<div style="font-size:13px;color:var(--ink-soft);margin-top:2px;white-space:pre-wrap;word-break:break-word">'+lienify(a.detail)+'</div>'):'';
  var resume=a.resume?('<div style="font-size:12.5px;color:var(--ink);margin-top:6px;padding:8px 10px;background:var(--paper);border:1px solid var(--line);border-radius:8px;white-space:pre-wrap">🎧 Résumé IA : '+escapeHtml(a.resume)+'</div>'):'';
  return '<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 2px;border-bottom:1px solid #f1f2f7">'+
    '<span style="flex-shrink:0;width:26px;height:26px;display:flex;align-items:center;justify-content:center;color:#6b7280">'+icoActivite(a)+'</span>'+
@@ -3888,8 +3889,11 @@ async function recupererRdvHubspot(i){
    var dt=new Date(d.meeting.iso);
    var jour=dt.toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
    var heure=dt.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
-   await enregistrerActivite(e,null,'rdv','RDV confirmé','📅 '+jour+' à '+heure+(d.meeting.titre?(' · '+d.meeting.titre):''));
-   toast('📅 RDV récupéré : '+jour+' à '+heure);
+   var ligne='📅 '+jour+' à '+heure+(d.meeting.titre?(' · '+d.meeting.titre):'');
+   if(d.contactEmail)ligne+='\nContact du RDV : '+d.contactEmail;
+   if(d.hubspotUrl)ligne+='\nFiche HubSpot : '+d.hubspotUrl;
+   await enregistrerActivite(e,null,'rdv','RDV confirmé',ligne);
+   toast('📅 RDV récupéré : '+jour+' à '+heure+(d.contactEmail?(' ('+d.contactEmail+')'):''));
   }else{
    toast((d&&(d.raison||d.erreur))||'Aucun RDV trouvé dans HubSpot.');
    if(d&&d.diag)console.log('🔎 RDV HubSpot — diagnostic :',d.diag);
