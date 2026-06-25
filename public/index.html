@@ -1058,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v192';
+const VERSION='v193';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -3878,11 +3878,11 @@ async function enregistrerActivite(e,c,source,titre,detail){
 }
 async function recupererRdvHubspot(i){
  var e=REAL[i];
- var email=ficheEmails(e)[0]||'';
- if(!email){toast('Aucun email de contact sur cette fiche — RDV HubSpot introuvable.');return;}
+ var emails=ficheEmails(e);
+ if(!emails.length){toast('Aucun email de contact sur cette fiche — RDV HubSpot introuvable.');return;}
  toast('🔎 Recherche du RDV dans HubSpot…');
  try{
-  var r=await api('/api/hubspot-meeting?debug=1&email='+encodeURIComponent(email));
+  var r=await api('/api/hubspot-meeting?debug=1&emails='+encodeURIComponent(emails.join(',')));
   var d=await r.json();
   if(d&&d.ok&&d.meeting&&d.meeting.iso){
    var dt=new Date(d.meeting.iso);
