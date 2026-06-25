@@ -1058,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v188';
+const VERSION='v189';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2663,6 +2663,7 @@ function contactHtml(c,i,j){
   :`<button class="act act-lemlist" id="enrbtn${i}_${j}" onclick="enrichir(${i},${j})" style="margin-top:4px">✉️ Enrichir ce contact</button>`}
   ${en&&(!en.email||!en.telephone)?`<button class="act act-copy" style="margin-top:4px" id="febtn${i}_${j}" onclick="lancerFE(${i},${j})" title="Cascade 15+ sources : email de repli + mobile">${en.fe_fait?'↻ FullEnrich (re-tenter)':'🔁 FullEnrich'}</button>`:''}
   ${en&&!en.telephone?`<button class="act act-copy" style="margin-top:4px" onclick="lancerKaspr(${i},${j})" title="Mobile FR via le profil LinkedIn (1 crédit tél. + 1 crédit export). * = URL LinkedIn demandée au lancement">${en.kaspr_fait?'↻ Kaspr (re-tenter)':'📱 Kaspr'}</button>`:''}
+  ${en&&(!en.email||!en.telephone)?`<button class="act act-copy" style="margin-top:4px" onclick="lancerLemlist(${i},${j})" title="Waterfall niveau 4 — email + mobile via la waterfall Lemlist (Prospeo, RocketReach, Cognism… ; consomme des crédits Lemlist)">${en.lemlist_fait?'↻ Lemlist (re-tenter)':'🔵 Lemlist'}</button>`:''}
  </div>`;
 }
 
@@ -3185,6 +3186,51 @@ async function enrichirKaspr(i,j){
   else toast('Kaspr : aucune donnée disponible pour ce profil');
   return gain;
  }catch(err){toast('Kaspr erreur réseau : '+err.message);return false;}
+}
+async function enrichirLemlist(i,j){
+ const e=REAL[i];
+ const c=contactsDe(e)[j||0];
+ if(!c||!c.enrich)return false;
+ try{
+  let d;
+  if(c.enrich.lemlist_id){
+   // reprise de l'enrichissement déjà lancé (pas de nouveau coût)
+   const rr=await api('/api/lemlist-enrich?enrichment_id='+encodeURIComponent(c.enrich.lemlist_id));
+   try{d=await rr.json();}catch(_){d={};}
+  }else{
+   const nomEnt=(e.enseigne_ia||e.enseigne||e.nom||'').trim();
+   const lk=c.linkedin||(c.enrich&&c.enrich.linkedin)||'';
+   const r=await api('/api/lemlist-enrich',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({contact:{prenom:c.prenom,nom:c.nom,linkedin:lk,email:c.enrich.email||'',fonction:(c.enrich&&c.enrich.fonction)||c.fonction||''},entreprise:{nom:nomEnt,site:domaineDe(e)}})});
+   try{d=await r.json();}catch(_){toast('Lemlist : réponse invalide ('+r.status+')');return false;}
+  }
+  let essais=0;
+  while(d.pending&&d.enrichment_id&&essais<7){
+   await new Promise(x=>setTimeout(x,8000));
+   const r2=await api('/api/lemlist-enrich?enrichment_id='+encodeURIComponent(d.enrichment_id));
+   try{d=await r2.json();}catch(_){break;}
+   essais++;
+  }
+  c.enrich.lemlist_fait=true;
+  if(d.erreur){c.enrich.lemlist_id=null;toast('Lemlist : '+d.erreur);persister();return false;}
+  if(d.pending){c.enrich.lemlist_id=d.enrichment_id;toast('Lemlist met du temps — reclique 🔵 Lemlist dans 1 à 2 min (reprise sans recoût)');persister();return false;}
+  c.enrich.lemlist_id=null;
+  const re=d.resultat||{};
+  let gain=false;
+  if(re.email&&!c.enrich.email){c.enrich.email=re.email;c.enrich.email_source='lemlist';c.enrich.email_qualification='Lemlist';gain=true;}
+  if(re.telephone&&!c.enrich.telephone){c.enrich.telephone=re.telephone;c.enrich.tel_source='lemlist';gain=true;}
+  if(re.linkedin&&!c.enrich.linkedin){c.enrich.linkedin=re.linkedin;gain=true;}
+  if(j===0||j===undefined)e.enrich=c.enrich;
+  rerender(i);persister();
+  toast(gain?'🔵 Lemlist : donnée(s) ajoutée(s) ✓':'Lemlist : rien de neuf trouvé pour ce contact');
+  return gain;
+ }catch(err){toast('Lemlist erreur réseau : '+err.message);return false;}
+}
+function lancerLemlist(i,j){
+ const e=REAL[i];
+ if(e._busy){toast('Analyse en cours ⏳');return;}
+ e._busy=true;rerender(i);
+ (async()=>{try{toast('🔵 Lemlist en cours… (peut prendre ~1 min)');await enrichirLemlist(i,j);}finally{e._busy=false;rerender(i);}})();
 }
 function lancerKaspr(i,j){
  const e=REAL[i],c=contactsDe(e)[j];
