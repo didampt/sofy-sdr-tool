@@ -1058,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v184';
+const VERSION='v185';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1078,7 +1078,8 @@ const STATUTS_APPEL=[
  {v:'Faux numéro',e:'📵',score:-15,cat:'bad'},
  {v:'Numéro perso – ne plus appeler',e:'🙅',score:-15,cat:'bad'},
  {v:'Opt-out téléphone',e:'🚫',score:-15,cat:'bad'},
- {v:'Hors prospection',e:'🛑',score:0,cat:'neutre'}
+ {v:'Hors prospection',e:'🛑',score:0,cat:'neutre'},
+ {v:'En séquence Lemlist',e:'📨',score:5,cat:'good'}
 ];
 const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
@@ -2331,6 +2332,13 @@ function ouvrirFicheDepuisAppel(listeId,n9){
  const modal=document.getElementById('ringover-modal'); if(modal)modal.style.display='none';
  ouvrirListe(listeId,null,n9);
 }
+function ouvrirFicheDepuisJournal(numero){
+ api('/api/fiche-par-numero?numero='+encodeURIComponent(numero)).then(r=>r.json()).then(d=>{
+  if(!d||!d.match){toast('Aucune fiche trouvée pour ce numéro');return;}
+  const n9=String(numero).replace(/\D/g,'').slice(-9);
+  ouvrirListe(d.match.liste_id,null,n9);
+ }).catch(()=>toast('Recherche fiche impossible'));
+}
 function ouvrirAppelsRingover(t){afficherAppelsModal(telNorm(t),RINGOVER_CALLS[cle9Ring(t)]||[],t);}
 // ───────── Journal des appels (Brique 2 — vue manager Romain) ─────────
 let JOURNAL_APPELS=[];
@@ -2385,7 +2393,7 @@ function renderAppels(arr){
     <span style="min-width:120px;color:var(--ink-soft)">${a.sdr||'?'}</span>
     <span style="min-width:92px;color:var(--ink-soft)">${sens}</span>
     <span style="min-width:70px;color:var(--ink-soft)">${dur}</span>
-    <span style="flex:1;min-width:120px">${a.numero||''}</span>
+    <span style="flex:1;min-width:120px">${a.numero||''}${a.numero?` <a onclick="event.stopPropagation();ouvrirFicheDepuisJournal('${String(a.numero||'').replace(/[^\d+]/g,'')}')" title="Ouvrir la fiche du contact" style="cursor:pointer;color:var(--accent);font-weight:700;margin-left:8px">📇 fiche</a>`:''}</span>
     ${tag}
   </div>`;
  }).join('')+(arr.length>APPELS_PAGE?'<div style="text-align:center;padding:14px"><button class="btn" onclick="voirPlusAppels()" style="background:var(--paper)">Voir plus ('+(arr.length-APPELS_PAGE)+' restants)</button></div>':'');
@@ -3653,7 +3661,12 @@ async function confirmerLemlist(produit){
    if(d.maj)majs++;else envoyes++;
   }catch(e2){erreurs++;dernErr=e2.message;}
  }
- if(envoyes||majs){e.lemlist_envoye=true;rerender(i);persister();}
+ if(envoyes||majs){
+  e.lemlist_envoye=true;
+  const nomSeq=(typeof nomModule==='function'&&produit)?nomModule(produit):(produit||'défaut');
+  e._act=e._act||[]; e._act.unshift({source:'lemlist',type:'sequenceAdded',titre:'📨 Envoyé vers Lemlist · séquence '+nomSeq,detail:'',auteur:(state.user&&state.user.nom)||'',ts:new Date().toISOString()});
+  setStatutAppel(i,'En séquence Lemlist');
+ }
  let msg='✈️ '+(produit||'défaut')+' : '+envoyes+' envoyé(s), '+majs+' mis à jour';
  if(erreurs)msg+=' · '+erreurs+' échec(s)'+(dernErr?' ('+dernErr+')':'');
  toast(msg);
@@ -4555,10 +4568,9 @@ function formatRappel(d){
 }
 async function ouvrirTache(id){
  const t=TACHES_INDEX[id]||{};
- // Marque la tâche faite (toutes les occurrences de la fiche) puis ouvre la fiche ciblée
- try{await api('/api/taches',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(t.fiche_cle?{fiche_cle:t.fiche_cle,sdr:t.sdr,faite:true}:{id,faite:true})});}catch(e){}
+ // Ouvre seulement la fiche — ne marque PAS la tâche faite (seul le bouton ✅ Fait la termine)
  if(t.liste_id){ ouvrirListe(t.liste_id,null,t.entreprise_nom||''); }
- else{toast('Tâche terminée ✓');chargerTaches();}
+ else{ toast('Fiche non rattachée à une liste'); }
 }
 async function tacheFait(id){
  const t=TACHES_INDEX[id]||{};
