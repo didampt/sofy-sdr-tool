@@ -10,6 +10,25 @@ export default async function handler(req, res) {
   if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
   if (sql) await ensureSchema();
 
+  // --- PUT : modifier une note SDR (par son auteur, ou un admin) ---
+  if (req.method === 'PUT') {
+    const b = req.body || {};
+    const id = b.id;
+    const detail = b.detail != null ? String(b.detail).slice(0, 2000) : '';
+    if (!id) return res.status(400).json({ erreur: 'id requis' });
+    if (!detail.trim()) return res.status(400).json({ erreur: 'texte requis' });
+    try {
+      const estAdmin = ['admin', 'superadmin'].includes(user.role);
+      const rows = estAdmin
+        ? await sql`UPDATE activites SET detail = ${detail} WHERE id = ${id} AND source = 'note' RETURNING id`
+        : await sql`UPDATE activites SET detail = ${detail} WHERE id = ${id} AND source = 'note' AND auteur = ${user.nom || ''} RETURNING id`;
+      if (!rows.length) return res.status(403).json({ erreur: 'Note introuvable ou non modifiable' });
+      return res.status(200).json({ ok: true });
+    } catch (e) {
+      return res.status(500).json({ erreur: 'Modification impossible', detail: String(e.message || e).slice(0, 200) });
+    }
+  }
+
   // --- POST : enregistrer une activité (note, RDV) ---
   if (req.method === 'POST') {
     const b = req.body || {};
@@ -23,8 +42,8 @@ export default async function handler(req, res) {
       const rows = await sql`
         INSERT INTO activites (fiche_cle, source, type, titre, detail, auteur, ts)
         VALUES (${email}, ${source}, ${type}, ${titre}, ${detail}, ${user.nom || null}, NOW())
-        RETURNING ts`;
-      return res.status(200).json({ ok: true, activite: { ts: rows.length ? rows[0].ts : new Date().toISOString() } });
+        RETURNING id, ts`;
+      return res.status(200).json({ ok: true, activite: { id: rows.length ? rows[0].id : null, ts: rows.length ? rows[0].ts : new Date().toISOString() } });
     } catch (e) {
       return res.status(500).json({ erreur: 'Enregistrement impossible', detail: String(e.message || e).slice(0, 200) });
     }
@@ -39,12 +58,13 @@ export default async function handler(req, res) {
     const out = [];
 
     const evs = await sql`
-      SELECT source, type, titre, detail, auteur, ts
+      SELECT id, source, type, titre, detail, auteur, ts
       FROM activites
       WHERE lower(fiche_cle) = ANY(${emails})
       ORDER BY ts DESC LIMIT 200`;
     for (const e of evs) {
       out.push({
+        id: e.id,
         source: e.source || 'lemlist',
         type: e.type || null,
         titre: e.titre || e.type || 'Activité',
