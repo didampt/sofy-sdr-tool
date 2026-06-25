@@ -108,7 +108,7 @@ export default async function handler(req, res) {
         const sdrTache = proprietaire || user.nom;
         if (sql && cle) {
           await sql`INSERT INTO activites (fiche_cle, source, type, titre, detail, auteur, ref, ts)
-            VALUES (${cle}, 'lemlist', 'sequenceAdded', ${'Ajoute a la sequence ' + (produit || 'Lemlist')}, ${ent || null}, ${sdrTache || null}, ${'add:' + cle + ':' + (produit || 'def')}, NOW())
+            VALUES (${cle}, 'lemlist', 'sequenceAdded', ${'Envoye vers Lemlist (' + (produit || 'sequence') + ')'}, ${ent || null}, ${sdrTache || null}, ${'add:' + cle + ':' + (produit || 'def')}, NOW())
             ON CONFLICT (ref) DO NOTHING`;
         }
         if (sql && cle && sdrTache) {
