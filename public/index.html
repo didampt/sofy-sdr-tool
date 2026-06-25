@@ -1058,7 +1058,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v189';
+const VERSION='v190';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -2663,7 +2663,7 @@ function contactHtml(c,i,j){
   :`<button class="act act-lemlist" id="enrbtn${i}_${j}" onclick="enrichir(${i},${j})" style="margin-top:4px">✉️ Enrichir ce contact</button>`}
   ${en&&(!en.email||!en.telephone)?`<button class="act act-copy" style="margin-top:4px" id="febtn${i}_${j}" onclick="lancerFE(${i},${j})" title="Cascade 15+ sources : email de repli + mobile">${en.fe_fait?'↻ FullEnrich (re-tenter)':'🔁 FullEnrich'}</button>`:''}
   ${en&&!en.telephone?`<button class="act act-copy" style="margin-top:4px" onclick="lancerKaspr(${i},${j})" title="Mobile FR via le profil LinkedIn (1 crédit tél. + 1 crédit export). * = URL LinkedIn demandée au lancement">${en.kaspr_fait?'↻ Kaspr (re-tenter)':'📱 Kaspr'}</button>`:''}
-  ${en&&(!en.email||!en.telephone)?`<button class="act act-copy" style="margin-top:4px" onclick="lancerLemlist(${i},${j})" title="Waterfall niveau 4 — email + mobile via la waterfall Lemlist (Prospeo, RocketReach, Cognism… ; consomme des crédits Lemlist)">${en.lemlist_fait?'↻ Lemlist (re-tenter)':'🔵 Lemlist'}</button>`:''}
+  ${en&&(!en.email||!en.telephone)?`<button class="act act-copy" style="margin-top:4px" onclick="lancerLemlist(${i},${j})" title="Waterfall niveau 4 — Lemlist (Prospeo, RocketReach, Cognism…). Facturé uniquement si trouvé : 5 crédits/email (≈0,05 $) + 20 crédits/mobile (≈0,20 $).">${en.lemlist_fait?'↻ Lemlist (re-tenter)':'🔵 Lemlist (≈'+(((!en.email?5:0)+(!en.telephone?20:0))/100).toFixed(2)+' $)'}</button>`:''}
  </div>`;
 }
 
@@ -3201,7 +3201,7 @@ async function enrichirLemlist(i,j){
    const nomEnt=(e.enseigne_ia||e.enseigne||e.nom||'').trim();
    const lk=c.linkedin||(c.enrich&&c.enrich.linkedin)||'';
    const r=await api('/api/lemlist-enrich',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({contact:{prenom:c.prenom,nom:c.nom,linkedin:lk,email:c.enrich.email||'',fonction:(c.enrich&&c.enrich.fonction)||c.fonction||''},entreprise:{nom:nomEnt,site:domaineDe(e)}})});
+    body:JSON.stringify({findEmail:!c.enrich.email,findPhone:!c.enrich.telephone,contact:{prenom:c.prenom,nom:c.nom,linkedin:lk,email:c.enrich.email||'',fonction:(c.enrich&&c.enrich.fonction)||c.fonction||''},entreprise:{nom:nomEnt,site:domaineDe(e)}})});
    try{d=await r.json();}catch(_){toast('Lemlist : réponse invalide ('+r.status+')');return false;}
   }
   let essais=0;
