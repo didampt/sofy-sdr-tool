@@ -41,7 +41,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         id: idLinkedin,
         name: `${prenom} ${nom}`.trim() || idLinkedin,
-        dataToGet: ['phone', 'directEmail', 'workEmail']
+        dataToGet: ['phone', 'workEmail']
       })
     });
 
