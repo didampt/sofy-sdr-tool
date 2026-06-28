@@ -15,8 +15,10 @@ import { sql, ensureSchema, verifierToken } from './db.js';
 export const config = { maxDuration: 30 };
 
 const cle9 = s => String(s || '').replace(/\D/g, '').slice(-9);
+let tablePrete = false;  // évite de relancer le DDL à chaque polling (instance chaude)
 
 async function assurerTable() {
+  if (tablePrete) return;
   await sql`CREATE TABLE IF NOT EXISTS appels_entrants (
     id BIGSERIAL PRIMARY KEY,
     ligne TEXT,
@@ -31,6 +33,7 @@ async function assurerTable() {
     traite BOOLEAN DEFAULT FALSE
   )`;
   await sql`CREATE INDEX IF NOT EXISTS idx_appels_entrants_ligne ON appels_entrants (ligne, recu_le DESC)`;
+  tablePrete = true;
 }
 
 // — Résolution de la fiche Sofy par le numéro (même logique que fiche-par-numero.js) —
@@ -112,7 +115,6 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     const user = verifierToken(req);
     if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
-    await ensureSchema();
     await assurerTable();
 
     let maLigne = '';
