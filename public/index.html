@@ -1069,7 +1069,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v205';
+const VERSION='v206';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -1139,6 +1139,7 @@ function demarrerApp(u){
  // Lien direct d'allocation de crédits (depuis Slack → ?allouer=NomSdr), réservé superadmin
  const allouer=params.get('allouer');
  if(allouer){history.replaceState(null,'',location.pathname);setTimeout(()=>ouvrirAllocation(decodeURIComponent(allouer)),400);}
+ demarrerPollAppels();
 }
 async function verifSession(){
  const t=localStorage.getItem('sofy_token');
@@ -2353,6 +2354,49 @@ function ouvrirFicheDepuisAppel(listeId,n9){
  const modal=document.getElementById('ringover-modal'); if(modal)modal.style.display='none';
  ouvrirListe(listeId,null,n9);
 }
+
+/* ───────── Appel entrant Ringover (bandeau temps réel) ───────── */
+let APPEL_AFFICHE_ID=null, APPEL_TIMER=null;
+function escAppel(s){return String(s==null?'':s).replace(/[&<>"]/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m];});}
+function demarrerPollAppels(){
+ if(APPEL_TIMER)return;
+ pollAppelEntrant();
+ APPEL_TIMER=setInterval(pollAppelEntrant,3000);
+}
+async function pollAppelEntrant(){
+ if(!state.user)return;
+ try{
+  const r=await api('/api/ringover-incoming');
+  if(!r.ok)return;
+  const d=await r.json();
+  const c=d&&d.call;
+  if(c){if(c.id!==APPEL_AFFICHE_ID)afficherAppelEntrant(c);}
+  else if(APPEL_AFFICHE_ID){masquerAppelEntrant();}
+ }catch(_){}
+}
+function afficherAppelEntrant(c){
+ APPEL_AFFICHE_ID=c.id;
+ const num=c.caller_number||'Numéro inconnu';
+ document.getElementById('appel-entrant-txt').innerHTML='<b>'+escAppel(num)+'</b>'+(c.entreprise?(' · '+escAppel(c.entreprise)):'');
+ const act=document.getElementById('appel-entrant-actions');act.innerHTML='';
+ const styleBtn='background:#fff;color:var(--accent);border:none;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;text-decoration:none;font-size:14px;display:inline-block';
+ if(c.source==='sofy'&&c.liste_id){
+  const n9=String(num).replace(/\D/g,'').slice(-9);
+  const b=document.createElement('button');b.textContent='\ud83d\udcc7 Ouvrir la fiche';b.setAttribute('style',styleBtn);
+  b.onclick=function(){ouvrirFicheDepuisAppel(c.liste_id,n9);fermerAppelEntrant();};
+  act.appendChild(b);
+ }else if(c.source==='hubspot'&&c.lien_hubspot){
+  const a=document.createElement('a');a.href=c.lien_hubspot;a.target='_blank';a.rel='noopener';a.textContent='\u2197 Voir dans HubSpot';a.setAttribute('style',styleBtn);
+  a.onclick=function(){setTimeout(fermerAppelEntrant,150);};
+  act.appendChild(a);
+ }else{
+  const sp=document.createElement('span');sp.textContent='Aucune fiche trouv\u00e9e pour ce num\u00e9ro';sp.setAttribute('style','opacity:.9;font-weight:500;font-size:14px');
+  act.appendChild(sp);
+ }
+ document.getElementById('appel-entrant').style.display='block';
+}
+function masquerAppelEntrant(){APPEL_AFFICHE_ID=null;const el=document.getElementById('appel-entrant');if(el)el.style.display='none';}
+function fermerAppelEntrant(){const id=APPEL_AFFICHE_ID;masquerAppelEntrant();if(id){try{api('/api/ringover-incoming?vu='+id);}catch(_){}}}
 function ouvrirFicheDepuisJournal(numero){
  api('/api/fiche-par-numero?numero='+encodeURIComponent(numero)).then(r=>r.json()).then(d=>{
   if(!d||!d.match){toast('Aucune fiche trouvée pour ce numéro');return;}
@@ -5350,5 +5394,15 @@ verifSession();
 validate();
 document.getElementById('btn-back').style.visibility='hidden';
 </script>
+<style>@keyframes sonnePulse{0%,100%{transform:scale(1)}50%{transform:scale(1.22)}}</style>
+<div id="appel-entrant" style="display:none;position:fixed;top:0;left:0;right:0;z-index:950;background:var(--accent);color:#fff;padding:11px 16px;box-shadow:0 3px 14px rgba(15,18,32,.25)">
+ <div style="max-width:1100px;margin:0 auto;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+  <span style="font-size:20px;display:inline-block;animation:sonnePulse 1s infinite">📞</span>
+  <span style="font-weight:700;white-space:nowrap">Appel entrant —</span>
+  <span id="appel-entrant-txt" style="flex:1;min-width:160px;font-weight:500"></span>
+  <span id="appel-entrant-actions" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"></span>
+  <button onclick="fermerAppelEntrant()" title="Fermer" style="background:rgba(255,255,255,.22);color:#fff;border:none;border-radius:8px;width:30px;height:30px;cursor:pointer;font-weight:700;font-size:15px;line-height:1;flex:none">✕</button>
+ </div>
+</div>
 </body>
 </html>
