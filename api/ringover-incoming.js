@@ -1,21 +1,23 @@
 // /api/ringover-incoming.js — Appels entrants Ringover → bandeau "fiche" pour le SDR.
 //
-// Ringover (Dashboard → Developer → Webhooks → champ "Incoming calls") POST l'événement "incoming_call" :
-//   { event:"incoming_call", call_id, caller_number, receiver_number, timestamp }
-// On identifie le SDR via sa ligne (receiver_number ↔ sdrs.ringover_numero), on résout la fiche
-//   par le numéro de l'appelant (Sofy Scrap d'abord, sinon HubSpot), et on stocke un "appel en cours".
-// L'onglet du SDR interroge ce point en GET (token) toutes les ~3 s → bandeau persistant.
+// Ringover (Dashboard → Developer → Webhooks → "Appels qui sonnent") POST au format :
+//   { resource:"call", event:"ringing", timestamp, data:{ id, call_id, direction:"inbound",
+//     from_number, to_number, user:{firstname,lastname,email}, status:"ringing" }, attempt }
+//   → appelant = data.from_number ; ligne du SDR = data.to_number.
 //
-// Sécurité webhook : en-tête Authorization = RINGOVER_WEBHOOK_SECRET (champ "Authorization Header" de Ringover)
-//   OU ?secret=RINGOVER_WEBHOOK_SECRET dans l'URL.
-// Variables Vercel : RINGOVER_WEBHOOK_SECRET, HUBSPOT_API_KEY (déjà présente).
+// Auth (l'une des trois) :
+//   - ?secret=RINGOVER_WEBHOOK_SECRET dans l'URL, OU
+//   - JWT signé HS512 avec le secret (Ringover : en-tête Authorization: Bearer … ET x-ringover-webhook-signature), OU
+//   - Authorization = secret brut (tests internes).
+// Variables Vercel : RINGOVER_WEBHOOK_SECRET, HUBSPOT_API_KEY.
 
+import crypto from 'crypto';
 import { sql, ensureSchema, verifierToken } from './db.js';
 
 export const config = { maxDuration: 30 };
 
 const cle9 = s => String(s || '').replace(/\D/g, '').slice(-9);
-let tablePrete = false;  // évite de relancer le DDL à chaque polling (instance chaude)
+let tablePrete = false;
 
 async function assurerTable() {
   if (tablePrete) return;
@@ -36,7 +38,20 @@ async function assurerTable() {
   tablePrete = true;
 }
 
-// — Résolution de la fiche Sofy par le numéro (même logique que fiche-par-numero.js) —
+// Vérifie un JWT Ringover (HS512) signé avec le secret
+function jwtValide(token, secret) {
+  if (!token || !secret) return false;
+  const t = String(token).replace(/^Bearer\s+/i, '').trim();
+  const parts = t.split('.');
+  if (parts.length !== 3) return false;
+  try {
+    const calc = crypto.createHmac('sha512', secret).update(parts[0] + '.' + parts[1]).digest('base64url');
+    const a = Buffer.from(parts[2]); const b = Buffer.from(calc);
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  } catch (_) { return false; }
+}
+
+// — Résolution de la fiche Sofy par le numéro —
 async function chercherSofy(numero) {
   const d9 = cle9(numero);
   if (d9.length < 6) return null;
@@ -61,7 +76,6 @@ async function chercherSofy(numero) {
   return null;
 }
 
-// — Portal HubSpot (pour le lien vers la fiche), mis en cache dans config —
 async function portalHubspot(token) {
   try {
     const c = await sql`SELECT valeur FROM config WHERE cle = 'hubspot_portal'`;
@@ -78,14 +92,13 @@ async function portalHubspot(token) {
   return null;
 }
 
-// — Résolution HubSpot par téléphone (best-effort, plusieurs formats) —
 async function chercherHubspot(numero) {
   const token = process.env.HUBSPOT_API_KEY;
   if (!token) return null;
   const d9 = cle9(numero);
   const brut = String(numero || '').trim();
   const national = d9 ? '0' + d9 : '';
-  const valeurs = [...new Set([brut, national, d9].filter(Boolean))];
+  const valeurs = [...new Set([brut, '+' + String(numero || '').replace(/\D/g, ''), national, d9].filter(Boolean))];
   const groupes = [];
   for (const v of valeurs) {
     groupes.push({ filters: [{ propertyName: 'phone', operator: 'EQ', value: v }] });
@@ -111,9 +124,8 @@ async function chercherHubspot(numero) {
 export default async function handler(req, res) {
   if (!sql) return res.status(500).json({ erreur: 'Base non configurée' });
 
-  // ───────── GET : interrogation par l'onglet du SDR (token) ─────────
+  // ───────── GET : polling onglet SDR (token) + debug + health ─────────
   if (req.method === 'GET') {
-    // Debug (ouvert via le secret) : voir le dernier payload reçu + les derniers appels stockés
     if (req.query && req.query.debug) {
       const sdbg = (process.env.RINGOVER_WEBHOOK_SECRET || '').trim();
       if (!sdbg || req.query.debug !== sdbg) return res.status(401).json({ erreur: 'debug: secret invalide' });
@@ -125,22 +137,19 @@ export default async function handler(req, res) {
       return res.status(200).json({ derniere_tentative: tentative, dernier_payload_recu: last, derniers_appels: derniers });
     }
     const user = verifierToken(req);
-    if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
+    // GET sans token = health (utile si Ringover "vérifie" l'URL en GET)
+    if (!user) return res.status(200).json({ ok: true, service: 'ringover-incoming' });
     await assurerTable();
-
     let maLigne = '';
     try {
       const rs = await sql`SELECT ringover_numero FROM sdrs WHERE lower(trim(nom)) = lower(trim(${user.nom})) LIMIT 1`;
       maLigne = rs.length ? cle9(rs[0].ringover_numero) : '';
     } catch (_) {}
-
-    // Fermeture du bandeau : ?vu=<id>
     const vu = req.query && req.query.vu;
     if (vu) {
       try { await sql`UPDATE appels_entrants SET traite = TRUE WHERE id = ${parseInt(vu)} AND ligne = ${maLigne}`; } catch (_) {}
       return res.status(200).json({ ok: true });
     }
-
     if (!maLigne) return res.status(200).json({ call: null, sans_ligne: true });
     const rows = await sql`
       SELECT id, caller_number, entreprise, source, liste_id, lien_hubspot, call_id, recu_le
@@ -151,54 +160,61 @@ export default async function handler(req, res) {
   }
 
   // ───────── POST : webhook Ringover (appel entrant) ─────────
-  // DIAGNOSTIC : journalise CHAQUE tentative AVANT toute vérif (même secret faux) → prouve si Ringover appelle vraiment
+  // DIAGNOSTIC : journalise CHAQUE tentative AVANT toute vérif
   try {
     const aBrut = (req.headers['authorization'] || '').toString();
     await sql`INSERT INTO config (cle, valeur) VALUES ('ringover_incoming_attempt', ${JSON.stringify({
       recu_le: new Date().toISOString(),
       method: req.method,
-      authorization: aBrut ? (aBrut.slice(0, 8) + '\u2026 (' + aBrut.length + ' car.)') : 'ABSENTE',
+      authorization: aBrut ? (aBrut.slice(0, 12) + '\u2026 (' + aBrut.length + ' car.)') : 'ABSENTE',
       url_secret: (req.query && req.query.secret) ? 'present' : 'absent',
       payload: req.body || null
     })}::jsonb) ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur`;
   } catch (_) {}
+
   const secretServeur = (process.env.RINGOVER_WEBHOOK_SECRET || '').trim();
   if (!secretServeur) return res.status(401).json({ erreur: 'RINGOVER_WEBHOOK_SECRET absente côté serveur — créer la variable Vercel (Production) puis Redeploy' });
-  const auth = (req.headers['authorization'] || '').toString().replace(/^Bearer\s+/i, '').trim();
-  const secretRecu = auth || (req.query.secret || '').trim();
-  if (secretRecu !== secretServeur) return res.status(401).json({ erreur: 'Secret Ringover invalide' });
+
+  // Auth : ?secret= OU JWT HS512 signé avec le secret OU Authorization brut (tests)
+  const authHeader = (req.headers['authorization'] || '').toString();
+  const authRaw = authHeader.replace(/^Bearer\s+/i, '').trim();
+  const sigHeader = (req.headers['x-ringover-webhook-signature'] || '').toString();
+  let okAuth = false;
+  if (req.query && req.query.secret && req.query.secret.trim() === secretServeur) okAuth = true;
+  if (!okAuth && authRaw && authRaw === secretServeur) okAuth = true;
+  if (!okAuth && jwtValide(authHeader, secretServeur)) okAuth = true;
+  if (!okAuth && jwtValide(sigHeader, secretServeur)) okAuth = true;
+  if (!okAuth) return res.status(401).json({ erreur: 'Auth Ringover invalide (ni ?secret= ni signature valide)' });
 
   await ensureSchema();
   await assurerTable();
 
   try {
     const corps = req.body || {};
-    // Journalise le dernier payload (pour vérifier/ajuster les vrais champs Ringover)
+    const d = corps.data || corps;
     try { await sql`INSERT INTO config (cle, valeur) VALUES ('ringover_incoming_last', ${JSON.stringify({ recu_le: new Date().toISOString(), payload: corps })}::jsonb) ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur`; } catch (_) {}
 
-    const event = corps.event || corps.event_type || '';
-    const caller = corps.caller_number || corps.from_number || corps.from || '';
-    const receiver = corps.receiver_number || corps.to_number || corps.to || corps.did || '';
-    const callId = corps.call_id || corps.callId || corps.id || null;
+    const event = (corps.event || corps.event_type || '').toString();
+    const direction = (d.direction || '').toString().toLowerCase();
+    const caller = d.from_number || d.caller_number || corps.caller_number || corps.from || '';
+    const receiver = d.to_number || d.receiver_number || corps.receiver_number || corps.to || corps.did || '';
+    const callId = d.call_id || d.id || corps.call_id || null;
 
-    // On ne traite que les sonneries entrantes (tolérant aux variantes de nom d'événement)
-    if (event && !/incoming|ring|call_started|started/i.test(String(event))) {
-      return res.status(200).json({ ok: true, ignore: event });
-    }
+    // sonneries ENTRANTES uniquement (ignore les appels sortants qui "sonnent" aussi)
+    if (event && !/incoming|ring|call_started|started/i.test(event)) return res.status(200).json({ ok: true, ignore: event });
+    if (direction && direction !== 'inbound') return res.status(200).json({ ok: true, ignore_direction: direction });
     if (!caller) return res.status(200).json({ ok: true, sans_numero: true });
 
     const ligne = cle9(receiver);
-    // SDR propriétaire de cette ligne (match sur les 9 derniers chiffres)
+    // SDR propriétaire de la ligne (match sur les 9 derniers chiffres)
     let sdr = null;
-    if (ligne) {
-      try {
-        const all = await sql`SELECT nom, ringover_numero FROM sdrs WHERE ringover_numero IS NOT NULL AND ringover_numero <> ''`;
-        const hit = all.find(s => cle9(s.ringover_numero) === ligne);
-        if (hit) sdr = hit.nom;
-      } catch (_) {}
-    }
+    try {
+      const all = await sql`SELECT nom, ringover_numero FROM sdrs WHERE ringover_numero IS NOT NULL AND ringover_numero <> ''`;
+      const hit = all.find(s => ligne && cle9(s.ringover_numero) === ligne);
+      if (hit) sdr = hit.nom;
+    } catch (_) {}
 
-    // Résolution fiche : Sofy d'abord, sinon HubSpot
+    // résolution fiche : Sofy puis HubSpot
     let entreprise = null, source = null, liste_id = null, lien_hubspot = null;
     const sofy = await chercherSofy(caller);
     if (sofy) { entreprise = sofy.entreprise; source = 'sofy'; liste_id = sofy.liste_id; }
@@ -210,7 +226,7 @@ export default async function handler(req, res) {
     await sql`INSERT INTO appels_entrants (ligne, sdr, caller_number, entreprise, source, liste_id, lien_hubspot, call_id)
       VALUES (${ligne}, ${sdr}, ${caller}, ${entreprise}, ${source}, ${liste_id}, ${lien_hubspot}, ${callId})`;
 
-    return res.status(200).json({ ok: true, sdr, source, entreprise: entreprise || null });
+    return res.status(200).json({ ok: true, sdr, source, entreprise: entreprise || null, ligne });
   } catch (err) {
     return res.status(500).json({ erreur: 'Erreur ringover-incoming', detail: String(err.message || err).slice(0, 200) });
   }
