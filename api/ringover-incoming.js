@@ -113,6 +113,16 @@ export default async function handler(req, res) {
 
   // ───────── GET : interrogation par l'onglet du SDR (token) ─────────
   if (req.method === 'GET') {
+    // Debug (ouvert via le secret) : voir le dernier payload reçu + les derniers appels stockés
+    if (req.query && req.query.debug) {
+      const sdbg = (process.env.RINGOVER_WEBHOOK_SECRET || '').trim();
+      if (!sdbg || req.query.debug !== sdbg) return res.status(401).json({ erreur: 'debug: secret invalide' });
+      await assurerTable();
+      let last = null, derniers = [];
+      try { const c = await sql`SELECT valeur FROM config WHERE cle = 'ringover_incoming_last'`; last = c.length ? c[0].valeur : null; } catch (_) {}
+      try { derniers = await sql`SELECT id, ligne, sdr, caller_number, entreprise, source, call_id, recu_le, traite FROM appels_entrants ORDER BY recu_le DESC LIMIT 8`; } catch (_) {}
+      return res.status(200).json({ dernier_payload_recu: last, derniers_appels: derniers });
+    }
     const user = verifierToken(req);
     if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
     await assurerTable();
