@@ -10,7 +10,11 @@
     },
     {
       "path": "/api/rappels-cron",
-      "schedule": "*/30 * * * *"
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/sms-cron",
+      "schedule": "0 * * * *"
     }
   ],
   "headers": [
