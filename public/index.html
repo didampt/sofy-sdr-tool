@@ -1069,7 +1069,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v206';
+const VERSION='v207';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2357,6 +2357,7 @@ function ouvrirFicheDepuisAppel(listeId,n9){
 
 /* ───────── Appel entrant Ringover (bandeau temps réel) ───────── */
 let APPEL_AFFICHE_ID=null, APPEL_TIMER=null;
+function estVisiteSite(e){var s1=((e.source_hotlead)||'').toString().toLowerCase();var s2=((e.signal&&e.signal.source)||'').toString().toLowerCase();function ok(v){return v==='rb2b'||v==='snitcher'||v==='sofy.fr'||v.indexOf('snitcher')>=0||v.indexOf('sofy')>=0;}return ok(s1)||ok(s2);}
 function escAppel(s){return String(s==null?'':s).replace(/[&<>"]/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m];});}
 function demarrerPollAppels(){
  if(APPEL_TIMER)return;
@@ -2811,7 +2812,7 @@ function ficheReal(e,i){
  const ca=e.chiffre_affaires?Number(e.chiffre_affaires).toLocaleString('fr-FR')+' €':null;
  const contacts=contactsDe(e);
  const siteWeb=domaineDe(e);
- const estHL=e.source_hotlead==='RB2B'||(e.signal&&e.signal.source==='RB2B');
+ const estHL=estVisiteSite(e);
  const titre=(!estHL&&contacts.length&&contacts[0].nom)?`${contacts[0].prenom} ${contacts[0].nom} — ${(contacts[0].enrich&&contacts[0].enrich.fonction)||contacts[0].fonction||'Dirigeant'}`:(enseigneDe(e)||e.nom);
  const aEmail=contacts.some(c=>c.enrich&&c.enrich.email);
  const s=e.score&&e.score.scores;
@@ -2887,7 +2888,7 @@ function ficheReal(e,i){
     </div>
    </div>
    ${e.ia?`<div class="contact-line" style="margin-top:8px" title="${(e.ia.explication||'').replace(/"/g,'&quot;')}">🤖 IA : ${e.ia.nom_commercial||e.ia.site_web?`${e.ia.nom_commercial||''}${e.ia.site_web?' · '+e.ia.site_web:''}`:'rien de fiable trouvé'} <span class="badge b-gmb">confiance ${e.ia.confiance||'?'}</span></div>`:''}
-   ${e.source_hotlead==='RB2B'||(e.signal&&e.signal.source==='RB2B')?(()=>{
+   ${estVisiteSite(e)?(()=>{
      const pv=(e.pages_visitees&&e.pages_visitees.length)?e.pages_visitees:((e.signal&&e.signal.pages)||[]);
      const prod=pv.find(p=>/so-?reach/i.test(p))?'SoReach':pv.find(p=>/so-?view|avis/i.test(p))?'Soview':pv.find(p=>/so-?connect|budy/i.test(p))?'SoConnect':null;
      const dv=e.date_visite||(e.signal&&e.signal.date);
@@ -3339,8 +3340,8 @@ function donneesPourScore(e){
   telephone:e.gmb.telephone}:{aucune_fiche_google:true,telephone_web:(e.ia&&e.ia.telephone)||null};
  // Signal RB2B (visite sofy.fr) — PRIORITAIRE pour orienter le produit selon la page visitée
  const pages=(e.pages_visitees&&e.pages_visitees.length)?e.pages_visitees:((e.signal&&e.signal.pages)||[]);
- const sig=(e.source_hotlead==='RB2B'||(e.signal&&e.signal.source==='RB2B'))?{
-  source:'RB2B',type:'visite_site',date:e.date_visite||(e.signal&&e.signal.date)||null,
+ const sig=(estVisiteSite(e))?{
+  source:(e.source_hotlead||(e.signal&&e.signal.source)||'sofy.fr'),type:'visite_site',date:e.date_visite||(e.signal&&e.signal.date)||null,
   pages_visitees:pages,secteur:e.secteur_rb2b||null
  }:(e.signal||null);
  return {nom:e.nom,enseigne:enseigneDe(e)||null,activite:e.activite,naf:e.naf,ville:e.ville,code_postal:e.code_postal,
@@ -3395,7 +3396,7 @@ async function chercherPersonas(i){
  const e=REAL[i];
  let jobs=jobsCibles();
  // Hot Lead (RB2B) sans critères de liste → personas C-level par défaut
- const estHotLead=e.source_hotlead==='RB2B'||(e.signal&&e.signal.source==='RB2B');
+ const estHotLead=estVisiteSite(e);
  if(!jobs.length&&estHotLead){jobs=['Directeur Général','Directeur Marketing','Directeur Commercial','Responsable Communication'];}
  if(!jobs.length){toast('Aucun persona sélectionné dans les critères de cette liste (hors Dirigeant/PDG)');return false;}
  try{
@@ -3474,7 +3475,7 @@ async function analyserGmb(i){
  const btn=document.getElementById('gmbbtn'+i);
  if(btn){btn.disabled=true;btn.textContent='⏳ Analyse…';}
  try{
-  const estHL=e.source_hotlead==='RB2B'||(e.signal&&e.signal.source==='RB2B');
+  const estHL=estVisiteSite(e);
   const p=new URLSearchParams({liste_id:state.savedId||'',nom:e.nom,ville:e.ville||'',naf:e.naf||'',enseigne:enseigneDe(e),adresse:e.adresse||'',cp:e.code_postal||'',site:domaineDe(e),ens_forte:e.enseigne_ia?'1':'',hotlead:estHL?'1':''});
   const r=await api('/api/gmb?'+p.toString());
   const g=await r.json();
@@ -3537,7 +3538,7 @@ async function pipelineFiche(i){
   }
   prog(i,35,'Étape 3/7 · 👥 Recherche des personas LinkedIn…');
   // ── 2.5 Personas (si la liste en cible OU Hot Lead, et que la fiche a un domaine/enseigne/LinkedIn) ──
-  const estHotLead=e.source_hotlead==='RB2B'||(e.signal&&e.signal.source==='RB2B');
+  const estHotLead=estVisiteSite(e);
   const peutPersonas=(jobsCibles().length||estHotLead)&&(domaineDe(e)||e.enseigne_ia||e.linkedin_entreprise);
   if(peutPersonas&&!e.personas_fait){
    wfSet(i,'pers','run');
