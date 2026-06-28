@@ -118,10 +118,11 @@ export default async function handler(req, res) {
       const sdbg = (process.env.RINGOVER_WEBHOOK_SECRET || '').trim();
       if (!sdbg || req.query.debug !== sdbg) return res.status(401).json({ erreur: 'debug: secret invalide' });
       await assurerTable();
-      let last = null, derniers = [];
+      let last = null, derniers = [], tentative = null;
+      try { const tt = await sql`SELECT valeur FROM config WHERE cle = 'ringover_incoming_attempt'`; tentative = tt.length ? tt[0].valeur : null; } catch (_) {}
       try { const c = await sql`SELECT valeur FROM config WHERE cle = 'ringover_incoming_last'`; last = c.length ? c[0].valeur : null; } catch (_) {}
       try { derniers = await sql`SELECT id, ligne, sdr, caller_number, entreprise, source, call_id, recu_le, traite FROM appels_entrants ORDER BY recu_le DESC LIMIT 8`; } catch (_) {}
-      return res.status(200).json({ dernier_payload_recu: last, derniers_appels: derniers });
+      return res.status(200).json({ derniere_tentative: tentative, dernier_payload_recu: last, derniers_appels: derniers });
     }
     const user = verifierToken(req);
     if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
@@ -150,6 +151,17 @@ export default async function handler(req, res) {
   }
 
   // ───────── POST : webhook Ringover (appel entrant) ─────────
+  // DIAGNOSTIC : journalise CHAQUE tentative AVANT toute vérif (même secret faux) → prouve si Ringover appelle vraiment
+  try {
+    const aBrut = (req.headers['authorization'] || '').toString();
+    await sql`INSERT INTO config (cle, valeur) VALUES ('ringover_incoming_attempt', ${JSON.stringify({
+      recu_le: new Date().toISOString(),
+      method: req.method,
+      authorization: aBrut ? (aBrut.slice(0, 8) + '\u2026 (' + aBrut.length + ' car.)') : 'ABSENTE',
+      url_secret: (req.query && req.query.secret) ? 'present' : 'absent',
+      payload: req.body || null
+    })}::jsonb) ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur`;
+  } catch (_) {}
   const secretServeur = (process.env.RINGOVER_WEBHOOK_SECRET || '').trim();
   if (!secretServeur) return res.status(401).json({ erreur: 'RINGOVER_WEBHOOK_SECRET absente côté serveur — créer la variable Vercel (Production) puis Redeploy' });
   const auth = (req.headers['authorization'] || '').toString().replace(/^Bearer\s+/i, '').trim();
