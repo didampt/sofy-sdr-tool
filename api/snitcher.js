@@ -85,26 +85,46 @@ function extraireItems(corps) {
 }
 
 export default async function handler(req, res) {
-  const secretServeur = (process.env.SNITCHER_WEBHOOK_SECRET || '').trim();
-  if (!secretServeur) {
-    return res.status(401).json({ erreur: 'SNITCHER_WEBHOOK_SECRET absente côté serveur — créer la variable Vercel (Production cochée) puis Redeploy' });
+  const q = req.query || {};
+
+  // ── Test manuel (superadmin) : injecte un faux événement Snitcher et exécute la vraie logique ──
+  // Permet de tester sans « Send Test » côté Snitcher (bouton « 🧪 Tester Snitcher » dans Paramètres).
+  let estTest = false;
+  if (q.test) {
+    let user = null;
+    try { const m = await import('./db.js'); user = m.verifierToken(req); } catch (_) {}
+    if (!user || user.role !== 'superadmin') return res.status(401).json({ erreur: 'Test réservé au superadmin (connecte-toi en superadmin)' });
+    estTest = true;
+    req.body = {
+      event: 'segment.entered',
+      segment: { name: 'TEST Sofy Scrap' },
+      company: { uuid: 'test_' + Date.now(), name: 'Entreprise Test Snitcher', domain: 'exemple-test-snitcher.fr', industry: 'Automobile', employee_range: '50-200', location: { city: 'Pointe-à-Pitre', region: 'Guadeloupe', country: 'France' } },
+      session: { pages_viewed: 3, referrer: 'google.com' }
+    };
   }
-  // Auth : secret dans l'URL (?secret=) — comme RB2B — OU signature HMAC-SHA256 (en-tête Signature) si présente.
-  const secretRecu = (req.query.secret || '').trim();
-  let okAuth = !!secretRecu && secretRecu === secretServeur;
-  const sig = (req.headers['signature'] || req.headers['x-signature'] || '').toString();
-  if (!okAuth && sig) {
-    try {
-      const brut = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {});
-      const attendu = crypto.createHmac('sha256', secretServeur).update(brut).digest('hex');
-      if (sig === attendu) okAuth = true;
-    } catch (_) {}
+
+  if (!estTest) {
+    const secretServeur = (process.env.SNITCHER_WEBHOOK_SECRET || '').trim();
+    if (!secretServeur) {
+      return res.status(401).json({ erreur: 'SNITCHER_WEBHOOK_SECRET absente côté serveur — créer la variable Vercel (Production cochée) puis Redeploy' });
+    }
+    // Auth : secret dans l'URL (?secret=) — comme RB2B — OU signature HMAC-SHA256 (en-tête Signature) si présente.
+    const secretRecu = (req.query.secret || '').trim();
+    let okAuth = !!secretRecu && secretRecu === secretServeur;
+    const sig = (req.headers['signature'] || req.headers['x-signature'] || '').toString();
+    if (!okAuth && sig) {
+      try {
+        const brut = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {});
+        const attendu = crypto.createHmac('sha256', secretServeur).update(brut).digest('hex');
+        if (sig === attendu) okAuth = true;
+      } catch (_) {}
+    }
+    if (!okAuth) {
+      if (req.method !== 'POST') return res.status(401).json({ erreur: 'Secret requis dans l\u2019URL (?secret=\u2026) — webhook Snitcher' });
+      return res.status(401).json({ erreur: 'Secret invalide', indice: `re\u00e7u ${secretRecu.length} car., attendu ${secretServeur.length}` });
+    }
+    if (req.method !== 'POST') return res.status(405).json({ erreur: 'POST uniquement (webhook Snitcher) — secret OK ✓' });
   }
-  if (!okAuth) {
-    if (req.method !== 'POST') return res.status(401).json({ erreur: 'Secret requis dans l\u2019URL (?secret=\u2026) — webhook Snitcher' });
-    return res.status(401).json({ erreur: 'Secret invalide', indice: `re\u00e7u ${secretRecu.length} car., attendu ${secretServeur.length}` });
-  }
-  if (req.method !== 'POST') return res.status(405).json({ erreur: 'POST uniquement (webhook Snitcher) — secret OK ✓' });
   if (!sql) return res.status(500).json({ erreur: 'Base non configurée' });
   await ensureSchema();
 
