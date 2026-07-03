@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Création de compte Sofy</title>
+  <meta name="description" content="Créez votre compte Sofy et centralisez votre marketing local.">
+  <link rel="icon" href="https://cdn.prod.website-files.com/692425aeab094a5d5da30bad/69286b92c2bc2cc6a34615ff_SOFY-favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="shell">
+    <section class="panel form-panel" aria-labelledby="signup-title">
+      <a class="brand" href="https://www.sofy.fr/" rel="noreferrer">
+        <img src="https://cdn.prod.website-files.com/692425aeab094a5d5da30bad/69242a559bca9c86f276f3a1_logo-SOFY.svg" alt="Sofy">
+      </a>
+
+      <h1 id="signup-title">Créez votre compte</h1>
+      <p class="intro">Renseignez vos informations. Notre équipe active ensuite votre organisation après vérification.</p>
+
+      <form id="signupForm" novalidate>
+        <div class="grid two">
+          <label> Prénom *
+            <input name="first_name" autocomplete="given-name" required>
+          </label>
+          <label> Nom *
+            <input name="last_name" autocomplete="family-name" required>
+          </label>
+        </div>
+
+        <label> Email professionnel *
+          <input name="email" type="email" autocomplete="email" required>
+        </label>
+
+        <label> Téléphone *
+          <span class="phone-row">
+            <div class="combo" id="phoneCountryCombo">
+              <input type="hidden" id="phoneCountry" name="phone_country">
+              <button type="button" class="combo-trigger" id="phoneCountryTrigger" aria-label="Indicatif pays"></button>
+              <div class="combo-menu" id="phoneCountryMenu" hidden>
+                <input class="combo-search" id="phoneCountrySearch" type="text" placeholder="Rechercher un pays ou indicatif">
+                <div class="combo-options" id="phoneCountryOptions"></div>
+              </div>
+            </div>
+            <input name="phone" id="phone" type="tel" autocomplete="tel" placeholder="06 12 34 56 78" required>
+          </span>
+        </label>
+
+        <label> Pays *
+          <div class="combo combo-wide" id="countryCombo">
+            <input type="hidden" name="country_code" id="countryCode">
+            <button type="button" class="combo-trigger" id="countryTrigger"></button>
+            <div class="combo-menu" id="countryMenu" hidden>
+              <input class="combo-search" id="countrySearch" type="text" placeholder="Rechercher un pays">
+              <div class="combo-options" id="countryOptions"></div>
+            </div>
+          </div>
+        </label>
+
+        <div id="companySection" class="company-section">
+          <label> Raison sociale *
+            <input id="companyName" name="company_name" autocomplete="organization" placeholder="Tapez le nom de votre société">
+          </label>
+          <div id="companyResults" class="suggestions" hidden></div>
+
+          <div id="frenchCompanyFields" class="grid two company-details">
+            <label> SIRET *
+              <input id="siret" name="siret" inputmode="numeric" maxlength="17" placeholder="123 456 789 00010">
+            </label>
+            <label> SIREN
+              <input id="siren" name="siren" inputmode="numeric" maxlength="11">
+            </label>
+          </div>
+          <label> Adresse
+            <input id="address" name="address">
+          </label>
+          <div class="grid two company-details">
+            <label> Code postal
+              <input id="postalCode" name="postal_code">
+            </label>
+            <label> Ville
+              <input id="city" name="city">
+            </label>
+          </div>
+        </div>
+
+        <label> Mot de passe *
+          <span class="password-row">
+            <input id="password" name="password" type="password" autocomplete="new-password" required>
+            <button type="button" id="togglePassword" aria-label="Afficher le mot de passe">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M2.2 12s3.6-6 9.8-6 9.8 6 9.8 6-3.6 6-9.8 6-9.8-6-9.8-6Z" />
+                <circle cx="12" cy="12" r="3.2" />
+              </svg>
+            </button>
+          </span>
+        </label>
+        <div class="password-help">
+          <span id="passwordStrength">12 caractères minimum, majuscule, minuscule, chiffre et symbole.</span>
+        </div>
+
+        <label class="check">
+          <input id="cgv" name="cgv" type="checkbox" required>
+          <span>J'accepte les <a href="https://cdn.prod.website-files.com/692425aeab094a5d5da30bad/69c3dc2b2be086cd147a91b8_CONDITIONS%20GE%CC%81NE%CC%81RALES%20DE%20VENTE%20ET%20D%E2%80%99UTILISATION%20%E2%80%93%20SOFY%20%28OPTIMA%20FRANCE%29.pdf" target="_blank" rel="noreferrer">CGV Sofy</a>.</span>
+        </label>
+
+        <div id="formError" class="form-error" hidden></div>
+        <button id="submitBtn" class="submit" type="submit">Créer mon compte</button>
+      </form>
+    </section>
+
+    <section class="panel marketing-panel" aria-label="Présentation Sofy">
+      <div class="story-head">
+        <div class="badge">Plateforme marketing local</div>
+        <h2>Soyez visible là où vos clients vous cherchent.</h2>
+        <p>SO-VIEW centralise vos fiches Google, vos avis et vos priorités locales pour faire progresser chaque établissement.</p>
+      </div>
+
+      <div class="module-slider" aria-label="Modules Sofy">
+        <div class="slide-track" id="moduleSlides">
+          <article class="module-slide is-active" data-module="SO-VIEW">
+            <div class="module-copy">
+              <span>SO-VIEW</span>
+              <h3>Soyez visible là où vos clients vous cherchent.</h3>
+              <p>Pilotez vos fiches Google, centralisez vos avis et repérez les actions prioritaires pour renforcer votre présence locale.</p>
+            </div>
+            <div class="module-graphic graph-view" aria-hidden="true">
+              <div class="local-map">
+                <i></i><i></i><i></i>
+                <strong>4,7</strong>
+                <small>Note moyenne</small>
+              </div>
+              <div class="review-feed">
+                <b>Avis à traiter</b>
+                <span style="--p:82%">Réponse IA prête</span>
+                <span style="--p:64%">Benchmark local</span>
+                <span style="--p:74%">Fiche Google à jour</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="module-slide" data-module="SO-REACH">
+            <div class="module-copy">
+              <span>SO-REACH</span>
+              <h3>Activez vos clients avec des campagnes SMS, RCS et email.</h3>
+              <p>Créez, segmentez et mesurez vos campagnes mobiles depuis une interface unique, avec Budy pour optimiser vos messages.</p>
+            </div>
+            <div class="module-graphic graph-reach" aria-hidden="true">
+              <div class="phone-mock">
+                <div class="message rich">Offre été<br><small>Réserver maintenant</small></div>
+                <div class="message">Rappel RDV confirmé</div>
+                <button>Voir l’offre</button>
+              </div>
+              <div class="campaign-metrics">
+                <b>98,6%</b><small>Délivrabilité</small>
+                <b>8,4%</b><small>Clic moyen</small>
+              </div>
+            </div>
+          </article>
+
+          <article class="module-slide" data-module="SO-CONNECT">
+            <div class="module-copy">
+              <span>SO-CONNECT</span>
+              <h3>Répondez plus vite, sur tous les canaux.</h3>
+              <p>Regroupez WhatsApp, Messenger, Instagram, webchat, RCS et Google Business Messages dans une messagerie assistée par Budy.</p>
+            </div>
+            <div class="module-graphic graph-connect" aria-hidden="true">
+              <div class="inbox-list">
+                <span>WhatsApp <b>2 min</b></span>
+                <span>Instagram <b>qualifié</b></span>
+                <span>Webchat <b>devis</b></span>
+                <span>RCS <b>relance</b></span>
+              </div>
+              <div class="agent-card">
+                <b>Budy IA</b>
+                <p>Réponse proposée, contact enrichi, CRM synchronisé.</p>
+              </div>
+            </div>
+          </article>
+
+          <article class="module-slide" data-module="BUDY IA">
+            <div class="module-copy">
+              <span>BUDY IA</span>
+              <h3>Une IA intégrée à chaque étape du parcours client.</h3>
+              <p>Budy rédige, analyse, répond, collecte les informations utiles et vous aide à prioriser les actions qui comptent.</p>
+            </div>
+            <div class="module-graphic graph-budy" aria-hidden="true">
+              <div class="orbit">
+                <i>avis</i><i>sms</i><i>crm</i><i>chat</i>
+                <strong>IA</strong>
+              </div>
+              <div class="action-stack">
+                <span>Réponse avis générée</span>
+                <span>Audience segmentée</span>
+                <span>Lead qualifié</span>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div class="slide-controls" aria-label="Navigation modules">
+          <button type="button" class="is-active" data-slide="0">SO-VIEW</button>
+          <button type="button" data-slide="1">SO-REACH</button>
+          <button type="button" data-slide="2">SO-CONNECT</button>
+          <button type="button" data-slide="3">BUDY IA</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
