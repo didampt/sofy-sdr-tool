@@ -31,6 +31,7 @@ function normalizeSignup(e, idx, listId) {
   const userId = info.user_id || null;
   return {
     key: signupKey(e),
+    fiche_key: signupKey(e),
     index: idx,
     list_id: listId,
     company_name: company.name || e.nom || '',

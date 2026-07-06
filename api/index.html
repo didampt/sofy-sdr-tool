@@ -431,6 +431,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
     <div class="logo" style="display:flex;align-items:center;gap:9px"><img src="/logo-icon.png" alt="" style="width:28px;height:28px" onerror="this.style.display='none'">Sofy <span>Scrap</span></div>
     <div class="tagline">Listes d'appel SDR<span id="bonjour-sdr" style="display:block;margin-top:6px;color:#E8EAF5;font-size:13px;font-weight:600"></span></div>
     <button class="nav-btn" data-view="signaux" onclick="ouvrirSignaux(this)">🔥 Signaux</button>
+    <button class="nav-btn" data-view="signups" onclick="nav('signups',this);chargerSignups()">🆕 Signups <span id="signups-badge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:2px"></span></button>
     <button class="nav-btn active" data-view="wizard" onclick="nav('wizard',this)">🎯 Nouvelle liste</button>
     <button class="nav-btn" data-view="results" onclick="nav('results',this)">📞 Résultats</button>
     <button class="nav-btn" data-view="taches" onclick="nav('taches',this);chargerTaches()">✅ Tâches <span id="taches-badge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:2px"></span></button>
@@ -653,6 +654,13 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
       <p class="sub">Vos rappels, triés par échéance. Un clic sur « Ouvrir la fiche » vous emmène sur le prospect et retire la tâche.</p>
       <div id="taches-stats" style="display:flex;gap:12px;margin-bottom:22px"></div>
       <div id="taches-liste"><p style="color:var(--ink-soft)">Chargement…</p></div>
+    </section>
+
+    <section class="view" id="view-signups">
+      <div class="eyebrow">Demandes entrantes</div>
+      <h1>🆕 Signups</h1>
+      <p class="sub">Nouveaux comptes créés depuis signup.sofy.fr. Un clic ouvre la fiche Hot Lead complète avec les mêmes actions SDR.</p>
+      <div id="signups-liste"><p style="color:var(--ink-soft)">Chargement…</p></div>
     </section>
 
     <section class="view" id="view-history">
@@ -965,7 +973,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v124';
+const VERSION='v125';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'Intéressé – RDV à prendre',e:'✅',score:30,cat:'good'},
@@ -1026,6 +1034,7 @@ function demarrerApp(u){
  if(!['superadmin','admin'].includes(u.role)){['params','stats'].forEach(v=>{const b=document.querySelector(`[data-view="${v}"]`);if(b)b.style.display='none';});}
  chargerSdrChips();
  chargerStatut();
+ chargerSignupBadge();
  // Lien direct vers une liste (ex : depuis Slack → ?liste=ID)
  const params=new URLSearchParams(location.search);
  const lid=params.get('liste');
@@ -3482,6 +3491,92 @@ async function chargerHistorique(){
   zone.innerHTML=d.listes.map(l=>rendreLigneListe(l,'hist-search')).join('');
  }catch(e){zone.innerHTML='<p style="color:var(--ink-soft)">Erreur : '+e.message+'</p>';}
 }
+function htmlSafe(v){return String(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function jsArg(v){return encodeURIComponent(String(v||''));}
+function signupStatut(s){
+ if(!s.pending)return '<span class="badge b-new">✅ Activé</span>';
+ return '<span class="badge b-signal">⏳ À valider</span>';
+}
+function signupTitle(s){
+ const contact=s.contact||{};
+ return s.company_name||contact.full_name||contact.email||'Signup';
+}
+function signupSubtitle(s){
+ const contact=s.contact||{};
+ return [contact.full_name,contact.email,contact.phone,s.city,s.country].filter(Boolean).join(' · ');
+}
+async function chargerSignupBadge(){
+ const b=document.getElementById('signups-badge');
+ if(!b)return;
+ try{
+  const r=await api('/api/signups');
+  const d=await r.json();
+  const n=Number(d.pending_count||0);
+  if(n>0){b.textContent=n;b.style.display='inline-block';}
+  else b.style.display='none';
+ }catch(_){}
+}
+async function chargerSignups(){
+ const zone=document.getElementById('signups-liste');
+ if(!zone)return;
+ zone.innerHTML='<p style="color:var(--ink-soft)">Chargement…</p>';
+ try{
+  const r=await api('/api/signups');
+  const d=await r.json();
+  if(d.erreur){zone.innerHTML='<p style="color:var(--ink-soft)">'+htmlSafe(d.erreur)+'</p>';return;}
+  majBadgeSignups(d.pending_count);
+  const signups=d.signups||[];
+  if(!signups.length){zone.innerHTML='<p style="color:var(--ink-soft)">Aucune demande signup pour l’instant.</p>';return;}
+  zone.innerHTML=signups.map(s=>rendreSignup(s)).join('');
+ }catch(e){zone.innerHTML='<p style="color:var(--ink-soft)">Erreur : '+htmlSafe(e.message)+'</p>';}
+}
+function majBadgeSignups(n){
+ const b=document.getElementById('signups-badge');
+ if(!b)return;
+ n=Number(n||0);
+ if(n>0){b.textContent=n;b.style.display='inline-block';}
+ else b.style.display='none';
+}
+function rendreSignup(s){
+ const date=s.submitted_at?new Date(s.submitted_at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'Date inconnue';
+ const t=htmlSafe(signupTitle(s));
+ const sub=htmlSafe(signupSubtitle(s));
+ const vat=s.tva_id?`<span class="badge b-new">TVA ${htmlSafe(s.tva_id)}</span>`:'';
+ const siret=s.siret?`<span class="badge b-gmb">SIRET ${htmlSafe(s.siret)}</span>`:'';
+ const ficheKey=jsArg(s.fiche_key||s.key);
+ const enable=s.pending&&s.can_enable&&state.user&&['admin','superadmin'].includes(state.user.role)
+  ?`<button class="act act-call" style="background:#10B981;color:#fff" onclick="event.stopPropagation();activerSignup('${jsArg(s.key)}')">✅ Activer le compte</button>`
+  :'';
+ return `<div class="fiche" style="cursor:pointer" onclick="ouvrirSignupFiche(${Number(s.list_id)||0},'${ficheKey}')">
+  <div class="fiche-head">
+   <div style="flex:1;min-width:0">
+    <div class="lead-name">🆕 ${t}</div>
+    <div class="lead-meta">${sub||'Contact non renseigné'} · ${date}</div>
+    <div class="badges">${signupStatut(s)}${siret}${vat}${s.organization_id?`<span class="badge b-new">Org ${htmlSafe(s.organization_id)}</span>`:''}</div>
+   </div>
+   <div class="act-row" style="border:0;padding:0;margin:0">${enable}<button class="act act-copy" onclick="event.stopPropagation();ouvrirSignupFiche(${Number(s.list_id)||0},'${ficheKey}')">Ouvrir la fiche →</button></div>
+  </div>
+ </div>`;
+}
+async function ouvrirSignupFiche(listId,ficheKey){
+ ficheKey=decodeURIComponent(String(ficheKey||''));
+ if(!listId||!ficheKey){toast('Fiche signup introuvable');return;}
+ await ouvrirListe(listId,ficheKey);
+ document.querySelectorAll('.nav-btn').forEach(x=>x.classList.remove('active'));
+ const b=document.querySelector('[data-view="signups"]');if(b)b.classList.add('active');
+}
+async function activerSignup(key){
+ key=decodeURIComponent(String(key||''));
+ const ok=await confirmSofy('✅ Activer le compte','Activer ce compte Auth0 et marquer la demande comme traitée dans Sofy Scrap ?','Activer');
+ if(!ok)return;
+ try{
+  const r=await api('/api/signups',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key})});
+  const d=await r.json();
+  if(!r.ok||d.erreur){toast('Erreur : '+(d.detail||d.erreur||'activation impossible'));return;}
+  toast(d.already_enabled?'Compte déjà activé':'✅ Compte activé');
+  chargerSignups();
+ }catch(e){toast('Erreur réseau : '+e.message);}
+}
 function rafraichirListes(){
  const vArch=document.getElementById('view-archives');
  if(vArch&&vArch.classList.contains('on'))chargerArchives();
@@ -3639,6 +3734,7 @@ async function ouvrirListe(id,cibleFiche,termeRecherche){
    const idx=REAL.findIndex(e=>cleSignal(e)===cibleFiche);
    if(idx>=0){
     const e=REAL[idx];
+    e._open=true;rerender(idx);
     const row=document.getElementById('fr'+idx);
     if(row){row.scrollIntoView({behavior:'smooth',block:'center'});row.style.transition='box-shadow .4s';row.style.boxShadow='0 0 0 3px var(--accent)';setTimeout(()=>row.style.boxShadow='',2500);}
     if(e.a_enrichir&&!e.score&&!verrouRecent(e)){
