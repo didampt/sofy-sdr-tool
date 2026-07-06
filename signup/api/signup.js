@@ -21,6 +21,10 @@ function validatePassword(password) {
   return null;
 }
 
+function e164Digits(parsed, fallback) {
+  return String(parsed ? parsed.number : fallback || '').replace(/\D/g, '');
+}
+
 function validatePayload(body) {
   const errors = [];
   const email = normalizeEmail(body.email);
@@ -52,7 +56,7 @@ function validatePayload(body) {
       first_name: String(body.first_name || '').trim(),
       last_name: String(body.last_name || '').trim(),
       email,
-      phone: parsed ? parsed.number : phone,
+      phone: e164Digits(parsed, phone),
       phone_country: phoneCountry,
       country: String(body.country || '').trim(),
       country_code: countryCode,

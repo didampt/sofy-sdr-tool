@@ -298,7 +298,7 @@ export async function ajouterHotLead(profil, cfg) {
     contacts: profil.nom_complet ? [{
       prenom: morceaux[0] || '', nom: morceaux.slice(1).join(' ') || '',
       fonction: profil.fonction || '', source: profil.source,
-      enrich: { email: profil.email || null, linkedin: profil.linkedin_brut || null, telephone: null },
+      enrich: { email: profil.email || null, linkedin: profil.linkedin_brut || null, telephone: profil.telephone || null },
       signal: { type: profil.type, source: profil.source, detail: profil.detail, date: maintenant }
     }] : []
   });

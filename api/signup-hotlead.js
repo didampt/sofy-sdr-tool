@@ -19,6 +19,10 @@ function domainFromEmail(email) {
   return /^(gmail|outlook|hotmail|yahoo|orange|wanadoo|free|sfr|laposte|icloud|live)\./.test(domain) ? null : domain;
 }
 
+function phoneDigits(phone) {
+  return String(phone || '').replace(/\D/g, '');
+}
+
 async function envoyerSlack(texte) {
   const hook = process.env.SLACK_WEBHOOK_URL;
   if (!hook) return;
@@ -33,8 +37,10 @@ async function envoyerSlack(texte) {
 
 function sanitizeSignupPayload(body) {
   const { password, signup_account, ...rest } = body || {};
+  const phone = phoneDigits(rest.phone);
   return {
     ...rest,
+    phone: phone || rest.phone,
     company: body && body.company ? { ...body.company, pappers_raw: body.company.pappers_raw || undefined } : undefined
   };
 }
@@ -59,6 +65,7 @@ export default async function handler(req, res) {
   const companyName = String(company.name || '').trim();
   const country = String(body.country || '').trim();
   const city = String(company.city || '').trim();
+  const phone = phoneDigits(body.phone);
   const signupAccount = body.signup_account && typeof body.signup_account === 'object' ? body.signup_account : {};
   const safePayload = sanitizeSignupPayload(body);
 
@@ -70,6 +77,7 @@ export default async function handler(req, res) {
     const result = await ajouterHotLead({
       nom_complet: `${firstName} ${lastName}`.trim(),
       email,
+      telephone: phone || null,
       entreprise: companyName || email,
       domaine: domainFromEmail(email),
       fonction: 'Inscription signup',
@@ -99,7 +107,7 @@ export default async function handler(req, res) {
     if (result.ajoute) {
       const app = (process.env.APP_URL || 'https://sofy-sdr-tool.vercel.app').replace(/\/$/, '');
       const link = `${app}/?liste=${result.liste_id}&fiche=${encodeURIComponent(result.cle_fiche || '')}`;
-      await envoyerSlack(`🔥 *Nouvelle inscription Sofy* — ${companyName || email}\n👤 ${firstName} ${lastName} · ${email}${body.phone ? ` · ${body.phone}` : ''}\n📍 ${country || 'Pays non renseigné'}${company.siret ? ` · SIRET ${company.siret}` : ''}${company.tva_id ? ` · TVA ${company.tva_id}` : ''}\n📂 <${link}|Ouvrir dans Sofy Scrap>`);
+      await envoyerSlack(`🔥 *Nouvelle inscription Sofy* — ${companyName || email}\n👤 ${firstName} ${lastName} · ${email}${phone ? ` · ${phone}` : ''}\n📍 ${country || 'Pays non renseigné'}${company.siret ? ` · SIRET ${company.siret}` : ''}${company.tva_id ? ` · TVA ${company.tva_id}` : ''}\n📂 <${link}|Ouvrir dans Sofy Scrap>`);
     }
 
     return res.status(200).json({ ok: true, ...result });
