@@ -48,6 +48,10 @@ const formError = document.querySelector('#formError');
 const password = document.querySelector('#password');
 const passwordStrength = document.querySelector('#passwordStrength');
 const togglePassword = document.querySelector('#togglePassword');
+const otpSection = document.querySelector('#otpSection');
+const otpCode = document.querySelector('#otpCode');
+const otpBoxes = Array.from(document.querySelectorAll('.otp-box'));
+const resendOtpBtn = document.querySelector('#resendOtpBtn');
 const countryCodeInput = document.querySelector('#countryCode');
 const phoneCountryInput = document.querySelector('#phoneCountry');
 const moduleSlides = Array.from(document.querySelectorAll('.module-slide'));
@@ -80,6 +84,9 @@ let selectedCompanyLegalForm = '';
 let selectedCompanyActivity = '';
 let abortSearch = null;
 let signupCompleted = false;
+let otpToken = '';
+let previewMode = '';
+let pendingSignupPayload = null;
 const searchCache = new Map();
 
 const countryCombo = createCombo({
@@ -114,8 +121,9 @@ function flagEmoji(code) {
     .replace(/./g, char => String.fromCodePoint(127397 + char.charCodeAt(0)));
 }
 
-function setError(message) {
+function setError(message, kind = 'error') {
   formError.hidden = !message;
+  formError.classList.toggle('is-info', kind === 'info');
   formError.innerHTML = message || '';
 }
 
@@ -299,15 +307,90 @@ function validateClient(payload) {
   return errors;
 }
 
-async function submitForm(event) {
-  event.preventDefault();
-  setError('');
-  updateCompanyVisibility();
+function otpPayload(payload) {
+  return {
+    ...payload,
+    otp_token: otpToken,
+    otp_code: otpCode.value.trim()
+  };
+}
 
-  const payload = formPayload();
-  const errors = validateClient(payload);
-  if (errors.length) {
-    setError(errors.map(error => `<div>${error}</div>`).join(''));
+function otpValue() {
+  return otpBoxes.map(box => box.value).join('');
+}
+
+function setOtpValue(value, focusIndex, shouldFocus = true) {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 6);
+  otpBoxes.forEach((box, index) => {
+    box.value = digits[index] || '';
+    box.classList.toggle('is-filled', Boolean(box.value));
+  });
+  otpCode.value = digits;
+  const nextIndex = focusIndex ?? Math.min(digits.length, otpBoxes.length - 1);
+  if (shouldFocus && otpBoxes[nextIndex]) otpBoxes[nextIndex].focus();
+}
+
+function showOtpStep() {
+  form.classList.add('is-otp-step');
+  otpSection.hidden = false;
+  otpCode.required = true;
+  if (previewMode !== 'otp-sent') {
+    const firstEmpty = otpBoxes.findIndex(box => !box.value);
+    (otpBoxes[firstEmpty === -1 ? otpBoxes.length - 1 : firstEmpty] || otpCode).focus();
+  }
+  submitBtn.textContent = 'Valider le code et créer mon compte';
+}
+
+function resetOtpStep() {
+  otpToken = '';
+  pendingSignupPayload = null;
+  form.classList.remove('is-otp-step');
+  otpSection.hidden = true;
+  otpCode.required = false;
+  setOtpValue('', 0, false);
+  if (!signupCompleted) submitBtn.textContent = 'Créer mon compte';
+}
+
+async function requestOtp(payload) {
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Envoi du code...';
+  try {
+    const response = await fetch('/api/signup-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const details = data.errors ? data.errors.join('<br>') : (data.detail || data.error || 'Erreur inconnue');
+      throw new Error(details);
+    }
+    otpToken = data.otp_token || '';
+    if (!otpToken) throw new Error('Code envoyé, mais jeton de validation manquant.');
+    pendingSignupPayload = payload;
+    showOtpStep();
+    setError('<div>Code envoyé par SMS. Il expire dans 10 minutes.</div>', 'info');
+  } catch (err) {
+    setError(err.message);
+    resetOtpStep();
+  } finally {
+    submitBtn.disabled = false;
+  }
+}
+
+async function submitSignup(payload) {
+  const finalPayload = payload || pendingSignupPayload;
+  if (!finalPayload) {
+    setError('Les informations du formulaire ne sont plus disponibles. Demandez un nouveau code.');
+    resetOtpStep();
+    return;
+  }
+
+  const code = otpValue();
+  if (!/^\d{6}$/.test(code)) {
+    setError('Saisissez le code à 6 chiffres reçu par SMS.');
+    const firstEmpty = otpBoxes.findIndex(box => !box.value);
+    (otpBoxes[firstEmpty === -1 ? 0 : firstEmpty] || otpCode).focus();
     return;
   }
 
@@ -317,7 +400,7 @@ async function submitForm(event) {
     const response = await fetch('/api/signup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(otpPayload(finalPayload))
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -332,9 +415,35 @@ async function submitForm(event) {
   } finally {
     if (!signupCompleted) {
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Créer mon compte';
+      submitBtn.textContent = 'Valider le code et créer mon compte';
     }
   }
+}
+
+function validatedPayload() {
+  updateCompanyVisibility();
+  const payload = formPayload();
+  const errors = validateClient(payload);
+  if (errors.length) {
+    setError(errors.map(error => `<div>${error}</div>`).join(''));
+    return null;
+  }
+  return payload;
+}
+
+async function submitForm(event) {
+  event.preventDefault();
+  setError('');
+  if (previewMode) return;
+
+  if (otpToken) {
+    await submitSignup(pendingSignupPayload);
+    return;
+  }
+
+  const payload = validatedPayload();
+  if (!payload) return;
+  await requestOtp(payload);
 }
 
 function renderReceivedView() {
@@ -468,6 +577,59 @@ document.addEventListener('click', event => {
 
 companyName.addEventListener('input', searchCompany);
 password.addEventListener('input', updatePasswordHelp);
+form.addEventListener('input', event => {
+  if (previewMode) return;
+  if (!event.target.closest('.otp-field')) resetOtpStep();
+});
+otpCode.addEventListener('input', () => setOtpValue(otpCode.value));
+otpBoxes.forEach((box, index) => {
+  box.addEventListener('focus', () => box.select());
+  box.addEventListener('input', () => {
+    const digits = box.value.replace(/\D/g, '');
+    if (digits.length > 1) {
+      setOtpValue(otpValue().slice(0, index) + digits, Math.min(index + digits.length, 5));
+      return;
+    }
+    box.value = digits;
+    box.classList.toggle('is-filled', Boolean(digits));
+    otpCode.value = otpValue();
+    if (digits && otpBoxes[index + 1]) otpBoxes[index + 1].focus();
+  });
+  box.addEventListener('keydown', event => {
+    if (event.key === 'Backspace' && !box.value && otpBoxes[index - 1]) {
+      otpBoxes[index - 1].focus();
+      otpBoxes[index - 1].value = '';
+      otpBoxes[index - 1].classList.remove('is-filled');
+      otpCode.value = otpValue();
+      event.preventDefault();
+    }
+    if (event.key === 'ArrowLeft' && otpBoxes[index - 1]) {
+      otpBoxes[index - 1].focus();
+      event.preventDefault();
+    }
+    if (event.key === 'ArrowRight' && otpBoxes[index + 1]) {
+      otpBoxes[index + 1].focus();
+      event.preventDefault();
+    }
+  });
+  box.addEventListener('paste', event => {
+    event.preventDefault();
+    setOtpValue(event.clipboardData.getData('text'), Math.min(index + 5, 5));
+  });
+});
+resendOtpBtn.addEventListener('click', async () => {
+  setError('');
+  if (previewMode) {
+    setError('<div>Mode aperçu : aucun SMS réel n’est envoyé.</div>', 'info');
+    return;
+  }
+  if (pendingSignupPayload) {
+    await requestOtp(pendingSignupPayload);
+    return;
+  }
+  const payload = validatedPayload();
+  if (payload) await requestOtp(payload);
+});
 togglePassword.addEventListener('click', () => {
   const show = password.type === 'password';
   password.type = show ? 'text' : 'password';
@@ -478,6 +640,7 @@ form.addEventListener('submit', submitForm);
 selectComboItem(countryCombo, byCode('FR'));
 selectComboItem(phoneCombo, byCode('FR'));
 updateCompanyVisibility();
+applyPreviewState();
 
 let activeModuleSlide = 0;
 let moduleTimer = null;
@@ -536,6 +699,41 @@ if (isReceivedViewRequested()) {
   renderReceivedView();
 }
 
+function applyPreviewState() {
+  previewMode = requestedPreviewState();
+  if (!previewMode || previewMode === 'received') return;
+  fillPreviewForm();
+  otpToken = 'preview-token';
+  pendingSignupPayload = formPayload();
+  showOtpStep();
+  if (previewMode === 'otp-entered') {
+    setOtpValue('123456', 5);
+    setError('<div>Code saisi. Le prochain clic finalise la demande de création.</div>', 'info');
+  } else {
+    setError('<div>Code envoyé par SMS. Il expire dans 10 minutes.</div>', 'info');
+  }
+}
+
+function fillPreviewForm() {
+  const set = (selector, value) => {
+    const node = document.querySelector(selector);
+    if (node) node.value = value;
+  };
+  set('[name="first_name"]', 'Camille');
+  set('[name="last_name"]', 'Martin');
+  set('[name="email"]', 'camille.martin@example.com');
+  phoneInput.value = '06 12 34 56 78';
+  companyName.value = 'Sofy Démo';
+  set('#siret', '12345678900010');
+  set('#tvaId', 'FR12345678901');
+  set('#address', '1 rue de la Paix');
+  set('#postalCode', '75002');
+  set('#city', 'Paris');
+  password.value = 'SofySignup!2026';
+  document.querySelector('#cgv').checked = true;
+  updatePasswordHelp();
+}
+
 function updateModuleStory(index) {
   const story = moduleStories[index];
   if (!story) return;
@@ -590,9 +788,32 @@ function normalizeModuleToken(value) {
 }
 
 function isReceivedViewRequested() {
+  if (requestedPreviewState() === 'received') return true;
   const params = new URLSearchParams(window.location.search);
   return ['received', 'success', 'submitted'].some(name => {
     const value = params.get(name);
     return value === '' || value === '1' || value === 'true';
   });
+}
+
+function requestedPreviewState() {
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get('preview') || params.get('state') || params.get('step');
+  const key = normalizeModuleToken(raw);
+  const aliases = new Map([
+    ['otpsent', 'otp-sent'],
+    ['otp', 'otp-sent'],
+    ['receivingotp', 'otp-sent'],
+    ['codesent', 'otp-sent'],
+    ['sms', 'otp-sent'],
+    ['otpentered', 'otp-entered'],
+    ['enteredotp', 'otp-entered'],
+    ['codeentered', 'otp-entered'],
+    ['final', 'otp-entered'],
+    ['finalstep', 'otp-entered'],
+    ['received', 'received'],
+    ['success', 'received'],
+    ['submitted', 'received']
+  ]);
+  return aliases.get(key) || '';
 }

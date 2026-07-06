@@ -9,6 +9,7 @@
   --muted: #66708d;
   --success: #17a66a;
   --danger: #bb244d;
+  --soft-shadow: 0 22px 70px rgba(0, 4, 71, .11);
 }
 
 * { box-sizing: border-box; }
@@ -51,6 +52,9 @@ a { color: var(--blue); font-weight: 700; }
   overflow-y: auto;
   padding: 40px clamp(28px, 6vw, 82px);
   align-items: center;
+  background:
+    radial-gradient(circle at 8% 12%, rgba(78,95,253,.10), transparent 28%),
+    linear-gradient(180deg, rgba(255,255,255,.58), rgba(255,255,255,.18));
 }
 
 .form-panel > h1,
@@ -105,7 +109,22 @@ h2 { font-size: clamp(34px, 4.4vw, 58px); color: white; max-width: 620px; }
 .intro { color: var(--muted); }
 .marketing-panel p { color: rgba(255,255,255,.78); max-width: 560px; }
 
-form { margin-top: 26px; display: grid; gap: 16px; }
+form {
+  margin-top: 26px;
+  display: grid;
+  gap: 16px;
+  padding: 4px;
+  border-radius: 28px;
+}
+
+form.is-otp-step > :not(#otpSection):not(#formError):not(#submitBtn) {
+  display: none !important;
+}
+
+form.is-otp-step {
+  margin-top: 34px;
+}
+
 .grid { display: grid; gap: 14px; }
 .grid.two { grid-template-columns: 1fr 1fr; }
 
@@ -144,6 +163,122 @@ input:focus,
 }
 
 .password-row { grid-template-columns: 1fr 50px; }
+
+.otp-section {
+  position: relative;
+  display: grid;
+  gap: 20px;
+  padding: clamp(24px, 5vw, 36px);
+  border: 1px solid rgba(78, 95, 253, .18);
+  border-radius: 30px;
+  background: rgba(255,255,255,.76);
+  box-shadow: var(--soft-shadow);
+  overflow: hidden;
+  animation: otpIn .38s ease both;
+}
+
+.otp-section::before {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  border: 1px solid rgba(255,255,255,.72);
+  border-radius: 24px;
+  pointer-events: none;
+}
+
+.otp-section strong {
+  display: block;
+  color: var(--navy);
+  font-size: clamp(22px, 4vw, 34px);
+  line-height: 1.05;
+  letter-spacing: -.03em;
+}
+
+.otp-section p {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.7;
+  max-width: 460px;
+}
+
+.otp-kicker {
+  display: inline-flex;
+  margin-bottom: 12px;
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.otp-field {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(42px, 1fr));
+  gap: clamp(7px, 1.6vw, 12px);
+  z-index: 1;
+}
+
+.otp-box {
+  height: clamp(54px, 8vw, 70px);
+  padding: 0;
+  border-radius: 18px;
+  text-align: center;
+  font-size: clamp(22px, 5vw, 34px);
+  font-weight: 900;
+  letter-spacing: -.04em;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.96), rgba(245,247,255,.90));
+  border: 1px solid rgba(0,4,71,.10);
+  box-shadow: inset 0 -10px 18px rgba(78,95,253,.04), 0 10px 24px rgba(0,4,71,.06);
+}
+
+.otp-box:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 5px rgba(78,95,253,.13), 0 14px 28px rgba(78,95,253,.16);
+}
+
+.otp-box.is-filled {
+  color: var(--navy);
+  border-color: rgba(78,95,253,.32);
+  background: #fff;
+}
+
+.otp-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.otp-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.link-button {
+  justify-self: start;
+  border: 0;
+  padding: 0;
+  color: var(--blue);
+  background: transparent;
+  font: 800 12px Montserrat, sans-serif;
+  cursor: pointer;
+}
+
+@keyframes otpIn {
+  from { opacity: 0; transform: translateY(10px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
 
 .combo {
   position: relative;
@@ -313,6 +448,12 @@ input:focus,
   padding: 12px;
   font-size: 13px;
   line-height: 1.5;
+}
+
+.form-error.is-info {
+  border-color: rgba(23,166,106,.22);
+  background: rgba(23,166,106,.08);
+  color: #0f7b52;
 }
 
 .submit {
@@ -951,4 +1092,15 @@ input:focus,
   .success-step-review { left: calc(50% - 46px); }
   .success-signal { left: 72px; }
   .signal-two { left: calc(50% + 26px); }
+}
+
+@media (max-width: 420px) {
+  .otp-field {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .otp-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }

@@ -107,6 +107,27 @@
           <span>J'accepte les <a href="https://cdn.prod.website-files.com/692425aeab094a5d5da30bad/69c3dc2b2be086cd147a91b8_CONDITIONS%20GE%CC%81NE%CC%81RALES%20DE%20VENTE%20ET%20D%E2%80%99UTILISATION%20%E2%80%93%20SOFY%20%28OPTIMA%20FRANCE%29.pdf" target="_blank" rel="noreferrer">CGV Sofy</a>.</span>
         </label>
 
+        <section id="otpSection" class="otp-section" hidden>
+          <div class="otp-copy">
+            <span class="otp-kicker">Étape sécurisée</span>
+            <strong>Validation du téléphone</strong>
+            <p>Nous avons envoyé un code à 6 chiffres par SMS. Saisissez-le pour finaliser la demande.</p>
+          </div>
+          <div class="otp-field" aria-label="Code reçu par SMS">
+            <input class="otp-box" type="text" inputmode="numeric" maxlength="1" aria-label="Chiffre 1">
+            <input class="otp-box" type="text" inputmode="numeric" maxlength="1" aria-label="Chiffre 2">
+            <input class="otp-box" type="text" inputmode="numeric" maxlength="1" aria-label="Chiffre 3">
+            <input class="otp-box" type="text" inputmode="numeric" maxlength="1" aria-label="Chiffre 4">
+            <input class="otp-box" type="text" inputmode="numeric" maxlength="1" aria-label="Chiffre 5">
+            <input class="otp-box" type="text" inputmode="numeric" maxlength="1" aria-label="Chiffre 6">
+            <input id="otpCode" name="otp_code" class="otp-hidden" inputmode="numeric" autocomplete="one-time-code" maxlength="6" tabindex="-1" aria-hidden="true">
+          </div>
+          <div class="otp-actions">
+            <button id="resendOtpBtn" class="link-button" type="button">Renvoyer un code</button>
+            <span>Valable 10 minutes</span>
+          </div>
+        </section>
+
         <div id="formError" class="form-error" hidden></div>
         <button id="submitBtn" class="submit" type="submit">Créer mon compte</button>
       </form>
