@@ -61,10 +61,12 @@
         </label>
 
         <div id="companySection" class="company-section">
-          <label> Raison sociale *
-            <input id="companyName" name="company_name" autocomplete="organization" placeholder="Tapez le nom de votre société">
-          </label>
-          <div id="companyResults" class="suggestions" hidden></div>
+          <div class="company-autocomplete">
+            <label> Raison sociale *
+              <input id="companyName" name="company_name" autocomplete="organization" placeholder="Tapez le nom de votre société" aria-autocomplete="list" aria-expanded="false" aria-controls="companyResults">
+            </label>
+            <div id="companyResults" class="suggestions" role="listbox" hidden></div>
+          </div>
 
           <div id="frenchCompanyFields" class="grid two company-details">
             <label> SIRET *

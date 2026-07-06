@@ -186,38 +186,80 @@ function fillCompany(company) {
   document.querySelector('#city').value = company.city || '';
   companyResults.hidden = true;
   companyResults.innerHTML = '';
+  companyName.setAttribute('aria-expanded', 'false');
+}
+
+function clearCompanyDetails() {
+  selectedCompanyRaw = null;
+  selectedCompanyLegalForm = '';
+  selectedCompanyActivity = '';
+  document.querySelector('#siret').value = '';
+  document.querySelector('#tvaId').value = '';
+  document.querySelector('#address').value = '';
+  document.querySelector('#postalCode').value = '';
+  document.querySelector('#city').value = '';
+}
+
+function setCompanyLoading(loading) {
+  companySection.classList.toggle('is-loading', loading);
+  companySection.setAttribute('aria-busy', String(loading));
 }
 
 async function selectCompany(company) {
-  fillCompany(company);
+  companyName.value = company.name || '';
+  companyResults.hidden = true;
+  companyResults.innerHTML = '';
+  companyName.setAttribute('aria-expanded', 'false');
+  clearCompanyDetails();
+  setCompanyLoading(true);
+
   const siret = String(company.siret || '').replace(/\D/g, '');
-  if (siret.length !== 14) return;
+  if (siret.length !== 14) {
+    fillCompany(company);
+    setCompanyLoading(false);
+    return;
+  }
   try {
     const response = await fetch(`/api/pappers-company?siret=${encodeURIComponent(siret)}`);
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Erreur Pappers');
-    if (data.company) fillCompany({ ...company, ...data.company });
+    fillCompany(data.company ? { ...company, ...data.company } : company);
   } catch (_) {
-    // The search result is still usable if detail hydration fails.
+    fillCompany(company);
+  } finally {
+    setCompanyLoading(false);
   }
 }
 
 function renderCompanies(companies) {
   if (!companies.length) {
-    companyResults.innerHTML = '<div class="form-error">Aucune entreprise trouvée. Vous pouvez saisir les informations manuellement.</div>';
+    companyResults.innerHTML = '<div class="suggestions-empty">Aucune entreprise trouvée. Vous pouvez saisir les informations manuellement.</div>';
     companyResults.hidden = false;
+    companyName.setAttribute('aria-expanded', 'true');
     return;
   }
   companyResults.innerHTML = companies.map((company, index) => `
-    <button type="button" data-index="${index}">
-      ${company.name || 'Entreprise sans nom'}
-      <small>${company.siret || 'SIRET indisponible'}${company.city ? ` - ${company.city}` : ''}</small>
+    <button type="button" role="option" data-index="${index}">
+      <span>${company.name || 'Entreprise sans nom'}</span>
+      <small>${company.siret || 'SIRET indisponible'}${company.city ? ` · ${company.city}` : ''}</small>
     </button>
   `).join('');
   companyResults.hidden = false;
+  companyName.setAttribute('aria-expanded', 'true');
   companyResults.querySelectorAll('button').forEach(button => {
     button.addEventListener('click', () => selectCompany(companies[Number(button.dataset.index)]));
   });
+}
+
+function renderCompanyLoading() {
+  companyResults.innerHTML = `
+    <div class="suggestions-loading">
+      <span class="suggestions-spinner" aria-hidden="true"></span>
+      Recherche en cours ...
+    </div>
+  `;
+  companyResults.hidden = false;
+  companyName.setAttribute('aria-expanded', 'true');
 }
 
 const searchCompany = debounce(async () => {
@@ -228,6 +270,7 @@ const searchCompany = debounce(async () => {
   document.querySelector('#tvaId').value = '';
   if (q.length < 3 || !isFrenchCompanyCountry()) {
     companyResults.hidden = true;
+    companyName.setAttribute('aria-expanded', 'false');
     return;
   }
 
@@ -238,6 +281,7 @@ const searchCompany = debounce(async () => {
 
   if (abortSearch) abortSearch.abort();
   abortSearch = new AbortController();
+  renderCompanyLoading();
 
   try {
     const response = await fetch(`/api/pappers-search?q=${encodeURIComponent(q)}`, { signal: abortSearch.signal });
@@ -248,8 +292,9 @@ const searchCompany = debounce(async () => {
     renderCompanies(companies);
   } catch (err) {
     if (err.name === 'AbortError') return;
-    companyResults.innerHTML = `<div class="form-error">${err.message}</div>`;
+    companyResults.innerHTML = `<div class="suggestions-empty">${err.message}</div>`;
     companyResults.hidden = false;
+    companyName.setAttribute('aria-expanded', 'true');
   }
 }, 260);
 
