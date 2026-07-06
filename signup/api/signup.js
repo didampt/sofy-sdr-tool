@@ -8,6 +8,7 @@ import {
   readBody,
   requireEnv
 } from './_lib.js';
+import { consumeOtpChallenge, verifyOtpChallenge } from './_otp.js';
 
 export const config = { maxDuration: 30 };
 
@@ -120,6 +121,14 @@ export default async function handler(req, res) {
   const { errors, normalized } = validatePayload(body);
   if (errors.length) return json(res, 400, { error: 'Validation failed', errors });
 
+  const otpResult = await verifyOtpChallenge({
+    id: body.otp_challenge_id,
+    email: normalized.email,
+    phone: normalized.phone,
+    code: body.otp_code
+  });
+  if (!otpResult.ok) return json(res, 400, { error: otpResult.error || 'Code de validation invalide.' });
+
   try {
     const backendBase = String(process.env.BACKEND_API_URL || '').replace(/\/$/, '');
     const backendUrl = process.env.BACKEND_SIGNUP_URL || `${backendBase}/auth/internal/signups`;
@@ -131,6 +140,7 @@ export default async function handler(req, res) {
 
     const account = await postJson(backendUrl, backendToken, normalized);
     const hotlead = await postJson(hotleadUrl, hotleadToken, { ...normalized, signup_account: account });
+    await consumeOtpChallenge(body.otp_challenge_id).catch(() => {});
 
     return json(res, 201, { ok: true, account, hotlead });
   } catch (err) {

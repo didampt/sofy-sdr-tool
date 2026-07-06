@@ -432,6 +432,71 @@ input:focus,
 
 .submit:disabled { opacity: .62; cursor: wait; }
 
+.link-button {
+  border: 0;
+  background: transparent;
+  color: var(--blue);
+  font: 800 13px Montserrat, sans-serif;
+  cursor: pointer;
+}
+
+.link-button:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+
+.form-panel.is-otp {
+  justify-content: center;
+  overflow-y: hidden;
+}
+
+.form-panel.is-otp .brand {
+  margin-bottom: 36px;
+}
+
+.otp-view {
+  width: min(100%, 520px);
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  animation: successPanelIn .55s cubic-bezier(.2,.8,.2,1) both;
+}
+
+.otp-kicker {
+  margin: 0 0 10px;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.otp-form {
+  width: 100%;
+  margin-top: 20px;
+}
+
+.otp-boxes {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.otp-box {
+  height: 62px;
+  padding: 0;
+  border-radius: 18px;
+  text-align: center;
+  font-size: 24px;
+  font-weight: 900;
+  color: var(--navy);
+}
+
+.otp-box:focus {
+  border-color: rgba(78,95,253,.62);
+  box-shadow: 0 0 0 4px rgba(78,95,253,.11);
+}
+
 .form-panel.is-received {
   justify-content: center;
   overflow-y: hidden;

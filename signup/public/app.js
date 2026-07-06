@@ -80,6 +80,9 @@ let selectedCompanyLegalForm = '';
 let selectedCompanyActivity = '';
 let abortSearch = null;
 let signupCompleted = false;
+let pendingSignupPayload = null;
+let pendingOtpChallengeId = null;
+let pendingOtpPhone = '';
 const searchCache = new Map();
 
 const countryCombo = createCombo({
@@ -357,12 +360,17 @@ async function submitForm(event) {
   }
 
   submitBtn.disabled = true;
-  submitBtn.textContent = 'Création en cours...';
+  submitBtn.textContent = 'Envoi du code...';
   try {
-    const response = await fetch('/api/signup', {
+    const response = await fetch('/api/signup-otp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        email: payload.email,
+        phone: payload.phone,
+        phone_country: payload.phone_country,
+        country_code: payload.country_code
+      })
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -370,16 +378,175 @@ async function submitForm(event) {
       throw new Error(details);
     }
 
-    signupCompleted = true;
-    renderReceivedView();
+    pendingSignupPayload = payload;
+    pendingOtpChallengeId = data.challenge_id;
+    pendingOtpPhone = data.phone || payload.phone;
+    renderOtpView();
   } catch (err) {
     setError(err.message);
   } finally {
-    if (!signupCompleted) {
+    if (!signupCompleted && document.body.contains(submitBtn)) {
       submitBtn.disabled = false;
       submitBtn.textContent = 'Créer mon compte';
     }
   }
+}
+
+function maskPhone(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (digits.length <= 4) return digits;
+  return `${digits.slice(0, 3)} ${'•'.repeat(Math.max(2, digits.length - 7))} ${digits.slice(-4)}`;
+}
+
+function otpCodeFromBoxes() {
+  return Array.from(document.querySelectorAll('.otp-box')).map(input => input.value).join('');
+}
+
+function setOtpError(message) {
+  const error = document.querySelector('#otpError');
+  if (!error) return;
+  error.hidden = !message;
+  error.innerHTML = message || '';
+}
+
+function fillOtpBoxes(value) {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 6);
+  const boxes = Array.from(document.querySelectorAll('.otp-box'));
+  boxes.forEach((box, index) => {
+    box.value = digits[index] || '';
+  });
+  const next = boxes[Math.min(digits.length, boxes.length - 1)];
+  if (next) next.focus();
+}
+
+function wireOtpInputs() {
+  const boxes = Array.from(document.querySelectorAll('.otp-box'));
+  boxes.forEach((box, index) => {
+    box.addEventListener('input', () => {
+      const digits = box.value.replace(/\D/g, '');
+      if (digits.length > 1) {
+        fillOtpBoxes(digits);
+        return;
+      }
+      box.value = digits;
+      if (digits && boxes[index + 1]) boxes[index + 1].focus();
+    });
+
+    box.addEventListener('keydown', event => {
+      if (event.key === 'Backspace' && !box.value && boxes[index - 1]) {
+        boxes[index - 1].focus();
+      }
+    });
+
+    box.addEventListener('paste', event => {
+      event.preventDefault();
+      fillOtpBoxes(event.clipboardData.getData('text'));
+    });
+  });
+
+  const otpForm = document.querySelector('#otpForm');
+  otpForm.addEventListener('submit', submitOtp);
+  const resend = document.querySelector('#resendOtp');
+  resend.addEventListener('click', resendOtp);
+  boxes[0]?.focus();
+}
+
+async function resendOtp() {
+  if (!pendingSignupPayload) return;
+  setOtpError('');
+  const button = document.querySelector('#resendOtp');
+  button.disabled = true;
+  button.textContent = 'Envoi...';
+  try {
+    const response = await fetch('/api/signup-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: pendingSignupPayload.email,
+        phone: pendingSignupPayload.phone,
+        phone_country: pendingSignupPayload.phone_country,
+        country_code: pendingSignupPayload.country_code
+      })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.detail || data.error || 'Envoi impossible.');
+    pendingOtpChallengeId = data.challenge_id;
+    pendingOtpPhone = data.phone || pendingOtpPhone;
+    fillOtpBoxes('');
+  } catch (err) {
+    setOtpError(err.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Renvoyer le code';
+  }
+}
+
+async function submitOtp(event) {
+  event.preventDefault();
+  setOtpError('');
+  const code = otpCodeFromBoxes();
+  if (!/^\d{6}$/.test(code)) {
+    setOtpError('Saisissez les 6 chiffres du code reçu par SMS.');
+    return;
+  }
+  if (!pendingSignupPayload || !pendingOtpChallengeId) {
+    setOtpError('La demande de validation a expiré. Revenez au formulaire pour recommencer.');
+    return;
+  }
+
+  const button = document.querySelector('#otpSubmit');
+  button.disabled = true;
+  button.textContent = 'Validation...';
+  try {
+    const response = await fetch('/api/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...pendingSignupPayload,
+        otp_challenge_id: pendingOtpChallengeId,
+        otp_code: code
+      })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const details = data.errors ? data.errors.join('<br>') : (data.detail || data.error || 'Erreur inconnue');
+      throw new Error(details);
+    }
+    signupCompleted = true;
+    renderReceivedView();
+  } catch (err) {
+    setOtpError(err.message);
+    button.disabled = false;
+    button.textContent = 'Valider mon numéro';
+  }
+}
+
+function renderOtpView() {
+  const formPanel = document.querySelector('.form-panel');
+  if (!formPanel) return;
+  formPanel.classList.add('is-otp');
+  formPanel.setAttribute('aria-labelledby', 'otp-title');
+  formPanel.innerHTML = `
+    <a class="brand" href="https://www.sofy.fr/" rel="noreferrer">
+      <img src="https://cdn.prod.website-files.com/692425aeab094a5d5da30bad/69242a559bca9c86f276f3a1_logo-SOFY.svg" alt="Sofy">
+    </a>
+    <section class="otp-view" aria-live="polite">
+      <p class="otp-kicker">Validation du téléphone</p>
+      <h1 id="otp-title">Entrez le code reçu par SMS</h1>
+      <p class="intro">Nous venons d’envoyer un code à 6 chiffres au ${maskPhone(pendingOtpPhone)}. Votre compte sera créé après validation du numéro.</p>
+      <form id="otpForm" class="otp-form">
+        <div class="otp-boxes" aria-label="Code de validation à 6 chiffres">
+          ${Array.from({ length: 6 }).map((_, index) => `
+            <input class="otp-box" inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="${index === 0 ? 'one-time-code' : 'off'}" aria-label="Chiffre ${index + 1}">
+          `).join('')}
+        </div>
+        <div id="otpError" class="form-error" hidden></div>
+        <button id="otpSubmit" class="submit" type="submit">Valider mon numéro</button>
+        <button id="resendOtp" class="link-button" type="button">Renvoyer le code</button>
+      </form>
+    </section>
+  `;
+  wireOtpInputs();
 }
 
 function renderReceivedView() {
@@ -576,7 +743,23 @@ if (moduleSlides.length) {
   startModuleSlider();
 }
 
-if (isReceivedViewRequested()) {
+if (isOtpViewRequested()) {
+  pendingSignupPayload = {
+    first_name: 'Camille',
+    last_name: 'Martin',
+    email: 'camille@example.com',
+    phone: '0612345678',
+    phone_country: 'FR',
+    country: 'France',
+    country_code: 'FR',
+    password: 'SofySignup!2026',
+    cgv_accepted: true,
+    company: { name: 'SOFY', siret: '12345678900010' }
+  };
+  pendingOtpChallengeId = 'preview';
+  pendingOtpPhone = '33612345678';
+  renderOtpView();
+} else if (isReceivedViewRequested()) {
   signupCompleted = true;
   renderReceivedView();
 }
@@ -640,4 +823,12 @@ function isReceivedViewRequested() {
     const value = params.get(name);
     return value === '' || value === '1' || value === 'true';
   });
+}
+
+function isOtpViewRequested() {
+  const params = new URLSearchParams(window.location.search);
+  return ['otp', 'code'].some(name => {
+    const value = params.get(name);
+    return value === '' || value === '1' || value === 'true';
+  }) || params.get('step') === 'otp';
 }
