@@ -202,6 +202,11 @@ input:focus,
   box-shadow: 0 18px 40px rgba(0, 4, 71, .12);
 }
 
+#phoneCountryCombo .combo-menu {
+  width: min(320px, calc(100vw - 32px));
+  right: auto;
+}
+
 .combo-search {
   height: 46px;
   margin-bottom: 10px;
