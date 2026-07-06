@@ -10,6 +10,7 @@ function mapCompany(item) {
     name: item.nom_entreprise || item.denomination || item.nom_complet || '',
     siret: siege.siret || item.siret || '',
     siren: item.siren || '',
+    tva_id: item.numero_tva_intracommunautaire || item.tva_intracommunautaire || '',
     address: [siege.numero_voie, siege.type_voie, siege.libelle_voie].filter(Boolean).join(' '),
     postal_code: siege.code_postal || '',
     city: siege.ville || '',

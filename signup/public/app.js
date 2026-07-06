@@ -76,6 +76,8 @@ const moduleStories = [
 ];
 
 let selectedCompanyRaw = null;
+let selectedCompanyLegalForm = '';
+let selectedCompanyActivity = '';
 let abortSearch = null;
 let signupCompleted = false;
 const searchCache = new Map();
@@ -136,11 +138,13 @@ function updateCompanyVisibility() {
   companyName.required = true;
   frenchCompanyFields.hidden = !frenchCompany;
   document.querySelector('#siret').required = frenchCompany;
-  document.querySelector('#siren').required = false;
+  document.querySelector('#tvaId').required = false;
   if (!frenchCompany) {
     selectedCompanyRaw = null;
+    selectedCompanyLegalForm = '';
+    selectedCompanyActivity = '';
     document.querySelector('#siret').value = '';
-    document.querySelector('#siren').value = '';
+    document.querySelector('#tvaId').value = '';
     companyResults.hidden = true;
     companyResults.innerHTML = '';
   }
@@ -172,14 +176,30 @@ function debounce(fn, wait) {
 
 function fillCompany(company) {
   selectedCompanyRaw = company.pappers_raw || null;
+  selectedCompanyLegalForm = company.legal_form || '';
+  selectedCompanyActivity = company.activity || '';
   companyName.value = company.name || '';
   document.querySelector('#siret').value = company.siret || '';
-  document.querySelector('#siren').value = company.siren || '';
+  document.querySelector('#tvaId').value = company.tva_id || company.numero_tva_intracommunautaire || '';
   document.querySelector('#address').value = company.address || '';
   document.querySelector('#postalCode').value = company.postal_code || '';
   document.querySelector('#city').value = company.city || '';
   companyResults.hidden = true;
   companyResults.innerHTML = '';
+}
+
+async function selectCompany(company) {
+  fillCompany(company);
+  const siret = String(company.siret || '').replace(/\D/g, '');
+  if (siret.length !== 14) return;
+  try {
+    const response = await fetch(`/api/pappers-company?siret=${encodeURIComponent(siret)}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Erreur Pappers');
+    if (data.company) fillCompany({ ...company, ...data.company });
+  } catch (_) {
+    // The search result is still usable if detail hydration fails.
+  }
 }
 
 function renderCompanies(companies) {
@@ -196,13 +216,16 @@ function renderCompanies(companies) {
   `).join('');
   companyResults.hidden = false;
   companyResults.querySelectorAll('button').forEach(button => {
-    button.addEventListener('click', () => fillCompany(companies[Number(button.dataset.index)]));
+    button.addEventListener('click', () => selectCompany(companies[Number(button.dataset.index)]));
   });
 }
 
 const searchCompany = debounce(async () => {
   const q = companyName.value.trim();
   selectedCompanyRaw = null;
+  selectedCompanyLegalForm = '';
+  selectedCompanyActivity = '';
+  document.querySelector('#tvaId').value = '';
   if (q.length < 3 || !isFrenchCompanyCountry()) {
     companyResults.hidden = true;
     return;
@@ -246,10 +269,12 @@ function formPayload() {
     company: {
       name: companyName.value.trim(),
       siret: document.querySelector('#siret').value.replace(/\D/g, ''),
-      siren: document.querySelector('#siren').value.replace(/\D/g, ''),
+      tva_id: document.querySelector('#tvaId').value.trim(),
       address: document.querySelector('#address').value.trim(),
       postal_code: document.querySelector('#postalCode').value.trim(),
       city: document.querySelector('#city').value.trim(),
+      legal_form: selectedCompanyLegalForm,
+      activity: selectedCompanyActivity,
       manual_entry: !selectedCompanyRaw,
       pappers_raw: selectedCompanyRaw
     }

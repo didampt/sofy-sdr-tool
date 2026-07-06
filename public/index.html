@@ -486,6 +486,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
     <div class="logo" style="display:flex;align-items:center;gap:9px"><img src="/logo-icon.png" alt="" style="width:28px;height:28px" onerror="this.style.display='none'">Sofy <span>Scrap</span></div>
     <div class="tagline">Listes d'appel SDR<span id="bonjour-sdr" style="display:block;margin-top:6px;color:#E8EAF5;font-size:13px;font-weight:600"></span></div>
     <button class="nav-btn" data-view="signaux" onclick="ouvrirSignaux(this)">🔥 Signaux</button>
+    <button class="nav-btn" data-view="signups" onclick="nav('signups',this);chargerSignups()">🆕 Inscriptions <span id="signups-badge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:2px"></span></button>
     <button class="nav-btn active" data-view="wizard" onclick="nav('wizard',this)">🎯 Nouvelle liste</button>
     <button class="nav-btn" data-view="results" onclick="nav('results',this)">📞 Résultats</button>
     <button class="nav-btn" data-view="taches" onclick="nav('taches',this);chargerTaches()">✅ Tâches <span id="taches-badge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:2px"></span></button>
@@ -718,6 +719,17 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
         <label id="taches-team-wrap" style="display:none;font-size:13px;align-items:center;gap:6px;cursor:pointer;white-space:nowrap"><input type="checkbox" id="taches-team" onchange="chargerTaches()"> 👥 Toute l'équipe</label>
       </div>
       <div id="taches-liste"><p style="color:var(--ink-soft)">Chargement…</p></div>
+    </section>
+
+    <section class="view" id="view-signups">
+      <div class="eyebrow">Demandes entrantes</div>
+      <h1>🆕 Inscriptions Sofy</h1>
+      <p class="sub">Comptes créés depuis signup.sofy.fr. Ils restent désactivés jusqu'à validation manuelle.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+        <input class="field" id="signups-search" placeholder="🔎 Filtrer : société, contact, email, pays…" oninput="rendreSignups()" style="flex:1;min-width:220px">
+        <button class="act act-copy" onclick="chargerSignups()">Rafraîchir</button>
+      </div>
+      <div id="signups-liste"><p style="color:var(--ink-soft)">Chargement…</p></div>
     </section>
 
     <section class="view" id="view-history">
@@ -1131,6 +1143,7 @@ function demarrerApp(u){
  if(!['superadmin','admin'].includes(u.role)){['params','stats','appels'].forEach(v=>{const b=document.querySelector(`[data-view="${v}"]`);if(b)b.style.display='none';});}
  chargerSdrChips();
  chargerStatut();
+ chargerSignupBadge();
  // Lien direct vers une liste (ex : depuis Slack → ?liste=ID)
  const params=new URLSearchParams(location.search);
  const lid=params.get('liste');
@@ -4882,6 +4895,81 @@ function rafraichirListes(){
  const vArch=document.getElementById('view-archives');
  if(vArch&&vArch.classList.contains('on'))chargerArchives();
  else chargerHistorique();
+}
+let SIGNUPS=[];
+async function chargerSignupBadge(){
+ const b=document.getElementById('signups-badge');
+ if(!b)return;
+ try{
+  const r=await api('/api/signups');
+  const d=await r.json();
+  if(!d.ok){b.style.display='none';return;}
+  const n=d.pending_count||0;
+  if(n>0){b.textContent=n;b.style.display='inline-block';}
+  else b.style.display='none';
+ }catch(_){b.style.display='none';}
+}
+async function chargerSignups(){
+ const zone=document.getElementById('signups-liste');
+ if(zone)zone.innerHTML='<p style="color:var(--ink-soft)">Chargement…</p>';
+ try{
+  const r=await api('/api/signups');
+  const d=await r.json();
+  if(d.erreur){zone.innerHTML='<p style="color:var(--ink-soft)">'+escapeHtml(d.erreur)+'</p>';return;}
+  SIGNUPS=d.signups||[];
+  chargerSignupBadge();
+  rendreSignups();
+ }catch(e){
+  if(zone)zone.innerHTML='<p style="color:var(--ink-soft)">Erreur : '+escapeHtml(e.message)+'</p>';
+ }
+}
+function rendreSignups(){
+ const zone=document.getElementById('signups-liste');
+ if(!zone)return;
+ const q=(document.getElementById('signups-search')?.value||'').trim().toLowerCase();
+ const canEnable=state.user&&['admin','superadmin'].includes(state.user.role);
+ const arr=SIGNUPS.filter(s=>{
+  if(!q)return true;
+  return [s.company_name,s.country,s.city,s.siret,s.siren,s.tva_id,s.contact&&s.contact.full_name,s.contact&&s.contact.email,s.contact&&s.contact.phone].join(' ').toLowerCase().includes(q);
+ });
+ if(!arr.length){zone.innerHTML='<p style="color:var(--ink-soft)">Aucune inscription'+(q?' pour ce filtre.':'.')+'</p>';return;}
+ zone.innerHTML=arr.map(s=>{
+  const pending=s.pending!==false;
+  const date=s.submitted_at?new Date(s.submitted_at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
+  const status=pending?'<span class="badge b-signal">À valider</span>':'<span class="badge b-new">Compte activé</span>';
+  const action=pending&&canEnable
+   ?`<button class="act act-call" onclick="activerSignup('${encodeURIComponent(s.key)}')">✅ Activer le compte</button>`
+   :pending
+    ?'<span style="font-size:12px;color:var(--ink-soft)">Activation réservée admin</span>'
+    :`<span style="font-size:12px;color:var(--ink-soft)">Activé${s.enabled_by?' par '+escapeHtml(s.enabled_by):''}${s.enabled_at?' · '+new Date(s.enabled_at).toLocaleDateString('fr-FR'):''}</span>`;
+  return `<div class="map-card" style="display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:12px">
+    <div style="min-width:0">
+      <div class="lead-name">${escapeHtml(s.company_name||'Société non renseignée')} ${status}</div>
+      <div class="lead-meta">${escapeHtml((s.contact&&s.contact.full_name)||'Contact')} · ${escapeHtml((s.contact&&s.contact.email)||'email manquant')} · ${escapeHtml(s.country||'Pays non renseigné')}${s.city?' · '+escapeHtml(s.city):''}</div>
+      <div class="badges">
+        <span class="badge b-gmb">Reçue ${escapeHtml(date)}</span>
+        ${s.siret?`<span class="badge b-gmb">SIRET ${escapeHtml(s.siret)}</span>`:''}
+        ${s.tva_id?`<span class="badge b-gmb">TVA ${escapeHtml(s.tva_id)}</span>`:''}
+        ${s.user_id?`<span class="badge b-new">Auth0 lié</span>`:'<span class="badge b-dup">Auth0 par email</span>'}
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">${action}</div>
+  </div>`;
+ }).join('');
+}
+async function activerSignup(key){
+ key=decodeURIComponent(key||'');
+ const s=SIGNUPS.find(x=>x.key===key);
+ if(!s)return toast('Signup introuvable');
+ const ok=await confirmSofy('Activer ce compte Sofy',`Valider l'inscription de ${s.company_name||s.contact?.email||'ce compte'} ?\n\nLe compte Auth0 sera débloqué et l'utilisateur pourra se connecter.`, 'Activer');
+ if(!ok)return;
+ try{
+  const r=await api('/api/signups',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key})});
+  const d=await r.json();
+  if(!d.ok){toast('Erreur : '+(d.erreur||d.detail||'activation impossible'));return;}
+  toast('✅ Compte activé');
+  await chargerSignups();
+ }catch(e){toast('Erreur réseau : '+e.message);}
 }
 async function archiverListe(id,nom,archiver){
  const action=archiver?'archiver':'désarchiver';

@@ -269,7 +269,7 @@ export async function ajouterHotLead(profil, cfg) {
   const cleStable = p => norm(p.domaine) || norm(p.linkedin_societe) || norm(p.entreprise);
   const connus = new Set(ents.map(e => norm(e.site_web) || norm(e.linkedin_entreprise) || norm(e.nom)));
   const cleP = cleStable(profil);
-  if (cleP && connus.has(cleP)) return { ajoute: false, raison: 'déjà présent' };
+  if (profil.type !== 'signup' && cleP && connus.has(cleP)) return { ajoute: false, raison: 'déjà présent' };
   if ((cfg && cfg.exclure_hubspot) !== false) {
     const dom = profil.email && !profil.email.match(/@(gmail|outlook|hotmail|yahoo|orange|wanadoo|free|sfr|laposte|icloud|live)\./) ? profil.email.split('@')[1] : profil.domaine;
     if (await estClientHubspot(profil.email, dom)) return { ajoute: false, raison: 'client HubSpot' };
@@ -291,9 +291,10 @@ export async function ajouterHotLead(profil, cfg) {
     nb_visites: profil.nb_visites || null,
     date_visite: profil.date_visite || maintenant,
     source_hotlead: profil.source, date_hotlead: maintenant,
+    signup: profil.signup || null,
     a_enrichir: true,
     signal_hot: true,
-    signal: { type: profil.type, source: profil.source, detail: profil.detail, date: maintenant, pages: profil.pages_visitees || [] },
+    signal: { type: profil.type, source: profil.source, detail: profil.detail, date: maintenant, pages: profil.pages_visitees || [], signup: profil.signup || null },
     contacts: profil.nom_complet ? [{
       prenom: morceaux[0] || '', nom: morceaux.slice(1).join(' ') || '',
       fonction: profil.fonction || '', source: profil.source,

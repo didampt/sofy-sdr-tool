@@ -31,6 +31,14 @@ async function envoyerSlack(texte) {
   } catch (_) {}
 }
 
+function sanitizeSignupPayload(body) {
+  const { password, signup_account, ...rest } = body || {};
+  return {
+    ...rest,
+    company: body && body.company ? { ...body.company, pappers_raw: body.company.pappers_raw || undefined } : undefined
+  };
+}
+
 export default async function handler(req, res) {
   const expected = (process.env.SIGNUP_HOTLEAD_TOKEN || '').trim();
   const received = String(req.headers['x-sofy-signup-token'] || '').trim();
@@ -51,6 +59,8 @@ export default async function handler(req, res) {
   const companyName = String(company.name || '').trim();
   const country = String(body.country || '').trim();
   const city = String(company.city || '').trim();
+  const signupAccount = body.signup_account && typeof body.signup_account === 'object' ? body.signup_account : {};
+  const safePayload = sanitizeSignupPayload(body);
 
   if (!email || !firstName || !lastName) {
     return res.status(400).json({ erreur: 'first_name, last_name et email requis' });
@@ -73,7 +83,14 @@ export default async function handler(req, res) {
       detail: `${firstName} ${lastName} a demandé la création d'un compte Sofy${companyName ? ` pour ${companyName}` : ''}`,
       ca_estime: null,
       industrie: company.activity || null,
-      effectif: null
+      effectif: null,
+      signup: {
+        user_id: signupAccount.user_id || null,
+        organization_id: signupAccount.organization_id || null,
+        disabled: signupAccount.disabled !== false,
+        submitted_at: new Date().toISOString(),
+        payload: safePayload
+      }
     }, {
       sdr: process.env.SIGNUP_HOTLEAD_SDR || 'didier',
       exclure_hubspot: false
@@ -82,7 +99,7 @@ export default async function handler(req, res) {
     if (result.ajoute) {
       const app = (process.env.APP_URL || 'https://sofy-sdr-tool.vercel.app').replace(/\/$/, '');
       const link = `${app}/?liste=${result.liste_id}&fiche=${encodeURIComponent(result.cle_fiche || '')}`;
-      await envoyerSlack(`🔥 *Nouvelle inscription Sofy* — ${companyName || email}\n👤 ${firstName} ${lastName} · ${email}${body.phone ? ` · ${body.phone}` : ''}\n📍 ${country || 'Pays non renseigné'}${company.siret ? ` · SIRET ${company.siret}` : ''}\n📂 <${link}|Ouvrir dans Sofy Scrap>`);
+      await envoyerSlack(`🔥 *Nouvelle inscription Sofy* — ${companyName || email}\n👤 ${firstName} ${lastName} · ${email}${body.phone ? ` · ${body.phone}` : ''}\n📍 ${country || 'Pays non renseigné'}${company.siret ? ` · SIRET ${company.siret}` : ''}${company.tva_id ? ` · TVA ${company.tva_id}` : ''}\n📂 <${link}|Ouvrir dans Sofy Scrap>`);
     }
 
     return res.status(200).json({ ok: true, ...result });

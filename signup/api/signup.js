@@ -63,6 +63,7 @@ function validatePayload(body) {
         name: String(company.name || '').trim(),
         siret: String(company.siret || '').replace(/\D/g, ''),
         siren: String(company.siren || '').replace(/\D/g, ''),
+        tva_id: String(company.tva_id || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase(),
         address: String(company.address || '').trim(),
         postal_code: String(company.postal_code || '').trim(),
         city: String(company.city || '').trim(),
@@ -125,7 +126,7 @@ export default async function handler(req, res) {
     const hotleadToken = requireEnv('SIGNUP_HOTLEAD_TOKEN');
 
     const account = await postJson(backendUrl, backendToken, normalized);
-    const hotlead = await postJson(hotleadUrl, hotleadToken, normalized);
+    const hotlead = await postJson(hotleadUrl, hotleadToken, { ...normalized, signup_account: account });
 
     return json(res, 201, { ok: true, account, hotlead });
   } catch (err) {
