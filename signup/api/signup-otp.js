@@ -1,47 +1,42 @@
-import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import {
   clientIp,
   json,
-  normalizeEmail,
+  newOtpCode,
+  newOtpToken,
   rateLimit,
   readBody,
-  requireEnv
+  requireEnv,
+  storeOtp
 } from './_lib.js';
-import { createOtpChallenge, generateOtpCode, otpRateLimitKey } from './_otp.js';
+import { validateSignupPayload } from './_signup-validation.js';
 
-export const config = { maxDuration: 30 };
+export const config = { maxDuration: 20 };
 
-function normalizePhone(phone, country) {
-  const parsed = parsePhoneNumberFromString(String(phone || '').trim(), String(country || 'FR').toUpperCase());
-  if (!parsed || !parsed.isValid()) return null;
-  return parsed.number.replace(/\D/g, '');
+function smsRecipient(phone) {
+  return String(phone || '').replace(/\D/g, '');
 }
 
-async function sendOtpSms(phone, code) {
-  const keyID = requireEnv('SOFY_API_KEY_ID');
-  const keySecret = requireEnv('SOFY_API_KEY_SECRET');
-  const url = String(process.env.SOFY_SMS_API_URL || 'https://api.sofy.fr/v1/sms').trim();
-  const from = String(process.env.SIGNUP_OTP_SENDER || 'SOFY').trim();
-
-  const response = await fetch(url, {
+async function sendOtpSms({ to, code }) {
+  const apiBase = String(process.env.SOFY_SMS_API_URL || 'https://api.sofy.fr/v1').replace(/\/$/, '');
+  const response = await fetch(`${apiBase}/sms`, {
     method: 'POST',
     headers: {
+      Accept: 'application/json',
       'Content-Type': 'application/json',
-      'X-API-KEY-ID': keyID,
-      'X-API-KEY-SECRET': keySecret
+      'X-API-KEY-ID': requireEnv('SOFY_API_KEY_ID'),
+      'X-API-KEY-SECRET': requireEnv('SOFY_API_KEY_SECRET')
     },
     body: JSON.stringify({
-      from,
-      to: phone,
+      from: process.env.SIGNUP_OTP_SMS_FROM || 'SOFY',
+      to,
       body: `Votre code de validation Sofy est ${code}. Il expire dans 10 minutes.`,
       shortenUrls: false,
       isTransactional: true
     })
   });
-
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data.error || data.erreur || data.detail || `Erreur SMS ${response.status}`);
+    throw new Error(data.error || data.message || data.detail || `Sofy SMS HTTP ${response.status}`);
   }
   return data;
 }
@@ -56,34 +51,31 @@ export default async function handler(req, res) {
     return json(res, 400, { error: 'Invalid JSON body' });
   }
 
-  const email = normalizeEmail(body.email);
-  const phoneCountry = String(body.phone_country || body.country_code || 'FR').toUpperCase();
-  const phone = normalizePhone(body.phone, phoneCountry);
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return json(res, 400, { error: 'Un email valide est requis.' });
-  }
-  if (!phone) {
-    return json(res, 400, { error: 'Un numéro de téléphone valide est requis.' });
-  }
-
   const ip = clientIp(req);
   const ipLimit = await rateLimit(`otp:ip:${ip}`, 12, 60 * 60);
   if (!ipLimit.ok) return json(res, 429, { error: 'Trop de demandes de code.', retry_after: ipLimit.retryAfter });
 
-  const phoneLimit = await rateLimit(`otp:phone:${otpRateLimitKey(phone, email)}`, 3, 15 * 60);
-  if (!phoneLimit.ok) return json(res, 429, { error: 'Trop de codes envoyés. Réessayez plus tard.', retry_after: phoneLimit.retryAfter });
+  const { errors, normalized } = validateSignupPayload(body);
+  if (errors.length) return json(res, 400, { error: 'Validation failed', errors });
+
+  const phoneLimit = await rateLimit(`otp:phone:${normalized.phone}`, 4, 60 * 60);
+  if (!phoneLimit.ok) return json(res, 429, { error: 'Trop de demandes pour ce numéro.', retry_after: phoneLimit.retryAfter });
+
+  const code = newOtpCode();
+  const token = newOtpToken();
+  const to = smsRecipient(normalized.phone);
+  if (!to) return json(res, 400, { error: 'Numéro de téléphone invalide.' });
 
   try {
-    const code = generateOtpCode();
-    const challengeID = await createOtpChallenge({ email, phone, code });
-    await sendOtpSms(phone, code);
+    const sms = await sendOtpSms({ to, code });
+    await storeOtp({ token, code, email: normalized.email, phone: normalized.phone, ttlSeconds: 10 * 60 });
     return json(res, 200, {
       ok: true,
-      challenge_id: challengeID,
-      phone,
-      expires_in: 600
+      otp_token: token,
+      expires_in: 10 * 60,
+      sms_id: sms.id || null
     });
   } catch (err) {
-    return json(res, 502, { error: 'Envoi du code impossible.', detail: err.message });
+    return json(res, 502, { error: 'Impossible d’envoyer le code SMS.', detail: err.message });
   }
 }
