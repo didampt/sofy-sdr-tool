@@ -5,10 +5,13 @@
 //        -> on récupère les SIREN -> people/find (siren + result_is_current) -> dirigeants.
 //      Raison : Basile n'a quasi pas de PERSONNES en DOM (test géo), mais beaucoup d'ENTREPRISES.
 //      Les filtres region_code/department_code n'existent pas ; la géo fine se fait par CODE POSTAL.
-//   C) MÉTROPOLE avec NAF précis (hybride) -> companies/find par code NAF -> SIREN ->
-//        people/find (siren + result_role + result_is_current) -> personnes aux postes ciblés.
-//      Raison : people/find ne filtre le secteur que par 7 macro-slugs (*_global) ; le secteur
-//      fin ("automobile", "pièces auto"...) n'est fiable que via le NAF côté entreprises.
+//   C) MÉTROPOLE avec NAF précis (hybride) -> people/find par POSTE (+ macro-secteur),
+//        puis TRI SECTORIEL PAR IA (claude-sonnet) sur nom d'entreprise + site + poste,
+//        en paginant jusqu'au quota.
+//      Raison : people/find ne filtre le secteur que par 7 macro-slugs (*_global), et
+//      people/find(siren) ne renvoie QUE les mandataires légaux (jamais les profils
+//      LinkedIn — vérifié en prod le 7 juil. 2026, y compris sur de grosses entreprises).
+//      Le pont entreprise->personne n'existe donc pas ; on trie côté Sofy avec l'IA.
 //
 // POST { mode, criteres }
 //   mode='estimer' -> comptage gratuit (+ échantillon de dirigeants en mode DOM)
@@ -165,57 +168,49 @@ function dirigeantVersFiche(lead, infoSiren) {
   };
 }
 
-// Récupère des entreprises par CODE NAF (chemin hybride métropole) : 1 appel companies/find
-// par code (limit 100, pas de pagination connue), quota réparti entre les codes.
-// metropoleSeule=true -> écarte les CP DOM (97xxx). Renvoie sirens + infos + total Basile cumulé.
-async function collecterSirenParNaf(nafCodes, key, capSiren, sirenExclus, metropoleSeule) {
-  sirenExclus = sirenExclus || new Set();
-  const sirens = []; const infoBySiren = {}; let totalEnt = 0;
-  const quota = Math.max(1, Math.ceil(capSiren / nafCodes.length));
-  for (let i = 0; i < nafCodes.length; i++) {
-    if (sirens.length >= capSiren) break;
-    const r = await basile('/companies/find', { limit: 100, filters: { naf_code: { include: [nafCodes[i]] } } }, key);
-    if (r.data && r.data.total != null) totalEnt += r.data.total;
-    let pris = 0;
-    for (const co of listeEntreprises(r.data)) {
-      if (pris >= quota || sirens.length >= capSiren) break;
-      const e = lireEntreprise(co);
-      const sn = e.siren ? String(e.siren).replace(/\D/g, '') : '';
-      if (!e.siren || infoBySiren[e.siren] || sirenExclus.has(sn)) continue;
-      if (metropoleSeule && String(e.cp || '').startsWith('97')) continue; // DOM exclu si métropole seule
-      infoBySiren[e.siren] = e; sirens.push(e.siren); pris++;
-    }
-  }
-  return { sirens, infoBySiren, totalEnt };
+// ---------- Tri sectoriel par IA (chemin hybride métropole) ----------
+const ANTHRO = 'https://api.anthropic.com/v1/messages';
+
+// Site web de l'entreprise actuelle (souvent présent dans experiences).
+function domaineCourant(d) {
+  const exps = Array.isArray(d.experiences) ? d.experiences : [];
+  const cur = exps.find(x => x && x.is_current && x.company_domain);
+  return cur ? cur.company_domain : '';
 }
 
-// people/find par paquets de SIREN, filtré sur les POSTES ciblés (chemin hybride).
-// Max 8 appels pour rester sous les 60 s Vercel.
-async function personnesParSirenEtPoste(sirens, infoBySiren, roles, key, capFiches) {
-  const out = [];
-  const taille = 30;
-  for (let i = 0, appels = 0; i < sirens.length && appels < 8; i += taille, appels++) {
-    if (out.length >= capFiches) break;
-    const part = sirens.slice(i, i + taille);
-    const f = { siren: { include: part }, result_is_current: true };
-    if (roles.length) f.result_role = { include: roles };
-    const r = await basile('/people/find', { limit: 100, filters: f }, key);
-    for (const l of ((r.data && r.data.leads) || [])) {
-      const d = l.data || l || {};
-      const fiche = leadVersFichePersonne(l);
-      const info = infoBySiren[d.siren];
-      if (info) { // complète la fiche avec les infos officielles de l'entreprise
-        if (info.nom) fiche.nom = info.nom;
-        if (!fiche.ville && info.ville) fiche.ville = info.ville;
-        fiche.code_postal = info.cp || '';
-        fiche.naf = info.naf || null;
-        if (!fiche.siren) fiche.siren = info.siren;
-      }
-      out.push(fiche);
-      if (out.length >= capFiches) break;
-    }
+// Demande à Claude quels numéros de la liste appartiennent au secteur visé.
+// Renvoie un Set de numéros, ou null si l'IA est indisponible (l'appelant décide quoi faire).
+async function filtrerSecteurIA(candidats, activite, nafCodes, apiKeyIA) {
+  const lignes = candidats.map(c => `${c.n} | ${c.entreprise}${c.domaine ? ' | ' + c.domaine : ''}${c.poste ? ' | ' + c.poste : ''}`).join('\n');
+  const prompt = `Secteur visé : "${activite}"${nafCodes && nafCodes.length ? ` (codes NAF indicatifs : ${nafCodes.join(', ')})` : ''}.
+Voici des entreprises françaises, une par ligne (numéro | nom de l'entreprise | site web éventuel | poste du contact) :
+${lignes}
+
+Réponds UNIQUEMENT avec un tableau JSON des numéros dont l'entreprise appartient clairement ou très probablement au secteur visé (d'après son nom et son site web). Dans le doute, EXCLUS le numéro. Exemple : [2,17,43]. Si aucune ne correspond : [].`;
+  for (let tent = 1; tent <= 2; tent++) {
+    try {
+      const r = await fetch(ANTHRO, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKeyIA, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 800, temperature: 0, messages: [{ role: 'user', content: prompt }] })
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) { if (tent < 2) { await new Promise(s => setTimeout(s, 600)); continue; } return null; }
+      const txt = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+      const m = txt.match(/\[[\d,\s]*\]/);
+      if (!m) return null;
+      return new Set(JSON.parse(m[0]));
+    } catch (e) { if (tent >= 2) return null; }
   }
-  return out;
+  return null;
+}
+
+// Transforme une page de leads Basile en lignes compactes pour le tri IA.
+function leadsVersCandidats(leads) {
+  return leads.map((l, n) => {
+    const d = l.data || l || {};
+    return { n, entreprise: d.current_company_name || '?', domaine: domaineCourant(d), poste: d.result_role || d.current_job_title || '' };
+  });
 }
 
 // Récupère des entreprises DOM (naf + code postal) et collecte SIREN + infos. cap = nb max de SIREN.
@@ -295,7 +290,7 @@ export default async function handler(req, res) {
   try {
     // SIREN déjà présents dans des listes existantes -> exclus pour ne sortir que du NEUF
     let sirenExclus = new Set();
-    if (companyFirst || hybride) {
+    if (companyFirst) {
       try {
         const rowsEx = sql ? await sql`SELECT entreprises FROM listes WHERE archivee = FALSE` : [];
         for (const row of rowsEx) { const ents = Array.isArray(row.entreprises) ? row.entreprises : []; for (const e of ents) { if (e.siren) sirenExclus.add(String(e.siren).replace(/\D/g, '')); } }
@@ -358,60 +353,88 @@ export default async function handler(req, res) {
       return res.status(400).json({ erreur: 'mode inconnu (estimer|creer)' });
     }
 
-    // ============== CHEMIN HYBRIDE MÉTROPOLE (entreprises NAF -> postes par SIREN) ==============
-    // Corrige le bug "secteur ignoré" : people/find ne connaît que 7 macro-secteurs, donc quand
-    // l'IA a extrait des codes NAF précis, on cherche d'abord les ENTREPRISES du secteur,
-    // puis les PERSONNES aux postes ciblés dans ces entreprises.
+    // ============== CHEMIN HYBRIDE MÉTROPOLE (postes + tri sectoriel par IA) ==============
+    // Corrige le bug "secteur ignoré" : people/find ne connaît que 7 macro-secteurs et ne peut
+    // pas croiser SIREN et postes LinkedIn. On cherche donc par POSTE (+ macro-secteur), puis
+    // Claude trie les entreprises des profils trouvés selon le secteur visé, page par page.
     if (hybride) {
+      const apiKeyIA = process.env.ANTHROPIC_API_KEY;
+      if (!apiKeyIA) return res.status(500).json({ erreur: 'ANTHROPIC_API_KEY manquante (tri sectoriel)' });
+      const filtres = filtresPersonnes(criteres);
       const nafCodes = naf.include;
-      const roles = rolesDepuisFamilles(criteres);
-      const metropoleSeule = domPrefixes.length === 0;
+      const activite = (criteres.activite_libre || '').trim() || ('activité des codes NAF ' + nafCodes.join(', '));
+      const debut = Date.now();
+      const tempsOk = () => (Date.now() - debut) < 40000; // marge sous les 60 s Vercel
 
       if (mode === 'estimer') {
-        // Comptage entreprises par NAF + petit échantillon de SIRENs pour valider la chaîne
-        let totalEnt = 0; const sampleSirens = []; const sampleInfo = {};
-        for (let i = 0; i < nafCodes.length; i++) {
-          const besoin = sampleSirens.length < 15;
-          const r = await basile('/companies/find', { limit: besoin ? 30 : 1, filters: { naf_code: { include: [nafCodes[i]] } } }, key);
-          if (r.status === 401) return res.status(502).json({ erreur: 'Clé Basile refusée' });
-          if (r.data && r.data.total != null) totalEnt += r.data.total;
-          for (const co of listeEntreprises(r.data)) {
-            if (sampleSirens.length >= 15) break;
-            const e = lireEntreprise(co);
-            const sn = e.siren ? String(e.siren).replace(/\D/g, '') : '';
-            if (!e.siren || sampleInfo[e.siren] || sirenExclus.has(sn)) continue;
-            if (metropoleSeule && String(e.cp || '').startsWith('97')) continue;
-            sampleInfo[e.siren] = e; sampleSirens.push(e.siren);
+        // 1 page réelle de 100 profils + tri IA -> taux sectoriel mesuré + échantillon
+        const r = await basile('/people/find', { limit: 100, filters: filtres }, key);
+        if (r.status === 401) return res.status(502).json({ erreur: 'Clé Basile refusée' });
+        const leads = (r.data && r.data.leads) || [];
+        const totalBrut = (r.data && r.data.total) || 0;
+        let taux = null, echantillon = [];
+        if (leads.length) {
+          const retenus = await filtrerSecteurIA(leadsVersCandidats(leads), activite, nafCodes, apiKeyIA);
+          if (retenus) {
+            taux = retenus.size / leads.length;
+            echantillon = leads.filter((l, n) => retenus.has(n)).slice(0, 6).map(l => {
+              const f = leadVersFichePersonne(l);
+              return {
+                nom: ((f.contacts[0].prenom || '') + ' ' + (f.contacts[0].nom || '')).trim() || '—',
+                role: f.contacts[0].fonction || '—',
+                entreprise: f.nom || '—',
+                ville: f.ville || ''
+              };
+            });
           }
         }
-        // Échantillon de PERSONNES aux postes ciblés dans ces entreprises (gratuit)
-        let echantillon = [];
-        if (sampleSirens.length) {
-          const personnes = await personnesParSirenEtPoste(sampleSirens, sampleInfo, roles, key, 40);
-          echantillon = personnes.slice(0, 6).map(f => ({
-            nom: ((f.contacts[0].prenom || '') + ' ' + (f.contacts[0].nom || '')).trim() || '—',
-            role: f.contacts[0].fonction || '—',
-            entreprise: f.nom || '—',
-            ville: f.ville || ''
-          }));
-        }
         return res.status(200).json({
-          mode_recherche: 'entreprise_postes',
-          nb_entreprises: totalEnt,
-          nb_personnes: null,
+          mode_recherche: 'personne_secteur',
+          nb_personnes_brut: totalBrut,
+          nb_personnes: taux == null ? null : Math.round(totalBrut * taux),
+          taux_secteur: taux,
           echantillon_personnes: echantillon,
-          _filtres: { naf_codes: nafCodes, postes: roles, zones }
+          _filtres: {
+            postes: (filtres.result_role && filtres.result_role.include) || [],
+            secteur_vise: activite,
+            naf_codes: nafCodes,
+            activity: (filtres.activity && filtres.activity.include) || [],
+            zones
+          }
         });
       }
 
       if (mode === 'creer') {
         const cap = capContacts(criteres);
-        // Cap SIREN élevé : les postes ciblés sont plus rares que les mandataires
-        const { sirens, infoBySiren } = await collecterSirenParNaf(nafCodes, key, Math.max(cap * 8, 240), sirenExclus, metropoleSeule);
-        if (!sirens.length) return res.status(200).json({ fiches: [], nb: 0, mode_recherche: 'entreprise_postes', message: 'Aucune nouvelle entreprise dans ce secteur (toutes déjà présentes dans tes listes).' });
-        let people = await personnesParSirenEtPoste(sirens, infoBySiren, roles, key, cap * 3);
-        let fiches = regrouperParEntreprise(people).slice(0, cap);
-        return res.status(200).json({ fiches, nb: fiches.length, mode_recherche: 'entreprise_postes' });
+        let fiches = [];
+        let token = null;
+        for (let page = 0; page < 6; page++) {
+          if (!tempsOk() || fiches.length >= cap * 1.5) break;
+          const body = { limit: 100, filters: filtres };
+          if (token) body.paginationToken = token;
+          const r = await basile('/people/find', body, key);
+          if (r.status === 402) break; // pagination coupée -> on garde ce qu'on a
+          if (!r.data || r.data.success === false) break;
+          const leads = r.data.leads || [];
+          if (!leads.length) break;
+          const retenus = await filtrerSecteurIA(leadsVersCandidats(leads), activite, nafCodes, apiKeyIA);
+          if (retenus === null) {
+            if (!fiches.length && page === 0) return res.status(503).json({ erreur: 'Tri sectoriel IA momentanément indisponible, réessaie dans quelques secondes.' });
+            break;
+          }
+          for (let n = 0; n < leads.length; n++) {
+            if (!retenus.has(n)) continue;
+            const f = leadVersFichePersonne(leads[n]);
+            if (f.contacts[0] && f.contacts[0].enrich && f.contacts[0].enrich.linkedin) fiches.push(f);
+          }
+          token = (r.data.pagination && r.data.pagination.nextToken) || null;
+          if (!token) break;
+        }
+        fiches = regrouperParEntreprise(fiches).slice(0, cap);
+        return res.status(200).json({
+          fiches, nb: fiches.length, mode_recherche: 'personne_secteur',
+          message: fiches.length ? undefined : 'Aucun contact du secteur visé parmi les profils parcourus — élargis le secteur ou les postes.'
+        });
       }
       return res.status(400).json({ erreur: 'mode inconnu (estimer|creer)' });
     }
