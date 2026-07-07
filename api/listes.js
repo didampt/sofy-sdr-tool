@@ -15,7 +15,7 @@ function hashCriteres(criteres) {
   const cle = JSON.stringify({
     naf: [...(c.naf || [])].sort(),
     size: c.size || '',
-    emp: c.emp || '',
+    emp: Array.isArray(c.emp) ? [...c.emp].sort().join('+') : (c.emp || ''),
     ca: c.ca || '',
     jobs: [...(c.jobs || [])].sort(),
     pays: [...(c.pays || [])].sort(),

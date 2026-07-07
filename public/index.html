@@ -623,7 +623,8 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
         <div class="qnum"><b>3</b> Taille de la société</div>
         <h2>Quel effectif ?</h2>
         <div class="chips" id="emp-chips"></div>
-        <p class="hint">ICP Sofy multi-sites : 20+ salariés recommandé.</p>
+        <p class="hint">ICP Sofy multi-sites : 20+ salariés recommandé. Plusieurs tranches possibles.</p>
+        <p class="hint" id="emp-note" style="display:none;color:#B45309">⚠️ Tranches non adjacentes : Pappers filtre par fourchette continue, les tranches intermédiaires seront incluses aussi.</p>
         <h2 style="margin-top:22px">Nombre d'établissements ?</h2>
         <div class="chips" id="etab-chips"></div>
         <p class="hint">ICP Sofy = multi-sites. « 2+ » cible les entreprises à plusieurs points de vente. Optionnel.</p>
@@ -1082,7 +1083,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v213';
+const VERSION='v214';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -1105,7 +1106,7 @@ const STATUTS_APPEL=[
  {v:'Hors prospection',e:'🛑',score:0,cat:'neutre'},
  {v:'En séquence Lemlist',e:'📨',score:5,cat:'good'}
 ];
-const state={naf:[],size:null,emp:null,ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
+const state={naf:[],size:null,emp:[],ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
 function api(url,opts={}){
@@ -1598,7 +1599,12 @@ function chips(id,opts,key,multi){
  });
 }
 chips('size-chips',["25","50","100","250","500"],'size');
-chips('emp-chips',["1–9","10–19","20–49","50–199","200–499","500+"],'emp');
+chips('emp-chips',["1–9","10–19","20–49","50–199","200–499","500+"],'emp',true);
+// Avertit si les tranches cochées ne se suivent pas (Pappers filtre par fourchette continue)
+document.getElementById('emp-chips').addEventListener('click',()=>{
+ const n=document.getElementById('emp-note');
+ if(n)n.style.display=empAvecTrous(state.emp)?'block':'none';
+});
 chips('etab-chips',["Indifférent","2+","5+","10+"],'etab');
 chips('ca-chips',["< 500 K€","500 K€ – 2 M€","2 – 10 M€","10 – 50 M€","50 M€ +","Indifférent"],'ca');
 chips('job-chips',["Dirigeant / PDG","Directeur Marketing","Directeur Relation Client","Directeur Expérience Client (CX)","Directeur Omnicanal / Digital","Responsable Service Client","Directeur CRM","Directeur Commercial","Responsable Communication","Directeur Réseau / Retail"],'jobs',true);
@@ -1668,7 +1674,7 @@ function renderNafTags(){
 function rmNaf(c){state.naf=state.naf.filter(x=>x!==c);renderNafTags();validate();}
 
 function validate(){
- const ok=[state.naf.length>0,!!state.size,!!state.emp,!!state.ca,state.jobs.length>0,state.pays.length>0&&!!state.listeNom&&!!state.sdr][state.step];
+ const ok=[state.naf.length>0,!!state.size,!!(state.emp&&state.emp.length),!!state.ca,state.jobs.length>0,state.pays.length>0&&!!state.listeNom&&!!state.sdr][state.step];
  document.getElementById('btn-next').disabled=!ok;
 }
 function move(dir){
@@ -1684,7 +1690,7 @@ function move(dir){
 
 /* ───────── RESET ───────── */
 function resetWizard(){
- state.naf=[];state.size=null;state.emp=null;state.ca=null;state.jobs=[];state.pays=[];state.etab=null;state.step=0;state.sdr=null;state.listeNom='';state.savedId=null;
+ state.naf=[];state.size=null;state.emp=[];state.ca=null;state.jobs=[];state.pays=[];state.etab=null;state.step=0;state.sdr=null;state.listeNom='';state.savedId=null;
  document.getElementById('liste-nom').value='';
  document.querySelectorAll('.chip.sel').forEach(c=>c.classList.remove('sel'));
  document.querySelectorAll('.custom-chip').forEach(c=>c.remove());
@@ -1706,6 +1712,24 @@ const DEP_MAP={"Guadeloupe":"971","Martinique":"972","Guyane française":"973","
 // Codes INSEE des 13 régions métropolitaines (exclut les DOM 01-06). "France métropolitaine" = ces régions.
 const REGIONS_METRO=["11","24","27","28","32","44","52","53","75","76","84","93","94"];
 const EFF_MAP={"1–9":["1","9"],"10–19":["10","19"],"20–49":["20","49"],"50–199":["50","199"],"200–499":["200","499"],"500+":["500",""]};
+// Tranches d'effectif multiples → enveloppe [min,max] pour Pappers (qui ne filtre que par fourchette continue).
+// Rétro-compatible : accepte aussi l'ancienne valeur simple (chaîne) des listes déjà sauvegardées.
+function effEnveloppe(emp){
+ const tr=(Array.isArray(emp)?emp:(emp?[emp]:[])).map(x=>EFF_MAP[x]).filter(Boolean);
+ if(!tr.length)return ["",""];
+ const mins=tr.map(t=>parseInt(t[0])||0);
+ const maxs=tr.map(t=>t[1]===''?Infinity:parseInt(t[1]));
+ const max=Math.max(...maxs);
+ return [String(Math.min(...mins)),max===Infinity?'':String(max)];
+}
+function empLabel(emp){return Array.isArray(emp)?emp.join(', '):(emp||'');}
+// Tranches non adjacentes cochées (ex : 1–9 + 200–499) → Pappers inclura aussi l'intervalle entre les deux
+function empAvecTrous(emp){
+ if(!Array.isArray(emp)||emp.length<2)return false;
+ const ordre=Object.keys(EFF_MAP);
+ const idx=emp.map(x=>ordre.indexOf(x)).filter(i=>i>=0).sort((a,b)=>a-b);
+ return (idx[idx.length-1]-idx[0])>=idx.length;
+}
 const CA_MAP={"< 500 K€":["","500000"],"500 K€ – 2 M€":["500000","2000000"],"2 – 10 M€":["2000000","10000000"],"10 – 50 M€":["10000000","50000000"],"50 M€ +":["50000000",""],"Indifférent":["",""]};
 let REAL=[];
 
@@ -1934,11 +1958,11 @@ async function estimerListe(){
   if(deps.length)p.set('dep',deps.join(','));
   if((c.pays||[]).includes('France métropolitaine'))p.set('region',REGIONS_METRO.join(','));
  }
- const eff=EFF_MAP[c.emp]||["",""];if(eff[0])p.set('effectif_min',eff[0]);if(eff[1])p.set('effectif_max',eff[1]);
+ const eff=effEnveloppe(c.emp);if(eff[0])p.set('effectif_min',eff[0]);if(eff[1])p.set('effectif_max',eff[1]);
  const ca=CA_MAP[c.ca]||["",""];if(ca[0])p.set('ca_min',ca[0]);if(ca[1])p.set('ca_max',ca[1]);
  p.set('nb_souhaite',Math.min(parseInt(c.size)||25,500));
  // Affiche la modale en mode chargement
- document.getElementById('estim-criteres').textContent=`${(c.naf||[]).join(', ')} · ${(c.pays||[]).join(' + ')} · ${c.emp||''} salariés${c.ca&&c.ca!=='Indifférent'?' · CA '+c.ca:''}${c.etab&&c.etab!=='Indifférent'?' · '+c.etab+' établissements':''}`;
+ document.getElementById('estim-criteres').textContent=`${(c.naf||[]).join(', ')} · ${(c.pays||[]).join(' + ')} · ${empLabel(c.emp)} salariés${c.ca&&c.ca!=='Indifférent'?' · CA '+c.ca:''}${c.etab&&c.etab!=='Indifférent'?' · '+c.etab+' établissements':''}`;
  document.getElementById('estim-loader').style.display='block';
  document.getElementById('estim-contenu').style.display='none';
  document.getElementById('estim-modal').style.display='flex';
@@ -2035,7 +2059,7 @@ async function launch(crit,skipCheck){
    if(deps.length)p.set('dep',deps.join(','));
    if(c.pays.includes('France métropolitaine'))p.set('region',REGIONS_METRO.join(','));
  }
- const eff=EFF_MAP[c.emp]||["",""];
+ const eff=effEnveloppe(c.emp);
  if(eff[0])p.set('effectif_min',eff[0]);
  if(eff[1])p.set('effectif_max',eff[1]);
  const ca=CA_MAP[c.ca]||["",""];
@@ -2132,7 +2156,7 @@ function showRealResults(total,c){
  const estAuto=c.auto==='hotleads';
  document.getElementById('res-sub').textContent=estAuto
   ?`🔥 Liste automatique des Hot Leads · ${REAL.length} fiche(s)${state.savedId?' · #'+state.savedId:''}`
-  :`${_naf}${_naf?' · ':''}${total} entreprises trouvées (Pappers) · ${c.emp||''} salariés · CA ${c.ca||'—'}${_pays?' · '+_pays:''}${c.ville?' / '+c.ville:''} — affichage : ${REAL.length}${state.savedId?' · Sauvegardée ✓ (#'+state.savedId+')':''}`;
+  :`${_naf}${_naf?' · ':''}${total} entreprises trouvées (Pappers) · ${empLabel(c.emp)} salariés · CA ${c.ca||'—'}${_pays?' · '+_pays:''}${c.ville?' / '+c.ville:''} — affichage : ${REAL.length}${state.savedId?' · Sauvegardée ✓ (#'+state.savedId+')':''}`;
  document.getElementById('kpis').style.display='flex';
  const sw2=document.getElementById('search-wrap');if(sw2){sw2.style.display='block';const sf2=document.getElementById('search-fiches');if(sf2)sf2.value='';}
  majBtnNouvelles();
@@ -4584,7 +4608,7 @@ function showResults(){
  nav('results');
  document.getElementById('res-title').textContent=`Liste · ${state.naf.join(', ')}`;
  const ville=document.getElementById('loc-ville').value;
- document.getElementById('res-sub').textContent=`${state.size} contacts demandés · ${state.emp} salariés · CA ${state.ca} · ${state.jobs.join(', ')} · ${state.pays.join(' + ')}${ville?' / '+ville:''} — aperçu démo : 4 fiches`;
+ document.getElementById('res-sub').textContent=`${state.size} contacts demandés · ${empLabel(state.emp)} salariés · CA ${state.ca} · ${state.jobs.join(', ')} · ${state.pays.join(' + ')}${ville?' / '+ville:''} — aperçu démo : 4 fiches`;
  document.getElementById('kpis').style.display='flex';
  const sw=document.getElementById('search-wrap');if(sw){sw.style.display='block';const sf=document.getElementById('search-fiches');if(sf)sf.value='';}
  document.getElementById('sort-bar').style.display='flex';
