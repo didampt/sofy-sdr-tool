@@ -486,7 +486,6 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
     <div class="logo" style="display:flex;align-items:center;gap:9px"><img src="/logo-icon.png" alt="" style="width:28px;height:28px" onerror="this.style.display='none'">Sofy <span>Scrap</span></div>
     <div class="tagline">Listes d'appel SDR<span id="bonjour-sdr" style="display:block;margin-top:6px;color:#E8EAF5;font-size:13px;font-weight:600"></span></div>
     <button class="nav-btn" data-view="signaux" onclick="ouvrirSignaux(this)">🔥 Signaux</button>
-    <button class="nav-btn" data-view="signups" onclick="nav('signups',this);chargerSignups()">🆕 Inscriptions <span id="signups-badge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:2px"></span></button>
     <button class="nav-btn active" data-view="wizard" onclick="nav('wizard',this)">🎯 Nouvelle liste</button>
     <button class="nav-btn" data-view="results" onclick="nav('results',this)">📞 Résultats</button>
     <button class="nav-btn" data-view="taches" onclick="nav('taches',this);chargerTaches()">✅ Tâches <span id="taches-badge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:2px"></span></button>
@@ -719,17 +718,6 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
         <label id="taches-team-wrap" style="display:none;font-size:13px;align-items:center;gap:6px;cursor:pointer;white-space:nowrap"><input type="checkbox" id="taches-team" onchange="chargerTaches()"> 👥 Toute l'équipe</label>
       </div>
       <div id="taches-liste"><p style="color:var(--ink-soft)">Chargement…</p></div>
-    </section>
-
-    <section class="view" id="view-signups">
-      <div class="eyebrow">Demandes entrantes</div>
-      <h1>🆕 Inscriptions Sofy</h1>
-      <p class="sub">Comptes créés depuis signup.sofy.fr. Ils restent désactivés jusqu'à validation manuelle.</p>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
-        <input class="field" id="signups-search" placeholder="🔎 Filtrer : société, contact, email, pays…" oninput="rendreSignups()" style="flex:1;min-width:220px">
-        <button class="act act-copy" onclick="chargerSignups()">Rafraîchir</button>
-      </div>
-      <div id="signups-liste"><p style="color:var(--ink-soft)">Chargement…</p></div>
     </section>
 
     <section class="view" id="view-history">
@@ -1081,7 +1069,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v207';
+const VERSION='v208';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -1143,7 +1131,6 @@ function demarrerApp(u){
  if(!['superadmin','admin'].includes(u.role)){['params','stats','appels'].forEach(v=>{const b=document.querySelector(`[data-view="${v}"]`);if(b)b.style.display='none';});}
  chargerSdrChips();
  chargerStatut();
- chargerSignupBadge();
  // Lien direct vers une liste (ex : depuis Slack → ?liste=ID)
  const params=new URLSearchParams(location.search);
  const lid=params.get('liste');
@@ -1227,7 +1214,7 @@ function retourPromptIA(){
 async function analyserPromptIA(){
  const prompt=document.getElementById('ia-prompt').value.trim();
  if(prompt.length<5){toast('⚠️ Décris ta cible en quelques mots');document.getElementById('ia-prompt').focus();return;}
- IA_PROMPT_INITIAL=prompt;
+ IA_PROMPT_INITIAL=prompt; window.IA_NOM_LISTE='';
  const btn=document.getElementById('ia-btn-analyser');
  if(btn){btn.disabled=true;btn.textContent='⏳ Analyse en cours…';}
  try{
@@ -1379,6 +1366,10 @@ function ouvrirEstimationIA(d){
    </div>
    <div style="background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:12.5px;line-height:1.5;color:#7a5510">⚠️ Ce sont les <b>dirigeants légaux</b> (président, gérant, DG…), pas forcément un directeur marketing. En PME antillaise, c'est souvent le bon interlocuteur. L'email/mobile seront récupérés à l'enrichissement.</div>
    <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid var(--line);font-size:13px"><span style="color:var(--ink-soft)">Coût enrichissement estimé (jusqu'à ${cap} fiches)</span><span style="font-weight:600">${coutMin} à ${coutMax} €</span></div>
+   <div style="margin-bottom:4px">
+    <label style="font-size:13px;font-weight:700;display:block;margin-bottom:6px">📝 Nom de la liste <span style="color:var(--danger)">*</span></label>
+    <input class="field" id="ia-liste-nom" placeholder="Ex : Dir. commerciaux automobile métropole" style="width:100%" value="${(window.IA_NOM_LISTE||'').replace(/"/g,'&quot;')}" oninput="window.IA_NOM_LISTE=this.value">
+   </div>
    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
     <button class="btn" onclick="document.getElementById('estim-ia-modal').style.display='none'" style="background:var(--paper)">Affiner</button>
     <button class="btn btn-primary" id="ia-btn-creer" onclick="creerListeIA()" ${nbEnt===0?"disabled style='opacity:.5'":""}>🚀 Générer la liste</button>
@@ -1400,6 +1391,10 @@ function ouvrirEstimationIA(d){
    <div style="background:#e6f1fb;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:12.5px;line-height:1.5;color:#0c447c">💡 Basile fournit l'identité, le poste et le <b>profil LinkedIn</b>. L'email et le mobile seront récupérés ensuite par l'enrichissement (Kaspr/FullEnrich/Dropcontact).</div>
    <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid var(--line);font-size:13px"><span style="color:var(--ink-soft)">Coût enrichissement estimé (${aCreer} fiches)</span><span style="font-weight:600">${coutMin} à ${coutMax} €</span></div>
    ${nbPersonnes===0?'<div style="background:#fcebeb;border-radius:8px;padding:11px 14px;margin-top:12px;font-size:13px;color:#a32d2d">Aucune personne trouvée. Élargis les postes ou la zone, puis recalcule.</div>':""}
+   <div style="margin-bottom:4px">
+    <label style="font-size:13px;font-weight:700;display:block;margin-bottom:6px">📝 Nom de la liste <span style="color:var(--danger)">*</span></label>
+    <input class="field" id="ia-liste-nom" placeholder="Ex : Dir. commerciaux automobile métropole" style="width:100%" value="${(window.IA_NOM_LISTE||'').replace(/"/g,'&quot;')}" oninput="window.IA_NOM_LISTE=this.value">
+   </div>
    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
     <button class="btn" onclick="document.getElementById('estim-ia-modal').style.display='none'" style="background:var(--paper)">Affiner</button>
     <button class="btn btn-primary" id="ia-btn-creer" onclick="creerListeIA()" ${nbPersonnes===0?"disabled style='opacity:.5'":""}>🚀 Générer la liste</button>
@@ -1414,6 +1409,14 @@ let IA_INDISPONIBLE=false;
 let CREATION_IA_EN_COURS=false;
 async function creerListeIA(){
  if(IA_INDISPONIBLE){toast('⏳ Liste intelligente temporairement indisponible (maintenance fournisseur).');return;}
+ // Nom de liste obligatoire (saisi par le SDR)
+ const champNom=document.getElementById('ia-liste-nom');
+ const nomSaisi=(champNom?champNom.value:(window.IA_NOM_LISTE||'')).trim();
+ if(!nomSaisi){
+  toast('⚠️ Donne un nom à ta liste avant de la générer');
+  if(champNom){champNom.focus();champNom.style.borderColor='var(--danger)';setTimeout(()=>champNom.style.borderColor='',2000);}
+  return;
+ }
  if(CREATION_IA_EN_COURS)return;
  CREATION_IA_EN_COURS=true;
  const btn=document.getElementById('ia-btn-creer');
@@ -1458,7 +1461,7 @@ async function creerListeIA(){
   fiches=fiches.filter(f=>!f.dedup_liste);
   if(!fiches.length){toast('Toutes les sociétés trouvées sont déjà dans d\'autres listes ('+nbDup+' doublon'+(nbDup>1?'s':'')+'). Rien à créer.');CREATION_IA_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🚀 Générer la liste';}return;}
   // 2) Crée la liste avec ces fiches (marquées)
-  const nom='✨ '+(IA_PROMPT_INITIAL.slice(0,50))+(IA_PROMPT_INITIAL.length>50?'…':'');
+  const nom='✨ '+nomSaisi;
   const sdr=state.user?state.user.nom:'';
   const rc=await api('/api/listes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nom,sdr,criteres:{ia:true,prompt:IA_PROMPT_INITIAL,criteres_ia:IA_CRITERES,naf:[],pays:[]},entreprises:fiches,credits_estimes:0})});
   const dc=await rc.json();
@@ -4895,81 +4898,6 @@ function rafraichirListes(){
  const vArch=document.getElementById('view-archives');
  if(vArch&&vArch.classList.contains('on'))chargerArchives();
  else chargerHistorique();
-}
-let SIGNUPS=[];
-async function chargerSignupBadge(){
- const b=document.getElementById('signups-badge');
- if(!b)return;
- try{
-  const r=await api('/api/signups');
-  const d=await r.json();
-  if(!d.ok){b.style.display='none';return;}
-  const n=d.pending_count||0;
-  if(n>0){b.textContent=n;b.style.display='inline-block';}
-  else b.style.display='none';
- }catch(_){b.style.display='none';}
-}
-async function chargerSignups(){
- const zone=document.getElementById('signups-liste');
- if(zone)zone.innerHTML='<p style="color:var(--ink-soft)">Chargement…</p>';
- try{
-  const r=await api('/api/signups');
-  const d=await r.json();
-  if(d.erreur){zone.innerHTML='<p style="color:var(--ink-soft)">'+escapeHtml(d.erreur)+'</p>';return;}
-  SIGNUPS=d.signups||[];
-  chargerSignupBadge();
-  rendreSignups();
- }catch(e){
-  if(zone)zone.innerHTML='<p style="color:var(--ink-soft)">Erreur : '+escapeHtml(e.message)+'</p>';
- }
-}
-function rendreSignups(){
- const zone=document.getElementById('signups-liste');
- if(!zone)return;
- const q=(document.getElementById('signups-search')?.value||'').trim().toLowerCase();
- const canEnable=state.user&&['admin','superadmin'].includes(state.user.role);
- const arr=SIGNUPS.filter(s=>{
-  if(!q)return true;
-  return [s.company_name,s.country,s.city,s.siret,s.siren,s.tva_id,s.contact&&s.contact.full_name,s.contact&&s.contact.email,s.contact&&s.contact.phone].join(' ').toLowerCase().includes(q);
- });
- if(!arr.length){zone.innerHTML='<p style="color:var(--ink-soft)">Aucune inscription'+(q?' pour ce filtre.':'.')+'</p>';return;}
- zone.innerHTML=arr.map(s=>{
-  const pending=s.pending!==false;
-  const date=s.submitted_at?new Date(s.submitted_at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
-  const status=pending?'<span class="badge b-signal">À valider</span>':'<span class="badge b-new">Compte activé</span>';
-  const action=pending&&canEnable
-   ?`<button class="act act-call" onclick="activerSignup('${encodeURIComponent(s.key)}')">✅ Activer le compte</button>`
-   :pending
-    ?'<span style="font-size:12px;color:var(--ink-soft)">Activation réservée admin</span>'
-    :`<span style="font-size:12px;color:var(--ink-soft)">Activé${s.enabled_by?' par '+escapeHtml(s.enabled_by):''}${s.enabled_at?' · '+new Date(s.enabled_at).toLocaleDateString('fr-FR'):''}</span>`;
-  return `<div class="map-card" style="display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:12px">
-    <div style="min-width:0">
-      <div class="lead-name">${escapeHtml(s.company_name||'Société non renseignée')} ${status}</div>
-      <div class="lead-meta">${escapeHtml((s.contact&&s.contact.full_name)||'Contact')} · ${escapeHtml((s.contact&&s.contact.email)||'email manquant')} · ${escapeHtml(s.country||'Pays non renseigné')}${s.city?' · '+escapeHtml(s.city):''}</div>
-      <div class="badges">
-        <span class="badge b-gmb">Reçue ${escapeHtml(date)}</span>
-        ${s.siret?`<span class="badge b-gmb">SIRET ${escapeHtml(s.siret)}</span>`:''}
-        ${s.tva_id?`<span class="badge b-gmb">TVA ${escapeHtml(s.tva_id)}</span>`:''}
-        ${s.user_id?`<span class="badge b-new">Auth0 lié</span>`:'<span class="badge b-dup">Auth0 par email</span>'}
-      </div>
-    </div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">${action}</div>
-  </div>`;
- }).join('');
-}
-async function activerSignup(key){
- key=decodeURIComponent(key||'');
- const s=SIGNUPS.find(x=>x.key===key);
- if(!s)return toast('Signup introuvable');
- const ok=await confirmSofy('Activer ce compte Sofy',`Valider l'inscription de ${s.company_name||s.contact?.email||'ce compte'} ?\n\nLe compte Auth0 sera débloqué et l'utilisateur pourra se connecter.`, 'Activer');
- if(!ok)return;
- try{
-  const r=await api('/api/signups',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key})});
-  const d=await r.json();
-  if(!d.ok){toast('Erreur : '+(d.erreur||d.detail||'activation impossible'));return;}
-  toast('✅ Compte activé');
-  await chargerSignups();
- }catch(e){toast('Erreur réseau : '+e.message);}
 }
 async function archiverListe(id,nom,archiver){
  const action=archiver?'archiver':'désarchiver';
