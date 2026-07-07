@@ -4,6 +4,7 @@
 // GET ?criteres=…    → listes existantes avec les MÊMES critères (anti-doublon)
 // POST {…}           → sauvegarder une nouvelle liste
 // PUT  {id, entreprises} → mettre à jour les entreprises (ex: après analyses GMB)
+// PUT  {id, jobs}        → mémoriser les postes personas dans les critères de la liste
 
 import { createHash } from 'crypto';
 import { sql, ensureSchema, verifierToken } from './db.js';
@@ -240,6 +241,16 @@ export default async function handler(req, res) {
           const statsMaj = calculerStatsListe(entreprises);
           await sql`UPDATE listes SET entreprises = ${JSON.stringify(entreprises)}, total = ${entreprises.length}, stats = ${JSON.stringify(statsMaj)} WHERE id = ${lid}`;
         }
+      }
+      // Personas : mémoriser les postes ciblés dans les critères (bouton 👥 sur une liste sans postes)
+      if (Array.isArray(req.body.jobs)) {
+        const lid = parseInt(id);
+        const rows = await sql`SELECT criteres FROM listes WHERE id = ${lid}`;
+        if (!rows.length) return res.status(404).json({ erreur: 'Liste introuvable' });
+        const c = rows[0].criteres || {};
+        c.jobs = req.body.jobs.filter(j => typeof j === 'string' && j.trim()).slice(0, 20);
+        await sql`UPDATE listes SET criteres = ${JSON.stringify(c)} WHERE id = ${lid}`;
+        return res.status(200).json({ ok: true, jobs: c.jobs });
       }
       // #2 Renommage d'une liste
       if (nom !== undefined && typeof nom === 'string' && nom.trim()) {

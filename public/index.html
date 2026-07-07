@@ -270,6 +270,11 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
   <div id="estim-ia-contenu"></div>
  </div>
 </div>
+<div id="personas-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:903;align-items:center;justify-content:center" onclick="if(event.target===this)this.style.display='none'">
+ <div style="background:#fff;border-radius:16px;max-width:440px;width:92%;padding:26px 28px;box-shadow:0 20px 60px rgba(0,0,0,.3);max-height:85vh;overflow-y:auto">
+  <div id="personas-choix"></div>
+ </div>
+</div>
 <div id="fiche-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:901;align-items:center;justify-content:center">
  <div style="background:#fff;border-radius:16px;max-width:520px;width:92%;padding:26px 28px;box-shadow:0 20px 60px rgba(0,0,0,.3);max-height:90vh;overflow-y:auto">
   <div style="font-size:18px;font-weight:700;margin-bottom:3px">➕ Ajouter une fiche</div>
@@ -1077,7 +1082,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v211';
+const VERSION='v212';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -3457,13 +3462,45 @@ function voirEmail(i){
 function jobsCibles(){
  return ((state.criteres&&state.criteres.jobs)||[]).filter(j=>!/dirigeant|pdg/i.test(j));
 }
+// Fonctions proposées quand la liste n'a aucun poste ciblé (mêmes choix que l'étape 5, hors Dirigeant/PDG)
+const JOBS_PERSONAS=["Directeur Commercial","Directeur Marketing","Responsable Communication","Directeur Relation Client","Directeur Expérience Client (CX)","Directeur Omnicanal / Digital","Responsable Service Client","Directeur CRM","Directeur Réseau / Retail"];
+function ouvrirChoixPersonas(i){
+ const deja=new Set(jobsCibles());
+ document.getElementById('personas-choix').innerHTML=`
+  <div style="font-size:18px;font-weight:700;margin-bottom:6px">👥 Quelles fonctions chercher ?</div>
+  <div style="font-size:13px;color:var(--ink-soft);line-height:1.5;margin-bottom:14px">Cette liste ne cible que « Dirigeant / PDG » — il est déjà fourni par Pappers sur chaque fiche. Coche les fonctions à chercher sur LinkedIn : elles seront <b>mémorisées pour toute la liste</b> (bouton 👥 et enrichissement).</div>
+  ${JOBS_PERSONAS.map(j=>`<label style="display:flex;align-items:center;gap:8px;padding:7px 4px;font-size:13.5px;cursor:pointer;border-top:1px solid var(--line)"><input type="checkbox" value="${j}" ${deja.has(j)?'checked':''}>${j}</label>`).join('')}
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px">
+   <button class="btn" onclick="document.getElementById('personas-modal').style.display='none'" style="background:var(--paper)">Annuler</button>
+   <button class="btn btn-primary" onclick="validerChoixPersonas(${i})">👥 Chercher</button>
+  </div>`;
+ document.getElementById('personas-modal').style.display='flex';
+}
+async function validerChoixPersonas(i){
+ const choix=[...document.querySelectorAll('#personas-choix input[type=checkbox]:checked')].map(c=>c.value);
+ if(!choix.length){toast('Coche au moins une fonction');return;}
+ document.getElementById('personas-modal').style.display='none';
+ // Mémorise dans les critères de la liste (local + serveur)
+ state.criteres=state.criteres||{};
+ const jobs=Array.isArray(state.criteres.jobs)?state.criteres.jobs:[];
+ for(const j of choix)if(!jobs.includes(j))jobs.push(j);
+ state.criteres.jobs=jobs;
+ if(state.savedId){
+  try{await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:state.savedId,jobs})});}catch(e){}
+ }
+ toast('✓ Fonctions mémorisées pour cette liste');
+ // Relance la recherche sur la fiche
+ if(REAL[i]._busy){return;}
+ REAL[i]._busy=true;rerender(i);
+ try{toast('👥 Recherche des personas (IA)…');await chercherPersonas(i);}finally{REAL[i]._busy=false;rerender(i);}
+}
 async function chercherPersonas(i){
  const e=REAL[i];
  let jobs=jobsCibles();
  // Hot Lead (RB2B) sans critères de liste → personas C-level par défaut
  const estHotLead=estVisiteSite(e);
  if(!jobs.length&&estHotLead){jobs=['Directeur Général','Directeur Marketing','Directeur Commercial','Responsable Communication'];}
- if(!jobs.length){toast('Aucun persona sélectionné dans les critères de cette liste (hors Dirigeant/PDG)');return false;}
+ if(!jobs.length){ouvrirChoixPersonas(i);return false;} // aucun poste ciblé → le SDR choisit à la volée
  try{
   const r=await api('/api/personas',{method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({liste_id:state.savedId,entreprise:{nom:e.nom,enseigne:enseigneDe(e),site:domaineDe(e),ville:e.ville||'',linkedin:e.linkedin_entreprise||''},jobs})});
@@ -4132,8 +4169,7 @@ async function chargerActiviteDB(i){
 }
 function sourceFiche(e){
  if(e.signal_hot||e.source_hotlead){
-  var sr=e.source_hotlead||(e.signal&&e.signal.source)||'';
-  return {label:(sr==='RB2B'?'📍 source sofy.fr':'💼 source LinkedIn'),cls:'b-source'};
+  return {label:(estVisiteSite(e)?'📍 source sofy.fr':'💼 source LinkedIn'),cls:'b-source'};
  }
  var cr=state.criteres||{};
  var cs=((contactsDe(e)[0]||{}).source)||e.source||'';
