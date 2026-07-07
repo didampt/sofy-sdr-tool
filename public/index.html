@@ -1082,7 +1082,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v212';
+const VERSION='v213';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2427,7 +2427,7 @@ function ouvrirFicheDepuisAppel(listeId,n9){
 
 /* ───────── Appel entrant Ringover (bandeau temps réel) ───────── */
 let APPEL_AFFICHE_ID=null, APPEL_TIMER=null;
-function estVisiteSite(e){var s1=((e.source_hotlead)||'').toString().toLowerCase();var s2=((e.signal&&e.signal.source)||'').toString().toLowerCase();function ok(v){return v==='rb2b'||v==='snitcher'||v==='sofy.fr'||v.indexOf('snitcher')>=0||v.indexOf('sofy')>=0;}return ok(s1)||ok(s2);}
+function estVisiteSite(e){var ty=((e.signal&&e.signal.type)||'').toString().toLowerCase();if(ty==='visite_site')return true;if(ty==='linkedin')return false;/* like/commentaire d'un post = signal LinkedIn, pas une visite (même si la source contient "sofy") */var s1=((e.source_hotlead)||'').toString().toLowerCase();var s2=((e.signal&&e.signal.source)||'').toString().toLowerCase();function ok(v){return v==='rb2b'||v==='snitcher'||v==='sofy.fr'||v.indexOf('snitcher')>=0||v.indexOf('sofy')>=0;}return ok(s1)||ok(s2);}
 function escAppel(s){return String(s==null?'':s).replace(/[&<>"]/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m];});}
 function demarrerPollAppels(){
  if(APPEL_TIMER)return;
