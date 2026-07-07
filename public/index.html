@@ -1083,7 +1083,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v214';
+const VERSION='v215';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4812,7 +4812,7 @@ function rendreLigneListe(l,champRecherche){
  return `<div class="fiche"><div class="fiche-top" style="grid-template-columns:1fr auto auto;align-items:center;gap:14px">
   <div>
    <div class="lead-name">${l.nom}${cr.auto!=='hotleads'?` <span onclick="renommerListe(${l.id},this)" data-nom="${(l.nom||'').replace(/"/g,'&quot;')}" title="Renommer la liste" style="cursor:pointer;font-size:14px;opacity:.5;font-weight:normal">✏️</span>`:''}</div>
-   <div class="lead-meta">SDR : <b>${l.sdr}</b>${(l.createur&&l.createur!==l.sdr)?` · créée par <b>${l.createur}</b>`:''} · ${date} · ${l.total||l.nb_entreprises||0} entreprise${(l.total||l.nb_entreprises||0)>1?'s':''}${cr.auto==='hotleads'?' · 🔥 liste automatique':` · ${(cr.naf||[]).join(', ')} · ${(cr.pays||[]).join(' + ')} · ~${l.credits_estimes||0} crédits Pappers`}</div>
+   <div class="lead-meta">SDR : <b>${l.sdr}</b>${(l.createur&&l.createur!==l.sdr)?` · créée par <b>${l.createur}</b>`:''} · ${date} · ${l.total||l.nb_entreprises||0} entreprise${(l.total||l.nb_entreprises||0)>1?'s':''}${cr.auto==='hotleads'?' · 🔥 liste automatique':cr.ia?` · 🤖 Liste intelligente${(cr.criteres_ia&&cr.criteres_ia.activite_libre)?' · '+cr.criteres_ia.activite_libre:''}`:cr.manuelle?' · ✍️ Liste manuelle':` · 🏢 Pappers · ${(cr.naf||[]).join(', ')} · ${(cr.pays||[]).join(' + ')} · ~${l.credits_estimes||0} crédits`}</div>
    ${pastilles}
   </div>
   ${(q!==null&&st&&st.pct_tag>=100)?`<div class="qbadge" style="background:${qcol}" title="Score qualité (liste 100% traitée)">${q}%</div>`:''}
