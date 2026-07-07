@@ -1,10 +1,14 @@
 // /api/ia-liste-creer.js — Orchestrateur de la "Liste intelligente".
-// DEUX CHEMINS (validés par diagnostics réels) :
-//   A) MÉTROPOLE / national  -> recherche PERSONNES par POSTE (result_role + result_country_code).
+// TROIS CHEMINS (validés par diagnostics réels) :
+//   A) MÉTROPOLE sans NAF précis -> recherche PERSONNES par POSTE (result_role + result_country_code).
 //   B) ZONE DOM (971..976)   -> ENTREPRISE D'ABORD : companies/find (naf_code + headquarters_postal_code)
 //        -> on récupère les SIREN -> people/find (siren + result_is_current) -> dirigeants.
 //      Raison : Basile n'a quasi pas de PERSONNES en DOM (test géo), mais beaucoup d'ENTREPRISES.
 //      Les filtres region_code/department_code n'existent pas ; la géo fine se fait par CODE POSTAL.
+//   C) MÉTROPOLE avec NAF précis (hybride) -> companies/find par code NAF -> SIREN ->
+//        people/find (siren + result_role + result_is_current) -> personnes aux postes ciblés.
+//      Raison : people/find ne filtre le secteur que par 7 macro-slugs (*_global) ; le secteur
+//      fin ("automobile", "pièces auto"...) n'est fiable que via le NAF côté entreprises.
 //
 // POST { mode, criteres }
 //   mode='estimer' -> comptage gratuit (+ échantillon de dirigeants en mode DOM)
@@ -161,6 +165,59 @@ function dirigeantVersFiche(lead, infoSiren) {
   };
 }
 
+// Récupère des entreprises par CODE NAF (chemin hybride métropole) : 1 appel companies/find
+// par code (limit 100, pas de pagination connue), quota réparti entre les codes.
+// metropoleSeule=true -> écarte les CP DOM (97xxx). Renvoie sirens + infos + total Basile cumulé.
+async function collecterSirenParNaf(nafCodes, key, capSiren, sirenExclus, metropoleSeule) {
+  sirenExclus = sirenExclus || new Set();
+  const sirens = []; const infoBySiren = {}; let totalEnt = 0;
+  const quota = Math.max(1, Math.ceil(capSiren / nafCodes.length));
+  for (let i = 0; i < nafCodes.length; i++) {
+    if (sirens.length >= capSiren) break;
+    const r = await basile('/companies/find', { limit: 100, filters: { naf_code: { include: [nafCodes[i]] } } }, key);
+    if (r.data && r.data.total != null) totalEnt += r.data.total;
+    let pris = 0;
+    for (const co of listeEntreprises(r.data)) {
+      if (pris >= quota || sirens.length >= capSiren) break;
+      const e = lireEntreprise(co);
+      const sn = e.siren ? String(e.siren).replace(/\D/g, '') : '';
+      if (!e.siren || infoBySiren[e.siren] || sirenExclus.has(sn)) continue;
+      if (metropoleSeule && String(e.cp || '').startsWith('97')) continue; // DOM exclu si métropole seule
+      infoBySiren[e.siren] = e; sirens.push(e.siren); pris++;
+    }
+  }
+  return { sirens, infoBySiren, totalEnt };
+}
+
+// people/find par paquets de SIREN, filtré sur les POSTES ciblés (chemin hybride).
+// Max 8 appels pour rester sous les 60 s Vercel.
+async function personnesParSirenEtPoste(sirens, infoBySiren, roles, key, capFiches) {
+  const out = [];
+  const taille = 30;
+  for (let i = 0, appels = 0; i < sirens.length && appels < 8; i += taille, appels++) {
+    if (out.length >= capFiches) break;
+    const part = sirens.slice(i, i + taille);
+    const f = { siren: { include: part }, result_is_current: true };
+    if (roles.length) f.result_role = { include: roles };
+    const r = await basile('/people/find', { limit: 100, filters: f }, key);
+    for (const l of ((r.data && r.data.leads) || [])) {
+      const d = l.data || l || {};
+      const fiche = leadVersFichePersonne(l);
+      const info = infoBySiren[d.siren];
+      if (info) { // complète la fiche avec les infos officielles de l'entreprise
+        if (info.nom) fiche.nom = info.nom;
+        if (!fiche.ville && info.ville) fiche.ville = info.ville;
+        fiche.code_postal = info.cp || '';
+        fiche.naf = info.naf || null;
+        if (!fiche.siren) fiche.siren = info.siren;
+      }
+      out.push(fiche);
+      if (out.length >= capFiches) break;
+    }
+  }
+  return out;
+}
+
 // Récupère des entreprises DOM (naf + code postal) et collecte SIREN + infos. cap = nb max de SIREN.
 async function collecterSiren(domPrefixes, naf, key, capSiren, limitParDom, sirenExclus) {
   sirenExclus = sirenExclus || new Set();
@@ -232,16 +289,21 @@ export default async function handler(req, res) {
   const domPrefixes = zones.filter(z => DOM.includes(z));
   const companyFirst = domPrefixes.length > 0 && !veutMetropole;
   const naf = nafFiltre(criteres);
+  // Chemin hybride métropole : secteur NAF précis -> entreprises d'abord, puis postes par SIREN.
+  const hybride = veutMetropole && !!naf;
 
   try {
-    // ========================= CHEMIN DOM (entreprise d'abord) =========================
-    if (companyFirst) {
-      // SIREN déjà présents dans des listes existantes -> exclus pour ne sortir que du NEUF
-      let sirenExclus = new Set();
+    // SIREN déjà présents dans des listes existantes -> exclus pour ne sortir que du NEUF
+    let sirenExclus = new Set();
+    if (companyFirst || hybride) {
       try {
         const rowsEx = sql ? await sql`SELECT entreprises FROM listes WHERE archivee = FALSE` : [];
         for (const row of rowsEx) { const ents = Array.isArray(row.entreprises) ? row.entreprises : []; for (const e of ents) { if (e.siren) sirenExclus.add(String(e.siren).replace(/\D/g, '')); } }
       } catch (e) {}
+    }
+
+    // ========================= CHEMIN DOM (entreprise d'abord) =========================
+    if (companyFirst) {
       if (mode === 'estimer') {
         // Comptage entreprises (1 appel/DOM, le 1er ramène un échantillon)
         let totalEnt = 0; let sampleSirens = []; let sampleInfo = {};
@@ -292,6 +354,64 @@ export default async function handler(req, res) {
         let fiches = regrouperParEntreprise(people);
         fiches.forEach(f => { delete f._role; });
         return res.status(200).json({ fiches, nb: fiches.length, mode_recherche: 'entreprise' });
+      }
+      return res.status(400).json({ erreur: 'mode inconnu (estimer|creer)' });
+    }
+
+    // ============== CHEMIN HYBRIDE MÉTROPOLE (entreprises NAF -> postes par SIREN) ==============
+    // Corrige le bug "secteur ignoré" : people/find ne connaît que 7 macro-secteurs, donc quand
+    // l'IA a extrait des codes NAF précis, on cherche d'abord les ENTREPRISES du secteur,
+    // puis les PERSONNES aux postes ciblés dans ces entreprises.
+    if (hybride) {
+      const nafCodes = naf.include;
+      const roles = rolesDepuisFamilles(criteres);
+      const metropoleSeule = domPrefixes.length === 0;
+
+      if (mode === 'estimer') {
+        // Comptage entreprises par NAF + petit échantillon de SIRENs pour valider la chaîne
+        let totalEnt = 0; const sampleSirens = []; const sampleInfo = {};
+        for (let i = 0; i < nafCodes.length; i++) {
+          const besoin = sampleSirens.length < 15;
+          const r = await basile('/companies/find', { limit: besoin ? 30 : 1, filters: { naf_code: { include: [nafCodes[i]] } } }, key);
+          if (r.status === 401) return res.status(502).json({ erreur: 'Clé Basile refusée' });
+          if (r.data && r.data.total != null) totalEnt += r.data.total;
+          for (const co of listeEntreprises(r.data)) {
+            if (sampleSirens.length >= 15) break;
+            const e = lireEntreprise(co);
+            const sn = e.siren ? String(e.siren).replace(/\D/g, '') : '';
+            if (!e.siren || sampleInfo[e.siren] || sirenExclus.has(sn)) continue;
+            if (metropoleSeule && String(e.cp || '').startsWith('97')) continue;
+            sampleInfo[e.siren] = e; sampleSirens.push(e.siren);
+          }
+        }
+        // Échantillon de PERSONNES aux postes ciblés dans ces entreprises (gratuit)
+        let echantillon = [];
+        if (sampleSirens.length) {
+          const personnes = await personnesParSirenEtPoste(sampleSirens, sampleInfo, roles, key, 40);
+          echantillon = personnes.slice(0, 6).map(f => ({
+            nom: ((f.contacts[0].prenom || '') + ' ' + (f.contacts[0].nom || '')).trim() || '—',
+            role: f.contacts[0].fonction || '—',
+            entreprise: f.nom || '—',
+            ville: f.ville || ''
+          }));
+        }
+        return res.status(200).json({
+          mode_recherche: 'entreprise_postes',
+          nb_entreprises: totalEnt,
+          nb_personnes: null,
+          echantillon_personnes: echantillon,
+          _filtres: { naf_codes: nafCodes, postes: roles, zones }
+        });
+      }
+
+      if (mode === 'creer') {
+        const cap = capContacts(criteres);
+        // Cap SIREN élevé : les postes ciblés sont plus rares que les mandataires
+        const { sirens, infoBySiren } = await collecterSirenParNaf(nafCodes, key, Math.max(cap * 8, 240), sirenExclus, metropoleSeule);
+        if (!sirens.length) return res.status(200).json({ fiches: [], nb: 0, mode_recherche: 'entreprise_postes', message: 'Aucune nouvelle entreprise dans ce secteur (toutes déjà présentes dans tes listes).' });
+        let people = await personnesParSirenEtPoste(sirens, infoBySiren, roles, key, cap * 3);
+        let fiches = regrouperParEntreprise(people).slice(0, cap);
+        return res.status(200).json({ fiches, nb: fiches.length, mode_recherche: 'entreprise_postes' });
       }
       return res.status(400).json({ erreur: 'mode inconnu (estimer|creer)' });
     }

@@ -1077,7 +1077,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v208';
+const VERSION='v209';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -1348,7 +1348,43 @@ function ouvrirEstimationIA(d){
  const esc=s=>String(s).replace(/</g,'&lt;');
  const cap=Math.min((IA_CRITERES&&parseInt(IA_CRITERES.nb_contacts,10))||20,100);
  let html;
- if(mode==='entreprise'){
+ if(mode==='entreprise_postes'){
+  // Chemin hybride métropole : entreprises du secteur (NAF) -> personnes aux postes ciblés
+  const nbEnt=d.nb_entreprises||0;
+  const ech=d.echantillon_personnes||[];
+  const f=d._filtres||{}; const naf=f.naf_codes||[]; const postes=f.postes||[];
+  const NOMS={'971':'Guadeloupe','972':'Martinique','973':'Guyane','974':'La Réunion','976':'Mayotte',metropole:'Métropole'};
+  const zones=(f.zones||[]).map(z=>NOMS[z]||z).join(', ');
+  const coutMin=(cap*0.09).toFixed(0), coutMax=(cap*0.66).toFixed(0);
+  const echHtml=ech.length
+    ?`<div style="margin-top:8px">${ech.map(e=>`<div style="font-size:12.5px;padding:6px 0;border-top:1px solid var(--line)"><b>${esc(e.entreprise)}</b> — ${esc(e.role)}${e.nom&&e.nom!=="—"?` · ${esc(e.nom)}`:""}${e.ville?` <span style="color:var(--ink-soft)">(${esc(e.ville)})</span>`:""}</div>`).join("")}</div>`
+    :`<div style="font-size:12.5px;color:var(--danger);margin-top:8px">Aucun contact trouvé sur l'échantillon d'entreprises testé. La recherche complète couvre plus d'entreprises, mais vérifie tes critères avant de générer.</div>`;
+  html=`
+   <div style="font-size:18px;font-weight:700;margin-bottom:3px">📊 Estimation de ta liste</div>
+   <div style="font-size:13px;color:var(--ink-soft);margin-bottom:14px">Secteur précis détecté → <b>recherche par entreprises (NAF), puis par postes</b> (gratuit).</div>
+   <div style="background:var(--paper);border-radius:10px;padding:16px;margin-bottom:14px">
+    <div style="font-size:13px;color:var(--ink-soft);margin-bottom:4px">Entreprises du secteur visé</div>
+    <div style="font-size:30px;font-weight:800">${nbEnt.toLocaleString('fr-FR')}</div>
+    <div style="font-size:12.5px;color:var(--ink-soft);margin-top:6px">La liste sera constituée des <b>personnes occupant les postes ciblés</b> dans ces entreprises (jusqu'à ${cap} fiches).</div>
+   </div>
+   <div style="background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:var(--ink-soft)">
+    <div style="font-weight:700;color:var(--ink);margin-bottom:5px">🔎 Filtres envoyés à Basile</div>
+    <div><b>Secteur NAF</b> (${naf.length}) : ${naf.length?naf.slice(0,6).map(esc).join(', '):'<span style="color:var(--danger)">aucun</span>'}</div>
+    <div style="margin-top:3px"><b>Postes ciblés</b> (${postes.length}) : ${postes.length?postes.slice(0,4).map(esc).join(', ')+(postes.length>4?` <span style="color:var(--ink-soft)">(+${postes.length-4})</span>`:''):'<span style="color:var(--danger)">aucun (tous postes)</span>'}</div>
+    <div style="margin-top:3px"><b>Zone :</b> ${zones?esc(zones):'—'}</div>
+    <div style="font-weight:700;color:var(--ink);margin-top:9px;margin-bottom:3px">👤 Échantillon de contacts (réel)</div>
+    ${echHtml}
+   </div>
+   <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid var(--line);font-size:13px"><span style="color:var(--ink-soft)">Coût enrichissement estimé (jusqu'à ${cap} fiches)</span><span style="font-weight:600">${coutMin} à ${coutMax} €</span></div>
+   <div style="margin-bottom:4px">
+    <label style="font-size:13px;font-weight:700;display:block;margin-bottom:6px">📝 Nom de la liste <span style="color:var(--danger)">*</span></label>
+    <input class="field" id="ia-liste-nom" placeholder="Ex : Dir. commerciaux automobile métropole" style="width:100%" value="${(window.IA_NOM_LISTE||'').replace(/"/g,'&quot;')}" oninput="window.IA_NOM_LISTE=this.value">
+   </div>
+   <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+    <button class="btn" onclick="document.getElementById('estim-ia-modal').style.display='none'" style="background:var(--paper)">Affiner</button>
+    <button class="btn btn-primary" id="ia-btn-creer" onclick="creerListeIA()" ${nbEnt===0?"disabled style='opacity:.5'":""}>🚀 Générer la liste</button>
+   </div>`;
+ } else if(mode==='entreprise'){
   const nbEnt=d.nb_entreprises||0;
   const ech=d.echantillon_dirigeants||[];
   const f=d._filtres||{}; const naf=(f.naf_code&&f.naf_code.include)||[];
@@ -1436,7 +1472,7 @@ async function creerListeIA(){
   const d=await r.json();
   if(d.erreur){toast('Erreur : '+d.erreur);CREATION_IA_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🚀 Générer la liste';}return;}
   let fiches=d.fiches||[];
-  if(!fiches.length){toast('Aucune fiche trouvée — essaie d\'affiner');CREATION_IA_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🚀 Générer la liste';}return;}
+  if(!fiches.length){toast(d.message||'Aucune fiche trouvée — essaie d\'affiner');CREATION_IA_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🚀 Générer la liste';}return;}
   // 1bis) Déduplication : marque les fiches déjà connues (HubSpot / listes Sofy) pour éviter de brûler des crédits
   if(btn)btn.textContent='⏳ Vérification doublons…';
   try{
