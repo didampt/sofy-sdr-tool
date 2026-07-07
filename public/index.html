@@ -1077,7 +1077,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v210';
+const VERSION='v211';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -1481,7 +1481,7 @@ async function creerListeIA(){
   if(btn)btn.textContent='⏳ Vérification doublons…';
   try{
    // On envoie un contact représentatif par fiche (le 1er) avec email + tel
-   const contacts=fiches.map(f=>{const c=(f.contacts||[])[0]||{};return {email:c.enrich?.email||null,telephone:c.enrich?.telephone||null,nom:c.nom||'',prenom:c.prenom||'',siren:f.siren||''};});
+   const contacts=fiches.map(f=>{const c=(f.contacts||[])[0]||{};return {email:c.enrich?.email||null,telephone:c.enrich?.telephone||null,linkedin:c.enrich?.linkedin||null,nom:c.nom||'',prenom:c.prenom||'',siren:f.siren||''};});
    const rd=await api('/api/dedup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contacts})});
    const dd=await rd.json();
    const rez=dd.resultats||{};

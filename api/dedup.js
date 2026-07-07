@@ -1,11 +1,13 @@
 // /api/dedup.js — Déduplication des fiches avant enrichissement (économie de crédits).
 // Vérifie si les contacts sont DÉJÀ connus, dans HubSpot et/ou dans les listes Sofy existantes.
 //
-// POST { contacts: [{ email, telephone, nom, prenom }], liste_id_courante? }
+// POST { contacts: [{ email, telephone, nom, prenom, siren?, linkedin? }], liste_id_courante? }
 //   liste_id_courante = (optionnel) liste à exclure de la comparaison interne (la liste en cours)
 //
 // Renvoie : { resultats: { "<cle>": { hubspot:{stage,owner}|null, liste:{nom,id}|null } } }
 //   La clé identifie chaque contact (email normalisé, sinon tel normalisé, sinon nom).
+//   Le LinkedIn sert au matching interne : indispensable pour les fiches Basile qui n'ont
+//   ni email, ni téléphone, ni SIREN avant enrichissement.
 
 import { verifierToken, sql } from './db.js';
 
@@ -41,6 +43,13 @@ export function normaliserTel(brut) {
 function normEmail(e) {
   if (!e || !String(e).includes('@')) return null;
   return String(e).trim().toLowerCase();
+}
+
+// Identifiant LinkedIn normalisé ("https://www.linkedin.com/in/Jean-Dupont-123/" → "jean-dupont-123")
+function normLinkedin(url) {
+  const m = String(url || '').match(/linkedin\.com\/in\/([^/?#]+)/i);
+  if (!m) return null;
+  try { return decodeURIComponent(m[1]).toLowerCase(); } catch (e) { return m[1].toLowerCase(); }
 }
 
 // Clé d'identification d'un contact (pour le mapping de retour)
@@ -86,7 +95,8 @@ export default async function handler(req, res) {
     cle: cleContact(c),
     email: normEmail(c.email),
     tel: normaliserTel(c.telephone),
-    siren: c.siren ? String(c.siren).replace(/\D/g, '') : ''
+    siren: c.siren ? String(c.siren).replace(/\D/g, '') : '',
+    linkedin: normLinkedin(c.linkedin)
   }));
   for (const it of items) resultats[it.cle] = { hubspot: null, liste: null };
 
@@ -97,7 +107,7 @@ export default async function handler(req, res) {
       ? await sql`SELECT id, nom, entreprises FROM listes WHERE archivee = FALSE AND id <> ${liste_id_courante}`
       : await sql`SELECT id, nom, entreprises FROM listes WHERE archivee = FALSE`;
     // Construit un index { email/tel → {nom,id} } à partir des contacts existants
-    const indexEmail = new Map(), indexTel = new Map(), indexSiren = new Map();
+    const indexEmail = new Map(), indexTel = new Map(), indexSiren = new Map(), indexLinkedin = new Map();
     for (const l of rows) {
       const ents = Array.isArray(l.entreprises) ? l.entreprises : [];
       for (const e of ents) {
@@ -105,8 +115,10 @@ export default async function handler(req, res) {
         for (const ct of (e.contacts || [])) {
           const em = normEmail(ct.enrich?.email);
           const tl = normaliserTel(ct.enrich?.telephone);
+          const li = normLinkedin(ct.enrich?.linkedin);
           if (em && !indexEmail.has(em)) indexEmail.set(em, { nom: l.nom, id: l.id });
           if (tl && !indexTel.has(tl.e164)) indexTel.set(tl.e164, { nom: l.nom, id: l.id });
+          if (li && !indexLinkedin.has(li)) indexLinkedin.set(li, { nom: l.nom, id: l.id });
           if (em && !sEmail) sEmail = em;
           if (tl && !sTel) sTel = tl.national;
         }
@@ -115,7 +127,7 @@ export default async function handler(req, res) {
       }
     }
     for (const it of items) {
-      let trouve = (it.email && indexEmail.get(it.email)) || (it.tel && indexTel.get(it.tel.e164)) || null;
+      let trouve = (it.email && indexEmail.get(it.email)) || (it.tel && indexTel.get(it.tel.e164)) || (it.linkedin && indexLinkedin.get(it.linkedin)) || null;
       if (trouve) resultats[it.cle].liste = trouve;
       if (it.siren && indexSiren.has(it.siren)) {
         const m = indexSiren.get(it.siren);
