@@ -1,5 +1,11 @@
 # AGENTS
 
+## Workflow
+
+- Au début de chaque session, faire un `git pull` pour récupérer le HEAD.
+- Demander la validation et la mise en production de chaque feature. Lorsque la validation est donnée, effectuer un ou plusieurs commits avec un récapitulatif de la feature/fix/etc.
+- Push les commits pour mettre en production (le déploiement Vercel est déclenché par le push).
+
 ## Purpose
 
 Internal Sofy SDR tool for building prospecting lists, enriching leads, scoring opportunities, and actioning them through Ringover, Lemlist, HubSpot, Slack, and SMS.
