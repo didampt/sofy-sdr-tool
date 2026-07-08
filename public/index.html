@@ -1083,7 +1083,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v215';
+const VERSION='v216';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -1267,7 +1267,7 @@ function afficherQuestionsIA(questions){
    </div>
    <div>
     <label style="display:block;font-size:13px;font-weight:600;margin-bottom:5px">Nombre de fiches à générer</label>
-    <input class="field" id="ia-nb" type="number" min="1" max="100" placeholder="Ex : 20" value="${c.nb_contacts?c.nb_contacts:20}" style="width:100%">
+    <input class="field" id="ia-nb" type="number" min="1" max="200" placeholder="Ex : 20" value="${c.nb_contacts?c.nb_contacts:20}" style="width:100%">
    </div>
   </div>
   <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:12px;cursor:pointer">
@@ -1352,7 +1352,7 @@ function _resumeFiltresBasile(f){
 function ouvrirEstimationIA(d){
  const mode=(d&&d.mode_recherche)||'personne';
  const esc=s=>String(s).replace(/</g,'&lt;');
- const cap=Math.min((IA_CRITERES&&parseInt(IA_CRITERES.nb_contacts,10))||20,100);
+ const cap=Math.min((IA_CRITERES&&parseInt(IA_CRITERES.nb_contacts,10))||20,200);
  let html;
  if(mode==='personne_secteur'){
   // Chemin hybride métropole : personnes par poste, puis tri sectoriel par IA
@@ -1368,7 +1368,7 @@ function ouvrirEstimationIA(d){
   const triKO=(nbSect==null);
   const echHtml=ech.length
     ?`<div style="margin-top:8px">${ech.map(e=>`<div style="font-size:12.5px;padding:6px 0;border-top:1px solid var(--line)"><b>${esc(e.entreprise)}</b> — ${esc(e.role)}${e.nom&&e.nom!=="—"?` · ${esc(e.nom)}`:""}${e.ville?` <span style="color:var(--ink-soft)">(${esc(e.ville)})</span>`:""}</div>`).join("")}</div>`
-    :`<div style="font-size:12.5px;color:var(--danger);margin-top:8px">${triKO?"Le tri sectoriel IA n'a pas répondu — recalcule l'estimation.":"Aucun contact du secteur sur les 100 premiers profils. La génération parcourt jusqu'à 600 profils, mais le volume risque d'être faible."}</div>`;
+    :`<div style="font-size:12.5px;color:var(--danger);margin-top:8px">${triKO?"Le tri sectoriel IA n'a pas répondu — recalcule l'estimation.":"Aucun contact du secteur sur les 100 premiers profils. La génération parcourt jusqu'à 6 000 profils, mais le volume risque d'être faible."}</div>`;
   html=`
    <div style="font-size:18px;font-weight:700;margin-bottom:3px">📊 Estimation de ta liste</div>
    <div style="font-size:13px;color:var(--ink-soft);margin-bottom:14px">Secteur précis détecté → <b>recherche par postes + tri sectoriel par IA</b> (gratuit).</div>
@@ -1477,12 +1477,34 @@ async function creerListeIA(){
  const btn=document.getElementById('ia-btn-creer');
  if(btn){btn.disabled=true;btn.textContent='⏳ Recherche en cours…';}
  try{
-  // 1) Recherche réelle (entreprises → contacts → fiches)
-  const r=await api('/api/ia-liste-creer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'creer',criteres:IA_CRITERES})});
-  const d=await r.json();
-  if(d.erreur){toast('Erreur : '+d.erreur);CREATION_IA_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🚀 Générer la liste';}return;}
-  let fiches=d.fiches||[];
-  if(!fiches.length){toast(d.message||'Aucune fiche trouvée — essaie d\'affiner');CREATION_IA_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🚀 Générer la liste';}return;}
+  // 1) Recherche réelle, en ENCHAÎNANT les appels serveur : chaque appel parcourt ~600 profils
+  //    (limite 60 s Vercel) et reprend au curseur du précédent, jusqu'au quota demandé.
+  const capVoulu=Math.min((IA_CRITERES&&parseInt(IA_CRITERES.nb_contacts,10))||20,200);
+  let fiches=[];
+  let curseur=null;
+  let dernierMsg='';
+  for(let appel=0;appel<10;appel++){
+   if(btn)btn.textContent='⏳ Recherche… '+fiches.length+'/'+capVoulu+' fiches'+(appel?' (lot '+(appel+1)+')':'');
+   const r=await api('/api/ia-liste-creer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'creer',criteres:IA_CRITERES,curseur})});
+   const d=await r.json();
+   if(d.erreur){
+    if(!fiches.length){toast('Erreur : '+d.erreur);CREATION_IA_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🚀 Générer la liste';}return;}
+    break; // on garde ce qu'on a déjà
+   }
+   dernierMsg=d.message||'';
+   // Fusion par entreprise (les contacts d'une même société rejoignent la même fiche)
+   for(const f of (d.fiches||[])){
+    const cle=(f.nom||'').toLowerCase().trim();
+    const exist=fiches.find(x=>(x.nom||'').toLowerCase().trim()===cle);
+    if(!exist){fiches.push(f);continue;}
+    const noms=new Set(exist.contacts.map(c=>((c.prenom||'')+' '+(c.nom||'')).toLowerCase()));
+    for(const c of (f.contacts||[])){const k=((c.prenom||'')+' '+(c.nom||'')).toLowerCase();if(!noms.has(k)){exist.contacts.push(c);noms.add(k);}}
+   }
+   curseur=d.curseur||null;
+   if(fiches.length>=capVoulu||d.epuise||!curseur)break;
+  }
+  fiches=fiches.slice(0,capVoulu);
+  if(!fiches.length){toast(dernierMsg||'Aucune fiche trouvée — essaie d\'affiner');CREATION_IA_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🚀 Générer la liste';}return;}
   // 1bis) Déduplication : marque les fiches déjà connues (HubSpot / listes Sofy) pour éviter de brûler des crédits
   if(btn)btn.textContent='⏳ Vérification doublons…';
   try{

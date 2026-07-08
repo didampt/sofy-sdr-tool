@@ -56,9 +56,14 @@ const FAMILLES_POSTE = {
 };
 function rolesDepuisFamilles(c) {
   if (Array.isArray(c.familles_poste) && c.familles_poste.length) {
+    const fams = c.familles_poste.map(f => String(f).toLowerCase().trim());
     const out = [];
-    for (const fam of c.familles_poste) {
-      const arr = FAMILLES_POSTE[String(fam).toLowerCase().trim()];
+    for (const fam of fams) {
+      let arr = FAMILLES_POSTE[fam];
+      // "direction" demandée AVEC d'autres familles = le SDR veut des fonctions précises + le gérant.
+      // On ne garde alors que Gérant/Gérante : Président/PDG/DG matchent des dizaines de milliers de
+      // profils tous secteurs et noyaient la fenêtre de pagination (constat prod du 8 juil. 2026).
+      if (fam === 'direction' && fams.length > 1) arr = ['Gérant', 'Gérante'];
       if (arr) for (const t of arr) if (!out.includes(t)) out.push(t);
     }
     if (out.length) return out;
@@ -131,8 +136,8 @@ function rangDirigeant(r) {
   if (/directeur|directrice/.test(r)) return 4;
   return 8;
 }
-// Nombre de fiches demandé (clamp 1..100, défaut 20).
-function capContacts(c) { const n = parseInt(c && c.nb_contacts, 10); return (n && n > 0) ? Math.min(n, 100) : 20; }
+// Nombre de fiches demandé (clamp 1..200, défaut 20).
+function capContacts(c) { const n = parseInt(c && c.nb_contacts, 10); return (n && n > 0) ? Math.min(n, 200) : 20; }
 
 // Garde UN seul dirigeant (le mieux classé) par entreprise.
 function unParEntreprise(people) {
@@ -211,6 +216,50 @@ function leadsVersCandidats(leads) {
     const d = l.data || l || {};
     return { n, entreprise: d.current_company_name || '?', domaine: domaineCourant(d), poste: d.result_role || d.current_job_title || '' };
   });
+}
+
+// ---------- Dédup serveur + curseur de pagination (chemin hybride) ----------
+// Identifiant LinkedIn normalisé (même logique que api/dedup.js).
+function slugLinkedin(url) {
+  const m = String(url || '').match(/linkedin\.com\/in\/([^/?#]+)/i);
+  if (!m) return null;
+  try { return decodeURIComponent(m[1]).toLowerCase(); } catch (e) { return m[1].toLowerCase(); }
+}
+// Tous les LinkedIn déjà présents dans les listes actives -> la recherche ne ressort que du NEUF.
+async function linkedinsConnus(sql) {
+  const connus = new Set();
+  try {
+    const rows = sql ? await sql`SELECT entreprises FROM listes WHERE archivee = FALSE` : [];
+    for (const row of rows) {
+      for (const e of (Array.isArray(row.entreprises) ? row.entreprises : [])) {
+        for (const ct of (e.contacts || [])) {
+          const s = slugLinkedin(ct.enrich && ct.enrich.linkedin);
+          if (s) connus.add(s);
+        }
+      }
+    }
+  } catch (e) {}
+  return connus;
+}
+// Clé du curseur de pagination : mêmes filtres Basile => on reprend là où on s'était arrêté,
+// même le lendemain (config JSONB). Une relance des mêmes critères explore donc du terrain neuf.
+function cleCurseur(filtres) {
+  const base = JSON.stringify({
+    roles: [...((filtres.result_role && filtres.result_role.include) || [])].sort(),
+    activity: (filtres.activity && filtres.activity.include) || [],
+    pays: (filtres.result_country_code && filtres.result_country_code.include) || []
+  });
+  let h = 0; for (let i = 0; i < base.length; i++) { h = ((h << 5) - h + base.charCodeAt(i)) | 0; }
+  return 'ia_curseur_' + Math.abs(h).toString(36);
+}
+async function lireCurseur(sql, cle) {
+  try { const r = await sql`SELECT valeur FROM config WHERE cle = ${cle}`; return (r.length && r[0].valeur) || null; } catch (e) { return null; }
+}
+async function ecrireCurseur(sql, cle, val) {
+  try {
+    await sql`INSERT INTO config (cle, valeur) VALUES (${cle}, ${JSON.stringify(val)})
+              ON CONFLICT (cle) DO UPDATE SET valeur = ${JSON.stringify(val)}`;
+  } catch (e) {}
 }
 
 // Récupère des entreprises DOM (naf + code postal) et collecte SIREN + infos. cap = nb max de SIREN.
@@ -406,34 +455,64 @@ export default async function handler(req, res) {
 
       if (mode === 'creer') {
         const cap = capContacts(criteres);
+        // Dédup serveur : les profils déjà en base sont écartés AVANT le tri IA
+        const connus = await linkedinsConnus(sql);
+        // Reprise : curseur envoyé par le front (enchaînement dans une même génération),
+        // sinon curseur persistant en base (reprise le lendemain sur les mêmes critères).
+        const cle = cleCurseur(filtres);
+        let curseur = (req.body.curseur && typeof req.body.curseur === 'object') ? req.body.curseur : await lireCurseur(sql, cle);
+        if (curseur && curseur.epuise) curseur = null; // gisement fini -> on rebalaye (la dédup écarte le connu)
+        let token = (curseur && curseur.token) || null;
+        let pages = (curseur && curseur.pages) || 0;
         let fiches = [];
-        let token = null;
-        for (let page = 0; page < 6; page++) {
-          if (!tempsOk() || fiches.length >= cap * 1.5) break;
+        let epuise = false;
+        for (let p = 0; p < 6; p++) {
+          if (!tempsOk() || fiches.length >= cap) break;
           const body = { limit: 100, filters: filtres };
           if (token) body.paginationToken = token;
-          const r = await basile('/people/find', body, key);
+          let r = await basile('/people/find', body, key);
+          // Token expiré / rejeté -> on repart du début (la dédup serveur évite les doublons)
+          if (token && (!r.data || r.data.success === false)) {
+            token = null; pages = 0;
+            r = await basile('/people/find', { limit: 100, filters: filtres }, key);
+          }
           if (r.status === 402) break; // pagination coupée -> on garde ce qu'on a
           if (!r.data || r.data.success === false) break;
           const leads = r.data.leads || [];
-          if (!leads.length) break;
-          const retenus = await filtrerSecteurIA(leadsVersCandidats(leads), activite, nafCodes, apiKeyIA);
-          if (retenus === null) {
-            if (!fiches.length && page === 0) return res.status(503).json({ erreur: 'Tri sectoriel IA momentanément indisponible, réessaie dans quelques secondes.' });
-            break;
-          }
-          for (let n = 0; n < leads.length; n++) {
-            if (!retenus.has(n)) continue;
-            const f = leadVersFichePersonne(leads[n]);
-            if (f.contacts[0] && f.contacts[0].enrich && f.contacts[0].enrich.linkedin) fiches.push(f);
-          }
+          if (!leads.length) { epuise = true; break; }
+          pages++;
           token = (r.data.pagination && r.data.pagination.nextToken) || null;
-          if (!token) break;
+          const nouveaux = leads.filter(l => {
+            const s = slugLinkedin(((l.data || l) || {}).profile_url);
+            return s && !connus.has(s);
+          });
+          if (nouveaux.length) {
+            const retenus = await filtrerSecteurIA(leadsVersCandidats(nouveaux), activite, nafCodes, apiKeyIA);
+            if (retenus === null) {
+              if (!fiches.length && p === 0) return res.status(503).json({ erreur: 'Tri sectoriel IA momentanément indisponible, réessaie dans quelques secondes.' });
+              break;
+            }
+            for (let n = 0; n < nouveaux.length; n++) {
+              if (!retenus.has(n)) continue;
+              const f = leadVersFichePersonne(nouveaux[n]);
+              const s = f.contacts[0] && f.contacts[0].enrich && slugLinkedin(f.contacts[0].enrich.linkedin);
+              if (!s) continue;
+              fiches.push(f);
+              connus.add(s); // pas deux fois dans la même génération
+            }
+          }
+          if (!token) { epuise = true; break; }
         }
+        await ecrireCurseur(sql, cle, { token, pages, epuise, maj: new Date().toISOString() });
         fiches = regrouperParEntreprise(fiches).slice(0, cap);
         return res.status(200).json({
           fiches, nb: fiches.length, mode_recherche: 'personne_secteur',
-          message: fiches.length ? undefined : 'Aucun contact du secteur visé parmi les profils parcourus — élargis le secteur ou les postes.'
+          curseur: { token, pages, epuise },
+          epuise,
+          profils_parcourus: pages * 100,
+          message: fiches.length ? undefined : (epuise
+            ? 'Fin du gisement Basile pour ces critères — tout le neuf a déjà été extrait. Élargis le secteur ou les postes.'
+            : 'Aucun nouveau contact du secteur sur ce lot de profils — relance pour explorer la suite.')
         });
       }
       return res.status(400).json({ erreur: 'mode inconnu (estimer|creer)' });
