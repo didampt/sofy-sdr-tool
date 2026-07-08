@@ -1795,7 +1795,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v217';
+const VERSION='v218';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -3119,7 +3119,17 @@ function engagementDe(e){
  for(let k=0;k<em.length;k++){const g=ENGAGEMENT[em[k]];if(g&&(!best||new Date(g.ts)>new Date(best.ts)))best=g;}
  return best;
 }
-function poidsEngagement(e){const g=engagementDe(e);return g?new Date(g.ts).getTime():0;}
+// Poids d'une fiche = date du DERNIER événement chaud, toutes natures confondues :
+// réaction Lemlist OU visite du site (Snitcher/RB2B) OU signal LinkedIn. Une visite fraîche
+// passe donc devant un « email ouvert » d'il y a plusieurs jours (et inversement).
+function poidsEngagement(e){
+ const ts=[];
+ const g=engagementDe(e);
+ if(g){const x=new Date(g.ts).getTime();if(isFinite(x))ts.push(x);}
+ const dv=e.date_visite||(e.signal&&e.signal.date);
+ if(dv){const x=new Date(dv).getTime();if(isFinite(x))ts.push(x);}
+ return ts.length?Math.max(...ts):0;
+}
 function ordreFiches(){const w=REAL.map(poidsEngagement);return REAL.map((x,k)=>k).sort(function(a,b){return w[b]-w[a];});}
 function tempsRelEngag(ts){const d=new Date(ts),x=(Date.now()-d.getTime())/1000;if(x<60)return 'à l’instant';if(x<3600)return 'il y a '+Math.floor(x/60)+' min';if(x<86400)return 'il y a '+Math.floor(x/3600)+' h';return 'il y a '+Math.floor(x/86400)+' j';}
 function statutTagHtml(e){

@@ -158,11 +158,13 @@ export default async function handler(req, res) {
         const auteur = b.userName || b.sendUserName || null;
         const detail = b.campaignName || null;
         const titre = LIBELLES[type] || type;
-        // 1ere occurrence de ce signal pour ce lead ? (alerter une seule fois, pas a chaque ouverture)
-        let premiereFois = false;
+        // Au plus UNE alerte Slack par lead par 24 h (tous types confondus) : un lead qui
+        // re-reagit plus tard re-declenche (ex : email re-ouvert 2 jours apres), sans spammer
+        // le SDR a chaque ouverture rapprochee. Verifie AVANT l'insertion de l'evenement courant.
+        let alerter = false;
         if (ALERTE.includes(type)) {
-          const v = await sql`SELECT 1 FROM activites WHERE fiche_cle = ${email} AND type = ${type} LIMIT 1`;
-          premiereFois = (v.length === 0);
+          const v = await sql`SELECT 1 FROM activites WHERE fiche_cle = ${email} AND type = ANY(${ALERTE}) AND ts > NOW() - INTERVAL '24 hours' LIMIT 1`;
+          alerter = (v.length === 0);
         }
         await sql`INSERT INTO activites (fiche_cle, source, type, titre, detail, auteur, ref, ts)
           VALUES (${email}, 'lemlist', ${type}, ${titre}, ${detail}, ${auteur}, ${ref}, ${ts})
@@ -172,8 +174,8 @@ export default async function handler(req, res) {
           await sql`UPDATE sms_programmes SET statut = 'cancelled' WHERE email = ${email} AND statut = 'pending'`;
           await sql`UPDATE taches SET faite = TRUE WHERE fiche_cle = ${email} AND faite = FALSE`;
         }
-        // Signal d'engagement -> alerte Slack immediate au SDR (1ere fois seulement)
-        if (premiereFois) await alerterSdr(email, titre, b, detail);
+        // Signal d'engagement -> alerte Slack immediate au SDR (max 1/lead/24 h)
+        if (alerter) await alerterSdr(email, titre, b, detail);
       }
     } catch (e) { /* on repond 200 quoi qu il arrive */ }
     return res.status(200).json({ ok: true });
