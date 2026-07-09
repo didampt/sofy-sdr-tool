@@ -27,6 +27,21 @@ export default async function handler(req, res) {
       return res.status(400).json({ erreur: "Aucune campagne configurée — renseigne les IDs de campagnes Lemlist dans ⚙️ Envois (carte Connexion réelle)" });
     }
 
+    // Plafond quotidien (délivrabilité) : max N NOUVEAUX leads Lemlist par SDR par 24 h glissantes.
+    // Seuls les ajouts comptent (sequenceAdded) — les mises à jour d'un lead déjà en séquence passent.
+    const PLAFOND_JOUR = parseInt(process.env.LEMLIST_PLAFOND_JOUR || '50', 10);
+    const sdrEnvoi = proprietaire || user.nom;
+    if (sql && sdrEnvoi) {
+      const cnt = await sql`SELECT COUNT(*)::int AS n FROM activites
+        WHERE type = 'sequenceAdded' AND auteur = ${sdrEnvoi} AND ts > NOW() - INTERVAL '24 hours'`;
+      if (cnt.length && cnt[0].n >= PLAFOND_JOUR) {
+        return res.status(429).json({
+          erreur: `Plafond Lemlist atteint : ${cnt[0].n}/${PLAFOND_JOUR} envois sur 24 h (protection délivrabilité). Réessaie demain.`,
+          plafond: PLAFOND_JOUR, envoyes_24h: cnt[0].n
+        });
+      }
+    }
+
     let ownerEmail = null;
     if (sql && proprietaire) {
       const me = await sql`SELECT email_envoi FROM sdrs WHERE nom = ${proprietaire} LIMIT 1`;

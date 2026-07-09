@@ -719,6 +719,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
           <button class="act" style="background:#185FA5;color:#fff" onclick="ouvrirAjoutFiche()">➕ Ajouter une fiche</button>
           <button class="act act-call" onclick="lancerWaterfall(false)">🚀 Lancer l'enrichissement</button>
           <button class="act act-call" id="btn-nouvelles" style="display:none;background:#0a8f57" onclick="lancerWaterfall(true)">🚀 Nouvelles fiches</button>
+          <button class="act act-lemlist" id="btn-lemlist-batch" style="display:none" onclick="envoyerBatchLemlist()">✈️ Envoi groupé Lemlist</button>
           <button class="act act-export" onclick="exportCsv()">⬇️ Export Excel / CSV</button>
           <button class="btn-reset" onclick="resetWizard();nav('wizard',document.querySelector('[data-view=wizard]'))">↺ Nouvelle liste</button>
         </div>
@@ -1829,7 +1830,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v221';
+const VERSION='v222';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -3032,6 +3033,8 @@ function showRealResults(total,c){
   ?`📍 Google Maps · ${c.activite||''}${(c.villes||[]).length?' · '+c.villes.join(', '):''}${c.note_max?' · note ≤ '+c.note_max+' ★':''}${c.note_min?' · note ≥ '+c.note_min+' ★':''} — ${REAL.length} établissement${REAL.length>1?'s':''}${state.savedId?' · Sauvegardée ✓ (#'+state.savedId+')':''}`
   :`${_naf}${_naf?' · ':''}${total} entreprises trouvées (Pappers) · ${empLabel(c.emp)} salariés · CA ${c.ca||'—'}${_pays?' · '+_pays:''}${c.ville?' / '+c.ville:''} — affichage : ${REAL.length}${state.savedId?' · Sauvegardée ✓ (#'+state.savedId+')':''}`;
  document.getElementById('kpis').style.display='flex';
+ // Envoi groupé Lemlist : réservé aux listes Google Maps (emails génériques + variables GMB)
+ const blb=document.getElementById('btn-lemlist-batch');if(blb)blb.style.display=c.gmb?'':'none';
  const sw2=document.getElementById('search-wrap');if(sw2){sw2.style.display='block';const sf2=document.getElementById('search-fiches');if(sf2)sf2.value='';}
  majBtnNouvelles();
  document.getElementById('sort-bar').style.display='flex'; // tris actifs : signaux/scores IA, note GMB, établissements
@@ -4805,6 +4808,51 @@ async function confirmerLemlist(produit){
  }
  let msg='✈️ '+(produit||'défaut')+' : '+envoyes+' envoyé(s), '+majs+' mis à jour';
  if(erreurs)msg+=' · '+erreurs+' échec(s)'+(dernErr?' ('+dernErr+')':'');
+ toast(msg);
+}
+// ── Envoi GROUPÉ Lemlist (listes Google Maps / SoView) ──
+// Validation batch par le SDR : confirm avec le décompte, puis envoi fiche par fiche.
+// Le serveur applique le plafond quotidien (50/24 h par SDR) → on s'arrête proprement au 429.
+let BATCH_LEMLIST_EN_COURS=false;
+async function envoyerBatchLemlist(){
+ if(BATCH_LEMLIST_EN_COURS){toast('Envoi groupé déjà en cours ⏳');return;}
+ const eligibles=[];
+ REAL.forEach((e,i)=>{
+  if(e.lemlist_envoye||e.deja_hubspot||e.dedup_hubspot||e.dedup_liste)return;
+  const c=contactsDe(e).find(x=>x.enrich&&x.enrich.email);
+  if(c)eligibles.push({i,e,c});
+ });
+ if(!eligibles.length){toast('Aucune fiche éligible : il faut un email, pas déjà envoyée, hors HubSpot');return;}
+ const nbReseau=eligibles.filter(x=>/réseau national/.test((x.c.enrich.email_qualification||''))).length;
+ if(!confirm(`✈️ Envoi groupé Lemlist — séquence SoView\n\n${eligibles.length} fiche(s) : email présent, jamais envoyées, hors HubSpot.${nbReseau?`\n⚠️ Dont ${nbReseau} email(s) de réseau national (siège) — décoche-les de la liste avant si tu ne veux pas écrire au siège.`:''}\n\nPlafond serveur : 50 nouveaux envois / 24 h par SDR (l'envoi s'arrête proprement au plafond).\nLes variables GMB (note, pire avis, concurrents) partent avec chaque lead.\n\nEnvoyer maintenant ?`))return;
+ BATCH_LEMLIST_EN_COURS=true;
+ const btn=document.getElementById('btn-lemlist-batch');
+ let envoyes=0,majs=0,erreurs=0,plafond=false,dernErr='';
+ try{
+  for(let k=0;k<eligibles.length;k++){
+   const {i,e,c}=eligibles[k];
+   if(btn)btn.textContent=`⏳ Envoi ${k+1}/${eligibles.length}…`;
+   try{
+    const r=await api('/api/lemlist',{method:'POST',headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({liste_id:state.savedId,produit:'soview',proprietaire:e.traite_par||state.user.nom,sms:(e.score&&e.score.sms)||'',contact:{email:c.enrich.email,prenom:c.prenom,nom:c.nom},variables:varsLemlist(e,c)})});
+    const d=await r.json();
+    if(r.status===429){plafond=true;dernErr=d.erreur||'plafond atteint';break;}
+    if(!d.ok){erreurs++;dernErr=(d.erreur||'')+(d.detail?' — '+d.detail:'');continue;}
+    if(d.maj)majs++;else envoyes++;
+    e.lemlist_envoye=true;
+    e._act=e._act||[];e._act.unshift({source:'lemlist',type:'sequenceAdded',titre:'📨 Envoyé vers Lemlist · séquence Soview (groupé)',detail:'',auteur:(state.user&&state.user.nom)||'',ts:new Date().toISOString()});
+    setStatutAppel(i,'En séquence Lemlist');
+   }catch(e2){erreurs++;dernErr=e2.message;}
+   await new Promise(s=>setTimeout(s,350)); // douceur avec l'API Lemlist
+  }
+ }finally{
+  BATCH_LEMLIST_EN_COURS=false;
+  if(btn)btn.textContent='✈️ Envoi groupé Lemlist';
+ }
+ persister();trierReal();
+ let msg=`✈️ Envoi groupé : ${envoyes} envoyé(s), ${majs} mis à jour`;
+ if(erreurs)msg+=` · ${erreurs} échec(s)${dernErr?' ('+dernErr+')':''}`;
+ if(plafond)msg+=` · ⛔ ${dernErr}`;
  toast(msg);
 }
 async function envoyerLemlist(i){

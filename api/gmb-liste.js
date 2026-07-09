@@ -245,6 +245,22 @@ export default async function handler(req, res) {
           }];
         }));
       }
+      // Dédoublonnage : un même email sur plusieurs fiches = site d'un réseau national
+      // (ex : 3 garages AD -> info@autodistribution.com). On le garde sur la 1re fiche
+      // (étiqueté), les autres repassent « À enrichir » pour éviter d'écrire 3x au siège.
+      const parEmail = new Map();
+      for (const f of fiches) {
+        const em = f.contacts[0] && f.contacts[0].enrich && f.contacts[0].enrich.email;
+        if (!em) continue;
+        if (!parEmail.has(em)) parEmail.set(em, []);
+        parEmail.get(em).push(f);
+      }
+      for (const [, fs] of parEmail) {
+        if (fs.length < 2) continue;
+        fs[0].contacts[0].enrich.email_qualification = '⚠️ email réseau national (partagé par ' + fs.length + ' fiches)';
+        for (const f of fs.slice(1)) f.contacts = [];
+        emailsTrouves -= (fs.length - 1);
+      }
       await loggerConso(user, 'google_places', nbAppels, null);
       return res.status(200).json({
         fiches, nb: fiches.length, mode_recherche: 'gmb',
