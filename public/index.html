@@ -725,6 +725,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
           <button class="act" style="background:#185FA5;color:#fff" onclick="ouvrirAjoutFiche()">➕ Ajouter une fiche</button>
           <button class="act act-call" onclick="lancerWaterfall(false)">🚀 Lancer l'enrichissement</button>
           <button class="act act-call" id="btn-nouvelles" style="display:none;background:#0a8f57" onclick="lancerWaterfall(true)">🚀 Nouvelles fiches</button>
+          <button class="act act-copy" id="btn-email-web" style="display:none" onclick="chercherEmailsWeb()">🔎 Emails manquants (IA)</button>
           <button class="act act-lemlist" id="btn-lemlist-batch" style="display:none" onclick="envoyerBatchLemlist()">✈️ Envoi groupé Lemlist</button>
           <button class="act act-export" onclick="exportCsv()">⬇️ Export Excel / CSV</button>
           <button class="btn-reset" onclick="resetWizard();nav('wizard',document.querySelector('[data-view=wizard]'))">↺ Nouvelle liste</button>
@@ -1836,7 +1837,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v224';
+const VERSION='v225';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -3103,8 +3104,9 @@ function showRealResults(total,c){
   ?`📍 Google Maps · ${c.activite||''}${(c.villes||[]).length?' · '+c.villes.join(', '):''}${c.note_max?' · note ≤ '+c.note_max+' ★':''}${c.note_min?' · note ≥ '+c.note_min+' ★':''} — ${REAL.length} établissement${REAL.length>1?'s':''}${state.savedId?' · Sauvegardée ✓ (#'+state.savedId+')':''}`
   :`${_naf}${_naf?' · ':''}${total} entreprises trouvées (Pappers) · ${empLabel(c.emp)} salariés · CA ${c.ca||'—'}${_pays?' · '+_pays:''}${c.ville?' / '+c.ville:''} — affichage : ${REAL.length}${state.savedId?' · Sauvegardée ✓ (#'+state.savedId+')':''}`;
  document.getElementById('kpis').style.display='flex';
- // Envoi groupé Lemlist : réservé aux listes Google Maps (emails génériques + variables GMB)
+ // Envoi groupé Lemlist + recherche d'emails IA : réservés aux listes Google Maps
  const blb=document.getElementById('btn-lemlist-batch');if(blb)blb.style.display=c.gmb?'':'none';
+ const bew=document.getElementById('btn-email-web');if(bew)bew.style.display=c.gmb?'':'none';
  const sw2=document.getElementById('search-wrap');if(sw2){sw2.style.display='block';const sf2=document.getElementById('search-fiches');if(sf2)sf2.value='';}
  majBtnNouvelles();
  document.getElementById('sort-bar').style.display='flex'; // tris actifs : signaux/scores IA, note GMB, établissements
@@ -4879,6 +4881,50 @@ async function confirmerLemlist(produit){
  let msg='✈️ '+(produit||'défaut')+' : '+envoyes+' envoyé(s), '+majs+' mis à jour';
  if(erreurs)msg+=' · '+erreurs+' échec(s)'+(dernErr?' ('+dernErr+')':'');
  toast(msg);
+}
+// ── Recherche WEB par IA des emails manquants (listes Google Maps) ──
+// Boucle côté navigateur (pas de limite Vercel) : 1 fiche = 1 appel Claude avec recherche web
+// réelle (site officiel, annuaires…). ~0,02-0,05 €/fiche, 10-30 s/fiche — laisser l'onglet ouvert.
+let EMAIL_WEB_EN_COURS=false;
+async function chercherEmailsWeb(){
+ if(EMAIL_WEB_EN_COURS){toast('Recherche déjà en cours ⏳');return;}
+ const cibles=[];
+ REAL.forEach((e,i)=>{
+  const aEmail=contactsDe(e).some(x=>x.enrich&&x.enrich.email);
+  if(!aEmail)cibles.push(i);
+ });
+ if(!cibles.length){toast('Toutes les fiches ont déjà un email ✓');return;}
+ const coutMax=(cibles.length*0.05).toFixed(2);
+ if(!confirm(`🔎 Recherche web par IA des emails manquants\n\n${cibles.length} fiche(s) sans email. L'IA cherche réellement sur le web (site officiel, annuaires, réseaux sociaux) le site + l'email de chaque établissement.\n\nCoût : jusqu'à ~${coutMax} € · Durée : ~${Math.ceil(cibles.length*20/60)} min (laisse l'onglet ouvert).\n\nLancer ?`))return;
+ EMAIL_WEB_EN_COURS=true;
+ const btn=document.getElementById('btn-email-web');
+ let trouves=0,sites=0,erreurs=0;
+ try{
+  for(let k=0;k<cibles.length;k++){
+   const i=cibles[k],e=REAL[i];
+   if(btn)btn.textContent=`🔎 ${k+1}/${cibles.length} — ${trouves} email(s)…`;
+   try{
+    const r=await api('/api/email-web',{method:'POST',headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({nom:enseigneDe(e)||e.nom,ville:e.ville||'',activite:e.activite||'',site:e.site_web||null,liste_id:state.savedId})});
+    const d=await r.json();
+    if(!d.ok){if(d.erreur)erreurs++;continue;}
+    let touche=false;
+    if(d.site&&!e.site_web){e.site_web=d.site;sites++;touche=true;}
+    if(d.email){
+     e.contacts=e.contacts||[];
+     e.contacts.push({prenom:'',nom:'Accueil / Standard',fonction:'Email trouvé par IA (recherche web)',source:'ia_web',
+      enrich:{email:d.email,email_qualification:'IA web'+(d.source?' · '+d.source.slice(0,60):'')}});
+     trouves++;touche=true;
+    }
+    if(touche)rerender(i);
+   }catch(e2){erreurs++;}
+  }
+ }finally{
+  EMAIL_WEB_EN_COURS=false;
+  if(btn)btn.textContent='🔎 Emails manquants (IA)';
+ }
+ persister();
+ toast(`🔎 Terminé : ${trouves} email(s) trouvé(s)${sites?`, ${sites} site(s) web ajoutés`:''}${erreurs?`, ${erreurs} échec(s)`:''} sur ${cibles.length} fiche(s)`);
 }
 // ── Envoi GROUPÉ Lemlist (listes Google Maps / SoView) ──
 // Validation batch par le SDR : confirm avec le décompte, puis envoi fiche par fiche.
