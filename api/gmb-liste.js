@@ -4,10 +4,13 @@
 // POST { mode:'estimer'|'creer', activite, villes:[...], note_min?, note_max?, nb? }
 //   estimer -> 1 page Text Search par ville (20 résultats max), comptage + échantillon (pas de Details)
 //   creer   -> jusqu'à 3 pages/ville (60 max/ville, limite Google), filtre note,
-//              puis Place Details (site web + téléphone) sur les fiches retenues
-//              -> fiches au format Sofy (gmb.note_moyenne, telephone_google, maps_url…).
+//              puis Place Details (site web + téléphone + PIRE AVIS) sur les fiches retenues,
+//              puis extraction d'un EMAIL GÉNÉRIQUE depuis le site officiel (accueil,
+//              /contact, /mentions-legales — budget 30 s, jamais bloquant)
+//              -> fiches au format Sofy (gmb.note_moyenne, avis_negatif, telephone_google,
+//                 maps_url, contact « Accueil / Standard » avec email si trouvé).
 //
-// Coût : Text Search + Details par fiche retenue -> journalisé dans consommations (google_places).
+// Coût : Text Search + Details (Atmosphere, avis inclus) par fiche -> journalisé (google_places).
 
 import { verifierToken, loggerConso } from './db.js';
 
@@ -29,10 +32,77 @@ async function pageTextSearch(params, key) {
 }
 
 async function detailsPlace(placeId, key) {
-  const p = new URLSearchParams({ place_id: placeId, fields: 'website,formatted_phone_number,url', language: 'fr', key });
+  // 'reviews' = jusqu'à 5 avis Google (facturation Atmosphere) -> on en tire le PIRE pour l'angle SoView
+  const p = new URLSearchParams({ place_id: placeId, fields: 'website,formatted_phone_number,url,reviews', language: 'fr', key });
   const r = await fetch(BASE + '/details/json?' + p.toString());
   const d = await r.json().catch(() => null);
   return (d && d.status === 'OK' && d.result) ? d.result : {};
+}
+
+// Le pire des avis renvoyés par Google (note la plus basse, texte non vide de préférence)
+function pireAvis(reviews, placeId) {
+  const avis = (Array.isArray(reviews) ? reviews : []).filter(a => typeof a.rating === 'number');
+  if (!avis.length) return null;
+  avis.sort((a, b) => a.rating - b.rating || ((b.text || '').length - (a.text || '').length));
+  const p = avis[0];
+  if (p.rating >= 4) return null; // pas d'avis vraiment négatif -> on n'affiche rien
+  return {
+    note: p.rating,
+    texte: String(p.text || '').replace(/\s+/g, ' ').trim().slice(0, 300) || '(avis sans texte)',
+    date: p.relative_time_description || '',
+    lien: 'https://search.google.com/local/reviews?placeid=' + placeId
+  };
+}
+
+// ---------- Extraction d'email depuis le site officiel (accueil + /contact + /mentions-legales) ----------
+function urlSure(u) {
+  try {
+    const x = new URL(u);
+    if (!/^https?:$/.test(x.protocol)) return false;
+    if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|\[)/.test(x.hostname)) return false;
+    return true;
+  } catch (e) { return false; }
+}
+async function fetchTexte(url, ms) {
+  if (!urlSure(url)) return '';
+  const ctl = new AbortController();
+  const to = setTimeout(() => ctl.abort(), ms);
+  try {
+    const r = await fetch(url, { signal: ctl.signal, redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SofyScrap/1.0)' } });
+    if (!r.ok) return '';
+    if (!/text\/html|text\/plain/.test(r.headers.get('content-type') || '')) return '';
+    return (await r.text()).slice(0, 400000);
+  } catch (e) { return ''; } finally { clearTimeout(to); }
+}
+const RE_EMAIL = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+const EMAIL_JUNK = /\.(png|jpe?g|gif|svg|webp|css|js)$|example\.|sentry|wixpress|schema\.org|no-?reply|@\dx\b/i;
+function extraireEmail(html, domaine) {
+  if (!html) return null;
+  const vus = new Set();
+  for (const m of html.matchAll(/mailto:([^"'?\s>]+)/gi)) { try { vus.add(decodeURIComponent(m[1]).toLowerCase().trim()); } catch (e) {} }
+  for (const m of html.matchAll(RE_EMAIL)) vus.add(m[0].toLowerCase());
+  const ok = [...vus].filter(e => e.includes('@') && e.length < 60 && !EMAIL_JUNK.test(e));
+  if (!ok.length) return null;
+  // Préférence : même domaine que le site, puis adresses génériques d'accueil
+  const memeDom = domaine ? ok.filter(e => e.split('@')[1] === domaine) : [];
+  const pool = memeDom.length ? memeDom : ok;
+  const PREF = ['contact@', 'info@', 'accueil@', 'bonjour@', 'hello@', 'commercial@'];
+  pool.sort((a, b) => {
+    const pa = PREF.findIndex(p => a.startsWith(p)), pb = PREF.findIndex(p => b.startsWith(p));
+    return (pa < 0 ? 9 : pa) - (pb < 0 ? 9 : pb);
+  });
+  return pool[0] || null;
+}
+// Essaie accueil puis /contact puis /mentions-legales ; s'arrête au premier email trouvé.
+async function trouverEmailSite(urlSite, domaine) {
+  let base;
+  try { base = new URL(urlSite).origin; } catch (e) { return null; }
+  const pages = [urlSite, base + '/contact', base + '/mentions-legales'];
+  for (const p of pages) {
+    const em = extraireEmail(await fetchTexte(p, 3500), domaine);
+    if (em) return em;
+  }
+  return null;
 }
 
 // Garde une place ? (ouverte + filtre de note ; sans note = gardée seulement si aucun filtre)
@@ -74,7 +144,9 @@ function versFiche(r, det, ville, activite) {
         nb_avis: r.user_ratings_total || 0,
         lien: 'https://search.google.com/local/reviews?placeid=' + r.place_id,
         place_id: r.place_id
-      } : null
+      } : null,
+      // Le pire avis Google (jusqu'à 5 renvoyés par Details) -> munition pour l'email SoView
+      avis_negatif: pireAvis(det.reviews, r.place_id)
     },
     contacts: []
   };
@@ -143,17 +215,41 @@ export default async function handler(req, res) {
           if (!token) break;
         }
       }
-      // Détails (site + téléphone) par paquets de 5 en parallèle
-      const fiches = [];
+      // Détails (site + téléphone + avis) par paquets de 5 en parallèle
+      const fiches = []; const aScraper = [];
       for (let i = 0; i < candidats.length; i += 5) {
         const lot = candidats.slice(i, i + 5);
         const dets = await Promise.all(lot.map(c => detailsPlace(c.r.place_id, key)));
         nbAppels += lot.length;
-        lot.forEach((c, j) => fiches.push(versFiche(c.r, dets[j] || {}, c.ville, activite)));
+        lot.forEach((c, j) => {
+          const det = dets[j] || {};
+          const f = versFiche(c.r, det, c.ville, activite);
+          fiches.push(f);
+          if (det.website) aScraper.push({ f, url: det.website });
+        });
+      }
+      // Email générique depuis le site officiel (accueil, /contact, /mentions-legales).
+      // Paquets de 8 en parallèle, budget temps global : les fiches non scrappées restent
+      // enrichissables plus tard, la création n'échoue jamais pour ça.
+      const debutScrape = Date.now();
+      let emailsTrouves = 0;
+      for (let i = 0; i < aScraper.length; i += 8) {
+        if (Date.now() - debutScrape > 30000) break;
+        await Promise.all(aScraper.slice(i, i + 8).map(async ({ f, url }) => {
+          const em = await trouverEmailSite(url, f.site_web).catch(() => null);
+          if (!em) return;
+          emailsTrouves++;
+          f.contacts = [{
+            prenom: '', nom: 'Accueil / Standard', fonction: 'Email générique (site web)',
+            source: 'site_web', enrich: { email: em, email_qualification: 'générique site' }
+          }];
+        }));
       }
       await loggerConso(user, 'google_places', nbAppels, null);
       return res.status(200).json({
         fiches, nb: fiches.length, mode_recherche: 'gmb',
+        emails_trouves: emailsTrouves,
+        avis_negatifs: fiches.filter(f => f.gmb && f.gmb.avis_negatif).length,
         message: fiches.length ? undefined : 'Aucun établissement ne passe le filtre de note sur ces villes — élargis la tranche ou ajoute des villes.'
       });
     }

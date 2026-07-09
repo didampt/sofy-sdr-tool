@@ -1829,7 +1829,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v220';
+const VERSION='v221';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2399,7 +2399,7 @@ async function creerListeGmb(){
    body:JSON.stringify({nom:'📍 '+nom,sdr,criteres:{gmb:true,activite:c.activite,villes:c.villes,note_min:c.note_min,note_max:c.note_max,naf:[],pays:[]},entreprises:fiches,credits_estimes:0})});
   const dc=await rc.json();
   if(dc.erreur){toast('Erreur création : '+dc.erreur);CREATION_GMB_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='📍 Créer la liste';}return;}
-  toast('📍 Liste créée : '+fiches.length+' établissement'+(fiches.length>1?'s':''));
+  toast('📍 Liste créée : '+fiches.length+' établissement'+(fiches.length>1?'s':'')+(d.emails_trouves?' · '+d.emails_trouves+' email'+(d.emails_trouves>1?'s':'')+' trouvé'+(d.emails_trouves>1?'s':'')+' sur les sites':''));
   setTimeout(()=>{CREATION_GMB_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='📍 Créer la liste';}ouvrirListe(dc.id);},300);
  }catch(e){toast('Erreur réseau : '+e.message);CREATION_GMB_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='📍 Créer la liste';}}
 }
