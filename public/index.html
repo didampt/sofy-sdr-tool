@@ -547,9 +547,13 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
         <div class="qcard">
           <div class="qnum"><b>1</b> Cible</div>
           <h2>Quelle activité, dans quelles villes ?</h2>
-          <input class="field" id="gmb-activite" placeholder="Ex : garage automobile, restaurant, salon de coiffure…" style="width:100%;margin-bottom:10px">
-          <input class="field" id="gmb-villes" placeholder="Villes séparées par des virgules (max 5) — Ex : Bordeaux, Mérignac, Pessac" style="width:100%">
-          <p class="hint">Google limite à ~60 établissements par ville : multiplie les villes pour le volume.</p>
+          <input class="field" id="gmb-activite" list="gmb-activites-list" placeholder="Choisis une catégorie Google… ou tape librement" style="width:100%;margin-bottom:10px" autocomplete="off">
+          <datalist id="gmb-activites-list"></datalist>
+          <div style="position:relative">
+           <input class="field" id="gmb-villes" placeholder="Villes séparées par des virgules (max 5) — Ex : Bordeaux, Mérignac, Pessac" style="width:100%" autocomplete="off" oninput="rechercheVilleGmb(this.value)">
+           <div id="gmb-villes-results" style="display:none;position:absolute;left:0;right:0;top:44px;background:#fff;border:1px solid var(--line);border-radius:10px;z-index:10;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div>
+          </div>
+          <p class="hint">Les catégories suggérées = catégories officielles des fiches Google (résultats plus propres). Google limite à ~60 établissements par ville : multiplie les villes pour le volume.</p>
           <h2 style="margin-top:20px;font-size:17px">Filtre de note Google</h2>
           <div class="row3" style="grid-template-columns:1fr 1fr 1fr;gap:10px">
             <select class="field" id="gmb-note-max"><option value="">Toutes les notes</option><option value="3">Note ≤ 3,0 ★</option><option value="3.5">Note ≤ 3,5 ★</option><option value="4" selected>Note ≤ 4,0 ★</option><option value="4.5">Note ≤ 4,5 ★</option></select>
@@ -1830,7 +1834,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v222';
+const VERSION='v223';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -1959,6 +1963,7 @@ function choisirMode(mode){
  }else if(mode==='gmb'){
   document.getElementById('mode-gmb').style.display='block';
   remplirSelectSdr('gmb-sdr');
+  remplirActivitesGmb();
  }else{
   document.getElementById('mode-manuelle').style.display='block';
   remplirSelectSdrManuelle();
@@ -2346,14 +2351,58 @@ async function creerListeManuelle(){
  }
 }
 // ───────── LISTE GOOGLE MAPS (GMB — ciblage SoView par note) ─────────
+// Activités = catégories OFFICIELLES des fiches Google (libellé FR → type Google).
+// Choisir une suggestion envoie le `type` à l'API → résultats bien plus propres.
+const ACTIVITES_GMB=[
+ ["garage automobile","car_repair"],["concessionnaire automobile","car_dealer"],["location de voitures","car_rental"],["station de lavage auto","car_wash"],
+ ["restaurant","restaurant"],["restauration rapide","meal_takeaway"],["boulangerie","bakery"],["bar","bar"],["café","cafe"],["boîte de nuit","night_club"],["hôtel","lodging"],
+ ["pharmacie","pharmacy"],["salon de coiffure","hair_care"],["institut de beauté","beauty_salon"],["spa","spa"],["dentiste","dentist"],["médecin","doctor"],["vétérinaire","veterinary_care"],
+ ["agence immobilière","real_estate_agency"],["salle de sport","gym"],["agence de voyages","travel_agency"],["pompes funèbres","funeral_home"],["pressing","laundry"],
+ ["magasin de vêtements","clothing_store"],["bijouterie","jewelry_store"],["magasin d'électroménager","electronics_store"],["magasin de meubles","furniture_store"],
+ ["magasin de bricolage","hardware_store"],["supermarché","supermarket"],["magasin de chaussures","shoe_store"],["librairie","book_store"],["animalerie","pet_store"],["fleuriste","florist"]
+];
+function remplirActivitesGmb(){
+ const dl=document.getElementById('gmb-activites-list');
+ if(dl&&!dl.children.length)dl.innerHTML=ACTIVITES_GMB.map(([l])=>`<option value="${l}">`).join('');
+}
 function criteresGmb(){
+ const activite=document.getElementById('gmb-activite').value.trim();
+ // Libellé reconnu → type Google officiel envoyé à l'API (sinon texte libre, sans type)
+ const m=ACTIVITES_GMB.find(([l])=>l.toLowerCase()===activite.toLowerCase());
  return {
-  activite:document.getElementById('gmb-activite').value.trim(),
+  activite,
+  type_gmb:m?m[1]:null,
   villes:document.getElementById('gmb-villes').value.split(',').map(v=>v.trim()).filter(Boolean),
   note_min:document.getElementById('gmb-note-min').value||null,
   note_max:document.getElementById('gmb-note-max').value||null,
   nb:parseInt(document.getElementById('gmb-nb').value,10)||30
  };
+}
+// Autocomplete de villes (Google, limité France) sur le fragment après la dernière virgule
+let GMB_VILLE_DEBOUNCE=null;
+function rechercheVilleGmb(valeur){
+ const box=document.getElementById('gmb-villes-results');
+ const frag=valeur.split(',').pop().trim();
+ if(frag.length<2){box.style.display='none';return;}
+ clearTimeout(GMB_VILLE_DEBOUNCE);
+ GMB_VILLE_DEBOUNCE=setTimeout(async()=>{
+  try{
+   const r=await api('/api/places-autocomplete?ville='+encodeURIComponent(frag));
+   const d=await r.json();
+   const vs=d.villes||[];
+   if(!vs.length){box.style.display='none';return;}
+   box.innerHTML=vs.map(v=>`<div class="naf-item" onclick="choisirVilleGmb('${String(v.nom).replace(/'/g,'&#39;').replace(/"/g,'&quot;')}')"><span>${String(v.nom).replace(/</g,'&lt;')}</span><span class="naf-code">${String(v.detail).replace(/</g,'&lt;').slice(0,30)}</span></div>`).join('');
+   box.style.display='block';
+  }catch(e){box.style.display='none';}
+ },250);
+}
+function choisirVilleGmb(nom){
+ const champ=document.getElementById('gmb-villes');
+ const parts=champ.value.split(',');
+ parts[parts.length-1]=' '+nom;
+ champ.value=parts.join(',').replace(/^\s+/,'')+', ';
+ document.getElementById('gmb-villes-results').style.display='none';
+ champ.focus();
 }
 function validerSaisieGmb(c){
  if(!c.activite){toast('⚠️ Indique une activité (ex : garage automobile)');document.getElementById('gmb-activite').focus();return false;}

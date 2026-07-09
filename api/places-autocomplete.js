@@ -2,6 +2,7 @@
 // Clé Google protégée côté serveur (jamais exposée au front).
 // GET ?q=texte           → liste d'établissements { place_id, nom, adresse }
 // GET ?place_id=...       → détails pour pré-remplir { nom, adresse, ville, code_postal, telephone, site_web, place_id }
+// GET ?ville=texte        → autocomplete de VILLES françaises { villes:[{nom, detail}] } (Liste Google Maps)
 
 import { verifierToken } from './db.js';
 
@@ -39,7 +40,17 @@ export default async function handler(req, res) {
   if (!key) return res.status(500).json({ erreur: 'GOOGLE_PLACES_API_KEY manquante' });
 
   try {
-    const { q, place_id } = req.query;
+    const { q, place_id, ville } = req.query;
+
+    // ── Mode villes : autocomplete limité aux villes françaises ──
+    if (ville && ville.trim().length >= 2) {
+      const d = await gPlaces(`https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(ville.trim())}&types=%28cities%29&components=country:fr&language=fr&key=${key}`);
+      const villes = (d.predictions || []).slice(0, 6).map(p => ({
+        nom: (p.structured_formatting && p.structured_formatting.main_text) || p.description,
+        detail: (p.structured_formatting && p.structured_formatting.secondary_text) || ''
+      }));
+      return res.status(200).json({ villes });
+    }
 
     // ── Mode détails : on a le place_id, on renvoie tout pour pré-remplir ──
     if (place_id) {

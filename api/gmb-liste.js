@@ -166,6 +166,10 @@ export default async function handler(req, res) {
     .map(v => String(v).trim()).filter(Boolean).slice(0, 5); // max 5 villes (3 pages Google/ville)
   const noteMin = (b.note_min !== undefined && b.note_min !== null && b.note_min !== '') ? parseFloat(b.note_min) : null;
   const noteMax = (b.note_max !== undefined && b.note_max !== null && b.note_max !== '') ? parseFloat(b.note_max) : null;
+  // Catégorie Google officielle (optionnelle, choisie dans les suggestions du front) :
+  // passée en `type` au Text Search -> résultats bien plus propres qu'en texte libre.
+  const TYPES_GMB = new Set(['car_dealer', 'car_repair', 'car_rental', 'car_wash', 'restaurant', 'meal_takeaway', 'bakery', 'bar', 'cafe', 'night_club', 'pharmacy', 'hair_care', 'beauty_salon', 'spa', 'lodging', 'real_estate_agency', 'gym', 'clothing_store', 'jewelry_store', 'veterinary_care', 'funeral_home', 'electronics_store', 'furniture_store', 'hardware_store', 'supermarket', 'shoe_store', 'book_store', 'pet_store', 'florist', 'travel_agency', 'dentist', 'doctor', 'laundry']);
+  const typeGmb = TYPES_GMB.has(String(b.type_gmb || '')) ? String(b.type_gmb) : null;
   const nb = Math.min(Math.max(parseInt(b.nb, 10) || 30, 1), 100); // Details facturés par fiche -> cap 100
   if (!activite || !villes.length) return res.status(400).json({ erreur: 'activite et villes requis' });
 
@@ -175,7 +179,7 @@ export default async function handler(req, res) {
     if (mode === 'estimer') {
       let total = 0, avecSuite = 0; const echantillon = [];
       for (const ville of villes) {
-        const d = await pageTextSearch({ query: activite + ' ' + ville }, key); nbAppels++;
+        const d = await pageTextSearch({ query: activite + ' ' + ville, ...(typeGmb ? { type: typeGmb } : {}) }, key); nbAppels++;
         const ok = (d.results || []).filter(r => passeFiltre(r, noteMin, noteMax));
         total += ok.length;
         if (d.next_page_token) avecSuite++;
@@ -203,7 +207,7 @@ export default async function handler(req, res) {
         for (let page = 0; page < 3; page++) {
           if (candidats.length >= nb) break;
           if (token) await new Promise(s => setTimeout(s, 2000)); // le pagetoken Google met ~2 s à s'activer
-          const d = await pageTextSearch(token ? { pagetoken: token } : { query: activite + ' ' + ville }, key); nbAppels++;
+          const d = await pageTextSearch(token ? { pagetoken: token } : { query: activite + ' ' + ville, ...(typeGmb ? { type: typeGmb } : {}) }, key); nbAppels++;
           for (const r of (d.results || [])) {
             if (candidats.length >= nb) break;
             if (!r.place_id || vus.has(r.place_id)) continue;
