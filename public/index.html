@@ -1829,7 +1829,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v219';
+const VERSION='v220';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -3028,6 +3028,8 @@ function showRealResults(total,c){
  const estAuto=c.auto==='hotleads';
  document.getElementById('res-sub').textContent=estAuto
   ?`🔥 Liste automatique des Hot Leads · ${REAL.length} fiche(s)${state.savedId?' · #'+state.savedId:''}`
+  :c.gmb
+  ?`📍 Google Maps · ${c.activite||''}${(c.villes||[]).length?' · '+c.villes.join(', '):''}${c.note_max?' · note ≤ '+c.note_max+' ★':''}${c.note_min?' · note ≥ '+c.note_min+' ★':''} — ${REAL.length} établissement${REAL.length>1?'s':''}${state.savedId?' · Sauvegardée ✓ (#'+state.savedId+')':''}`
   :`${_naf}${_naf?' · ':''}${total} entreprises trouvées (Pappers) · ${empLabel(c.emp)} salariés · CA ${c.ca||'—'}${_pays?' · '+_pays:''}${c.ville?' / '+c.ville:''} — affichage : ${REAL.length}${state.savedId?' · Sauvegardée ✓ (#'+state.savedId+')':''}`;
  document.getElementById('kpis').style.display='flex';
  const sw2=document.getElementById('search-wrap');if(sw2){sw2.style.display='block';const sf2=document.getElementById('search-fiches');if(sf2)sf2.value='';}
@@ -3690,15 +3692,18 @@ function gmbHtml(g){
  if(!g.trouve)return `<p class="hint" style="margin-top:14px">Aucune fiche Google trouvée — angle Soview : « vous n'êtes pas visible sur Google Maps ».</p>`;
  const comp=g.concurrents?`<div class="gmb-cell gmb-comp"><b>${String(g.concurrents.note_moyenne).replace('.',',')} ★</b>Moyenne ${g.concurrents.secteur} (${g.concurrents.zone}, ${g.concurrents.nb_analyses} analysés)</div>`:'';
  const ecart=g.concurrents?Math.round((g.concurrents.note_moyenne-g.note_moyenne)*10)/10:null;
+ // Tolérant : les fiches issues d'une « Liste Google Maps » n'ont ni pire_fiche ni avis_negatif
+ const noteTxt=(g.note_moyenne!=null)?String(g.note_moyenne).replace('.',','):'—';
+ const nbF=g.nb_fiches||1;
  return `
-  <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);margin:16px 0 8px">Google Business — ${String(g.note_moyenne).replace('.',',')} ★ (${(g.total_avis||0).toLocaleString('fr-FR')} avis · ${g.nb_fiches} fiche${g.nb_fiches>1?'s':''})${ecart>0?` · <span style="color:var(--danger)">${String(ecart).replace('.',',')} pt sous les concurrents</span>`:''}</h3>
+  <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);margin:16px 0 8px">Google Business — ${noteTxt} ★ (${(g.total_avis||0).toLocaleString('fr-FR')} avis · ${nbF} fiche${nbF>1?'s':''})${ecart>0?` · <span style="color:var(--danger)">${String(ecart).replace('.',',')} pt sous les concurrents</span>`:''}</h3>
   ${g.telephone?`<div class="contact-line" style="margin-bottom:8px">☎️ Standard : <b>${g.telephone}</b>${telBtns(g.telephone)} <span class="badge b-gmb">source GMB</span></div>`:''}
-  <div class="gmb-vs">
-   <div class="gmb-cell gmb-bad"><b>${String(g.pire_fiche.note).replace('.',',')} ★ (${g.pire_fiche.nb_avis} avis)</b>Pire fiche : <a href="${g.pire_fiche.lien}" target="_blank">${g.pire_fiche.nom}</a></div>
+  ${(g.pire_fiche||comp)?`<div class="gmb-vs">
+   ${g.pire_fiche?`<div class="gmb-cell gmb-bad"><b>${String(g.pire_fiche.note).replace('.',',')} ★ (${g.pire_fiche.nb_avis} avis)</b>Pire fiche : <a href="${g.pire_fiche.lien}" target="_blank">${g.pire_fiche.nom}</a></div>`:''}
    ${comp}
-  </div>
+  </div>`:''}
   ${g.avis_negatif?`<h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);margin:14px 0 8px">Avis négatif récent (${g.avis_negatif.note}★ · ${g.avis_negatif.date})</h3>
-  <div class="review-box">« ${g.avis_negatif.texte} »<span class="who">Avis Google · ${g.pire_fiche.nom}${g.avis_negatif.lien?` · <a href="${g.avis_negatif.lien}" target="_blank">Voir tous les avis ↗</a>`:''}</span></div>`:''}`;
+  <div class="review-box">« ${g.avis_negatif.texte} »<span class="who">Avis Google${g.pire_fiche?' · '+g.pire_fiche.nom:''}${g.avis_negatif.lien?` · <a href="${g.avis_negatif.lien}" target="_blank">Voir tous les avis ↗</a>`:''}</span></div>`:''}`;
 }
 
 function contactHtml(c,i,j){

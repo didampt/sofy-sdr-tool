@@ -63,9 +63,18 @@ function versFiche(r, det, ville, activite) {
       trouve: true,
       note_moyenne: (typeof r.rating === 'number') ? r.rating : null,
       total_avis: r.user_ratings_total || 0,
+      nb_fiches: 1,
       place_id: r.place_id,
       telephone: det.formatted_phone_number || null,
-      site_web: site
+      site_web: site,
+      // Un seul établissement -> sa propre fiche sert de « pire fiche » (lien direct vers les avis)
+      pire_fiche: (typeof r.rating === 'number') ? {
+        nom: r.name || '',
+        note: r.rating,
+        nb_avis: r.user_ratings_total || 0,
+        lien: 'https://search.google.com/local/reviews?placeid=' + r.place_id,
+        place_id: r.place_id
+      } : null
     },
     contacts: []
   };
