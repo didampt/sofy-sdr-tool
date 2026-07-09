@@ -1837,7 +1837,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v226';
+const VERSION='v227';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -3243,8 +3243,19 @@ function estMobile(t){
 // Appel via l'extension Ringover click-to-call : un simple lien tel: suffit, l'extension le capte.
 function appeler(num){ location.href='tel:'+telNorm(num); }
 function waNumero(t){
- // wa.me veut le numéro international SANS + ni espaces (ex : 33612345678)
- return telNorm(t).replace(/[^0-9]/g,'');
+ // wa.me exige le format INTERNATIONAL sans + (ex : 33612345678, 590690809133).
+ // Un numéro national 0XXXXXXXXX bloque l'envoi -> conversion avec les indicatifs DOM.
+ let n=telNorm(t).replace(/[^0-9+]/g,'');
+ if(n.startsWith('+'))return n.slice(1);
+ if(n.startsWith('00'))return n.slice(2);
+ if(!n.startsWith('0')&&n.length>=11)return n; // déjà international sans +
+ if(/^0\d{9}$/.test(n)){
+  // Indicatif selon la zone : Guadeloupe/St-Martin +590, Martinique +596, Guyane +594, Réunion/Mayotte +262
+  const DOM={'0590':'590','0690':'590','0691':'590','0596':'596','0696':'596','0697':'596','0594':'594','0694':'594','0262':'262','0263':'262','0269':'262','0692':'262','0693':'262'};
+  const cc=DOM[n.slice(0,4)]||'33';
+  return cc+n.slice(1);
+ }
+ return n.replace(/^0+/,'');
 }
 function waLink(t){
  const num=waNumero(t);
