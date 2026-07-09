@@ -513,8 +513,8 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
       <div class="eyebrow">Nouvelle liste d'appel</div>
       <div id="mode-choix" style="max-width:680px">
         <h1 style="margin-bottom:6px">Comment veux-tu créer ta liste ?</h1>
-        <p class="sub" style="margin-bottom:22px">Trois façons : décris ta cible à l'IA, extrais depuis Pappers, ou crée une liste vide à remplir à la main.</p>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+        <p class="sub" style="margin-bottom:22px">Quatre façons : décris ta cible à l'IA, extrais depuis Pappers, cible par note Google Maps, ou crée une liste vide à remplir à la main.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
           <div onclick="choisirMode('ia')" style="cursor:pointer;border:2px solid #185FA5;border-radius:14px;padding:22px;transition:.15s;background:var(--card);position:relative" onmouseover="this.style.background='#f5f9fe'" onmouseout="this.style.background='var(--card)'">
             <div style="position:absolute;top:12px;right:12px;font-size:10px;font-weight:700;color:#fff;background:#185FA5;padding:2px 8px;border-radius:20px">NOUVEAU</div>
             <div style="font-size:30px;margin-bottom:10px">✨</div>
@@ -526,10 +526,44 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
             <div style="font-size:16px;font-weight:700;margin-bottom:5px">Liste depuis Pappers</div>
             <div style="font-size:13px;color:var(--ink-soft);line-height:1.5">Tu choisis un secteur, une zone, une taille. La machine extrait les entreprises, dédoublonne et score automatiquement.</div>
           </div>
+          <div onclick="choisirMode('gmb')" style="cursor:pointer;border:1px solid var(--line);border-radius:14px;padding:22px;transition:.15s;background:var(--card);position:relative" onmouseover="this.style.borderColor='#185FA5'" onmouseout="this.style.borderColor='var(--line)'">
+            <div style="position:absolute;top:12px;right:12px;font-size:10px;font-weight:700;color:#fff;background:#16A34A;padding:2px 8px;border-radius:20px">NOUVEAU</div>
+            <div style="font-size:30px;margin-bottom:10px">📍</div>
+            <div style="font-size:16px;font-weight:700;margin-bottom:5px">Liste Google Maps (SoView)</div>
+            <div style="font-size:13px;color:var(--ink-soft);line-height:1.5">Ville + activité + note Google. Idéal SoView : cible les fiches mal notées, avec téléphone et site web inclus.</div>
+          </div>
           <div onclick="choisirMode('manuelle')" style="cursor:pointer;border:1px solid var(--line);border-radius:14px;padding:22px;transition:.15s;background:var(--card)" onmouseover="this.style.borderColor='#185FA5'" onmouseout="this.style.borderColor='var(--line)'">
             <div style="font-size:30px;margin-bottom:10px">✍️</div>
             <div style="font-size:16px;font-weight:700;margin-bottom:5px">Liste manuelle</div>
             <div style="font-size:13px;color:var(--ink-soft);line-height:1.5">Tu nommes ta liste (ton ICP) et tu y ajoutes toi-même les fiches que tu as identifiées. Idéal pour des cibles repérées à la main.</div>
+          </div>
+        </div>
+      </div>
+      <div id="mode-gmb" style="display:none;max-width:640px">
+        <div class="head-row">
+          <div><h1>📍 Liste Google Maps</h1><p class="sub">Cible par ville, activité et note Google — le signal SoView par excellence.</p></div>
+          <button class="btn-reset" onclick="retourChoixMode()">↺ Retour</button>
+        </div>
+        <div class="qcard">
+          <div class="qnum"><b>1</b> Cible</div>
+          <h2>Quelle activité, dans quelles villes ?</h2>
+          <input class="field" id="gmb-activite" placeholder="Ex : garage automobile, restaurant, salon de coiffure…" style="width:100%;margin-bottom:10px">
+          <input class="field" id="gmb-villes" placeholder="Villes séparées par des virgules (max 5) — Ex : Bordeaux, Mérignac, Pessac" style="width:100%">
+          <p class="hint">Google limite à ~60 établissements par ville : multiplie les villes pour le volume.</p>
+          <h2 style="margin-top:20px;font-size:17px">Filtre de note Google</h2>
+          <div class="row3" style="grid-template-columns:1fr 1fr 1fr;gap:10px">
+            <select class="field" id="gmb-note-max"><option value="">Toutes les notes</option><option value="3">Note ≤ 3,0 ★</option><option value="3.5">Note ≤ 3,5 ★</option><option value="4" selected>Note ≤ 4,0 ★</option><option value="4.5">Note ≤ 4,5 ★</option></select>
+            <select class="field" id="gmb-note-min"><option value="">Pas de minimum</option><option value="1">Note ≥ 1,0 ★</option><option value="2">Note ≥ 2,0 ★</option><option value="3">Note ≥ 3,0 ★</option></select>
+            <input class="field" id="gmb-nb" type="number" min="1" max="100" value="30" title="Nombre de fiches">
+          </div>
+          <p class="hint">« Note ≤ 4,0 » = les établissements qui ont besoin de SoView. Le nombre de fiches est plafonné à 100 (chaque fiche = 1 appel Google Details : téléphone + site web).</p>
+          <h2 style="margin-top:20px;font-size:17px">Identification</h2>
+          <input class="field" id="gmb-nom" placeholder="Nom de la liste (ex : Garages mal notés Bordeaux)" style="width:100%;margin-bottom:10px">
+          <select class="field" id="gmb-sdr" style="width:100%"></select>
+          <div id="gmb-estim" style="display:none;background:var(--paper);border-radius:10px;padding:14px 16px;margin-top:16px;font-size:13px;line-height:1.6"></div>
+          <div class="wiz-foot" style="margin-top:22px">
+            <button class="btn" id="btn-estimer-gmb" onclick="estimerListeGmb()" style="background:var(--paper)">📊 Estimer (gratuit)</button>
+            <button class="btn btn-primary" id="btn-creer-gmb" onclick="creerListeGmb()">📍 Créer la liste</button>
           </div>
         </div>
       </div>
@@ -1795,7 +1829,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v218';
+const VERSION='v219';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -1914,12 +1948,16 @@ function choisirMode(mode){
  document.getElementById('wizard-pappers').style.display='none';
  document.getElementById('mode-manuelle').style.display='none';
  document.getElementById('mode-ia').style.display='none';
+ document.getElementById('mode-gmb').style.display='none';
  if(mode==='pappers'){
   document.getElementById('wizard-pappers').style.display='block';
  }else if(mode==='ia'){
   document.getElementById('mode-ia').style.display='block';
   // On repart toujours de l'étape prompt
   retourPromptIA();
+ }else if(mode==='gmb'){
+  document.getElementById('mode-gmb').style.display='block';
+  remplirSelectSdr('gmb-sdr');
  }else{
   document.getElementById('mode-manuelle').style.display='block';
   remplirSelectSdrManuelle();
@@ -1930,6 +1968,7 @@ function retourChoixMode(){
  document.getElementById('wizard-pappers').style.display='none';
  document.getElementById('mode-manuelle').style.display='none';
  document.getElementById('mode-ia').style.display='none';
+ document.getElementById('mode-gmb').style.display='none';
 }
 // ───────── LISTE INTELLIGENTE (IA) ─────────
 let IA_CRITERES=null;      // critères extraits par l'IA (pour l'estimation/création)
@@ -2260,8 +2299,8 @@ async function creerListeIA(){
   setTimeout(()=>{CREATION_IA_EN_COURS=false;ouvrirListe(dc.id);},300);
  }catch(e){toast('Erreur réseau : '+e.message);CREATION_IA_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🚀 Générer la liste';}}
 }
-async function remplirSelectSdrManuelle(){
- const sel=document.getElementById('manuelle-sdr');
+async function remplirSelectSdr(idSelect){
+ const sel=document.getElementById(idSelect);
  if(!sel)return;
  // Un SDR ne choisit pas (c'est lui) ; admin/superadmin peuvent assigner
  const moi=state.user?state.user.nom:'';
@@ -2271,6 +2310,7 @@ async function remplirSelectSdrManuelle(){
   sel.innerHTML=(d.sdrs||[]).filter(s=>s.actif).map(s=>`<option value="${s.nom}"${s.nom===moi?' selected':''}>${s.nom}</option>`).join('');
  }catch(e){sel.innerHTML=`<option value="${moi}">${moi}</option>`;}
 }
+function remplirSelectSdrManuelle(){return remplirSelectSdr('manuelle-sdr');}
 let CREATION_MANUELLE_EN_COURS=false;
 async function creerListeManuelle(){
  // Verrou anti double-clic : si une création est déjà en cours, on ignore
@@ -2303,6 +2343,65 @@ async function creerListeManuelle(){
   CREATION_MANUELLE_EN_COURS=false;
   if(btn){btn.disabled=false;btn.textContent='✍️ Créer la liste vide';}
  }
+}
+// ───────── LISTE GOOGLE MAPS (GMB — ciblage SoView par note) ─────────
+function criteresGmb(){
+ return {
+  activite:document.getElementById('gmb-activite').value.trim(),
+  villes:document.getElementById('gmb-villes').value.split(',').map(v=>v.trim()).filter(Boolean),
+  note_min:document.getElementById('gmb-note-min').value||null,
+  note_max:document.getElementById('gmb-note-max').value||null,
+  nb:parseInt(document.getElementById('gmb-nb').value,10)||30
+ };
+}
+function validerSaisieGmb(c){
+ if(!c.activite){toast('⚠️ Indique une activité (ex : garage automobile)');document.getElementById('gmb-activite').focus();return false;}
+ if(!c.villes.length){toast('⚠️ Indique au moins une ville');document.getElementById('gmb-villes').focus();return false;}
+ return true;
+}
+async function estimerListeGmb(){
+ const c=criteresGmb();
+ if(!validerSaisieGmb(c))return;
+ const btn=document.getElementById('btn-estimer-gmb');
+ if(btn){btn.disabled=true;btn.textContent='⏳ Comptage…';}
+ try{
+  const r=await api('/api/gmb-liste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'estimer',...c})});
+  const d=await r.json();
+  if(d.erreur){toast('Erreur : '+d.erreur);}
+  else{
+   const box=document.getElementById('gmb-estim');
+   const ech=(d.echantillon||[]).map(e=>`<div style="padding:5px 0;border-top:1px solid var(--line)"><b>${String(e.nom).replace(/</g,'&lt;')}</b> — ${e.note!=null?e.note.toLocaleString('fr-FR')+' ★':'sans note'} (${e.avis} avis) <span style="color:var(--ink-soft)">· ${String(e.ville).replace(/</g,'&lt;')}</span></div>`).join('');
+   box.innerHTML=`<b>${d.nb_etablissements}</b> établissement${d.nb_etablissements>1?'s':''} correspondent sur la 1re page de chaque ville${d.peut_aller_plus_loin?' <span style="color:var(--ink-soft)">(la création ira jusqu\'à ~60/ville)</span>':''}.`+(ech?`<div style="margin-top:8px;font-weight:700">Échantillon réel :</div>${ech}`:'');
+   box.style.display='block';
+  }
+ }catch(e){toast('Erreur réseau : '+e.message);}
+ if(btn){btn.disabled=false;btn.textContent='📊 Estimer (gratuit)';}
+}
+let CREATION_GMB_EN_COURS=false;
+async function creerListeGmb(){
+ if(CREATION_GMB_EN_COURS)return;
+ const c=criteresGmb();
+ if(!validerSaisieGmb(c))return;
+ const nom=document.getElementById('gmb-nom').value.trim();
+ if(!nom){toast('⚠️ Donne un nom à ta liste');document.getElementById('gmb-nom').focus();return;}
+ const sdr=document.getElementById('gmb-sdr').value||(state.user?state.user.nom:'');
+ CREATION_GMB_EN_COURS=true;
+ const btn=document.getElementById('btn-creer-gmb');
+ if(btn){btn.disabled=true;btn.textContent='⏳ Recherche Google Maps…';}
+ try{
+  const r=await api('/api/gmb-liste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'creer',...c})});
+  const d=await r.json();
+  if(d.erreur){toast('Erreur : '+d.erreur+(d.detail?' — '+d.detail:''));CREATION_GMB_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='📍 Créer la liste';}return;}
+  const fiches=d.fiches||[];
+  if(!fiches.length){toast(d.message||'Aucun établissement trouvé — élargis la note ou les villes');CREATION_GMB_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='📍 Créer la liste';}return;}
+  if(btn)btn.textContent='⏳ Sauvegarde…';
+  const rc=await api('/api/listes',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({nom:'📍 '+nom,sdr,criteres:{gmb:true,activite:c.activite,villes:c.villes,note_min:c.note_min,note_max:c.note_max,naf:[],pays:[]},entreprises:fiches,credits_estimes:0})});
+  const dc=await rc.json();
+  if(dc.erreur){toast('Erreur création : '+dc.erreur);CREATION_GMB_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='📍 Créer la liste';}return;}
+  toast('📍 Liste créée : '+fiches.length+' établissement'+(fiches.length>1?'s':''));
+  setTimeout(()=>{CREATION_GMB_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='📍 Créer la liste';}ouvrirListe(dc.id);},300);
+ }catch(e){toast('Erreur réseau : '+e.message);CREATION_GMB_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='📍 Créer la liste';}}
 }
 let toastT;
 function toast(msg){
@@ -4980,6 +5079,7 @@ function sourceFiche(e){
  }
  var cr=state.criteres||{};
  var cs=((contactsDe(e)[0]||{}).source)||e.source||'';
+ if(cr.gmb||e.source==='gmb')return {label:'📍 Google Maps',cls:'b-source'};
  if(cr.manuelle||cs==='manuelle'||cs==='sdr'||e.telephone_google)return {label:'✍️ Ajout manuel',cls:'b-source'};
  if(cr.ia)return {label:'🤖 Liste intelligente',cls:'b-source'};
  if(cs==='linkedin'||(e.signal&&e.signal.type==='linkedin'))return {label:'💼 source LinkedIn',cls:'b-source'};
@@ -5595,7 +5695,7 @@ function rendreLigneListe(l,champRecherche){
  return `<div class="fiche"><div class="fiche-top" style="grid-template-columns:1fr auto auto;align-items:center;gap:14px">
   <div>
    <div class="lead-name">${l.nom}${cr.auto!=='hotleads'?` <span onclick="renommerListe(${l.id},this)" data-nom="${(l.nom||'').replace(/"/g,'&quot;')}" title="Renommer la liste" style="cursor:pointer;font-size:14px;opacity:.5;font-weight:normal">✏️</span>`:''}</div>
-   <div class="lead-meta">SDR : <b>${l.sdr}</b>${(l.createur&&l.createur!==l.sdr)?` · créée par <b>${l.createur}</b>`:''} · ${date} · ${l.total||l.nb_entreprises||0} entreprise${(l.total||l.nb_entreprises||0)>1?'s':''}${cr.auto==='hotleads'?' · 🔥 liste automatique':cr.ia?` · 🤖 Liste intelligente${(cr.criteres_ia&&cr.criteres_ia.activite_libre)?' · '+cr.criteres_ia.activite_libre:''}`:cr.manuelle?' · ✍️ Liste manuelle':` · 🏢 Pappers · ${(cr.naf||[]).join(', ')} · ${(cr.pays||[]).join(' + ')} · ~${l.credits_estimes||0} crédits`}</div>
+   <div class="lead-meta">SDR : <b>${l.sdr}</b>${(l.createur&&l.createur!==l.sdr)?` · créée par <b>${l.createur}</b>`:''} · ${date} · ${l.total||l.nb_entreprises||0} entreprise${(l.total||l.nb_entreprises||0)>1?'s':''}${cr.auto==='hotleads'?' · 🔥 liste automatique':cr.ia?` · 🤖 Liste intelligente${(cr.criteres_ia&&cr.criteres_ia.activite_libre)?' · '+cr.criteres_ia.activite_libre:''}`:cr.gmb?` · 📍 Google Maps · ${cr.activite||''}${(cr.villes||[]).length?' · '+cr.villes.join(', '):''}${cr.note_max?' · note ≤ '+cr.note_max+' ★':''}`:cr.manuelle?' · ✍️ Liste manuelle':` · 🏢 Pappers · ${(cr.naf||[]).join(', ')} · ${(cr.pays||[]).join(' + ')} · ~${l.credits_estimes||0} crédits`}</div>
    ${pastilles}
   </div>
   ${(q!==null&&st&&st.pct_tag>=100)?`<div class="qbadge" style="background:${qcol}" title="Score qualité (liste 100% traitée)">${q}%</div>`:''}
