@@ -14,7 +14,7 @@ function emailValide(e) {
   return typeof e === 'string' && /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(e.trim()) && e.length < 80;
 }
 function domaineSimple(s) {
-  if (!s || typeof s !== 'string') return null;
+  if (!s || typeof s !== 'string' || s.trim().toLowerCase() === 'null' || !s.includes('.')) return null;
   try { return new URL(s.startsWith('http') ? s : 'https://' + s).hostname.replace(/^www\./, ''); } catch (e) { return null; }
 }
 
