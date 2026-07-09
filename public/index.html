@@ -1837,7 +1837,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v225';
+const VERSION='v226';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -3104,9 +3104,10 @@ function showRealResults(total,c){
   ?`📍 Google Maps · ${c.activite||''}${(c.villes||[]).length?' · '+c.villes.join(', '):''}${c.note_max?' · note ≤ '+c.note_max+' ★':''}${c.note_min?' · note ≥ '+c.note_min+' ★':''} — ${REAL.length} établissement${REAL.length>1?'s':''}${state.savedId?' · Sauvegardée ✓ (#'+state.savedId+')':''}`
   :`${_naf}${_naf?' · ':''}${total} entreprises trouvées (Pappers) · ${empLabel(c.emp)} salariés · CA ${c.ca||'—'}${_pays?' · '+_pays:''}${c.ville?' / '+c.ville:''} — affichage : ${REAL.length}${state.savedId?' · Sauvegardée ✓ (#'+state.savedId+')':''}`;
  document.getElementById('kpis').style.display='flex';
- // Envoi groupé Lemlist + recherche d'emails IA : réservés aux listes Google Maps
+ // Envoi groupé Lemlist : réservé aux listes Google Maps. Recherche d'emails IA : toutes les listes
+ // (sur Pappers/IA, dernier recours quand la cascade nominative n'a rien trouvé).
  const blb=document.getElementById('btn-lemlist-batch');if(blb)blb.style.display=c.gmb?'':'none';
- const bew=document.getElementById('btn-email-web');if(bew)bew.style.display=c.gmb?'':'none';
+ const bew=document.getElementById('btn-email-web');if(bew)bew.style.display='';
  const sw2=document.getElementById('search-wrap');if(sw2){sw2.style.display='block';const sf2=document.getElementById('search-fiches');if(sf2)sf2.value='';}
  majBtnNouvelles();
  document.getElementById('sort-bar').style.display='flex'; // tris actifs : signaux/scores IA, note GMB, établissements
@@ -4905,7 +4906,7 @@ async function chercherEmailsWeb(){
    if(btn)btn.textContent=`🔎 ${k+1}/${cibles.length} — ${trouves} email(s)…`;
    try{
     const r=await api('/api/email-web',{method:'POST',headers:{'Content-Type':'application/json'},
-     body:JSON.stringify({nom:enseigneDe(e)||e.nom,ville:e.ville||'',activite:e.activite||'',site:e.site_web||null,liste_id:state.savedId})});
+     body:JSON.stringify({nom:enseigneDe(e)||e.nom,ville:e.ville||'',activite:e.activite||'',site:domaineDe(e)||null,liste_id:state.savedId})});
     const d=await r.json();
     if(!d.ok){if(d.erreur)erreurs++;continue;}
     let touche=false;
