@@ -1,7 +1,8 @@
 // /api/gmb-liste.js — Liste depuis Google Maps (fiches Google Business) pour cibler SoView.
 // La note Google est le signal de vente : on cible par ville + activité + tranche de note.
 //
-// POST { mode:'estimer'|'creer', activite, villes:[...], note_min?, note_max?, nb? }
+// POST { mode:'estimer'|'creer', activites:[{nom,type}] (max 3, rétro-compat activite/type_gmb),
+//        villes:[...] (max 5, activités × villes ≤ 6), note_min?, note_max?, nb? }
 //   estimer -> 1 page Text Search par ville (20 résultats max), comptage + échantillon (pas de Details)
 //   creer   -> jusqu'à 3 pages/ville (60 max/ville, limite Google), filtre note,
 //              puis Place Details (site web + téléphone + PIRE AVIS) sur les fiches retenues,
@@ -161,59 +162,71 @@ export default async function handler(req, res) {
 
   const b = req.body || {};
   const mode = b.mode;
-  const activite = String(b.activite || '').trim();
   const villes = (Array.isArray(b.villes) ? b.villes : String(b.villes || '').split(','))
-    .map(v => String(v).trim()).filter(Boolean).slice(0, 5); // max 5 villes (3 pages Google/ville)
+    .map(v => String(v).trim()).filter(Boolean).slice(0, 5); // max 5 villes
   const noteMin = (b.note_min !== undefined && b.note_min !== null && b.note_min !== '') ? parseFloat(b.note_min) : null;
   const noteMax = (b.note_max !== undefined && b.note_max !== null && b.note_max !== '') ? parseFloat(b.note_max) : null;
-  // Catégorie Google officielle (optionnelle, choisie dans les suggestions du front) :
-  // passée en `type` au Text Search -> résultats bien plus propres qu'en texte libre.
+  // Catégories Google officielles (optionnelles, choisies dans les suggestions du front) :
+  // passées en `type` au Text Search -> résultats bien plus propres qu'en texte libre.
   const TYPES_GMB = new Set(['car_dealer', 'car_repair', 'car_rental', 'car_wash', 'restaurant', 'meal_takeaway', 'bakery', 'bar', 'cafe', 'night_club', 'pharmacy', 'hair_care', 'beauty_salon', 'spa', 'lodging', 'real_estate_agency', 'gym', 'clothing_store', 'jewelry_store', 'veterinary_care', 'funeral_home', 'electronics_store', 'furniture_store', 'hardware_store', 'supermarket', 'shoe_store', 'book_store', 'pet_store', 'florist', 'travel_agency', 'dentist', 'doctor', 'laundry']);
-  const typeGmb = TYPES_GMB.has(String(b.type_gmb || '')) ? String(b.type_gmb) : null;
+  // Multi-activités : [{nom, type}] (max 3). Rétro-compatible avec l'ancien {activite, type_gmb}.
+  let activites = Array.isArray(b.activites) ? b.activites : [{ nom: b.activite, type: b.type_gmb }];
+  activites = activites
+    .map(a => ({ nom: String((a && a.nom) || '').trim(), type: TYPES_GMB.has(String((a && a.type) || '')) ? String(a.type) : null }))
+    .filter(a => a.nom).slice(0, 3);
   const nb = Math.min(Math.max(parseInt(b.nb, 10) || 30, 1), 100); // Details facturés par fiche -> cap 100
-  if (!activite || !villes.length) return res.status(400).json({ erreur: 'activite et villes requis' });
+  if (!activites.length || !villes.length) return res.status(400).json({ erreur: 'activites et villes requis' });
+  // Chaque recherche Google = 1 activité × 1 ville : on plafonne les combinaisons (budget 60 s Vercel)
+  const combos = [];
+  for (const a of activites) for (const ville of villes) combos.push({ a, ville });
+  if (combos.length > 6) return res.status(400).json({ erreur: `Trop de combinaisons (${activites.length} activités × ${villes.length} villes = ${combos.length}, max 6) — réduis les activités ou les villes.` });
 
   let nbAppels = 0;
   try {
-    // ============ ESTIMER : 1 page par ville, gratuitissime, échantillon réel ============
+    // ============ ESTIMER : 1 page par combinaison, gratuitissime, échantillon réel ============
     if (mode === 'estimer') {
-      let total = 0, avecSuite = 0; const echantillon = [];
-      for (const ville of villes) {
-        const d = await pageTextSearch({ query: activite + ' ' + ville, ...(typeGmb ? { type: typeGmb } : {}) }, key); nbAppels++;
-        const ok = (d.results || []).filter(r => passeFiltre(r, noteMin, noteMax));
+      let total = 0, avecSuite = 0; const echantillon = []; const vusEst = new Set();
+      for (const { a, ville } of combos) {
+        const d = await pageTextSearch({ query: a.nom + ' ' + ville, ...(a.type ? { type: a.type } : {}) }, key); nbAppels++;
+        const ok = (d.results || []).filter(r => r.place_id && !vusEst.has(r.place_id) && passeFiltre(r, noteMin, noteMax));
+        ok.forEach(r => vusEst.add(r.place_id));
         total += ok.length;
         if (d.next_page_token) avecSuite++;
-        for (const r of ok.slice(0, 3)) {
+        for (const r of ok.slice(0, 2)) {
           if (echantillon.length >= 6) break;
-          echantillon.push({ nom: r.name, ville, note: (typeof r.rating === 'number') ? r.rating : null, avis: r.user_ratings_total || 0 });
+          echantillon.push({ nom: r.name, ville, activite: a.nom, note: (typeof r.rating === 'number') ? r.rating : null, avis: r.user_ratings_total || 0 });
         }
       }
       await loggerConso(user, 'google_places', nbAppels, null);
       return res.status(200).json({
         mode_recherche: 'gmb',
-        nb_etablissements: total,           // sur la 1re page de chaque ville
-        peut_aller_plus_loin: avecSuite > 0, // Google permet jusqu'à 60 résultats/ville
+        nb_etablissements: total,           // sur la 1re page de chaque combinaison
+        peut_aller_plus_loin: avecSuite > 0, // Google permet jusqu'à 60 résultats/recherche
         echantillon,
-        _filtres: { activite, villes, note_min: noteMin, note_max: noteMax }
+        _filtres: { activites: activites.map(a => a.nom), villes, note_min: noteMin, note_max: noteMax }
       });
     }
 
-    // ============ CREER : jusqu'à 3 pages/ville, filtre note, Details sur les retenues ============
+    // ============ CREER : filtre note, Details sur les retenues ============
     if (mode === 'creer') {
+      // Pages par combinaison ajustées au nombre de combinaisons (attente de 2 s entre pages Google)
+      const pagesMax = combos.length <= 2 ? 3 : (combos.length <= 4 ? 2 : 1);
+      const quotaCombo = Math.ceil(nb / combos.length);
       const vus = new Set(); const candidats = [];
-      for (const ville of villes) {
+      for (const { a, ville } of combos) {
         if (candidats.length >= nb) break;
-        let token = null;
-        for (let page = 0; page < 3; page++) {
-          if (candidats.length >= nb) break;
+        let token = null; let prisCombo = 0;
+        for (let page = 0; page < pagesMax; page++) {
+          if (candidats.length >= nb || prisCombo >= quotaCombo) break;
           if (token) await new Promise(s => setTimeout(s, 2000)); // le pagetoken Google met ~2 s à s'activer
-          const d = await pageTextSearch(token ? { pagetoken: token } : { query: activite + ' ' + ville, ...(typeGmb ? { type: typeGmb } : {}) }, key); nbAppels++;
+          const d = await pageTextSearch(token ? { pagetoken: token } : { query: a.nom + ' ' + ville, ...(a.type ? { type: a.type } : {}) }, key); nbAppels++;
           for (const r of (d.results || [])) {
-            if (candidats.length >= nb) break;
+            if (candidats.length >= nb || prisCombo >= quotaCombo) break;
             if (!r.place_id || vus.has(r.place_id)) continue;
             vus.add(r.place_id);
             if (!passeFiltre(r, noteMin, noteMax)) continue;
-            candidats.push({ r, ville });
+            candidats.push({ r, ville, activite: a.nom });
+            prisCombo++;
           }
           token = d.next_page_token || null;
           if (!token) break;
@@ -227,7 +240,7 @@ export default async function handler(req, res) {
         nbAppels += lot.length;
         lot.forEach((c, j) => {
           const det = dets[j] || {};
-          const f = versFiche(c.r, det, c.ville, activite);
+          const f = versFiche(c.r, det, c.ville, c.activite);
           fiches.push(f);
           if (det.website) aScraper.push({ f, url: det.website });
         });

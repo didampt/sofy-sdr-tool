@@ -547,8 +547,10 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
         <div class="qcard">
           <div class="qnum"><b>1</b> Cible</div>
           <h2>Quelle activité, dans quelles villes ?</h2>
-          <input class="field" id="gmb-activite" list="gmb-activites-list" placeholder="Choisis une catégorie Google… ou tape librement" style="width:100%;margin-bottom:10px" autocomplete="off">
-          <datalist id="gmb-activites-list"></datalist>
+          <div style="position:relative;margin-bottom:10px">
+           <input class="field" id="gmb-activite" placeholder="Activités séparées par des virgules (max 3) — Ex : garage automobile, station de lavage auto" style="width:100%" autocomplete="off" oninput="rechercheActiviteGmb(this.value)">
+           <div id="gmb-activites-results" style="display:none;position:absolute;left:0;right:0;top:44px;background:#fff;border:1px solid var(--line);border-radius:10px;z-index:11;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div>
+          </div>
           <div style="position:relative">
            <input class="field" id="gmb-villes" placeholder="Villes séparées par des virgules (max 5) — Ex : Bordeaux, Mérignac, Pessac" style="width:100%" autocomplete="off" oninput="rechercheVilleGmb(this.value)">
            <div id="gmb-villes-results" style="display:none;position:absolute;left:0;right:0;top:44px;background:#fff;border:1px solid var(--line);border-radius:10px;z-index:10;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div>
@@ -1834,7 +1836,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v223';
+const VERSION='v224';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -1963,7 +1965,6 @@ function choisirMode(mode){
  }else if(mode==='gmb'){
   document.getElementById('mode-gmb').style.display='block';
   remplirSelectSdr('gmb-sdr');
-  remplirActivitesGmb();
  }else{
   document.getElementById('mode-manuelle').style.display='block';
   remplirSelectSdrManuelle();
@@ -2361,17 +2362,33 @@ const ACTIVITES_GMB=[
  ["magasin de vêtements","clothing_store"],["bijouterie","jewelry_store"],["magasin d'électroménager","electronics_store"],["magasin de meubles","furniture_store"],
  ["magasin de bricolage","hardware_store"],["supermarché","supermarket"],["magasin de chaussures","shoe_store"],["librairie","book_store"],["animalerie","pet_store"],["fleuriste","florist"]
 ];
-function remplirActivitesGmb(){
- const dl=document.getElementById('gmb-activites-list');
- if(dl&&!dl.children.length)dl.innerHTML=ACTIVITES_GMB.map(([l])=>`<option value="${l}">`).join('');
+// Suggestions d'activités (catégories Google) sur le fragment après la dernière virgule
+function rechercheActiviteGmb(valeur){
+ const box=document.getElementById('gmb-activites-results');
+ const frag=valeur.split(',').pop().trim().toLowerCase();
+ if(frag.length<2){box.style.display='none';return;}
+ const dejaChoisies=new Set(valeur.split(',').slice(0,-1).map(v=>v.trim().toLowerCase()));
+ const hits=ACTIVITES_GMB.filter(([l])=>l.toLowerCase().includes(frag)&&!dejaChoisies.has(l.toLowerCase())).slice(0,7);
+ if(!hits.length){box.style.display='none';return;}
+ box.innerHTML=hits.map(([l,t])=>`<div class="naf-item" onclick="choisirActiviteGmb('${l.replace(/'/g,'&#39;')}')"><span>${l}</span><span class="naf-code">${t}</span></div>`).join('');
+ box.style.display='block';
+}
+function choisirActiviteGmb(nom){
+ const champ=document.getElementById('gmb-activite');
+ const parts=champ.value.split(',');
+ parts[parts.length-1]=' '+nom;
+ champ.value=parts.join(',').replace(/^\s+/,'')+', ';
+ document.getElementById('gmb-activites-results').style.display='none';
+ champ.focus();
 }
 function criteresGmb(){
- const activite=document.getElementById('gmb-activite').value.trim();
- // Libellé reconnu → type Google officiel envoyé à l'API (sinon texte libre, sans type)
- const m=ACTIVITES_GMB.find(([l])=>l.toLowerCase()===activite.toLowerCase());
+ // Chaque libellé reconnu → type Google officiel envoyé à l'API (sinon texte libre, sans type)
+ const activites=document.getElementById('gmb-activite').value.split(',').map(v=>v.trim()).filter(Boolean).map(nom=>{
+  const m=ACTIVITES_GMB.find(([l])=>l.toLowerCase()===nom.toLowerCase());
+  return {nom,type:m?m[1]:null};
+ });
  return {
-  activite,
-  type_gmb:m?m[1]:null,
+  activites,
   villes:document.getElementById('gmb-villes').value.split(',').map(v=>v.trim()).filter(Boolean),
   note_min:document.getElementById('gmb-note-min').value||null,
   note_max:document.getElementById('gmb-note-max').value||null,
@@ -2405,8 +2422,12 @@ function choisirVilleGmb(nom){
  champ.focus();
 }
 function validerSaisieGmb(c){
- if(!c.activite){toast('⚠️ Indique une activité (ex : garage automobile)');document.getElementById('gmb-activite').focus();return false;}
+ if(!c.activites.length){toast('⚠️ Indique une activité (ex : garage automobile)');document.getElementById('gmb-activite').focus();return false;}
+ if(c.activites.length>3){toast('⚠️ Maximum 3 activités par liste');document.getElementById('gmb-activite').focus();return false;}
  if(!c.villes.length){toast('⚠️ Indique au moins une ville');document.getElementById('gmb-villes').focus();return false;}
+ if(c.villes.length>5){toast('⚠️ Maximum 5 villes par liste');document.getElementById('gmb-villes').focus();return false;}
+ const combos=c.activites.length*c.villes.length;
+ if(combos>6){toast('⚠️ Trop de combinaisons : '+c.activites.length+' activités × '+c.villes.length+' villes = '+combos+' (max 6). Réduis l\'un ou l\'autre.');return false;}
  return true;
 }
 async function estimerListeGmb(){
@@ -2420,7 +2441,7 @@ async function estimerListeGmb(){
   if(d.erreur){toast('Erreur : '+d.erreur);}
   else{
    const box=document.getElementById('gmb-estim');
-   const ech=(d.echantillon||[]).map(e=>`<div style="padding:5px 0;border-top:1px solid var(--line)"><b>${String(e.nom).replace(/</g,'&lt;')}</b> — ${e.note!=null?e.note.toLocaleString('fr-FR')+' ★':'sans note'} (${e.avis} avis) <span style="color:var(--ink-soft)">· ${String(e.ville).replace(/</g,'&lt;')}</span></div>`).join('');
+   const ech=(d.echantillon||[]).map(e=>`<div style="padding:5px 0;border-top:1px solid var(--line)"><b>${String(e.nom).replace(/</g,'&lt;')}</b> — ${e.note!=null?e.note.toLocaleString('fr-FR')+' ★':'sans note'} (${e.avis} avis) <span style="color:var(--ink-soft)">· ${String(e.ville).replace(/</g,'&lt;')}${e.activite?' · '+String(e.activite).replace(/</g,'&lt;'):''}</span></div>`).join('');
    box.innerHTML=`<b>${d.nb_etablissements}</b> établissement${d.nb_etablissements>1?'s':''} correspondent sur la 1re page de chaque ville${d.peut_aller_plus_loin?' <span style="color:var(--ink-soft)">(la création ira jusqu\'à ~60/ville)</span>':''}.`+(ech?`<div style="margin-top:8px;font-weight:700">Échantillon réel :</div>${ech}`:'');
    box.style.display='block';
   }
@@ -2446,7 +2467,7 @@ async function creerListeGmb(){
   if(!fiches.length){toast(d.message||'Aucun établissement trouvé — élargis la note ou les villes');CREATION_GMB_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='📍 Créer la liste';}return;}
   if(btn)btn.textContent='⏳ Sauvegarde…';
   const rc=await api('/api/listes',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({nom:'📍 '+nom,sdr,criteres:{gmb:true,activite:c.activite,villes:c.villes,note_min:c.note_min,note_max:c.note_max,naf:[],pays:[]},entreprises:fiches,credits_estimes:0})});
+   body:JSON.stringify({nom:'📍 '+nom,sdr,criteres:{gmb:true,activite:c.activites.map(a=>a.nom).join(', '),activites:c.activites.map(a=>a.nom),villes:c.villes,note_min:c.note_min,note_max:c.note_max,naf:[],pays:[]},entreprises:fiches,credits_estimes:0})});
   const dc=await rc.json();
   if(dc.erreur){toast('Erreur création : '+dc.erreur);CREATION_GMB_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='📍 Créer la liste';}return;}
   toast('📍 Liste créée : '+fiches.length+' établissement'+(fiches.length>1?'s':'')+(d.emails_trouves?' · '+d.emails_trouves+' email'+(d.emails_trouves>1?'s':'')+' trouvé'+(d.emails_trouves>1?'s':'')+' sur les sites':''));

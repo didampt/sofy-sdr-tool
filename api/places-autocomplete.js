@@ -42,13 +42,23 @@ export default async function handler(req, res) {
   try {
     const { q, place_id, ville } = req.query;
 
-    // ── Mode villes : autocomplete limité aux villes françaises ──
+    // ── Mode villes : autocomplete France + DOM ──
+    // Google classe les DOM sous leurs propres codes pays (GP/MQ/GF/RE/YT), pas sous FR,
+    // et limite à 5 pays par requête -> 2 requêtes parallèles fusionnées.
     if (ville && ville.trim().length >= 2) {
-      const d = await gPlaces(`https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(ville.trim())}&types=%28cities%29&components=country:fr&language=fr&key=${key}`);
-      const villes = (d.predictions || []).slice(0, 6).map(p => ({
-        nom: (p.structured_formatting && p.structured_formatting.main_text) || p.description,
-        detail: (p.structured_formatting && p.structured_formatting.secondary_text) || ''
-      }));
+      const base = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(ville.trim())}&types=%28cities%29&language=fr&key=${key}`;
+      const groupes = ['country:fr|country:gp|country:mq', 'country:re|country:gf|country:yt'];
+      const [d1, d2] = await Promise.all(groupes.map(g => gPlaces(base + '&components=' + encodeURIComponent(g))));
+      const vus = new Set(); const villes = [];
+      for (const p of [...(d1.predictions || []), ...(d2.predictions || [])]) {
+        const nom = (p.structured_formatting && p.structured_formatting.main_text) || p.description;
+        const detail = (p.structured_formatting && p.structured_formatting.secondary_text) || '';
+        const cle = (nom + '|' + detail).toLowerCase();
+        if (vus.has(cle)) continue;
+        vus.add(cle);
+        villes.push({ nom, detail });
+        if (villes.length >= 8) break;
+      }
       return res.status(200).json({ villes });
     }
 
