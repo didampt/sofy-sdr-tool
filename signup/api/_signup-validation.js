@@ -11,6 +11,38 @@ export function validatePassword(password) {
   return null;
 }
 
+function cleanText(value, max = 500) {
+  return String(value || '').trim().slice(0, max);
+}
+
+function sanitizeTrackingSnapshot(value) {
+  const input = value && typeof value === 'object' ? value : {};
+  return {
+    landing_page: cleanText(input.landing_page, 1000),
+    referrer: cleanText(input.referrer, 1000),
+    utm_source: cleanText(input.utm_source, 200),
+    utm_medium: cleanText(input.utm_medium, 200),
+    utm_campaign: cleanText(input.utm_campaign, 200),
+    utm_term: cleanText(input.utm_term, 200),
+    utm_content: cleanText(input.utm_content, 200),
+    gclid: cleanText(input.gclid, 300),
+    fbclid: cleanText(input.fbclid, 300),
+    msclkid: cleanText(input.msclkid, 300),
+    ttclid: cleanText(input.ttclid, 300),
+    li_fat_id: cleanText(input.li_fat_id, 300),
+    first_seen_at: cleanText(input.first_seen_at, 80),
+    seen_at: cleanText(input.seen_at, 80)
+  };
+}
+
+function sanitizeTracking(value) {
+  const input = value && typeof value === 'object' ? value : {};
+  return {
+    original: sanitizeTrackingSnapshot(input.original),
+    current: sanitizeTrackingSnapshot(input.current)
+  };
+}
+
 export function validateSignupPayload(body) {
   const errors = [];
   const email = normalizeEmail(body.email);
@@ -61,7 +93,8 @@ export function validateSignupPayload(body) {
         activity: String(company.activity || '').trim(),
         manual_entry: Boolean(company.manual_entry),
         pappers_raw: company.pappers_raw && typeof company.pappers_raw === 'object' ? company.pappers_raw : undefined
-      }
+      },
+      tracking: sanitizeTracking(body.tracking)
     }
   };
 }

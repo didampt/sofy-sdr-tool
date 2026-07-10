@@ -7,6 +7,7 @@ import {
   readBody,
   requireEnv
 } from './_lib.js';
+import { syncSignupToHubSpot } from './hubspot-signup.js';
 import { validateSignupPayload } from './_signup-validation.js';
 
 export const config = { maxDuration: 30 };
@@ -69,9 +70,17 @@ export default async function handler(req, res) {
     const hotleadToken = requireEnv('SIGNUP_HOTLEAD_TOKEN');
 
     const account = await postJson(backendUrl, backendToken, normalized);
+
+    let hubspot = null;
+    try {
+      hubspot = await syncSignupToHubSpot(normalized);
+    } catch (err) {
+      hubspot = { ok: false, error: 'HubSpot sync failed', detail: err.message };
+    }
+
     const hotlead = await postJson(hotleadUrl, hotleadToken, { ...normalized, signup_account: account });
 
-    return json(res, 201, { ok: true, account, hotlead });
+    return json(res, 201, { ok: true, account, hubspot, hotlead });
   } catch (err) {
     return json(res, 502, { error: 'Signup submission failed', detail: err.message });
   }

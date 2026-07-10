@@ -88,6 +88,7 @@ let otpToken = '';
 let previewMode = '';
 let pendingSignupPayload = null;
 const searchCache = new Map();
+const attribution = initAttribution();
 
 const countryCombo = createCombo({
   root: document.querySelector('#countryCombo'),
@@ -330,7 +331,46 @@ function formPayload() {
       activity: selectedCompanyActivity,
       manual_entry: !selectedCompanyRaw,
       pappers_raw: selectedCompanyRaw
-    }
+    },
+    tracking: attribution
+  };
+}
+
+function initAttribution() {
+  const storageKey = 'sofy_signup_attribution_v1';
+  const current = trafficSnapshot();
+  let original = null;
+
+  try {
+    original = JSON.parse(window.localStorage.getItem(storageKey) || 'null');
+  } catch (_) {}
+
+  if (!original || typeof original !== 'object' || !original.first_seen_at) {
+    original = { ...current, first_seen_at: new Date().toISOString() };
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(original));
+    } catch (_) {}
+  }
+
+  return { original, current: { ...current, seen_at: new Date().toISOString() } };
+}
+
+function trafficSnapshot() {
+  const params = new URLSearchParams(window.location.search);
+  const pick = name => String(params.get(name) || '').trim();
+  return {
+    landing_page: window.location.href,
+    referrer: document.referrer || '',
+    utm_source: pick('utm_source'),
+    utm_medium: pick('utm_medium'),
+    utm_campaign: pick('utm_campaign'),
+    utm_term: pick('utm_term'),
+    utm_content: pick('utm_content'),
+    gclid: pick('gclid'),
+    fbclid: pick('fbclid'),
+    msclkid: pick('msclkid'),
+    ttclid: pick('ttclid'),
+    li_fat_id: pick('li_fat_id')
   };
 }
 
