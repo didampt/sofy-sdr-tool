@@ -29,6 +29,14 @@ async function postJson(url, token, payload) {
   return data;
 }
 
+async function capture(name, promise) {
+  try {
+    return { name, ok: true, value: await promise };
+  } catch (err) {
+    return { name, ok: false, error: err };
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { error: 'POST only' });
 
@@ -69,16 +77,22 @@ export default async function handler(req, res) {
     const hotleadUrl = requireEnv('SOFY_SCRAP_HOTLEAD_URL');
     const hotleadToken = requireEnv('SIGNUP_HOTLEAD_TOKEN');
 
-    const account = await postJson(backendUrl, backendToken, normalized);
+    const [accountResult, hotleadResult, hubspotResult] = await Promise.all([
+      capture('gw.sofy.fr', postJson(backendUrl, backendToken, normalized)),
+      capture('sofy-sdr-tool', postJson(hotleadUrl, hotleadToken, normalized)),
+      capture('HubSpot', syncSignupToHubSpot(normalized))
+    ]);
 
-    let hubspot = null;
-    try {
-      hubspot = await syncSignupToHubSpot(normalized);
-    } catch (err) {
-      hubspot = { ok: false, error: 'HubSpot sync failed', detail: err.message };
-    }
+    const failures = [accountResult, hotleadResult]
+      .filter(result => !result.ok)
+      .map(result => `${result.name}: ${result.error.message}`);
+    if (failures.length) throw new Error(failures.join(' ; '));
 
-    const hotlead = await postJson(hotleadUrl, hotleadToken, { ...normalized, signup_account: account });
+    const account = accountResult.value;
+    const hotlead = hotleadResult.value;
+    const hubspot = hubspotResult.ok
+      ? hubspotResult.value
+      : { ok: false, error: 'HubSpot sync failed', detail: hubspotResult.error.message };
 
     return json(res, 201, { ok: true, account, hubspot, hotlead });
   } catch (err) {
