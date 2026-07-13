@@ -6070,7 +6070,7 @@ async function chargerHistorique(){
 function htmlSafe(v){return String(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function jsArg(v){return encodeURIComponent(String(v||''));}
 function signupStatut(s){
- if(s.banned)return `<span class="badge b-gmb">Banni par ${htmlSafe(s.banned_by||'utilisateur inconnu')}</span>`;
+ if(s.banned)return `<span class="badge" style="background:#FEECEC;color:var(--danger)">Banni par ${htmlSafe(s.banned_by||'utilisateur inconnu')}</span>`;
  if(!s.pending)return '<span class="badge b-new">✅ Activé</span>';
  return '<span class="badge b-signal">⏳ À valider</span>';
 }
