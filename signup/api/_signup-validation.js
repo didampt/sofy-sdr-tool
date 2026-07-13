@@ -52,6 +52,8 @@ export function validateSignupPayload(body) {
 
   if (!String(body.first_name || '').trim()) errors.push('Le prénom est requis.');
   if (!String(body.last_name || '').trim()) errors.push('Le nom est requis.');
+  if (!String(body.fonction || '').trim()) errors.push('La fonction est requise.');
+  if (!String(company.secteur || '').trim()) errors.push('Le secteur d’activité est requis.');
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push('Un email valide est requis.');
   if (!String(body.country || '').trim() || !countryCode) errors.push('Le pays est requis.');
   if (!body.cgv_accepted) errors.push('Vous devez accepter les CGV.');
@@ -76,6 +78,7 @@ export function validateSignupPayload(body) {
       email,
       phone: parsed ? parsed.number : phone,
       phone_country: phoneCountry,
+      fonction: cleanText(body.fonction, 200),
       country: String(body.country || '').trim(),
       country_code: countryCode,
       password: String(body.password || ''),
@@ -89,6 +92,7 @@ export function validateSignupPayload(body) {
         address: String(company.address || '').trim(),
         postal_code: String(company.postal_code || '').trim(),
         city: String(company.city || '').trim(),
+        secteur: cleanText(company.secteur, 200),
         legal_form: String(company.legal_form || '').trim(),
         activity: String(company.activity || '').trim(),
         manual_entry: Boolean(company.manual_entry),

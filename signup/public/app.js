@@ -34,8 +34,71 @@ const countries = ISO_COUNTRIES.map(code => {
   };
 }).map(country => ({
   ...country,
-  search: `${country.name} ${country.code} ${country.dialCode}`.toLowerCase()
+  search: normalizeSearch(`${country.name} ${country.code} ${country.dialCode}`)
 })).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+
+const fonctionOptions = textItems([
+  'Marketing / Acquisition — Direction',
+  'Marketing / Acquisition — Responsable',
+  'Marketing Réseau / Trade Marketing — Direction',
+  'Marketing Réseau / Trade Marketing — Responsable',
+  'CRM / Fidélisation',
+  'SEO local / E-réputation',
+  'Relation client / CX / Omnicanal — Direction',
+  'Relation client / CX / Omnicanal — Responsable',
+  'Opérations / Transformation — Direction',
+  'Opérations / Transformation — Responsable',
+  'Réseau / Franchise — Direction',
+  'Réseau / Franchise — Animation réseau',
+  'IT / DSI',
+  'Achats',
+  'Établissement — Direction / Franchisé / Gérant',
+  'Consultant'
+]);
+
+const secteurOptions = textItems([
+  'Grande distribution alimentaire',
+  'Commerce alimentaire spécialisé',
+  'Boulangerie pâtisserie',
+  'Restauration rapide',
+  'Restauration à table',
+  'Hôtellerie',
+  'Tourisme',
+  'Loisirs',
+  'Mode',
+  'Chaussures',
+  'Maroquinerie',
+  'Bijouterie',
+  'Horlogerie',
+  'Maison décoration',
+  'Bricolage',
+  'Jardinerie',
+  'Animalerie',
+  'Sport',
+  'Culture',
+  'Téléphonie',
+  'Électronique',
+  'Santé',
+  'Pharmacie',
+  'Parapharmacie',
+  'Optique',
+  'Audition',
+  'Beauté',
+  'Bien-être',
+  'Immobilier',
+  'Automobile',
+  'Mobilité',
+  'Banque',
+  'Assurance',
+  'Services à la personne',
+  'Distribution B2B',
+  'Négoce B2B',
+  'Services B2B',
+  'Technologies et logiciels',
+  'Bureautique',
+  'Équipements professionnels',
+  'Autre'
+]);
 
 const form = document.querySelector('#signupForm');
 const phoneInput = document.querySelector('#phone');
@@ -115,6 +178,48 @@ const phoneCombo = createCombo({
   formatOption: item => item.name,
   meta: item => item.dialCode
 });
+
+const fonctionCombo = createCombo({
+  root: document.querySelector('#fonctionCombo'),
+  trigger: document.querySelector('#fonctionTrigger'),
+  menu: document.querySelector('#fonctionMenu'),
+  search: document.querySelector('#fonctionSearch'),
+  options: document.querySelector('#fonctionOptions'),
+  input: document.querySelector('#fonction'),
+  items: fonctionOptions,
+  placeholder: 'Sélectionnez votre fonction',
+  formatTrigger: item => item.label,
+  formatOption: item => item.label
+});
+
+const secteurCombo = createCombo({
+  root: document.querySelector('#secteurCombo'),
+  trigger: document.querySelector('#secteurTrigger'),
+  menu: document.querySelector('#secteurMenu'),
+  search: document.querySelector('#secteurSearch'),
+  options: document.querySelector('#secteurOptions'),
+  input: document.querySelector('#secteur'),
+  items: secteurOptions,
+  placeholder: 'Sélectionnez votre secteur',
+  formatTrigger: item => item.label,
+  formatOption: item => item.label
+});
+
+function textItems(values) {
+  return values.map((value, index) => ({
+    code: String(index),
+    value,
+    label: value,
+    search: normalizeSearch(value)
+  }));
+}
+
+function normalizeSearch(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
 
 function flagEmoji(code) {
   return String(code || '')
@@ -316,6 +421,7 @@ function formPayload() {
     email: String(data.get('email') || '').trim(),
     phone: phoneInput.value.trim(),
     phone_country: phoneCountryInput.value,
+    fonction: String(data.get('fonction') || '').trim(),
     country: country ? country.name : '',
     country_code: country ? country.code : '',
     password: password.value,
@@ -327,6 +433,7 @@ function formPayload() {
       address: document.querySelector('#address').value.trim(),
       postal_code: document.querySelector('#postalCode').value.trim(),
       city: document.querySelector('#city').value.trim(),
+      secteur: String(data.get('secteur') || '').trim(),
       legal_form: selectedCompanyLegalForm,
       activity: selectedCompanyActivity,
       manual_entry: !selectedCompanyRaw,
@@ -379,6 +486,8 @@ function validateClient(payload) {
   if (!payload.first_name) errors.push('Le prénom est requis.');
   if (!payload.last_name) errors.push('Le nom est requis.');
   if (!payload.country_code) errors.push('Le pays est requis.');
+  if (!payload.fonction) errors.push('La fonction est requise.');
+  if (!payload.company.secteur) errors.push('Le secteur d’activité est requis.');
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)) errors.push('Un email valide est requis.');
   const phone = parsePhoneNumberFromString(payload.phone, payload.phone_country);
   if (!phone || !phone.isValid()) errors.push('Un numéro de téléphone valide est requis.');
@@ -587,6 +696,7 @@ function createCombo(config) {
     selectedItem: null
   };
 
+  renderComboTrigger(state);
   renderComboOptions(state);
 
   state.trigger.addEventListener('click', () => {
@@ -603,7 +713,7 @@ function createCombo(config) {
   });
 
   state.search.addEventListener('input', () => {
-    const query = state.search.value.trim().toLowerCase();
+    const query = normalizeSearch(state.search.value.trim());
     state.filteredItems = query
       ? state.items.filter(item => item.search.includes(query))
       : state.items.slice();
@@ -616,9 +726,9 @@ function createCombo(config) {
 function renderComboOptions(state) {
   state.options.innerHTML = state.filteredItems.map(item => `
     <button type="button" class="combo-option${state.selectedItem && state.selectedItem.code === item.code ? ' is-active' : ''}" data-code="${item.code}">
-      <span class="combo-flag">${item.flag}</span>
+      ${item.flag ? `<span class="combo-flag">${item.flag}</span>` : ''}
       <span>${state.formatOption(item)}</span>
-      <span class="combo-meta">${state.meta(item)}</span>
+      ${state.meta ? `<span class="combo-meta">${state.meta(item)}</span>` : ''}
     </button>
   `).join('');
 
@@ -633,14 +743,10 @@ function renderComboOptions(state) {
 }
 
 function selectComboItem(state, item) {
+  if (!item) return;
   state.selectedItem = item;
-  state.input.value = item.code;
-  state.trigger.innerHTML = `
-    <span class="combo-value">
-      <span class="combo-flag">${item.flag}</span>
-      <span class="combo-text">${state.formatTrigger(item)}</span>
-    </span>
-  `;
+  state.input.value = item.value || item.code;
+  renderComboTrigger(state);
 
   if (state.input === countryCodeInput) {
     updateCompanyVisibility();
@@ -648,6 +754,22 @@ function selectComboItem(state, item) {
       selectComboItem(phoneCombo, item);
     }
   }
+}
+
+function renderComboTrigger(state) {
+  if (!state.selectedItem) {
+    state.input.value = '';
+    state.trigger.innerHTML = `<span class="combo-placeholder">${state.placeholder || 'Sélectionner'}</span>`;
+    return;
+  }
+
+  const item = state.selectedItem;
+  state.trigger.innerHTML = `
+    <span class="combo-value">
+      ${item.flag ? `<span class="combo-flag">${item.flag}</span>` : ''}
+      <span class="combo-text">${state.formatTrigger(item)}</span>
+    </span>
+  `;
 }
 
 function closeAllCombos() {
@@ -813,6 +935,8 @@ function fillPreviewForm() {
   set('#address', '1 rue de la Paix');
   set('#postalCode', '75002');
   set('#city', 'Paris');
+  selectComboItem(fonctionCombo, fonctionOptions.find(item => item.value === 'Marketing / Acquisition — Direction'));
+  selectComboItem(secteurCombo, secteurOptions.find(item => item.value === 'Technologies et logiciels'));
   password.value = 'SofySignup!2026';
   document.querySelector('#cgv').checked = true;
   updatePasswordHelp();

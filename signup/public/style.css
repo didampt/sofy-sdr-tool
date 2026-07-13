@@ -136,7 +136,8 @@ label {
   color: var(--navy);
 }
 
-input {
+input,
+select {
   width: 100%;
   height: 50px;
   border: 1px solid rgba(17, 21, 61, .12);
@@ -150,6 +151,7 @@ input {
 }
 
 input:focus,
+select:focus,
 .combo.is-open .combo-trigger {
   border-color: var(--blue);
   box-shadow: 0 0 0 4px rgba(78,95,253,.13);
@@ -326,6 +328,10 @@ input:focus,
   text-overflow: ellipsis;
 }
 
+.combo-placeholder {
+  color: var(--muted);
+}
+
 .combo-menu {
   position: absolute;
   inset: calc(100% + 8px) 0 auto;
@@ -340,6 +346,14 @@ input:focus,
 #phoneCountryCombo .combo-menu {
   width: min(320px, calc(100vw - 32px));
   right: auto;
+}
+
+.text-combo .combo-menu {
+  z-index: 15;
+}
+
+.text-combo .combo-options {
+  max-height: 292px;
 }
 
 .combo-search {

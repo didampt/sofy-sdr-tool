@@ -141,10 +141,11 @@ function establishmentCandidates(value) {
 }
 
 function sectorCandidates(company) {
+  const signupSector = clean(company.secteur, 200);
   const raw = pappersRaw(company);
   const activity = clean(company.activity || raw.libelle_code_naf || raw.code_naf || '', 300);
   const text = normalizeKey(`${activity} ${raw.code_naf || ''}`);
-  const candidates = [activity];
+  const candidates = [signupSector, activity];
 
   if (/restaur|hotel|heberg|bar|cafe|traiteur/.test(text)) candidates.push('restauration_hotellerie', 'Restauration / hôtellerie');
   if (/commerce|detail|retail|magasin|boutique/.test(text)) candidates.push('commerce_retail', 'Commerce / retail');
@@ -270,12 +271,13 @@ async function associateContactCompany({ contactId, companyId, token }) {
 async function createSignupNote({ body, contactId, companyId, token }) {
   if (!contactId && !companyId) return null;
   const company = body.company || {};
+  const fonction = clean(body.fonction || process.env.HUBSPOT_SIGNUP_DEFAULT_FONCTION || 'Inscription signup', 200);
   const lines = [
     '<b>Nouvelle inscription Sofy</b>',
     `Contact: ${html(`${body.first_name || ''} ${body.last_name || ''}`.trim())} (${html(body.email || '')})`,
     `Société: ${html(company.name || '')}`,
     `Pays: ${html(body.country || '')}`,
-    `Fonction: ${html(process.env.HUBSPOT_SIGNUP_DEFAULT_FONCTION || 'Inscription signup')}`,
+    `Fonction: ${html(fonction)}`,
     `Secteur: ${html(sectorCandidates(company)[0] || '')}`,
     `Nombre d'établissements: ${html(establishmentCount(company) || '')}`,
     '',
@@ -319,7 +321,7 @@ export async function syncSignupToHubSpot(body) {
   const contactMeta = await getProperties('contacts', token);
   const companyMeta = await getProperties('companies', token);
   const domain = domainFromEmail(body.email);
-  const fonction = clean(process.env.HUBSPOT_SIGNUP_DEFAULT_FONCTION || 'Inscription signup', 200);
+  const fonction = clean(body.fonction || process.env.HUBSPOT_SIGNUP_DEFAULT_FONCTION || 'Inscription signup', 200);
 
   const contactProps = compactObject({
     email: clean(body.email).toLowerCase(),
@@ -335,9 +337,10 @@ export async function syncSignupToHubSpot(body) {
 
   setProperty(contactProps, findProperty(contactMeta, [
     process.env.HUBSPOT_SIGNUP_CONTACT_FUNCTION_PROPERTY,
+    'revops_fonction',
     'fonction',
     'job_function'
-  ]), [process.env.HUBSPOT_SIGNUP_DEFAULT_FONCTION, 'autre', 'Autre', fonction]);
+  ]), [body.fonction, fonction, process.env.HUBSPOT_SIGNUP_DEFAULT_FONCTION, 'autre', 'Autre']);
   addConfiguredTrackingProperties(contactProps, contactMeta, 'HUBSPOT_SIGNUP_CONTACT', body.tracking);
 
   const etabs = establishmentCount(company);
@@ -345,6 +348,7 @@ export async function syncSignupToHubSpot(body) {
     name: clean(company.name, 300),
     domain: domain || undefined,
     country: clean(body.country, 200),
+    phone: clean(body.phone, 80),
     city: clean(company.city, 200),
     address: clean(company.address, 500),
     zip: clean(company.postal_code, 80)
@@ -352,6 +356,7 @@ export async function syncSignupToHubSpot(body) {
 
   setProperty(companyProps, findProperty(companyMeta, [
     process.env.HUBSPOT_SIGNUP_COMPANY_SECTOR_PROPERTY,
+    'revops_secteur',
     'secteur',
     'company_sector',
     'industry'
@@ -372,6 +377,10 @@ export async function syncSignupToHubSpot(body) {
     process.env.HUBSPOT_SIGNUP_COMPANY_SIREN_PROPERTY,
     'siren'
   ]), [company.siren]);
+  setProperty(companyProps, findProperty(companyMeta, [
+    process.env.HUBSPOT_SIGNUP_COMPANY_TVA_PROPERTY,
+    'numero_de_tva'
+  ]), [company.tva_id]);
   addConfiguredTrackingProperties(companyProps, companyMeta, 'HUBSPOT_SIGNUP_COMPANY', body.tracking);
 
   const contact = await upsertContact({ body, contactProps, token });
