@@ -28,7 +28,11 @@ function normalizeSignup(e, idx, listId) {
   const company = payload.company || {};
   const contact = signupContact(e);
   const enabledAt = info.enabled_at || e.signup_enabled_at || null;
+  const bannedAt = info.banned_at || e.signup_banned_at || null;
+  const bannedBy = info.banned_by || e.signup_banned_by || null;
   const userId = info.user_id || null;
+  const enabled = Boolean(enabledAt || info.enabled === true);
+  const banned = Boolean(bannedAt || info.banned === true);
   return {
     key: signupKey(e),
     fiche_key: signupKey(e),
@@ -44,7 +48,10 @@ function normalizeSignup(e, idx, listId) {
     submitted_at: info.submitted_at || e.date_hotlead || (e.signal && e.signal.date) || null,
     enabled_at: enabledAt,
     enabled_by: info.enabled_by || null,
-    pending: !enabledAt && info.enabled !== true,
+    banned_at: bannedAt,
+    banned_by: bannedBy,
+    pending: !enabled && !banned,
+    banned,
     user_id: userId,
     organization_id: info.organization_id || null,
     can_enable: Boolean(userId || contact.email),
@@ -106,7 +113,9 @@ export default async function handler(req, res) {
       if (!['admin', 'superadmin'].includes(user.role)) {
         return res.status(403).json({ erreur: 'Réservé aux administrateurs' });
       }
-      const { key } = req.body || {};
+      const { key, action } = req.body || {};
+      const signupAction = action || 'enable';
+      if (!['enable', 'ban'].includes(signupAction)) return res.status(400).json({ erreur: 'action invalide' });
       if (!list) return res.status(404).json({ erreur: 'Liste Hot Leads introuvable' });
       if (!key) return res.status(400).json({ erreur: 'key requis' });
 
@@ -115,7 +124,52 @@ export default async function handler(req, res) {
 
       const current = entreprises[idx];
       const normalized = normalizeSignup(current, idx, list.id);
-      if (!normalized.pending) return res.status(200).json({ ok: true, already_enabled: true, signup: normalized });
+      if (!normalized.pending) {
+        return res.status(200).json({
+          ok: true,
+          already_enabled: Boolean(normalized.enabled_at),
+          already_banned: Boolean(normalized.banned),
+          signup: normalized
+        });
+      }
+
+      if (signupAction === 'ban') {
+        const bannedAt = new Date().toISOString();
+        const bannedBy = user.email || user.nom || null;
+        const latestList = await getHotLeadList();
+        const latestEntreprises = (latestList && Array.isArray(latestList.entreprises)) ? latestList.entreprises : [];
+        const latestIdx = latestEntreprises.findIndex(e => signupKey(e) === key);
+        if (!latestList || latestIdx < 0) return res.status(404).json({ erreur: 'Signup introuvable après rechargement' });
+        const latest = latestEntreprises[latestIdx];
+        const latestNormalized = normalizeSignup(latest, latestIdx, latestList.id);
+        if (!latestNormalized.pending) {
+          return res.status(200).json({
+            ok: true,
+            already_enabled: Boolean(latestNormalized.enabled_at),
+            already_banned: Boolean(latestNormalized.banned),
+            signup: latestNormalized
+          });
+        }
+        const signup = {
+          ...(signupInfo(latest) || {}),
+          banned: true,
+          banned_at: bannedAt,
+          banned_by: bannedBy
+        };
+        latestEntreprises[latestIdx] = {
+          ...latest,
+          signup,
+          signup_banned_at: bannedAt,
+          signup_banned_by: bannedBy,
+          signal: {
+            ...(latest.signal || {}),
+            signup
+          }
+        };
+        await sql`UPDATE listes SET entreprises = ${JSON.stringify(latestEntreprises)} WHERE id = ${latestList.id}`;
+        return res.status(200).json({ ok: true, signup: normalizeSignup(latestEntreprises[latestIdx], latestIdx, latestList.id) });
+      }
+
       if (!normalized.can_enable) return res.status(400).json({ erreur: 'Aucun user_id ou email pour activer ce signup' });
 
       const backend = await callBackendEnable({ userId: normalized.user_id, email: normalized.contact.email });

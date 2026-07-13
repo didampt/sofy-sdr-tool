@@ -6070,6 +6070,7 @@ async function chargerHistorique(){
 function htmlSafe(v){return String(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function jsArg(v){return encodeURIComponent(String(v||''));}
 function signupStatut(s){
+ if(s.banned)return `<span class="badge b-gmb">Banni par ${htmlSafe(s.banned_by||'utilisateur inconnu')}</span>`;
  if(!s.pending)return '<span class="badge b-new">✅ Activé</span>';
  return '<span class="badge b-signal">⏳ À valider</span>';
 }
@@ -6123,6 +6124,9 @@ function rendreSignup(s){
  const enable=s.pending&&s.can_enable&&state.user&&['admin','superadmin'].includes(state.user.role)
   ?`<button class="act act-call" style="background:#10B981;color:#fff" onclick="event.stopPropagation();activerSignup('${jsArg(s.key)}')">✅ Activer le compte</button>`
   :'';
+ const ban=s.pending&&state.user&&['admin','superadmin'].includes(state.user.role)
+  ?`<button class="act act-del" onclick="event.stopPropagation();bannirSignup('${jsArg(s.key)}')">Bannir</button>`
+  :'';
  return `<div class="fiche" style="cursor:pointer" onclick="ouvrirSignupFiche(${Number(s.list_id)||0},'${ficheKey}')">
   <div class="fiche-head">
    <div style="flex:1;min-width:0">
@@ -6130,7 +6134,7 @@ function rendreSignup(s){
     <div class="lead-meta">${sub||'Contact non renseigné'} · ${date}</div>
     <div class="badges">${signupStatut(s)}${siret}${vat}${s.organization_id?`<span class="badge b-new">Org ${htmlSafe(s.organization_id)}</span>`:''}</div>
    </div>
-   <div class="act-row" style="border:0;padding:0;margin:0">${enable}<button class="act act-copy" onclick="event.stopPropagation();ouvrirSignupFiche(${Number(s.list_id)||0},'${ficheKey}')">Ouvrir la fiche →</button></div>
+   <div class="act-row" style="border:0;padding:0;margin:0">${enable}${ban}<button class="act act-copy" onclick="event.stopPropagation();ouvrirSignupFiche(${Number(s.list_id)||0},'${ficheKey}')">Ouvrir la fiche →</button></div>
   </div>
  </div>`;
 }
@@ -6149,7 +6153,19 @@ async function activerSignup(key){
   const r=await api('/api/signups',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key})});
   const d=await r.json();
   if(!r.ok||d.erreur){toast('Erreur : '+(d.detail||d.erreur||'activation impossible'));return;}
-  toast(d.already_enabled?'Compte déjà activé':'✅ Compte activé');
+  toast(d.already_banned?'Signup déjà banni':(d.already_enabled?'Compte déjà activé':'✅ Compte activé'));
+  chargerSignups();
+ }catch(e){toast('Erreur réseau : '+e.message);}
+}
+async function bannirSignup(key){
+ key=decodeURIComponent(String(key||''));
+ const ok=await confirmSofy('🚫 Bannir le signup','Marquer cette demande comme bannie sans activer le compte ?','Bannir');
+ if(!ok)return;
+ try{
+  const r=await api('/api/signups',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,action:'ban'})});
+  const d=await r.json();
+  if(!r.ok||d.erreur){toast('Erreur : '+(d.detail||d.erreur||'ban impossible'));return;}
+  toast(d.already_banned?'Signup déjà banni':'🚫 Signup banni');
   chargerSignups();
  }catch(e){toast('Erreur réseau : '+e.message);}
 }
