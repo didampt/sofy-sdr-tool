@@ -1,4 +1,5 @@
 const HS = 'https://api.hubapi.com';
+const HUBSPOT_REQUEST_TIMEOUT_MS = 6000;
 const FREE_EMAIL_DOMAIN = /^(gmail|outlook|hotmail|yahoo|orange|wanadoo|free|sfr|laposte|icloud|live)\./i;
 const propertyCache = new Map();
 
@@ -30,17 +31,30 @@ function domainFromEmail(email) {
 }
 
 async function hs(path, method, token, body) {
-  const response = await fetch(HS + path, {
-    method,
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`
-    },
-    body: body ? JSON.stringify(body) : undefined
-  });
-  const data = await response.json().catch(() => ({}));
-  return { ok: response.ok, status: response.status, data };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), HUBSPOT_REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(HS + path, {
+      method,
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal
+    });
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, status: response.status, data };
+  } catch (err) {
+    if (controller.signal.aborted) {
+      throw new Error(`HubSpot ${method} ${path} timeout après ${HUBSPOT_REQUEST_TIMEOUT_MS / 1000}s`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function getProperties(objectType, token) {
@@ -220,12 +234,15 @@ async function searchOne(objectType, token, filters, properties = []) {
 
 async function upsertContact({ body, contactProps, token }) {
   const email = clean(body.email).toLowerCase();
-  const existing = email ? await searchOne('contacts', token, [{ propertyName: 'email', operator: 'EQ', value: email }], ['email']) : null;
-  if (existing && existing.id) {
-    const patch = await hs(`/crm/v3/objects/contacts/${existing.id}`, 'PATCH', token, { properties: contactProps });
+  const existing = email
+    ? await hs(`/crm/v3/objects/contacts/${encodeURIComponent(email)}?idProperty=email&properties=email`, 'GET', token)
+    : null;
+  if (existing && existing.ok && existing.data.id) {
+    const patch = await hs(`/crm/v3/objects/contacts/${existing.data.id}`, 'PATCH', token, { properties: contactProps });
     if (!patch.ok) throw new Error(patch.data.message || `HubSpot contact PATCH HTTP ${patch.status}`);
-    return { id: existing.id, created: false };
+    return { id: existing.data.id, created: false };
   }
+  if (existing && existing.status !== 404) throw new Error(existing.data.message || `HubSpot contact GET HTTP ${existing.status}`);
 
   const create = await hs('/crm/v3/objects/contacts', 'POST', token, { properties: contactProps });
   if (!create.ok) throw new Error(create.data.message || `HubSpot contact POST HTTP ${create.status}`);
@@ -241,16 +258,17 @@ async function upsertCompany({ body, companyProps, companyMeta, token }) {
   const siret = clean(company.siret, 30);
   const siretProp = findProperty(companyMeta, [process.env.HUBSPOT_SIGNUP_COMPANY_SIRET_PROPERTY, 'siret']);
 
-  let existing = null;
+  const searches = [];
   if (siret && siretProp) {
-    existing = await searchOne('companies', token, [{ propertyName: siretProp.name, operator: 'EQ', value: siret }], ['name']);
+    searches.push(searchOne('companies', token, [{ propertyName: siretProp.name, operator: 'EQ', value: siret }], ['name']));
   }
-  if (!existing && domain) {
-    existing = await searchOne('companies', token, [{ propertyName: 'domain', operator: 'EQ', value: domain }], ['name']);
+  if (domain) {
+    searches.push(searchOne('companies', token, [{ propertyName: 'domain', operator: 'EQ', value: domain }], ['name']));
   }
-  if (!existing && name) {
-    existing = await searchOne('companies', token, [{ propertyName: 'name', operator: 'EQ', value: name }], ['name']);
+  if (name) {
+    searches.push(searchOne('companies', token, [{ propertyName: 'name', operator: 'EQ', value: name }], ['name']));
   }
+  const existing = (await Promise.all(searches)).find(Boolean) || null;
 
   if (existing && existing.id) {
     const patch = await hs(`/crm/v3/objects/companies/${existing.id}`, 'PATCH', token, { properties: companyProps });
@@ -318,8 +336,10 @@ export async function syncSignupToHubSpot(body) {
   if (!token) return { ok: false, skipped: true, raison: 'HUBSPOT_API_KEY non configurée' };
 
   const company = body.company || {};
-  const contactMeta = await getProperties('contacts', token);
-  const companyMeta = await getProperties('companies', token);
+  const [contactMeta, companyMeta] = await Promise.all([
+    getProperties('contacts', token),
+    getProperties('companies', token)
+  ]);
   const domain = domainFromEmail(body.email);
   const fonction = clean(body.fonction || process.env.HUBSPOT_SIGNUP_DEFAULT_FONCTION || 'Inscription signup', 200);
 
@@ -383,14 +403,18 @@ export async function syncSignupToHubSpot(body) {
   ]), [company.tva_id]);
   addConfiguredTrackingProperties(companyProps, companyMeta, 'HUBSPOT_SIGNUP_COMPANY', body.tracking);
 
-  const contact = await upsertContact({ body, contactProps, token });
-  const companyResult = await upsertCompany({ body, companyProps, companyMeta, token });
+  const [contact, companyResult] = await Promise.all([
+    upsertContact({ body, contactProps, token }),
+    upsertCompany({ body, companyProps, companyMeta, token })
+  ]);
   const warnings = [];
 
-  const association = await associateContactCompany({ contactId: contact.id, companyId: companyResult.id, token });
+  const [association, note] = await Promise.all([
+    associateContactCompany({ contactId: contact.id, companyId: companyResult.id, token }),
+    createSignupNote({ body, contactId: contact.id, companyId: companyResult.id, token })
+  ]);
   if (association && !association.ok) warnings.push(`Association HubSpot ignorée: HTTP ${association.status}`);
 
-  const note = await createSignupNote({ body, contactId: contact.id, companyId: companyResult.id, token });
   if (note && !note.ok) warnings.push(`Note HubSpot ignorée: ${note.data.message || `HTTP ${note.status}`}`);
 
   return {
