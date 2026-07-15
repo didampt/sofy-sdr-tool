@@ -83,7 +83,7 @@ async function getProperties(objectType, token) {
 }
 
 function findProperty(properties, candidates) {
-  const names = candidates.map(clean).filter(Boolean);
+  const names = candidates.map(candidate => clean(candidate)).filter(Boolean);
   for (const name of names) {
     const direct = properties.byName.get(name);
     if (direct) return direct;
@@ -94,7 +94,7 @@ function findProperty(properties, candidates) {
 
 function enumCandidate(prop, values) {
   const options = prop.options || [];
-  const candidates = values.map(clean).filter(Boolean);
+  const candidates = values.map(value => clean(value)).filter(Boolean);
   const normalized = new Set(candidates.map(normalizeKey));
   return options.find(option =>
     candidates.includes(option.value) ||
@@ -361,6 +361,14 @@ export async function syncSignupToHubSpot(body) {
     'fonction',
     'job_function'
   ]), [body.fonction, fonction, process.env.HUBSPOT_SIGNUP_DEFAULT_FONCTION, 'autre', 'Autre']);
+  setProperty(contactProps, findProperty(contactMeta, [
+    process.env.HUBSPOT_SIGNUP_CONTACT_COUNTRY_PROPERTY,
+    'revops_pays'
+  ]), [body.country]);
+  setProperty(contactProps, findProperty(contactMeta, [
+    process.env.HUBSPOT_SIGNUP_CONTACT_COUNTRY_CODE_PROPERTY,
+    'hs_country_region_code'
+  ]), [body.country_code]);
   addConfiguredTrackingProperties(contactProps, contactMeta, 'HUBSPOT_SIGNUP_CONTACT', body.tracking);
 
   const etabs = establishmentCount(company);
@@ -381,6 +389,14 @@ export async function syncSignupToHubSpot(body) {
     'company_sector',
     'industry'
   ]), sectorCandidates(company));
+  setProperty(companyProps, findProperty(companyMeta, [
+    process.env.HUBSPOT_SIGNUP_COMPANY_COUNTRY_PROPERTY,
+    'custom__liste_pays'
+  ]), [body.country]);
+  setProperty(companyProps, findProperty(companyMeta, [
+    process.env.HUBSPOT_SIGNUP_COMPANY_COUNTRY_CODE_PROPERTY,
+    'hs_country_code'
+  ]), [body.country_code]);
   setProperty(companyProps, findProperty(companyMeta, [
     process.env.HUBSPOT_SIGNUP_COMPANY_ESTABLISHMENTS_PROPERTY,
     'nombre_d_etablissements',
