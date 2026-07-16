@@ -101,7 +101,19 @@ export default async function handler(req, res) {
     }
 
     out.sort((a, b) => new Date(b.ts || 0) - new Date(a.ts || 0));
-    return res.status(200).json({ activites: out });
+
+    // Profils LinkedIn captés via Lemlist (photo miniature, poste…) pour les contacts de la fiche
+    let profils = {};
+    try {
+      const ps = await sql`SELECT email, picture, job_title, tagline, company_size, linkedin_url
+        FROM linkedin_profils WHERE email = ANY(${emails})`;
+      for (const p of ps) profils[p.email] = {
+        picture: p.picture || null, job_title: p.job_title || null, tagline: p.tagline || null,
+        company_size: p.company_size || null, linkedin_url: p.linkedin_url || null
+      };
+    } catch (_) {}
+
+    return res.status(200).json({ activites: out, profils });
   } catch (e) {
     return res.status(500).json({ erreur: 'Activité indisponible', detail: String(e.message || e).slice(0, 200) });
   }

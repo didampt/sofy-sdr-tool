@@ -1837,7 +1837,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v228';
+const VERSION='v229';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -3795,13 +3795,18 @@ function gmbHtml(g){
 
 function contactHtml(c,i,j){
  const en=c.enrich;
+ // Profil LinkedIn capté via Lemlist (photo miniature, poste) — voir linkedin_profils
+ const prof=(typeof REAL!=='undefined'&&REAL[i]&&REAL[i]._profils&&en&&en.email)?REAL[i]._profils[String(en.email).toLowerCase()]:null;
+ const photoUrl=(prof&&prof.picture)||c.photo||null;
+ const photo=photoUrl?`<img src="${photoUrl}" onerror="this.style.display='none'" title="${escapeHtml((prof&&(prof.tagline||prof.job_title))||'')}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;flex-shrink:0;border:1px solid var(--line)">`:'';
+ const fonctionAff=(en&&en.fonction)||c.fonction||(prof&&prof.job_title)||'?';
  return `<div style="border-top:1px dashed var(--line);padding:10px 0 4px;margin-top:10px">
   ${c.signal?`<div class="contact-line" style="color:var(--danger);font-weight:700">🔥 ${c.signal.emoji||'💙'} ${c.signal.interaction||'a réagi'}${c.signal.concurrent?` sur un post <b>${c.signal.concurrent}</b>`:''}${c.signal.post?` <a href="${c.signal.post}" target="_blank" style="font-weight:600">→ voir le post</a>`:''}${c.signal.linkedin?` <a href="${c.signal.linkedin}" target="_blank" style="font-weight:600">→ voir le profil</a>`:''} · ${new Date(c.signal.date).toLocaleDateString('fr-FR')}</div>`:''}
-  <div class="contact-line"><b>${(c.prenom+' '+c.nom).trim()}</b> — ${(en&&en.fonction)||c.fonction||'?'} <span class="badge b-gmb">${c.source}</span></div>
+  <div class="contact-line" style="display:flex;align-items:center;gap:8px">${photo}<span><b>${(c.prenom+' '+c.nom).trim()}</b> — ${fonctionAff} <span class="badge b-gmb">${c.source}</span>${(prof&&prof.company_size)?` <span class="badge b-gmb" title="Taille d'entreprise (LinkedIn)">${prof.company_size}</span>`:''}</span></div>
   ${en?`
    ${en.email?`<div class="contact-line">✉️ <b>${en.email}</b> <a class="act act-call" style="padding:4px 10px;font-size:12px" href="mailto:${en.email}" title="Écrire un email">📧</a> <button class="act act-copy" style="padding:4px 10px;font-size:12px" onclick="navigator.clipboard.writeText('${en.email}');toast('Email copié ✓')" title="Copier l'adresse">📋</button>${en.email_qualification?` <span class="badge b-new">${en.email_qualification}</span>`:''}</div>`:'<div class="contact-line" style="color:var(--ink-soft)">✉️ Email non trouvé (Dropcontact) — repli FullEnrich à venir</div>'}
    ${en.telephone?`<div class="contact-line">${estMobile(en.telephone)?'📱':'☎️'} <b>${en.telephone}</b>${telBtns(en.telephone)}${(function(){var so=en.tel_source||en.telephone_source;return so?' <span class="badge b-gmb">'+(({fullenrich:'FullEnrich',kaspr:'Kaspr',lemlist:'Lemlist'})[so]||so)+'</span>':'';})()}</div>`:''}${(en.telephone_fixe&&en.telephone_fixe!==en.telephone)?`<div class="contact-line">☎️ <b>${en.telephone_fixe}</b> <span class="badge b-gmb">fixe</span>${telBtns(en.telephone_fixe)}</div>`:''}
-   ${en.linkedin?`<div class="contact-line">💼 <a href="${en.linkedin.startsWith('http')?en.linkedin:'https://'+en.linkedin}" target="_blank">Profil LinkedIn ✓</a></div>`:''}`
+   ${en.linkedin?`<div class="contact-line">💼 <a href="${en.linkedin.startsWith('http')?en.linkedin:'https://'+en.linkedin}" target="_blank">Profil LinkedIn ✓</a></div>`:(prof&&prof.linkedin_url?`<div class="contact-line">💼 <a href="${prof.linkedin_url.startsWith('http')?prof.linkedin_url:'https://'+prof.linkedin_url}" target="_blank">Profil LinkedIn ✓</a> <span class="badge b-gmb">Lemlist</span></div>`:'')}`
   :`<button class="act act-lemlist" id="enrbtn${i}_${j}" onclick="enrichir(${i},${j})" style="margin-top:4px">✉️ Enrichir ce contact</button>`}
   ${en&&(!en.email||!en.telephone)?`<button class="act act-copy" style="margin-top:4px" id="febtn${i}_${j}" onclick="lancerFE(${i},${j})" title="Cascade 15+ sources : email de repli + mobile">${en.fe_fait?'↻ FullEnrich (re-tenter)':'🔁 FullEnrich'}</button>`:''}
   ${en&&manqueMobile(en)?`<button class="act act-copy" style="margin-top:4px" onclick="lancerKaspr(${i},${j})" title="Mobile FR via le profil LinkedIn (1 crédit tél. + 1 crédit export). * = URL LinkedIn demandée au lancement">${en.kaspr_fait?'↻ Kaspr (re-tenter)':'📱 Kaspr'}</button>`:''}
@@ -5274,6 +5279,7 @@ async function chargerActiviteDB(i){
   var r=await api('/api/activite?emails='+encodeURIComponent(emails.join(',')));
   var d=await r.json();
   e._act=(d&&d.activites)?d.activites:[];
+  e._profils=(d&&d.profils)||{};
  }catch(_){ e._act=e._act||[]; }
  e._actLoaded=true; e._actLoading=false;
  if(e._open)rerender(i);

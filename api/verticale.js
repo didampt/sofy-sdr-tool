@@ -108,7 +108,17 @@ async function arbreGroupe(racine, apiKey) {
   return { filiales: [...filiales.values()], requetes };
 }
 
-// Résout la holding racine : siren fourni, sinon meilleure correspondance Pappers (+ candidats)
+// Résout la holding racine : siren fourni, sinon meilleure correspondance Pappers (+ candidats).
+// Repli : beaucoup de groupes sont enregistrés sous leur ACRONYME (« Groupe Bernard Hayot » -> « GBH »).
+async function chercherEntreprises(q, apiKey) {
+  const p = new URLSearchParams({ api_token: apiKey, q, par_page: '5', precision: 'standard' });
+  const r = await fetch('https://api.pappers.fr/v2/recherche?' + p.toString());
+  const d = r.ok ? await r.json().catch(() => ({})) : {};
+  return (d.resultats || []).map(e => ({
+    siren: String(e.siren || ''), nom: e.nom_entreprise || '',
+    ville: (e.siege && e.siege.ville) || '', naf: e.code_naf || null, activite: e.libelle_code_naf || null
+  })).filter(c => c.siren);
+}
 async function resoudreHolding(nom, siren, apiKey) {
   if (siren) {
     const r = await fetch(`https://api.pappers.fr/v2/entreprise?api_token=${apiKey}&siren=${encodeURIComponent(siren)}`);
@@ -116,22 +126,23 @@ async function resoudreHolding(nom, siren, apiKey) {
     if (e && e.siren) return { holding: { siren: String(e.siren), nom: e.nom_entreprise || e.denomination || nom || '' }, candidats: [] };
     return { holding: null, candidats: [] };
   }
-  const p = new URLSearchParams({ api_token: apiKey, q: nom, par_page: '5', precision: 'standard' });
-  const r = await fetch('https://api.pappers.fr/v2/recherche?' + p.toString());
-  const d = r.ok ? await r.json().catch(() => ({})) : {};
-  const rs = d.resultats || [];
-  const candidats = rs.map(e => ({
-    siren: String(e.siren || ''), nom: e.nom_entreprise || '',
-    ville: (e.siege && e.siege.ville) || '', naf: e.code_naf || null, activite: e.libelle_code_naf || null
-  })).filter(c => c.siren);
-  // Priorité à une entité qui ressemble à une holding / au nom exact
+  let candidats = await chercherEntreprises(nom, apiKey);
+  let acronyme = null;
+  if (!candidats.length) {
+    const mots = nom.split(/\s+/).filter(Boolean);
+    if (mots.length >= 2) {
+      acronyme = mots.map(w => w[0]).join('').toUpperCase(); // « Groupe Bernard Hayot » -> « GBH »
+      candidats = await chercherEntreprises(acronyme, apiKey);
+    }
+  }
+  // Priorité à une entité qui ressemble à une holding / au nom exact (ou à l'acronyme)
   const cible = normaliser(nom);
+  const cibleAcro = acronyme ? normaliser(acronyme) : null;
   candidats.sort((a, b) => {
-    const sa = (normaliser(a.nom) === cible ? 2 : 0) + (NAF_HOLDING.has(String(a.naf || '')) ? 1 : 0);
-    const sb = (normaliser(b.nom) === cible ? 2 : 0) + (NAF_HOLDING.has(String(b.naf || '')) ? 1 : 0);
-    return sb - sa;
+    const score = (c) => (normaliser(c.nom) === cible || (cibleAcro && normaliser(c.nom) === cibleAcro) ? 2 : 0) + (NAF_HOLDING.has(String(c.naf || '')) ? 1 : 0);
+    return score(b) - score(a);
   });
-  return { holding: candidats[0] || null, candidats };
+  return { holding: candidats[0] || null, candidats, acronyme };
 }
 
 // ---------- Moteur ENSEIGNE (Google Maps, balayage par département) ----------
@@ -171,12 +182,21 @@ export default async function handler(req, res) {
   const user = verifierToken(req);
   if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
 
-  // ── Debug superadmin : réponse brute recherche-dirigeants (pour ajuster le mapping) ──
+  // ── Debug superadmin : réponses brutes Pappers (pour ajuster le mapping) ──
+  // ?debug=1&q=NOM                    -> /recherche-dirigeants
+  // ?debug=1&endpoint=recherche&q=NOM -> /recherche (résolution de la holding)
   if (req.method === 'GET' && (req.query || {}).debug) {
     if (user.role !== 'superadmin') return res.status(401).json({ erreur: 'Réservé au superadmin' });
     const apiKey = process.env.PAPPERS_API_KEY;
     if (!apiKey) return res.status(500).json({ erreur: 'PAPPERS_API_KEY manquante' });
-    const r = await pageRechercheDirigeants(String(req.query.q || ''), 1, apiKey);
+    const q = String(req.query.q || '');
+    if (req.query.endpoint === 'recherche') {
+      const p = new URLSearchParams({ api_token: apiKey, q, par_page: '5', precision: 'standard' });
+      const r = await fetch('https://api.pappers.fr/v2/recherche?' + p.toString());
+      const txt = await r.text(); let d = null; try { d = JSON.parse(txt); } catch (_) {}
+      return res.status(200).json({ status: r.status, total: d && d.total, exemple: (d && d.resultats) ? d.resultats.slice(0, 3).map(e => ({ siren: e.siren, nom: e.nom_entreprise, ville: e.siege && e.siege.ville, naf: e.code_naf })) : txt.slice(0, 400) });
+    }
+    const r = await pageRechercheDirigeants(q, 1, apiKey);
     const rs = (r.data && r.data.resultats) || [];
     return res.status(200).json({ status: r.status, total: r.data && r.data.total, exemple: rs.slice(0, 3) });
   }
@@ -242,10 +262,50 @@ export default async function handler(req, res) {
       }).filter(e => { if (e._cessee || e._proc) { exclues++; return false; } return true; })
         .map(({ _cessee, _proc, ...e }) => e);
 
+      // Contacts Basile (mandataires par SIREN) : ajoute les profils LinkedIn (poste, URL, photo
+      // si fournie) en plus du dirigeant Pappers — max 3 contacts par fiche, dédoublonnés par nom.
+      let contactsBasile = 0;
+      if (b.contacts_basile !== false && process.env.BASILE_API_KEY && entreprises.length) {
+        try {
+          const bkey = process.env.BASILE_API_KEY;
+          const parSiren = new Map(entreprises.map(e => [String(e.siren), e]));
+          const sirens = [...parSiren.keys()];
+          for (let i = 0; i < sirens.length; i += 50) {
+            const part = sirens.slice(i, i + 50);
+            const r = await fetch('https://api.basile.cc/people/find', {
+              method: 'POST', headers: { 'Authorization': bkey, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ limit: 100, filters: { siren: { include: part }, result_is_current: true } })
+            });
+            const d = await r.json().catch(() => null);
+            for (const lead of ((d && d.leads) || [])) {
+              const x = lead.data || lead || {};
+              const f = parSiren.get(String(x.siren || ''));
+              if (!f) continue;
+              const fonction = x.result_role || x.current_job_title || '';
+              if (/commissaire|liquidateur|administrateur judiciaire/i.test(fonction)) continue;
+              const prenom = x.people_first_name || x.result_first_name || '';
+              const nomC = x.people_last_name || x.result_last_name || '';
+              if (!prenom && !nomC) continue;
+              // Premier contact = le dirigeant Pappers (sinon contactsDe() le perdrait)
+              if (!f.contacts) f.contacts = f.dirigeant ? [{ prenom: f.dirigeant.prenom, nom: f.dirigeant.nom, fonction: f.dirigeant.fonction || 'Dirigeant', source: 'pappers', enrich: null }] : [];
+              if (f.contacts.length >= 3) continue;
+              if (f.contacts.some(c => normaliser(c.prenom + ' ' + c.nom) === normaliser(prenom + ' ' + nomC))) continue;
+              const contact = { prenom, nom: nomC, fonction, source: 'basile', enrich: {} };
+              if (x.profile_url) contact.enrich.linkedin = x.profile_url;
+              const photo = x.people_profile_picture || x.profile_picture || x.picture || x.photo_url || null;
+              if (photo) contact.photo = photo;
+              f.contacts.push(contact);
+              contactsBasile++;
+            }
+          }
+        } catch (_) {}
+      }
+
       await loggerConso(user, 'pappers', requetes + retenues.length, b.liste_id || null);
       return res.status(200).json({
         moteur: 'groupe', holding, total: actives.length,
         fiches_detaillees: retenues.length, exclues_cessees_ou_liquidation: exclues,
+        contacts_basile: contactsBasile,
         credits_estimes: requetes + retenues.length, entreprises
       });
     }

@@ -217,6 +217,35 @@ export default async function handler(req, res) {
     } catch (e) { return res.status(500).json({ erreur: e.message }); }
   }
 
+  // 1quinquies) Backfill des profils LinkedIn depuis les événements déjà archivés (superadmin)
+  // GET ?backfill_profils=1 -> reconstruit linkedin_profils à partir de lemlist_events (1 requête SQL)
+  if (req.method === 'GET' && q.backfill_profils) {
+    let user = null;
+    try { const m = await import('./db.js'); user = m.verifierToken(req); } catch (_) {}
+    if (!user || user.role !== 'superadmin') return res.status(401).json({ erreur: 'Réservé au superadmin' });
+    if (!sql) return res.status(500).json({ erreur: 'pas de base' });
+    try {
+      const r = await sql`
+        INSERT INTO linkedin_profils (email, picture, job_title, tagline, company_size, linkedin_url, company_linkedin_url, maj_le)
+        SELECT DISTINCT ON (lower(email)) lower(email),
+          brut->>'picture', brut->>'jobTitle', brut->>'tagline', brut->>'companySize',
+          brut->>'linkedinUrl', brut->>'companyLinkedinUrl', recu_le
+        FROM lemlist_events
+        WHERE email IS NOT NULL AND (brut->>'picture' IS NOT NULL OR brut->>'jobTitle' IS NOT NULL OR brut->>'linkedinUrl' IS NOT NULL)
+        ORDER BY lower(email), recu_le DESC
+        ON CONFLICT (email) DO UPDATE SET
+          picture = COALESCE(EXCLUDED.picture, linkedin_profils.picture),
+          job_title = COALESCE(EXCLUDED.job_title, linkedin_profils.job_title),
+          tagline = COALESCE(EXCLUDED.tagline, linkedin_profils.tagline),
+          company_size = COALESCE(EXCLUDED.company_size, linkedin_profils.company_size),
+          linkedin_url = COALESCE(EXCLUDED.linkedin_url, linkedin_profils.linkedin_url),
+          company_linkedin_url = COALESCE(EXCLUDED.company_linkedin_url, linkedin_profils.company_linkedin_url),
+          maj_le = GREATEST(EXCLUDED.maj_le, linkedin_profils.maj_le)
+        RETURNING email`;
+      return res.status(200).json({ ok: true, profils: r.length });
+    } catch (e) { return res.status(500).json({ erreur: e.message }); }
+  }
+
   // 2) Voir les derniers événements bruts (debug)
   if (req.method === 'GET' && q.voir) {
     if (!sql) return res.status(500).json({ erreur: 'pas de base' });
@@ -233,6 +262,23 @@ export default async function handler(req, res) {
       const email = b.leadEmail || b.email || null;
       const type = b.type || (b.metaData && b.metaData.type) || null;
       if (sql) await sql`INSERT INTO lemlist_events (type, email, brut) VALUES (${type}, ${email}, ${JSON.stringify(b)}::jsonb)`;
+
+      // Capte le profil LinkedIn du lead quand Lemlist le fournit (photo, poste, taille d'entreprise) :
+      // upsert non destructif — une nouvelle photo rafraîchit l'URL signée licdn (elles expirent)
+      if (sql && email && (b.picture || b.jobTitle || b.tagline || b.companySize || b.linkedinUrl)) {
+        try {
+          await sql`INSERT INTO linkedin_profils (email, picture, job_title, tagline, company_size, linkedin_url, company_linkedin_url, maj_le)
+            VALUES (${email.toLowerCase()}, ${b.picture || null}, ${b.jobTitle || null}, ${b.tagline || null}, ${b.companySize || null}, ${b.linkedinUrl || null}, ${b.companyLinkedinUrl || null}, NOW())
+            ON CONFLICT (email) DO UPDATE SET
+              picture = COALESCE(EXCLUDED.picture, linkedin_profils.picture),
+              job_title = COALESCE(EXCLUDED.job_title, linkedin_profils.job_title),
+              tagline = COALESCE(EXCLUDED.tagline, linkedin_profils.tagline),
+              company_size = COALESCE(EXCLUDED.company_size, linkedin_profils.company_size),
+              linkedin_url = COALESCE(EXCLUDED.linkedin_url, linkedin_profils.linkedin_url),
+              company_linkedin_url = COALESCE(EXCLUDED.company_linkedin_url, linkedin_profils.company_linkedin_url),
+              maj_le = NOW()`;
+        } catch (_) {}
+      }
 
       // Vérification du secret (la requête vient bien de Lemlist)
       let attendu = null;

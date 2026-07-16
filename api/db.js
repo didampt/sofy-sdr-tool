@@ -88,6 +88,18 @@ export async function ensureSchema() {
     email TEXT,
     brut JSONB
   )`;
+  // Profil LinkedIn du contact, capté au fil de l'eau depuis les webhooks Lemlist
+  // (photo miniature, poste, taille d'entreprise) — affiché sur la carte contact.
+  await sql`CREATE TABLE IF NOT EXISTS linkedin_profils (
+    email TEXT PRIMARY KEY,
+    picture TEXT,
+    job_title TEXT,
+    tagline TEXT,
+    company_size TEXT,
+    linkedin_url TEXT,
+    company_linkedin_url TEXT,
+    maj_le TIMESTAMPTZ DEFAULT NOW()
+  )`;
   await sql`CREATE TABLE IF NOT EXISTS activites (
     id SERIAL PRIMARY KEY,
     fiche_cle TEXT,
