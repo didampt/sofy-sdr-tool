@@ -58,7 +58,7 @@ export default async function handler(req, res) {
     const out = [];
 
     const evs = await sql`
-      SELECT id, source, type, titre, detail, auteur, ts
+      SELECT id, source, type, titre, detail, auteur, ts, fiche_cle
       FROM activites
       WHERE lower(fiche_cle) = ANY(${emails})
       ORDER BY ts DESC LIMIT 200`;
@@ -70,6 +70,9 @@ export default async function handler(req, res) {
         titre: e.titre || e.type || 'Activité',
         detail: e.detail || null,
         auteur: e.auteur || null,
+        // Email du lead concerné (fiche_cle est un email pour les événements Lemlist ;
+        // les notes utilisent des clés 'nom:…'/'fiche:…' qu'on ne renvoie pas)
+        contact: (e.fiche_cle && e.fiche_cle.includes('@')) ? e.fiche_cle : null,
         ts: e.ts
       });
     }

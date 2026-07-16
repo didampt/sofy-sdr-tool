@@ -156,7 +156,10 @@ export default async function handler(req, res) {
         const ref = b._id || null;
         const ts = b.createdAt || new Date().toISOString();
         const auteur = b.userName || b.sendUserName || null;
-        const detail = b.campaignName || null;
+        // Nom du lead concerné dans le détail (ex : "SoReach SDR · Jean-Pierre Doutaux")
+        // pour identifier qui a ouvert/répondu même hors du contexte de la fiche
+        const lead = [b.firstName || b.leadFirstName, b.lastName || b.leadLastName].filter(Boolean).join(' ');
+        const detail = [b.campaignName, lead].filter(Boolean).join(' · ') || null;
         const titre = LIBELLES[type] || type;
         // Au plus UNE alerte Slack par lead par 24 h (tous types confondus) : un lead qui
         // re-reagit plus tard re-declenche (ex : email re-ouvert 2 jours apres), sans spammer

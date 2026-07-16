@@ -1837,7 +1837,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v227';
+const VERSION='v228';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -5026,7 +5026,26 @@ function famTypeAct(a){
  if(t==='sequenceadded'||t.indexOf('contacted')>=0||t.indexOf('hooked')>=0||t.indexOf('attracted')>=0)return 'sequence';
  return so==='lemlist'?'email':'autre';
 }
-function normActivite(a){return {source:a.source||'lemlist',type:famTypeAct(a),titre:a.titre||a.type||'Activité',detail:a.detail||'',auteur:a.auteur||'',ts:a.ts,record:null};}
+function normActivite(a){return {source:a.source||'lemlist',type:famTypeAct(a),titre:a.titre||a.type||'Activité',detail:a.detail||'',auteur:a.auteur||'',contact:a.contact||null,ts:a.ts,record:null};}
+// Résout l'email d'une activité (a.contact) vers le nom du contact de la fiche, sinon renvoie l'email
+function nomContactActivite(e,email){
+ if(!email)return '';
+ if(!e)return email;
+ var em=String(email).toLowerCase();
+ var cs=contactsDe(e)||[];
+ for(var k=0;k<cs.length;k++){
+  var c=cs[k];
+  if(c&&c.enrich&&String(c.enrich.email||'').toLowerCase()===em){
+   var n=[c.prenom,c.nom].filter(Boolean).join(' ').trim();
+   if(n)return n;
+  }
+ }
+ if(e.dirigeant&&e.dirigeant.enrich&&String(e.dirigeant.enrich.email||'').toLowerCase()===em){
+  var n2=[e.dirigeant.prenom,e.dirigeant.nom].filter(Boolean).join(' ').trim();
+  if(n2)return n2;
+ }
+ return email;
+}
 function callToActivite(c){
  const dir=c.direction==='in'?'entrant':(c.direction==='out'?'sortant':'');
  const dur=c.incall_duration?(' · '+Math.floor(c.incall_duration/60)+' min '+(c.incall_duration%60)+' s'):'';
@@ -5066,11 +5085,15 @@ function ligneActivite(a,i){
  var heure=t.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
  var src=({lemlist:'Lemlist',ringover:'Ringover',sms:'SoReach'})[a.source]||'';
  var audio=a.record?('<audio controls preload="metadata" src="/api/ringover-record?url='+encodeURIComponent(a.record)+'" style="width:100%;margin-top:6px;height:34px"></audio>'):'';
+ var fiche=(i!=null&&typeof REAL!=='undefined'&&REAL[i])?REAL[i]:null;
+ var qui=a.contact?nomContactActivite(fiche,a.contact):'';
+ if(qui&&a.detail&&String(a.detail).indexOf(qui)>=0)qui='';
+ var quiHtml=qui?('<div style="font-size:12.5px;color:var(--ink-soft);margin-top:2px" title="'+escapeHtml(a.contact)+'">👤 '+escapeHtml(qui)+'</div>'):'';
  var detail=a.detail?('<div style="font-size:13px;color:var(--ink-soft);margin-top:2px;white-space:pre-wrap;word-break:break-word">'+lienify(a.detail)+'</div>'):'';
  var resume=a.resume?('<div style="font-size:12.5px;color:var(--ink);margin-top:6px;padding:8px 10px;background:var(--paper);border:1px solid var(--line);border-radius:8px;white-space:pre-wrap">🎧 Résumé IA : '+escapeHtml(a.resume)+'</div>'):'';
  return '<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 2px;border-bottom:1px solid #f1f2f7">'+
    '<span style="flex-shrink:0;width:26px;height:26px;display:flex;align-items:center;justify-content:center;color:#6b7280">'+icoActivite(a)+'</span>'+
-   '<div style="flex:1;min-width:0"><div style="font-size:14px">'+escapeHtml(a.titre)+(src?(' <span style="font-size:11px;color:#9aa1b1;border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin-left:6px">'+src+'</span>'):'')+'</div>'+detail+resume+audio+'</div>'+
+   '<div style="flex:1;min-width:0"><div style="font-size:14px">'+escapeHtml(a.titre)+(src?(' <span style="font-size:11px;color:#9aa1b1;border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin-left:6px">'+src+'</span>'):'')+'</div>'+quiHtml+detail+resume+audio+'</div>'+
    '<div style="flex-shrink:0;text-align:right;white-space:nowrap"><div style="font-size:13px;font-weight:600">'+heure+'</div><div style="font-size:12px;color:#9aa1b1">'+escapeHtml(a.auteur||'systeme')+'</div>'+((a.type==='note'&&a.id&&i!=null)?'<div onclick="editerNote('+i+','+a.id+')" title="Modifier la note" style="cursor:pointer;font-size:12px;color:var(--accent);font-weight:700;margin-top:2px">✏️ modifier</div>':'')+'</div>'+
   '</div>';
 }
@@ -5091,8 +5114,9 @@ function renderActivite(){
   if(idx[key]===undefined){idx[key]=groups.length;groups.push({label:labelJourAct(d),items:[]});}
   groups[idx[key]].items.push(a);
  });
+ var ctxI=(typeof ACT_CTX!=='undefined'&&ACT_CTX&&ACT_CTX.i!=null)?ACT_CTX.i:null;
  box.innerHTML=groups.map(function(g){
-  return '<div style="margin-top:12px"><div style="font-size:12px;font-weight:700;color:var(--ink-soft);padding:6px 0;border-bottom:1px solid var(--line)">'+g.label+'</div>'+g.items.map(ligneActivite).join('')+'</div>';
+  return '<div style="margin-top:12px"><div style="font-size:12px;font-weight:700;color:var(--ink-soft);padding:6px 0;border-bottom:1px solid var(--line)">'+g.label+'</div>'+g.items.map(function(a){return ligneActivite(a,ctxI);}).join('')+'</div>';
  }).join('');
 }
 async function ouvrirActivite(i){
@@ -5138,7 +5162,7 @@ async function enregistrerActivite(e,c,source,titre,detail){
 async function syntheseHubspot(i){
  const e=REAL[i];
  var items=timelineFiche(e).slice().sort(function(a,b){return new Date(a.ts)-new Date(b.ts);});
- var lignes=items.map(function(a){var dt=new Date(a.ts).toLocaleDateString('fr-FR');return '['+dt+'] '+(a.titre||a.type||'')+(a.detail?(' — '+a.detail):'');});
+ var lignes=items.map(function(a){var dt=new Date(a.ts).toLocaleDateString('fr-FR');var qui=a.contact?nomContactActivite(e,a.contact):'';if(qui&&a.detail&&String(a.detail).indexOf(qui)>=0)qui='';return '['+dt+'] '+(a.titre||a.type||'')+(qui?(' ('+qui+')'):'')+(a.detail?(' — '+a.detail):'');});
  var hist=lignes.join('\n');
  if(!hist.trim()){toast('Aucune note ni appel à synthétiser sur cette fiche.');return;}
  var ent=(e.enseigne_ia||e.enseigne||e.nom||'');
@@ -5220,7 +5244,7 @@ async function ajouterNote(){
 }
 function timelineFiche(e){
  var arr=[];
- (e._act||[]).forEach(function(a){arr.push({id:a.id,source:a.source,type:famTypeAct(a),titre:a.titre,detail:a.detail,auteur:a.auteur,ts:a.ts,record:null});});
+ (e._act||[]).forEach(function(a){arr.push({id:a.id,source:a.source,type:famTypeAct(a),titre:a.titre,detail:a.detail,auteur:a.auteur,contact:a.contact||null,ts:a.ts,record:null});});
  var seen={};
  numerosFiche(e).forEach(function(t){var k=cle9Ring(t);if(!k||seen[k])return;seen[k]=1;(RINGOVER_CALLS[k]||[]).forEach(function(c){arr.push(callToActivite(c));});});
  return arr;
