@@ -513,7 +513,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
       <div class="eyebrow">Nouvelle liste d'appel</div>
       <div id="mode-choix" style="max-width:680px">
         <h1 style="margin-bottom:6px">Comment veux-tu créer ta liste ?</h1>
-        <p class="sub" style="margin-bottom:22px">Quatre façons : décris ta cible à l'IA, extrais depuis Pappers, cible par note Google Maps, ou crée une liste vide à remplir à la main.</p>
+        <p class="sub" style="margin-bottom:22px">Cinq façons : décris ta cible à l'IA, extrais depuis Pappers, cible par note Google Maps, vise un réseau ou un groupe entier, ou crée une liste vide à remplir à la main.</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
           <div onclick="choisirMode('ia')" style="cursor:pointer;border:2px solid #185FA5;border-radius:14px;padding:22px;transition:.15s;background:var(--card);position:relative" onmouseover="this.style.background='#f5f9fe'" onmouseout="this.style.background='var(--card)'">
             <div style="position:absolute;top:12px;right:12px;font-size:10px;font-weight:700;color:#fff;background:#185FA5;padding:2px 8px;border-radius:20px">NOUVEAU</div>
@@ -531,6 +531,12 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
             <div style="font-size:30px;margin-bottom:10px">📍</div>
             <div style="font-size:16px;font-weight:700;margin-bottom:5px">Liste Google Maps (SoView)</div>
             <div style="font-size:13px;color:var(--ink-soft);line-height:1.5">Ville + activité + note Google. Idéal SoView : cible les fiches mal notées, avec téléphone et site web inclus.</div>
+          </div>
+          <div onclick="choisirMode('verticale')" style="cursor:pointer;border:1px solid var(--line);border-radius:14px;padding:22px;transition:.15s;background:var(--card);position:relative" onmouseover="this.style.borderColor='#185FA5'" onmouseout="this.style.borderColor='var(--line)'">
+            <div style="position:absolute;top:12px;right:12px;font-size:10px;font-weight:700;color:#fff;background:#7C3AED;padding:2px 8px;border-radius:20px">NOUVEAU</div>
+            <div style="font-size:30px;margin-bottom:10px">🏢</div>
+            <div style="font-size:16px;font-weight:700;margin-bottom:5px">Liste Verticale (réseau / groupe)</div>
+            <div style="font-size:13px;color:var(--ink-soft);line-height:1.5">Une franchise (BigMat…) ou un groupe multi-enseignes (GBH…) : toutes ses entités en une liste — points de vente, filiales, dirigeants.</div>
           </div>
           <div onclick="choisirMode('manuelle')" style="cursor:pointer;border:1px solid var(--line);border-radius:14px;padding:22px;transition:.15s;background:var(--card)" onmouseover="this.style.borderColor='#185FA5'" onmouseout="this.style.borderColor='var(--line)'">
             <div style="font-size:30px;margin-bottom:10px">✍️</div>
@@ -570,6 +576,33 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
           <div class="wiz-foot" style="margin-top:22px">
             <button class="btn" id="btn-estimer-gmb" onclick="estimerListeGmb()" style="background:var(--paper)">📊 Estimer (gratuit)</button>
             <button class="btn btn-primary" id="btn-creer-gmb" onclick="creerListeGmb()">📍 Créer la liste</button>
+          </div>
+        </div>
+      </div>
+      <div id="mode-verticale" style="display:none;max-width:640px">
+        <div class="head-row">
+          <div><h1>🏢 Liste Verticale</h1><p class="sub">Toutes les entités d'un réseau ou d'un groupe en une liste — comme une recherche « entreprise actuelle » Sales Navigator, en mieux.</p></div>
+          <button class="btn-reset" onclick="retourChoixMode()">↺ Retour</button>
+        </div>
+        <div class="qcard">
+          <div class="qnum"><b>1</b> Cible</div>
+          <h2>Quel réseau ou quel groupe ?</h2>
+          <input class="field" id="vert-nom" placeholder="Ex : BigMat · Groupe Bernard Hayot · Gedimat…" style="width:100%;margin-bottom:12px" autocomplete="off" oninput="VERT_HOLDING=null">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:13.5px;line-height:1.45"><input type="radio" name="vert-moteur" value="enseigne" checked onchange="majModeVerticale()" style="margin-top:2px"><span><b>🏪 Réseau / franchise à vitrines</b> — balayage Google Maps de tous les points de vente (note, avis, téléphone inclus). Ex : BigMat, Gedimat, Point S.</span></label>
+            <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:13.5px;line-height:1.45"><input type="radio" name="vert-moteur" value="groupe" onchange="majModeVerticale()" style="margin-top:2px"><span><b>🏢 Groupe / holding multi-enseignes</b> — l'arbre des filiales au registre (Pappers) : dirigeants, CA, effectif. Ex : Groupe Bernard Hayot.</span></label>
+          </div>
+          <div id="vert-perimetre-box" style="margin-top:12px"><label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">Périmètre du balayage</label>
+            <select class="field" id="vert-perimetre" style="width:100%"><option value="france">🇫🇷 France entière (101 départements — plusieurs minutes)</option><option value="dom">🌴 DOM uniquement (971, 972, 973, 974, 976)</option><option value="metropole">Métropole uniquement</option></select>
+          </div>
+          <div id="vert-estim" style="display:none;background:var(--paper);border-radius:10px;padding:14px 16px;margin-top:16px;font-size:13px;line-height:1.6"></div>
+          <h2 style="margin-top:20px;font-size:17px">Identification</h2>
+          <input class="field" id="vert-nom-liste" placeholder="Nom de la liste (ex : Verticale BigMat France)" style="width:100%;margin-bottom:10px">
+          <select class="field" id="vert-sdr" style="width:100%"></select>
+          <div id="vert-progress" style="display:none;background:var(--paper);border-radius:10px;padding:12px 16px;margin-top:14px;font-size:13px"></div>
+          <div class="wiz-foot" style="margin-top:22px">
+            <button class="btn" id="btn-estimer-vert" onclick="estimerVerticale()" style="background:var(--paper)">📊 Estimer (quasi gratuit)</button>
+            <button class="btn btn-primary" id="btn-creer-vert" onclick="creerListeVerticale()">🏢 Créer la liste</button>
           </div>
         </div>
       </div>
@@ -1837,7 +1870,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v229';
+const VERSION='v230';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -1957,6 +1990,7 @@ function choisirMode(mode){
  document.getElementById('mode-manuelle').style.display='none';
  document.getElementById('mode-ia').style.display='none';
  document.getElementById('mode-gmb').style.display='none';
+ document.getElementById('mode-verticale').style.display='none';
  if(mode==='pappers'){
   document.getElementById('wizard-pappers').style.display='block';
  }else if(mode==='ia'){
@@ -1966,6 +2000,10 @@ function choisirMode(mode){
  }else if(mode==='gmb'){
   document.getElementById('mode-gmb').style.display='block';
   remplirSelectSdr('gmb-sdr');
+ }else if(mode==='verticale'){
+  document.getElementById('mode-verticale').style.display='block';
+  remplirSelectSdr('vert-sdr');
+  majModeVerticale();
  }else{
   document.getElementById('mode-manuelle').style.display='block';
   remplirSelectSdrManuelle();
@@ -1977,6 +2015,7 @@ function retourChoixMode(){
  document.getElementById('mode-manuelle').style.display='none';
  document.getElementById('mode-ia').style.display='none';
  document.getElementById('mode-gmb').style.display='none';
+ document.getElementById('mode-verticale').style.display='none';
 }
 // ───────── LISTE INTELLIGENTE (IA) ─────────
 let IA_CRITERES=null;      // critères extraits par l'IA (pour l'estimation/création)
@@ -2474,6 +2513,118 @@ async function creerListeGmb(){
   toast('📍 Liste créée : '+fiches.length+' établissement'+(fiches.length>1?'s':'')+(d.emails_trouves?' · '+d.emails_trouves+' email'+(d.emails_trouves>1?'s':'')+' trouvé'+(d.emails_trouves>1?'s':'')+' sur les sites':''));
   setTimeout(()=>{CREATION_GMB_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='📍 Créer la liste';}ouvrirListe(dc.id);},300);
  }catch(e){toast('Erreur réseau : '+e.message);CREATION_GMB_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='📍 Créer la liste';}}
+}
+/* ───────── LISTE VERTICALE (réseau / groupe) ───────── */
+let VERT_HOLDING=null;            // holding retenue après estimation (désambiguïsation)
+let CREATION_VERT_EN_COURS=false;
+const VERT_DEPS=(function(){
+ var metro=[];for(var i=1;i<=95;i++){if(i===20){metro.push('2A','2B');continue;}metro.push(String(i).padStart(2,'0'));}
+ var dom=['971','972','973','974','976'];
+ return {metropole:metro,dom:dom,france:metro.concat(dom)};
+})();
+function vertMoteur(){var r=document.querySelector('input[name="vert-moteur"]:checked');return r?r.value:'enseigne';}
+function majModeVerticale(){
+ var m=vertMoteur();
+ var per=document.getElementById('vert-perimetre-box');
+ if(per)per.style.display=(m==='enseigne')?'block':'none';
+ VERT_HOLDING=null;
+ var box=document.getElementById('vert-estim');if(box)box.style.display='none';
+}
+function choisirHoldingVert(siren,nom){VERT_HOLDING={siren:siren,nom:nom};estimerVerticale();}
+async function estimerVerticale(){
+ var nom=document.getElementById('vert-nom').value.trim();
+ if(nom.length<2){toast('⚠️ Indique le nom du réseau ou du groupe');document.getElementById('vert-nom').focus();return;}
+ var m=vertMoteur();
+ var btn=document.getElementById('btn-estimer-vert');
+ if(btn){btn.disabled=true;btn.textContent='⏳ Analyse…';}
+ var box=document.getElementById('vert-estim');
+ try{
+  if(m==='groupe'){
+   var body={moteur:'groupe',mode:'estimer'};
+   if(VERT_HOLDING&&VERT_HOLDING.siren)body.siren=VERT_HOLDING.siren;else body.nom=nom;
+   const r=await api('/api/verticale',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+   const d=await r.json();
+   if(d.erreur){
+    var cands0=(d.candidats||[]).slice(0,4).map(function(c){return '<button class="chip" onclick="choisirHoldingVert(\''+c.siren+'\',\''+escapeHtml(c.nom).replace(/'/g,'&#39;')+'\')">'+escapeHtml(c.nom)+' · '+escapeHtml(c.ville||'')+'</button>';}).join(' ');
+    if(box&&cands0){box.innerHTML='Introuvable tel quel. Candidats proches : '+cands0;box.style.display='block';}
+    else toast('Erreur : '+d.erreur);
+   }else{
+    VERT_HOLDING=d.holding||VERT_HOLDING;
+    var ech=(d.filiales||[]).slice(0,8).map(function(f){return '<div style="padding:5px 0;border-top:1px solid var(--line)"><b>'+escapeHtml(f.nom)+'</b> <span style="color:var(--ink-soft)">· '+escapeHtml(f.activite||f.naf||'')+' · '+escapeHtml(f.ville||'')+(f.effectif?' · '+escapeHtml(f.effectif):'')+(f.niveau>1?' · via '+escapeHtml(f.via||''):'')+'</span></div>';}).join('');
+    var cands=(d.candidats||[]).filter(function(c){return !VERT_HOLDING||c.siren!==VERT_HOLDING.siren;}).slice(0,4).map(function(c){return '<button class="chip" onclick="choisirHoldingVert(\''+c.siren+'\',\''+escapeHtml(c.nom).replace(/'/g,'&#39;')+'\')">'+escapeHtml(c.nom)+' · '+escapeHtml(c.ville||'')+'</button>';}).join(' ');
+    box.innerHTML='Groupe : <b>'+escapeHtml((d.holding&&d.holding.nom)||nom)+'</b> (SIREN '+escapeHtml((d.holding&&d.holding.siren)||'?')+') — <b>'+d.total+'</b> filiale'+(d.total>1?'s':'')+' active'+(d.total>1?'s':'')+(d.cessees?' <span style="color:var(--ink-soft)">(+ '+d.cessees+' cessée'+(d.cessees>1?'s':'')+' écartée'+(d.cessees>1?'s':'')+')</span>':'')+'.'
+     +(ech?'<div style="margin-top:8px;font-weight:700">Aperçu :</div>'+ech:'')
+     +(cands?'<div style="margin-top:10px"><span style="color:var(--ink-soft)">Pas le bon groupe ? Essaye :</span> '+cands+'</div>':'');
+    box.style.display='block';
+    if(!d.total)toast('0 filiale trouvée — essaye un autre candidat ci-dessous ou le SIREN exact');
+   }
+  }else{
+   const r=await api('/api/verticale',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({moteur:'enseigne',mode:'estimer',enseigne:nom})});
+   const d=await r.json();
+   if(d.erreur){toast('Erreur : '+d.erreur);}
+   else{
+    var ech2=(d.echantillon||[]).map(function(e){return '<div style="padding:5px 0;border-top:1px solid var(--line)"><b>'+escapeHtml(e.nom)+'</b> — '+(e.note!=null?e.note.toLocaleString('fr-FR')+' ★':'sans note')+' ('+e.avis+' avis) <span style="color:var(--ink-soft)">· '+escapeHtml(e.dep)+'</span></div>';}).join('');
+    box.innerHTML='<b>'+d.trouves_echantillon+'</b> point'+(d.trouves_echantillon>1?'s':'')+' de vente sur 8 départements testés → <b>≈ '+d.estimation_france+'</b> estimés France entière.'+(ech2?'<div style="margin-top:8px;font-weight:700">Échantillon :</div>'+ech2:'');
+    box.style.display='block';
+   }
+  }
+ }catch(e){toast('Erreur réseau : '+e.message);}
+ if(btn){btn.disabled=false;btn.textContent='📊 Estimer (quasi gratuit)';}
+}
+async function creerListeVerticale(){
+ if(CREATION_VERT_EN_COURS)return;
+ var nomCible=document.getElementById('vert-nom').value.trim();
+ if(nomCible.length<2){toast('⚠️ Indique le nom du réseau ou du groupe');document.getElementById('vert-nom').focus();return;}
+ var nomListe=document.getElementById('vert-nom-liste').value.trim();
+ if(!nomListe){toast('⚠️ Donne un nom à ta liste');document.getElementById('vert-nom-liste').focus();return;}
+ var sdr=document.getElementById('vert-sdr').value||(state.user?state.user.nom:'');
+ var m=vertMoteur();
+ CREATION_VERT_EN_COURS=true;
+ var btn=document.getElementById('btn-creer-vert');
+ var prog=document.getElementById('vert-progress');
+ function fin(){CREATION_VERT_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🏢 Créer la liste';}}
+ if(btn){btn.disabled=true;btn.textContent='⏳ Création…';}
+ try{
+  var fiches=[],criteres;
+  if(m==='groupe'){
+   var body={moteur:'groupe',mode:'creer',nb:300};
+   if(VERT_HOLDING&&VERT_HOLDING.siren)body.siren=VERT_HOLDING.siren;else body.nom=nomCible;
+   if(prog){prog.style.display='block';prog.textContent='⏳ Arbre du groupe + détail des filiales (Pappers + Basile)…';}
+   const r=await api('/api/verticale',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+   const d=await r.json();
+   if(d.erreur){toast('Erreur : '+d.erreur);fin();if(prog)prog.style.display='none';return;}
+   fiches=d.entreprises||[];
+   criteres={verticale:true,moteur:'groupe',cible:(d.holding&&d.holding.nom)||nomCible,siren_holding:(d.holding&&d.holding.siren)||null,naf:[],pays:[]};
+  }else{
+   var per=(document.getElementById('vert-perimetre')||{}).value||'france';
+   var deps=VERT_DEPS[per]||VERT_DEPS.france;
+   var vusPid={};
+   criteres={verticale:true,moteur:'enseigne',gmb:true,cible:nomCible,perimetre:per,naf:[],pays:[]};
+   if(prog)prog.style.display='block';
+   for(var i=0;i<deps.length;i+=10){
+    var lot=deps.slice(i,i+10);
+    if(prog)prog.textContent='⏳ Balayage Google Maps : départements '+(i+1)+'–'+Math.min(i+10,deps.length)+' / '+deps.length+' — '+fiches.length+' point(s) de vente trouvé(s)…';
+    try{
+     const r2=await api('/api/verticale',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({moteur:'enseigne',mode:'creer',enseigne:nomCible,departements:lot,nb:150})});
+     const d2=await r2.json();
+     if(d2.erreur){toast('Lot '+(Math.floor(i/10)+1)+' en erreur : '+d2.erreur);continue;}
+     (d2.entreprises||[]).forEach(function(f){
+      var pid=(f.gmb&&f.gmb.place_id)||(f.nom+'|'+f.code_postal);
+      if(vusPid[pid])return;vusPid[pid]=1;fiches.push(f);
+     });
+    }catch(_){/* lot en échec réseau -> on continue le balayage */}
+   }
+  }
+  if(!fiches.length){toast('Aucune entité trouvée — vérifie le nom de la cible.');fin();if(prog)prog.style.display='none';return;}
+  if(prog)prog.textContent='⏳ Sauvegarde de '+fiches.length+' fiche(s)…';
+  const rc=await api('/api/listes',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({nom:'🏢 '+nomListe,sdr:sdr,criteres:criteres,entreprises:fiches,credits_estimes:0})});
+  const dc=await rc.json();
+  if(dc.erreur){toast('Erreur création : '+dc.erreur);fin();if(prog)prog.style.display='none';return;}
+  toast('🏢 Liste créée : '+fiches.length+' entité'+(fiches.length>1?'s':''));
+  if(prog)prog.style.display='none';
+  setTimeout(function(){fin();ouvrirListe(dc.id);},300);
+ }catch(e){toast('Erreur réseau : '+e.message);fin();if(prog)prog.style.display='none';}
 }
 let toastT;
 function toast(msg){
