@@ -1873,7 +1873,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v235';
+const VERSION='v236';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2556,7 +2556,7 @@ async function estimerVerticale(){
     var ech=(d.filiales||[]).slice(0,8).map(function(f){return '<div style="padding:5px 0;border-top:1px solid var(--line)"><b>'+escapeHtml(f.nom)+'</b> <span style="color:var(--ink-soft)">· '+escapeHtml(f.activite||f.naf||'')+' · '+escapeHtml(f.ville||'')+(f.effectif?' · '+escapeHtml(f.effectif):'')+(f.niveau>1?' · via '+escapeHtml(f.via||''):'')+'</span></div>';}).join('');
     var cands=(d.candidats||[]).filter(function(c){return !VERT_HOLDING||c.siren!==VERT_HOLDING.siren;}).slice(0,4).map(function(c){return '<button class="chip" onclick="choisirHoldingVert(\''+c.siren+'\',\''+escapeHtml(c.nom).replace(/'/g,'&#39;')+'\')">'+escapeHtml(c.nom)+' · '+escapeHtml(c.ville||'')+(c.mandats?' · '+c.mandats+' mandat'+(c.mandats>1?'s':''):'')+'</button>';}).join(' ');
     var rep=d.repartition||{};
-    var repTxt=[rep.mandat?rep.mandat+' par mandat de la holding':'',rep.dirigeant_commun?rep.dirigeant_commun+' via dirigeants communs':'',rep.nom?rep.nom+' au nom du groupe':''].filter(Boolean).join(' · ');
+    var repTxt=[rep.mandat?rep.mandat+' par mandat de la holding':'',rep.beneficiaire?rep.beneficiaire+' via bénéficiaires effectifs':'',rep.dirigeant_commun?rep.dirigeant_commun+' via dirigeants communs':'',rep.nom?rep.nom+' au nom du groupe':''].filter(Boolean).join(' · ');
     box.innerHTML='Groupe : <b>'+escapeHtml((d.holding&&d.holding.nom)||nom)+'</b> (SIREN '+escapeHtml((d.holding&&d.holding.siren)||'?')+') — <b>'+d.total+'</b> entité'+(d.total>1?'s':'')+' active'+(d.total>1?'s':'')+(d.cessees?' <span style="color:var(--ink-soft)">(+ '+d.cessees+' cessée'+(d.cessees>1?'s':'')+' écartée'+(d.cessees>1?'s':'')+')</span>':'')+'.'
      +(repTxt?'<div style="color:var(--ink-soft);margin-top:2px;font-size:12.5px">'+repTxt+'</div>':'')
      +(ech?'<div style="margin-top:8px;font-weight:700">Aperçu :</div>'+ech:'')

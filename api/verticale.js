@@ -84,12 +84,12 @@ function filialesDepuisResultats(resultats, holding) {
 // sociétés qu'il dirige actuellement. Anti-homonymes (les « Michel Gonnet » sont légion) :
 // la DATE DE NAISSANCE tranche quand les deux côtés l'ont ; sinon on exige que la société
 // soit dans l'EMPREINTE GÉOGRAPHIQUE du groupe (départements de la racine + stratégie A).
-function mandatsPersonnePhysique(resultats, prenom, nom, annee, empreinte) {
+function mandatsPersonnePhysique(resultats, prenom, nom, annee, empreinte, filtreFait) {
   const cp = normaliser(prenom), cn = normaliser(nom);
   const out = [];
   for (const r of (Array.isArray(resultats) ? resultats : [])) {
     if (!r || typeof r !== 'object' || r.personne_morale === true) continue;
-    const rp = normaliser(r.prenom || ''), rn = normaliser(r.nom || '');
+    const rp = normaliser(r.prenom || (Array.isArray(r.prenoms) && r.prenoms[0]) || ''), rn = normaliser(r.nom || '');
     const complet = normaliser(r.nom_complet || (r.prenom || '') + ' ' + (r.nom || ''));
     const match = (rp && rn) ? (rp === cp && rn === cn) : (complet === normaliser(prenom + ' ' + nom));
     if (!match) continue;
@@ -104,7 +104,8 @@ function mandatsPersonnePhysique(resultats, prenom, nom, annee, empreinte) {
       const actuel = (ent.dirigeant_actuel !== undefined) ? !!ent.dirigeant_actuel : (r.actuel !== false);
       if (!actuel) continue;
       // Sans date pour trancher l'homonymie : seule l'empreinte géo du groupe fait foi
-      if (!datesSures) {
+      // (sauf si le filtrage a déjà été fait par l'API, ex : date passée en paramètre)
+      if (!datesSures && !filtreFait) {
         const dep = depDeCp((ent.siege && ent.siege.code_postal) || '');
         if (!empreinte || !empreinte.size || !empreinte.has(dep)) continue;
       }
@@ -135,6 +136,14 @@ function motsRequete(nom) {
   return String(nom || '').split(/\s+/).filter(m => { const n = normaliser(m); return n && !MOTS_GENERIQUES.has(n); }).join(' ') || String(nom || '');
 }
 function anneeNaissance(s) { const m = String(s || '').match(/(19|20)\d{2}/); return m ? m[0] : null; }
+// Date de naissance au format DD-MM-YYYY attendu par /recherche-beneficiaires
+function dateNaissanceParam(b) {
+  const f = String((b && (b.date_de_naissance_formate || b.date_de_naissance_rgpd_formatee)) || '').trim();
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(f)) return f.replace(/\//g, '-');
+  const d = String((b && (b.date_de_naissance || b.date_de_naissance_complete)) || '').trim();
+  const m = d.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
+}
 function depDeCp(cp) { cp = String(cp || ''); return /^9[78]/.test(cp) ? cp.slice(0, 3) : cp.slice(0, 2); }
 
 // Arbre du groupe — 3 stratégies combinées, dédoublonnées par SIREN :
@@ -181,12 +190,15 @@ async function arbreGroupe(racine, apiKey, nomUsuel) {
 
   // ── B. Dirigeants communs (personnes physiques de la holding -> leurs mandats) ──
   // Anti-homonymes : date de naissance quand disponible, sinon empreinte géo (racine + A).
+  let empreinteAB = new Set();
+  let beneficiaires = [];
   try {
     const r = await fetch(`https://api.pappers.fr/v2/entreprise?api_token=${apiKey}&siren=${encodeURIComponent(racine.siren)}`);
     requetes++;
     const e = r.ok ? await r.json().catch(() => null) : null;
-    if (e && e.siege && e.siege.code_postal) racine.code_postal = e.siege.code_postal; // empreinte géo (B et C)
-    const empreinteAB = new Set([...filiales.values()].map(f => depDeCp(f.code_postal)).filter(Boolean));
+    if (e && e.siege && e.siege.code_postal) racine.code_postal = e.siege.code_postal; // empreinte géo (B, C, D)
+    beneficiaires = (e && Array.isArray(e.beneficiaires_effectifs)) ? e.beneficiaires_effectifs : [];
+    empreinteAB = new Set([...filiales.values()].map(f => depDeCp(f.code_postal)).filter(Boolean));
     if (racine.code_postal) empreinteAB.add(depDeCp(racine.code_postal));
     const physiques = ((e && e.representants) || [])
       .filter(p => !p.personne_morale && (p.nom || p.nom_complet) && !/commissaire|liquidateur/i.test(p.qualite || ''))
@@ -202,6 +214,32 @@ async function arbreGroupe(racine, apiKey, nomUsuel) {
       if (!rd.ok) continue;
       for (const f of mandatsPersonnePhysique(rd.data.resultats || [], prenom, nomP, annee, empreinteAB)) {
         ajouter(f, 1, (prenom + ' ' + nomP).trim(), 'dirigeant_commun');
+      }
+    }
+  } catch (_) {}
+
+  // ── D. Bénéficiaires effectifs : les personnes au sommet du groupe -> toutes les sociétés
+  // dont elles sont bénéficiaires effectifs. Le BE traverse les chaînes de détention par
+  // CAPITAL, là où les mandats ne relient pas les filiales opérationnelles (cas Loret :
+  // concessions/télécom détenues par la holding mais dirigées par des managers salariés).
+  // Anti-homonymes : la date de naissance est passée en PARAMÈTRE de recherche quand connue.
+  try {
+    const bes = beneficiaires.filter(b => b && !b.personne_morale && b.nom).slice(0, 4);
+    for (const be of bes) {
+      if (requetes >= 50) break;
+      const prenom = String((Array.isArray(be.prenoms) && be.prenoms[0]) || be.prenom || '').split(',')[0].trim();
+      const nomB = be.nom || '';
+      if (!nomB) continue;
+      const dnaiss = dateNaissanceParam(be);
+      const p = new URLSearchParams({ api_token: apiKey, q: (prenom + ' ' + nomB).trim(), par_page: '100' });
+      if (dnaiss) { p.set('date_de_naissance_beneficiaire_min', dnaiss); p.set('date_de_naissance_beneficiaire_max', dnaiss); }
+      requetes++;
+      const r = await fetch('https://api.pappers.fr/v2/recherche-beneficiaires?' + p.toString());
+      const d = r.ok ? await r.json().catch(() => ({})) : {};
+      // Date passée en paramètre -> le filtrage homonymes est déjà fait par Pappers ; sinon
+      // mandatsPersonnePhysique applique nom+prénom + empreinte géographique.
+      for (const f of mandatsPersonnePhysique(d.resultats || [], prenom, nomB, anneeNaissance(dnaiss), empreinteAB, !!dnaiss)) {
+        ajouter(f, 1, (prenom + ' ' + nomB).trim(), 'beneficiaire');
       }
     }
   } catch (_) {}
@@ -493,6 +531,14 @@ export default async function handler(req, res) {
         } catch (e) { out[champ || 'base'] = { erreur: e.message }; }
       }
       return res.status(200).json(out);
+    }
+    // ?debug=1&endpoint=beneficiaires&q=Prénom Nom[&naissance=DD-MM-YYYY] -> recherche-beneficiaires brut
+    if (req.query.endpoint === 'beneficiaires') {
+      const p = new URLSearchParams({ api_token: apiKey, q, par_page: '5' });
+      if (req.query.naissance) { p.set('date_de_naissance_beneficiaire_min', String(req.query.naissance)); p.set('date_de_naissance_beneficiaire_max', String(req.query.naissance)); }
+      const r = await fetch('https://api.pappers.fr/v2/recherche-beneficiaires?' + p.toString());
+      const txt = await r.text(); let d = null; try { d = JSON.parse(txt); } catch (_) {}
+      return res.status(200).json({ status: r.status, total: d && d.total, exemple: d ? (d.resultats || []).slice(0, 2) : txt.slice(0, 400) });
     }
     if (req.query.endpoint === 'recherche') {
       const p = new URLSearchParams({ api_token: apiKey, q, par_page: '5', precision: 'standard' });
