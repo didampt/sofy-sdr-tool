@@ -52,7 +52,7 @@ Conséquences OBLIGATOIRES quand une page produit précise est visitée :
 3. **Signaux** : liste courte des éléments concrets exploitables (max 4), formulés pour un SDR
 4. **Synthèse d'appel** (4-6 phrases) : qui appeler, contexte de l'entreprise, LE point de douleur n°1 avec les chiffres exacts (note, avis, concurrents), et l'angle d'attaque produit recommandé
 5. **Accroche d'appel** : LA première phrase que le SDR peut dire après bonjour (naturelle, factuelle, pas commerciale agressive)
-6. **Email de prospection** : objet court intriguant + corps de 80-120 mots, personnalisé avec les données réelles (note Google, avis, concurrents…), ton direct et utile, une seule idée, CTA = proposer un échange de 15 min ou réserver sur sofy.fr/demo. Signature : ${sdr || 'L\'équipe Sofy'} — Sofy.
+6. **Email de prospection** : objet court intriguant + corps de 80-120 mots, personnalisé avec les données réelles (note Google, avis, concurrents…), ton direct et utile, une seule idée, CTA = proposer un échange de 15 min en invitant à cliquer sur le bouton de réservation situé sous l'email (ex : « réservez un créneau via le bouton ci-dessous »). N'écris JAMAIS d'URL dans le texte. Signature : ${sdr || 'L\'équipe Sofy'} — Sofy.
 7. **SMS** (max 140 caractères, hors mention STOP) : version ultra-courte de l'accroche avec le prénom du contact si connu.
 
 Règles : utilise UNIQUEMENT les données fournies (n'invente aucun chiffre). Écris en français. Si une donnée manque, n'en parle pas.
