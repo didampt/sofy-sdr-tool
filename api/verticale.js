@@ -164,6 +164,7 @@ async function arbreGroupe(racine, apiKey, nomUsuel) {
     const r = await fetch(`https://api.pappers.fr/v2/entreprise?api_token=${apiKey}&siren=${encodeURIComponent(racine.siren)}`);
     requetes++;
     const e = r.ok ? await r.json().catch(() => null) : null;
+    if (e && e.siege && e.siege.code_postal) racine.code_postal = e.siege.code_postal; // empreinte géo (stratégie C)
     const physiques = ((e && e.representants) || [])
       .filter(p => !p.personne_morale && (p.nom || p.nom_complet) && !/commissaire|liquidateur/i.test(p.qualite || ''))
       .slice(0, 4);
@@ -184,8 +185,14 @@ async function arbreGroupe(racine, apiKey, nomUsuel) {
   // ── C. Nom éponyme (patronyme distinctif dans la dénomination) ──
   // Le nom TAPÉ par le SDR porte souvent le patronyme (« Groupe Barbotteau ») même quand
   // la dénomination légale de la racine ne le porte pas (« GB ») -> on essaie les deux.
+  // Deux garde-fous anti-bruit : (1) les entreprises individuelles homonymes sont exclues
+  // (« BARBOTTEAU VANESSA · vente à domicile »), (2) on reste dans l'EMPREINTE GÉOGRAPHIQUE
+  // du groupe = les départements de la racine et des entités trouvées par les stratégies A/B.
+  const depDe = (cp) => { cp = String(cp || ''); return /^9[78]/.test(cp) ? cp.slice(0, 3) : cp.slice(0, 2); };
+  const empreinte = new Set([...filiales.values()].map(f => depDe(f.code_postal)).filter(Boolean));
+  if (racine.code_postal) empreinte.add(depDe(racine.code_postal));
   const token = motDistinctif(nomUsuel || '') || motDistinctif(racine.nom);
-  if (token && requetes < 45) {
+  if (token && empreinte.size && requetes < 45) {
     try {
       const p = new URLSearchParams({ api_token: apiKey, q: token, par_page: '100', precision: 'standard' });
       requetes++;
@@ -197,12 +204,15 @@ async function arbreGroupe(racine, apiKey, nomUsuel) {
         for (const ent of rs) {
           if (!normaliser(ent.nom_entreprise || '').includes(token)) continue;
           if (ent.entreprise_cessee === true || ent.entreprise_cessee === 1) continue;
+          if (/entrepreneur individuel|micro-entrepreneur|artisan|commer[cç]ant/i.test(ent.forme_juridique || '')) continue;
+          const cp = (ent.siege && ent.siege.code_postal) || '';
+          if (!empreinte.has(depDe(cp))) continue;
           const siren = String(ent.siren || '').replace(/\s/g, '');
           if (!siren) continue;
           ajouter({
             siren, nom: ent.nom_entreprise || '',
             naf: ent.code_naf || null, activite: ent.libelle_code_naf || null,
-            ville: (ent.siege && ent.siege.ville) || '', code_postal: (ent.siege && ent.siege.code_postal) || '',
+            ville: (ent.siege && ent.siege.ville) || '', code_postal: cp,
             adresse: (ent.siege && ent.siege.adresse_ligne_1) || '',
             effectif: ent.effectif || ent.tranche_effectif || null,
             chiffre_affaires: ent.dernier_chiffre_affaires || null,
@@ -249,6 +259,7 @@ async function resoudreHolding(nom, siren, apiKey) {
   if (acronyme) essais.push(acronyme);
   const vus = new Set();
   const candidats = [];
+  let probes = 0;
   for (const q of essais) {
     if (candidats.length >= 12) break;
     for (const c of await chercherEntreprises(q, apiKey)) {
@@ -256,6 +267,37 @@ async function resoudreHolding(nom, siren, apiKey) {
       vus.add(c.siren); candidats.push(c);
     }
   }
+
+  // Source décisive : les DIRIGEANTS PERSONNE MORALE portant le nom. La tête de groupe y figure
+  // par définition (elle préside ses filiales), même quand la recherche d'entreprises la noie
+  // derrière les homonymes (cas L. LORET ET CIE). Pappers fournit son nb de mandats directement.
+  const qDir = (motsUtiles.length ? motsUtiles.join(' ') : nom);
+  try {
+    let trouvesPM = 0;
+    for (let page = 1; page <= 3; page++) {
+      probes++;
+      const rd = await pageRechercheDirigeants(qDir, page, apiKey);
+      if (!rd.ok) break;
+      const rs = rd.data.resultats || [];
+      for (const r of rs) {
+        if (r.personne_morale !== true) continue;
+        const qualite = r.qualite || (Array.isArray(r.qualites) && r.qualites[0]) || '';
+        if (/commissaire|liquidateur/i.test(qualite)) continue;
+        const siren = String(r.siren || '').replace(/\s/g, '');
+        const denomination = r.denomination || r.nom_complet || '';
+        if (!siren || !denomination) continue;
+        const mandats = r.nb_entreprises_total || (Array.isArray(r.entreprises) ? r.entreprises.length : 0);
+        trouvesPM++;
+        const existant = candidats.find(c => c.siren === siren);
+        if (existant) { existant.mandats = Math.max(existant.mandats || 0, mandats); continue; }
+        if (vus.has(siren)) continue;
+        vus.add(siren);
+        candidats.push({ siren, nom: denomination, ville: '', naf: null, activite: null, effectif_min: 0, ca: 0, mandats });
+      }
+      const total = rd.data.total || rs.length;
+      if (trouvesPM >= 5 || !rs.length || page * 100 >= total) break;
+    }
+  } catch (_) {}
   // Score de base : NAF holding, nom exact (ou acronyme), mot distinctif, taille (CA / effectif)
   const cible = normaliser(nom);
   const cibleAcro = acronyme ? normaliser(acronyme) : null;
@@ -269,22 +311,7 @@ async function resoudreHolding(nom, siren, apiKey) {
   }
   candidats.sort((a, b) => b._score - a._score);
 
-  // Départage des homonymes par la réalité du registre : la vraie tête de groupe est celle
-  // qui détient des MANDATS de dirigeant personne morale (une SCI familiale n'en a aucun).
-  // Sonde : 1 page recherche-dirigeants par candidat (cache partagé entre noms équivalents).
-  let probes = 0;
-  const cacheRs = new Map();
-  for (const c of candidats.slice(0, 8)) {
-    const cle = normaliser(c.nom) || c.nom;
-    let rs = cacheRs.get(cle);
-    if (rs === undefined) {
-      probes++;
-      const r = await pageRechercheDirigeants(c.nom, 1, apiKey);
-      rs = (r.ok && (r.data.resultats || [])) || [];
-      cacheRs.set(cle, rs);
-    }
-    c.mandats = filialesDepuisResultats(rs, c).filter(f => !f.cessee).length;
-  }
+  // Tri final : le nombre de mandats détenus prime (signal registre), le score de base départage
   candidats.sort((a, b) => (b.mandats || 0) - (a.mandats || 0) || b._score - a._score);
   return { holding: candidats[0] || null, candidats, acronyme, probes };
 }
