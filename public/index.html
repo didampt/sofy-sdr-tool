@@ -594,6 +594,9 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
           </div>
           <div id="vert-perimetre-box" style="margin-top:12px"><label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">Périmètre du balayage</label>
             <select class="field" id="vert-perimetre" style="width:100%" onchange="var b=document.getElementById('vert-estim');if(b)b.style.display='none'"><option value="france">🇫🇷 France entière (101 départements — plusieurs minutes)</option><option value="dom">🌴 DOM uniquement (971, 972, 973, 974, 976)</option><option value="metropole">Métropole uniquement</option></select>
+            <label style="font-size:13px;font-weight:600;display:block;margin:10px 0 6px">Nombre max de fiches</label>
+            <input class="field" id="vert-max" type="number" min="10" max="1000" value="300" style="width:100%">
+            <p class="hint">Le balayage s'arrête au plafond (départements dans l'ordre : DOM d'abord si périmètre DOM). Chaque fiche = 1 appel Google Details (téléphone, site, pire avis ≈ 0,02 $).</p>
           </div>
           <div id="vert-estim" style="display:none;background:var(--paper);border-radius:10px;padding:14px 16px;margin-top:16px;font-size:13px;line-height:1.6"></div>
           <h2 style="margin-top:20px;font-size:17px">Identification</h2>
@@ -1870,7 +1873,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v233';
+const VERSION='v234';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2606,17 +2609,20 @@ async function creerListeVerticale(){
   }else{
    var per=(document.getElementById('vert-perimetre')||{}).value||'france';
    var deps=VERT_DEPS[per]||VERT_DEPS.france;
+   var maxF=Math.min(Math.max(parseInt((document.getElementById('vert-max')||{}).value,10)||300,10),1000);
    var vusPid={};
-   criteres={verticale:true,moteur:'enseigne',gmb:true,cible:nomCible,perimetre:per,naf:[],pays:[]};
+   criteres={verticale:true,moteur:'enseigne',gmb:true,cible:nomCible,perimetre:per,max_fiches:maxF,naf:[],pays:[]};
    if(prog)prog.style.display='block';
    for(var i=0;i<deps.length;i+=10){
+    if(fiches.length>=maxF)break;
     var lot=deps.slice(i,i+10);
-    if(prog)prog.textContent='⏳ Balayage Google Maps : départements '+(i+1)+'–'+Math.min(i+10,deps.length)+' / '+deps.length+' — '+fiches.length+' point(s) de vente trouvé(s)…';
+    if(prog)prog.textContent='⏳ Balayage Google Maps : départements '+(i+1)+'–'+Math.min(i+10,deps.length)+' / '+deps.length+' — '+fiches.length+' / '+maxF+' fiche(s)…';
     try{
-     const r2=await api('/api/verticale',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({moteur:'enseigne',mode:'creer',enseigne:nomCible,departements:lot,nb:150})});
+     const r2=await api('/api/verticale',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({moteur:'enseigne',mode:'creer',enseigne:nomCible,departements:lot,nb:Math.min(150,maxF-fiches.length)})});
      const d2=await r2.json();
      if(d2.erreur){toast('Lot '+(Math.floor(i/10)+1)+' en erreur : '+d2.erreur);continue;}
      (d2.entreprises||[]).forEach(function(f){
+      if(fiches.length>=maxF)return;
       var pid=(f.gmb&&f.gmb.place_id)||(f.nom+'|'+f.code_postal);
       if(vusPid[pid])return;vusPid[pid]=1;fiches.push(f);
      });

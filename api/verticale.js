@@ -271,44 +271,68 @@ async function resoudreHolding(nom, siren, apiKey) {
     }
   }
 
-  // Source décisive : les DIRIGEANTS PERSONNE MORALE portant le nom. La tête de groupe y figure
-  // par définition (elle préside ses filiales), même quand la recherche d'entreprises la noie
-  // derrière les homonymes (cas L. LORET ET CIE). Pappers fournit son nb de mandats directement.
-  const qDir = (motsUtiles.length ? motsUtiles.join(' ') : nom);
-  try {
-    let trouvesPM = 0;
-    // 1er essai : champ 'denomination' (personnes morales uniquement) ; repli : 'q' plein texte
-    for (const champ of ['denomination', 'q']) {
-      for (let page = 1; page <= 3; page++) {
-        probes++;
-        const rd = await pageRechercheDirigeants(qDir, page, apiKey, champ);
-        if (!rd.ok) break;
-        const rs = rd.data.resultats || [];
-        for (const r of rs) {
-          if (r.personne_morale !== true) continue;
-          const qualite = r.qualite || (Array.isArray(r.qualites) && r.qualites[0]) || '';
-          if (/commissaire|liquidateur/i.test(qualite)) continue;
-          const siren = String(r.siren || '').replace(/\s/g, '');
-          const denomination = r.denomination || r.nom_complet || '';
-          if (!siren || !denomination) continue;
-          const mandats = r.nb_entreprises_total || (Array.isArray(r.entreprises) ? r.entreprises.length : 0);
-          trouvesPM++;
-          const existant = candidats.find(c => c.siren === siren);
-          if (existant) { existant.mandats = Math.max(existant.mandats || 0, mandats); continue; }
-          if (vus.has(siren)) continue;
-          vus.add(siren);
-          candidats.push({ siren, nom: denomination, ville: '', naf: null, activite: null, effectif_min: 0, ca: 0, mandats });
-        }
-        const total = rd.data.total || rs.length;
-        if (!rs.length || page * 100 >= total) break;
+  // Candidats élargis : /recherche large (100) filtrée sur les structures « de groupe »
+  // (NAF holding, ou CA/effectif significatif) — attrape L. LORET ET CIE que le top 20 noie.
+  const token = motDistinctif(nom);
+  if (token) {
+    try {
+      const p = new URLSearchParams({ api_token: apiKey, q: token, par_page: '100', precision: 'standard' });
+      probes++;
+      const r = await fetch('https://api.pappers.fr/v2/recherche?' + p.toString());
+      const d = r.ok ? await r.json().catch(() => ({})) : {};
+      const gros = (d.resultats || []).map(e => ({
+        siren: String(e.siren || ''), nom: e.nom_entreprise || '',
+        ville: (e.siege && e.siege.ville) || '', naf: e.code_naf || null, activite: e.libelle_code_naf || null,
+        effectif_min: e.effectif_min || 0,
+        ca: e.dernier_chiffre_affaires || e.chiffre_affaires || 0
+      })).filter(c => c.siren && normaliser(c.nom).includes(token)
+        && (NAF_HOLDING.has(String(c.naf || '')) || c.ca >= 1000000 || c.effectif_min >= 10))
+        .slice(0, 8);
+      for (const c of gros) {
+        if (vus.has(c.siren)) continue;
+        vus.add(c.siren); candidats.push(c);
       }
-      if (trouvesPM) break; // le champ denomination a fonctionné -> pas besoin du repli plein texte
+    } catch (_) {}
+  }
+
+  // Source décisive : les DIRIGEANTS PERSONNE MORALE portant le nom (la tête de groupe préside
+  // ses filiales). Vérification STRICTE de la correspondance du nom : Pappers ignore les
+  // paramètres inconnus et peut renvoyer des dirigeants sans rapport (bug « KLESIA »).
+  const qDir = (motsUtiles.length ? motsUtiles.join(' ') : nom);
+  const nomCorrespond = (denomination) => {
+    const n = normaliser(denomination);
+    return n && (n.includes(normaliser(qDir)) || (token && n.includes(token)));
+  };
+  const rsScan = []; // toutes les pages scannées, réutilisées pour la sonde (0 requête en plus)
+  try {
+    for (let page = 1; page <= 5; page++) {
+      probes++;
+      const rd = await pageRechercheDirigeants(qDir, page, apiKey, 'q');
+      if (!rd.ok) break;
+      const rs = rd.data.resultats || [];
+      rsScan.push(...rs);
+      for (const r of rs) {
+        if (r.personne_morale !== true) continue;
+        const qualite = r.qualite || (Array.isArray(r.qualites) && r.qualites[0]) || '';
+        if (/commissaire|liquidateur/i.test(qualite)) continue;
+        const siren = String(r.siren || '').replace(/\s/g, '');
+        const denomination = r.denomination || r.nom_complet || '';
+        if (!siren || !denomination || !nomCorrespond(denomination)) continue;
+        const mandats = r.nb_entreprises_total || (Array.isArray(r.entreprises) ? r.entreprises.length : 0);
+        const existant = candidats.find(c => c.siren === siren);
+        if (existant) { existant.mandats = Math.max(existant.mandats || 0, mandats); continue; }
+        if (vus.has(siren)) continue;
+        vus.add(siren);
+        candidats.push({ siren, nom: denomination, ville: '', naf: null, activite: null, effectif_min: 0, ca: 0, mandats });
+      }
+      const total = rd.data.total || rs.length;
+      if (!rs.length || page * 100 >= total) break;
     }
   } catch (_) {}
+
   // Score de base : NAF holding, nom exact (ou acronyme), mot distinctif, taille (CA / effectif)
   const cible = normaliser(nom);
   const cibleAcro = acronyme ? normaliser(acronyme) : null;
-  const token = motDistinctif(nom);
   for (const c of candidats) {
     const n = normaliser(c.nom);
     c._score = (n === cible || (cibleAcro && n === cibleAcro) ? 2 : 0)
@@ -316,7 +340,13 @@ async function resoudreHolding(nom, siren, apiKey) {
       + (token && n.includes(token) ? 1 : 0)
       + (c.ca > 10000000 || c.effectif_min >= 50 ? 2 : (c.ca > 1000000 || c.effectif_min >= 10 ? 1 : 0));
   }
-  candidats.sort((a, b) => b._score - a._score);
+
+  // Sonde de mandats pour les candidats issus de /recherche : comptage dans les pages déjà
+  // scannées (filtré par LEUR siren) — aucune requête supplémentaire.
+  for (const c of candidats) {
+    if (c.mandats !== undefined) continue;
+    c.mandats = filialesDepuisResultats(rsScan, c).filter(f => !f.cessee).length;
+  }
 
   // Tri final : le nombre de mandats détenus prime (signal registre), le score de base départage
   candidats.sort((a, b) => (b.mandats || 0) - (a.mandats || 0) || b._score - a._score);
