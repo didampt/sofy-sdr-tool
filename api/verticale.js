@@ -220,12 +220,14 @@ async function arbreGroupe(racine, apiKey, nomUsuel) {
 // Résout la holding racine : siren fourni, sinon meilleure correspondance Pappers (+ candidats).
 // Repli : beaucoup de groupes sont enregistrés sous leur ACRONYME (« Groupe Bernard Hayot » -> « GBH »).
 async function chercherEntreprises(q, apiKey) {
-  const p = new URLSearchParams({ api_token: apiKey, q, par_page: '10', precision: 'standard' });
+  const p = new URLSearchParams({ api_token: apiKey, q, par_page: '20', precision: 'standard' });
   const r = await fetch('https://api.pappers.fr/v2/recherche?' + p.toString());
   const d = r.ok ? await r.json().catch(() => ({})) : {};
   return (d.resultats || []).map(e => ({
     siren: String(e.siren || ''), nom: e.nom_entreprise || '',
-    ville: (e.siege && e.siege.ville) || '', naf: e.code_naf || null, activite: e.libelle_code_naf || null
+    ville: (e.siege && e.siege.ville) || '', naf: e.code_naf || null, activite: e.libelle_code_naf || null,
+    effectif_min: e.effectif_min || 0,
+    ca: e.dernier_chiffre_affaires || e.chiffre_affaires || 0
   })).filter(c => c.siren);
 }
 // La recherche Pappers exige TOUS les mots -> « Groupe Barbotteau » ne matche aucune société.
@@ -254,20 +256,37 @@ async function resoudreHolding(nom, siren, apiKey) {
       vus.add(c.siren); candidats.push(c);
     }
   }
-  // Priorité : NAF holding, nom exact (ou acronyme exact), présence du mot distinctif du groupe
+  // Score de base : NAF holding, nom exact (ou acronyme), mot distinctif, taille (CA / effectif)
   const cible = normaliser(nom);
   const cibleAcro = acronyme ? normaliser(acronyme) : null;
   const token = motDistinctif(nom);
-  candidats.sort((a, b) => {
-    const score = (c) => {
-      const n = normaliser(c.nom);
-      return (n === cible || (cibleAcro && n === cibleAcro) ? 2 : 0)
-        + (NAF_HOLDING.has(String(c.naf || '')) ? 2 : 0)
-        + (token && n.includes(token) ? 1 : 0);
-    };
-    return score(b) - score(a);
-  });
-  return { holding: candidats[0] || null, candidats, acronyme };
+  for (const c of candidats) {
+    const n = normaliser(c.nom);
+    c._score = (n === cible || (cibleAcro && n === cibleAcro) ? 2 : 0)
+      + (NAF_HOLDING.has(String(c.naf || '')) ? 2 : 0)
+      + (token && n.includes(token) ? 1 : 0)
+      + (c.ca > 10000000 || c.effectif_min >= 50 ? 2 : (c.ca > 1000000 || c.effectif_min >= 10 ? 1 : 0));
+  }
+  candidats.sort((a, b) => b._score - a._score);
+
+  // Départage des homonymes par la réalité du registre : la vraie tête de groupe est celle
+  // qui détient des MANDATS de dirigeant personne morale (une SCI familiale n'en a aucun).
+  // Sonde : 1 page recherche-dirigeants par candidat (cache partagé entre noms équivalents).
+  let probes = 0;
+  const cacheRs = new Map();
+  for (const c of candidats.slice(0, 8)) {
+    const cle = normaliser(c.nom) || c.nom;
+    let rs = cacheRs.get(cle);
+    if (rs === undefined) {
+      probes++;
+      const r = await pageRechercheDirigeants(c.nom, 1, apiKey);
+      rs = (r.ok && (r.data.resultats || [])) || [];
+      cacheRs.set(cle, rs);
+    }
+    c.mandats = filialesDepuisResultats(rs, c).filter(f => !f.cessee).length;
+  }
+  candidats.sort((a, b) => (b.mandats || 0) - (a.mandats || 0) || b._score - a._score);
+  return { holding: candidats[0] || null, candidats, acronyme, probes };
 }
 
 // ---------- Moteur ENSEIGNE (Google Maps, balayage par département) ----------
@@ -342,7 +361,7 @@ export default async function handler(req, res) {
       const siren = String(b.siren || '').replace(/\s/g, '');
       if (!nom && !siren) return res.status(400).json({ erreur: 'nom (ou siren) du groupe requis' });
 
-      const { holding, candidats } = await resoudreHolding(nom, siren, apiKey);
+      const { holding, candidats, probes = 0 } = await resoudreHolding(nom, siren, apiKey);
       if (!holding) return res.status(404).json({ erreur: `Groupe introuvable sur Pappers : « ${nom || siren} »`, candidats });
 
       const { filiales, requetes } = await arbreGroupe(holding, apiKey, nom);
@@ -352,7 +371,7 @@ export default async function handler(req, res) {
         // Répartition par stratégie de rattachement (mandat / dirigeant commun / nom éponyme)
         const repartition = {};
         for (const f of actives) repartition[f.lien || 'mandat'] = (repartition[f.lien || 'mandat'] || 0) + 1;
-        await loggerConso(user, 'pappers', requetes, b.liste_id || null);
+        await loggerConso(user, 'pappers', requetes + probes, b.liste_id || null);
         return res.status(200).json({
           moteur: 'groupe', holding, candidats,
           total: actives.length, cessees: filiales.length - actives.length,
@@ -430,7 +449,7 @@ export default async function handler(req, res) {
         } catch (_) {}
       }
 
-      await loggerConso(user, 'pappers', requetes + retenues.length, b.liste_id || null);
+      await loggerConso(user, 'pappers', requetes + probes + retenues.length, b.liste_id || null);
       return res.status(200).json({
         moteur: 'groupe', holding, total: actives.length,
         fiches_detaillees: retenues.length, exclues_cessees_ou_liquidation: exclues,
