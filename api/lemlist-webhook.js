@@ -6,6 +6,8 @@
 import crypto from 'crypto';
 import { sql, ensureSchema } from './db.js';
 
+export const config = { maxDuration: 60 };
+
 function authHeader() { return 'Basic ' + Buffer.from(':' + process.env.LEMLIST_API_KEY).toString('base64'); }
 
 async function envoyerDM(slackId, texte) {
@@ -164,6 +166,54 @@ export default async function handler(req, res) {
         } catch (e) { return { id, erreur: e.message }; }
       }));
       return res.status(200).json({ users });
+    } catch (e) { return res.status(500).json({ erreur: e.message }); }
+  }
+
+  // 1quater) Backfill (superadmin) : complète les anciennes activités « A répondu » avec le
+  // texte de la réponse via l'API Inbox. Rejouable : ne traite que les activités sans 💬.
+  // GET ?backfill=1[&max=30] -> { traites, sans_texte, restants }
+  if (req.method === 'GET' && q.backfill) {
+    let user = null;
+    try { const m = await import('./db.js'); user = m.verifierToken(req); } catch (_) {}
+    if (!user || user.role !== 'superadmin') return res.status(401).json({ erreur: 'Backfill réservé au superadmin' });
+    if (!sql) return res.status(500).json({ erreur: 'pas de base' });
+    if (!process.env.LEMLIST_API_KEY) return res.status(500).json({ erreur: 'LEMLIST_API_KEY manquante' });
+    try {
+      // Activités « réponse » sans texte, jointes au payload brut pour retrouver le contactId
+      const rows = await sql`
+        SELECT a.id, a.ref, a.detail, e.brut->>'contactId' AS contact_id
+        FROM activites a
+        JOIN lemlist_events e ON e.brut->>'_id' = a.ref
+        WHERE a.source = 'lemlist' AND a.type = ANY(${TYPES_REPONSE})
+          AND a.ref IS NOT NULL AND (a.detail IS NULL OR a.detail NOT LIKE '%💬%')
+          AND e.brut->>'contactId' IS NOT NULL
+        ORDER BY a.ts DESC`;
+      const max = Math.min(parseInt(q.max || '30', 10) || 30, 100);
+      // Groupe par contact : 1 seul appel Inbox par contact (limite Lemlist : 20 req / 2 s)
+      const parContact = {};
+      for (const r of rows) (parContact[r.contact_id] = parContact[r.contact_id] || []).push(r);
+      let traites = 0, sansTexte = 0, contacts = 0;
+      for (const [contactId, acts] of Object.entries(parContact)) {
+        if (contacts >= max) break;
+        contacts++;
+        let msgs = [];
+        try {
+          const r = await fetch('https://api.lemlist.com/api/inbox/' + encodeURIComponent(contactId) + '?limit=100', { headers: { 'Authorization': authHeader() } });
+          const d = r.ok ? await r.json().catch(() => null) : null;
+          msgs = (d && (Array.isArray(d.data) ? d.data : (Array.isArray(d) ? d : []))) || [];
+        } catch (_) {}
+        for (const a of acts) {
+          // Le message Inbox porte le même _id que l'activité webhook -> jointure exacte
+          const m = msgs.find(x => x && x._id === a.ref && (x.message || x.text));
+          const texte = m ? nettoyerReponse(m.message || m.text) : null;
+          if (!texte) { sansTexte++; continue; }
+          const detail = (a.detail ? a.detail + '\n' : '') + '💬 « ' + texte + ' »';
+          await sql`UPDATE activites SET detail = ${detail} WHERE id = ${a.id}`;
+          traites++;
+        }
+        await new Promise(ok => setTimeout(ok, 150)); // douceur avec le rate limit Lemlist
+      }
+      return res.status(200).json({ ok: true, candidats: rows.length, contacts_traites: contacts, traites, sans_texte: sansTexte, restants: Math.max(0, Object.keys(parContact).length - contacts) });
     } catch (e) { return res.status(500).json({ erreur: e.message }); }
   }
 
