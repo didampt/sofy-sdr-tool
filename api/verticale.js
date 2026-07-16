@@ -40,35 +40,39 @@ async function pageRechercheDirigeants(q, page, apiKey) {
   return { ok: r.ok, status: r.status, data };
 }
 
-// Extraction défensive : selon les versions, le résultat porte le dirigeant à plat avec
-// l'entreprise imbriquée (r.entreprise), ou des champs mélangés. On ratisse les deux.
+// Format réel /recherche-dirigeants (vérifié via ?debug=1) : chaque résultat = UN dirigeant
+// (personne morale : denomination + siren + qualite) avec `entreprises` = TABLEAU des sociétés
+// où il détient le mandat. Beaucoup d'homonymes (SCI GBH, GBH SARL…) -> match STRICT par le
+// SIREN du dirigeant ; mandats de contrôle (commissaire aux comptes…) et mandats passés exclus.
 function filialesDepuisResultats(resultats, holding) {
-  const cible = normaliser(holding.nom);
   const out = [];
   for (const r of (Array.isArray(resultats) ? resultats : [])) {
     if (!r || typeof r !== 'object') continue;
-    const ent = (r.entreprise && typeof r.entreprise === 'object') ? r.entreprise : null;
-    if (!ent) continue;
-    // Le dirigeant est-il bien NOTRE holding ? (siren si dispo, sinon nom normalisé identique)
-    const estPM = r.personne_morale === true || !!r.denomination;
-    if (!estPM) continue;
-    const dirSiren = String(r.siren_personne_morale || r.siren_dirigeant || r.siren || '').replace(/\s/g, '');
-    const dirNom = normaliser(r.denomination || r.nom_complet || r.nom || '');
-    const matchSiren = holding.siren && dirSiren && dirSiren === holding.siren && dirSiren !== String(ent.siren || '');
-    const matchNom = dirNom && cible && dirNom === cible;
-    if (!matchSiren && !matchNom) continue;
-    const siren = String(ent.siren || '').replace(/\s/g, '');
-    if (!siren) continue;
-    out.push({
-      siren,
-      nom: ent.nom_entreprise || ent.denomination || ent.nom || '',
-      naf: ent.code_naf || null,
-      activite: ent.libelle_code_naf || null,
-      ville: (ent.siege && ent.siege.ville) || ent.ville || '',
-      code_postal: (ent.siege && ent.siege.code_postal) || ent.code_postal || '',
-      qualite: r.qualite || r.fonction || '',
-      cessee: ent.entreprise_cessee === true
-    });
+    if (r.personne_morale !== true) continue;
+    const dirSiren = String(r.siren || '').replace(/\s/g, '');
+    if (!holding.siren || !dirSiren || dirSiren !== String(holding.siren)) continue;
+    const qualite = r.qualite || (Array.isArray(r.qualites) && r.qualites[0]) || '';
+    if (/commissaire|liquidateur|administrateur judiciaire/i.test(qualite)) continue;
+    for (const ent of (Array.isArray(r.entreprises) ? r.entreprises : [])) {
+      const siren = String(ent.siren || '').replace(/\s/g, '');
+      if (!siren || siren === dirSiren) continue;
+      const actuel = (ent.dirigeant_actuel !== undefined) ? !!ent.dirigeant_actuel : (r.actuel !== false);
+      if (!actuel) continue;
+      out.push({
+        siren,
+        nom: ent.nom_entreprise || ent.denomination || '',
+        naf: ent.code_naf || null,
+        activite: ent.libelle_code_naf || null,
+        ville: (ent.siege && ent.siege.ville) || '',
+        code_postal: (ent.siege && ent.siege.code_postal) || '',
+        adresse: (ent.siege && ent.siege.adresse_ligne_1) || '',
+        effectif: ent.effectif || null,
+        chiffre_affaires: ent.chiffre_affaires || null,
+        forme: ent.forme_juridique || null,
+        qualite,
+        cessee: !!ent.entreprise_cessee || ent.statut_consolide === 'radié'
+      });
+    }
   }
   return out;
 }
@@ -247,9 +251,9 @@ export default async function handler(req, res) {
         const d = details[i] || {};
         return {
           nom: f.nom, siren: f.siren, naf: f.naf, activite: f.activite,
-          ville: f.ville, code_postal: f.code_postal, adresse: '',
-          effectif: null,
-          chiffre_affaires: d.chiffre_affaires || null,
+          ville: f.ville, code_postal: f.code_postal, adresse: f.adresse || '',
+          effectif: f.effectif || null,
+          chiffre_affaires: d.chiffre_affaires || f.chiffre_affaires || null,
           nb_etablissements: d.nb_etablissements || null,
           site_web: d.site_web || null,
           date_creation: d.date_creation || null,
