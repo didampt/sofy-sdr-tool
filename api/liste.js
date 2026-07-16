@@ -34,7 +34,7 @@ function dernierCA(e) {
   return e.chiffre_affaires || null;
 }
 
-async function detailEntreprise(siren, apiKey) {
+export async function detailEntreprise(siren, apiKey) {
   try {
     const r = await fetch(`https://api.pappers.fr/v2/entreprise?api_token=${apiKey}&siren=${siren}`);
     if (!r.ok) return null;

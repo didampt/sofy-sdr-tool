@@ -22,7 +22,7 @@ function domaineDeUrl(url) {
   try { return new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return null; }
 }
 
-async function pageTextSearch(params, key) {
+export async function pageTextSearch(params, key) {
   const p = new URLSearchParams({ ...params, language: 'fr', region: 'fr', key });
   const r = await fetch(BASE + '/textsearch/json?' + p.toString());
   const d = await r.json().catch(() => null);
@@ -32,7 +32,7 @@ async function pageTextSearch(params, key) {
   return d;
 }
 
-async function detailsPlace(placeId, key) {
+export async function detailsPlace(placeId, key) {
   // 'reviews' = jusqu'à 5 avis Google (facturation Atmosphere) -> on en tire le PIRE pour l'angle SoView
   const p = new URLSearchParams({ place_id: placeId, fields: 'website,formatted_phone_number,url,reviews', language: 'fr', key });
   const r = await fetch(BASE + '/details/json?' + p.toString());
@@ -116,7 +116,7 @@ function passeFiltre(r, noteMin, noteMax) {
   return true;
 }
 
-function versFiche(r, det, ville, activite) {
+export function versFiche(r, det, ville, activite) {
   const site = det.website ? domaineDeUrl(det.website) : null;
   return {
     nom: r.name || 'Sans nom',
