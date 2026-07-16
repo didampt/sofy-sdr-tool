@@ -16,7 +16,7 @@
 //
 // GET ?debug=1&q=NOM (superadmin) : réponse brute Pappers recherche-dirigeants (ajustement du mapping)
 
-import { verifierToken, loggerConso, limiteAtteinte } from './db.js';
+import { verifierToken, loggerConso, limiteAtteinte, sql } from './db.js';
 import { detailEntreprise } from './liste.js';
 import { pageTextSearch, detailsPlace, versFiche } from './gmb-liste.js';
 
@@ -353,6 +353,21 @@ async function resoudreHolding(nom, siren, apiKey) {
   return { holding: candidats[0] || null, candidats, acronyme, probes };
 }
 
+// Déduplication INTER-LISTES : clés déjà extraites dans les listes existantes (une nouvelle
+// extraction « kiabi 50 » une semaine plus tard ramène les 50 SUIVANTES, sans re-payer les mêmes).
+async function clesDejaExtraites() {
+  const cles = { pids: new Set(), sirens: new Set() };
+  if (!sql) return cles;
+  try {
+    const ls = await sql`SELECT entreprises FROM listes WHERE criteres->>'auto' IS NULL`;
+    for (const l of ls) for (const e of (l.entreprises || [])) {
+      if (e.siren) cles.sirens.add(String(e.siren));
+      if (e.gmb && e.gmb.place_id) cles.pids.add(e.gmb.place_id);
+    }
+  } catch (_) {}
+  return cles;
+}
+
 // ---------- Moteur ENSEIGNE (Google Maps, balayage par département) ----------
 const DEPARTEMENTS = [
   ['01', 'Ain'], ['02', 'Aisne'], ['03', 'Allier'], ['04', 'Alpes-de-Haute-Provence'], ['05', 'Hautes-Alpes'],
@@ -398,6 +413,11 @@ export default async function handler(req, res) {
     const apiKey = process.env.PAPPERS_API_KEY;
     if (!apiKey) return res.status(500).json({ erreur: 'PAPPERS_API_KEY manquante' });
     const q = String(req.query.q || '');
+    // ?debug=1&endpoint=resolution&q=groupe loret -> toute la résolution, candidats détaillés
+    if (req.query.endpoint === 'resolution') {
+      const r = await resoudreHolding(q, '', apiKey);
+      return res.status(200).json({ holding: r.holding, acronyme: r.acronyme, probes: r.probes, candidats: r.candidats });
+    }
     if (req.query.endpoint === 'recherche') {
       const p = new URLSearchParams({ api_token: apiKey, q, par_page: '5', precision: 'standard' });
       const r = await fetch('https://api.pappers.fr/v2/recherche?' + p.toString());
@@ -447,7 +467,14 @@ export default async function handler(req, res) {
 
       // creer : détail Pappers par filiale (dirigeant, CA…) — même format que la liste Pappers
       const nb = Math.min(Math.max(parseInt(b.nb, 10) || 150, 1), 300);
-      const retenues = actives.slice(0, nb);
+      // Dédoublonnage inter-listes AVANT le détail payant (1 crédit/fiche)
+      let doublonsInterListes = 0;
+      let pool = actives;
+      if (b.dedup !== false) {
+        const cles = await clesDejaExtraites();
+        pool = actives.filter(f => { if (cles.sirens.has(String(f.siren))) { doublonsInterListes++; return false; } return true; });
+      }
+      const retenues = pool.slice(0, nb);
       const details = new Array(retenues.length).fill(null);
       for (let i = 0; i < retenues.length; i += 10) {
         const lot = retenues.slice(i, i + 10);
@@ -517,8 +544,9 @@ export default async function handler(req, res) {
       return res.status(200).json({
         moteur: 'groupe', holding, total: actives.length,
         fiches_detaillees: retenues.length, exclues_cessees_ou_liquidation: exclues,
+        doublons_inter_listes: doublonsInterListes,
         contacts_basile: contactsBasile,
-        credits_estimes: requetes + retenues.length, entreprises
+        credits_estimes: requetes + probes + retenues.length, entreprises
       });
     }
 
@@ -583,8 +611,15 @@ export default async function handler(req, res) {
         if (places.length >= capFiches) break;
       }
 
+      // Dédoublonnage inter-listes AVANT les Details payants (fiches Google déjà extraites ailleurs)
+      let doublonsInterListes = 0;
+      let poolPlaces = places;
+      if (b.dedup !== false) {
+        const cles = await clesDejaExtraites();
+        poolPlaces = places.filter(p => { if (cles.pids.has(p.r.place_id)) { doublonsInterListes++; return false; } return true; });
+      }
       // Details (site, téléphone, avis) par lots de 8 — même munitions que la liste Google Maps
-      const retenues = places.slice(0, capFiches);
+      const retenues = poolPlaces.slice(0, capFiches);
       const fiches = [];
       for (let i = 0; i < retenues.length; i += 8) {
         const lot = retenues.slice(i, i + 8);
@@ -603,7 +638,8 @@ export default async function handler(req, res) {
       return res.status(200).json({
         moteur: 'enseigne', enseigne, departements: deps,
         total: fiches.length, appels_google: nbAppels,
-        tronque: places.length > capFiches,
+        tronque: poolPlaces.length > capFiches,
+        doublons_inter_listes: doublonsInterListes,
         entreprises: fiches
       });
     }

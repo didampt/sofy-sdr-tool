@@ -1873,7 +1873,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v234';
+const VERSION='v235';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2596,7 +2596,7 @@ async function creerListeVerticale(){
  function fin(){CREATION_VERT_EN_COURS=false;if(btn){btn.disabled=false;btn.textContent='🏢 Créer la liste';}}
  if(btn){btn.disabled=true;btn.textContent='⏳ Création…';}
  try{
-  var fiches=[],criteres;
+  var fiches=[],criteres,doublons=0;
   if(m==='groupe'){
    var body={moteur:'groupe',mode:'creer',nb:300};
    if(VERT_HOLDING&&VERT_HOLDING.siren)body.siren=VERT_HOLDING.siren;else body.nom=nomCible;
@@ -2605,6 +2605,7 @@ async function creerListeVerticale(){
    const d=await r.json();
    if(d.erreur){toast('Erreur : '+d.erreur);fin();if(prog)prog.style.display='none';return;}
    fiches=d.entreprises||[];
+   doublons=d.doublons_inter_listes||0;
    criteres={verticale:true,moteur:'groupe',cible:(d.holding&&d.holding.nom)||nomCible,siren_holding:(d.holding&&d.holding.siren)||null,naf:[],pays:[]};
   }else{
    var per=(document.getElementById('vert-perimetre')||{}).value||'france';
@@ -2621,6 +2622,7 @@ async function creerListeVerticale(){
      const r2=await api('/api/verticale',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({moteur:'enseigne',mode:'creer',enseigne:nomCible,departements:lot,nb:Math.min(150,maxF-fiches.length)})});
      const d2=await r2.json();
      if(d2.erreur){toast('Lot '+(Math.floor(i/10)+1)+' en erreur : '+d2.erreur);continue;}
+     doublons+=d2.doublons_inter_listes||0;
      (d2.entreprises||[]).forEach(function(f){
       if(fiches.length>=maxF)return;
       var pid=(f.gmb&&f.gmb.place_id)||(f.nom+'|'+f.code_postal);
@@ -2635,7 +2637,7 @@ async function creerListeVerticale(){
    body:JSON.stringify({nom:'🏢 '+nomListe,sdr:sdr,criteres:criteres,entreprises:fiches,credits_estimes:0})});
   const dc=await rc.json();
   if(dc.erreur){toast('Erreur création : '+dc.erreur);fin();if(prog)prog.style.display='none';return;}
-  toast('🏢 Liste créée : '+fiches.length+' entité'+(fiches.length>1?'s':''));
+  toast('🏢 Liste créée : '+fiches.length+' entité'+(fiches.length>1?'s':'')+(doublons?' · '+doublons+' déjà extraite'+(doublons>1?'s':'')+' écartée'+(doublons>1?'s':''):''));
   if(prog)prog.style.display='none';
   setTimeout(function(){fin();ouvrirListe(dc.id);},300);
  }catch(e){toast('Erreur réseau : '+e.message);fin();if(prog)prog.style.display='none';}
