@@ -21,7 +21,7 @@ async function envoyerDM(slackId, texte) {
 }
 
 // Trouve le SDR proprietaire du lead (celui qui l'a pousse en sequence) et lui envoie une alerte Slack
-async function alerterSdr(email, titre, b, campagne) {
+async function alerterSdr(email, titre, b, campagne, reponse) {
   try {
     const own = await sql`SELECT auteur FROM activites WHERE fiche_cle = ${email} AND type = 'sequenceAdded' AND auteur IS NOT NULL ORDER BY ts DESC LIMIT 1`;
     const sdrNom = (own.length && own[0].auteur) || b.sendUserName || b.userName || null;
@@ -31,9 +31,46 @@ async function alerterSdr(email, titre, b, campagne) {
     const qui = [b.firstName || b.leadFirstName, b.lastName || b.leadLastName].filter(Boolean).join(' ');
     const ent = b.companyName || b.company || '';
     const url = process.env.APP_URL || 'https://sofy-sdr-tool.vercel.app';
-    const txt = `🔥 *${titre}* — ${qui || email}${ent ? ' · ' + ent : ''}\nCampagne : ${campagne || '—'}\n👉 Le lead reagit, recontacte-le a chaud : ${url}`;
+    const txt = `🔥 *${titre}* — ${qui || email}${ent ? ' · ' + ent : ''}\nCampagne : ${campagne || '—'}${reponse ? '\n💬 « ' + reponse.slice(0, 300) + ' »' : ''}\n👉 Le lead reagit, recontacte-le a chaud : ${url}`;
     await envoyerDM(s[0].slack_id, txt);
   } catch (_) {}
+}
+
+// ── Contenu des réponses (email / LinkedIn / WhatsApp / SMS) via l'API Inbox Lemlist ──
+const TYPES_REPONSE = ['warmed', 'emailsReplied', 'linkedinReplied', 'whatsappReplied', 'smsReplied'];
+const TYPES_RECUS = new Set(['emailsReplied', 'linkedinReplied', 'whatsappReplied', 'smsReplied']);
+
+// HTML de la réponse -> texte lisible : balises retirées, fil cité coupé, tronqué à 400 car.
+function nettoyerReponse(html) {
+  let t = String(html || '');
+  t = t.replace(/<style[\s\S]*?<\/style>/gi, ' ');
+  t = t.replace(/<blockquote[\s\S]*/i, ' ');
+  t = t.replace(/<(br|\/p|\/div)[^>]*>/gi, '\n');
+  t = t.replace(/<[^>]+>/g, ' ');
+  t = t.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+       .replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"');
+  t = t.split(/\n\s*(?:Le .{5,80} a écrit\s*:|On .{5,80} wrote\s*:|De\s*:|From\s*:|-{3,}\s*Original)/i)[0];
+  t = t.split('\n').filter(l => !/^\s*>/.test(l)).join('\n');
+  t = t.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  if (t.length > 400) t = t.slice(0, 400).trim() + '…';
+  return t || null;
+}
+
+// Récupère le texte du dernier message REÇU du contact (l'événement webhook ne contient pas le corps)
+async function recupererReponseInbox(contactId) {
+  if (!contactId || !process.env.LEMLIST_API_KEY) return null;
+  try {
+    const r = await fetch('https://api.lemlist.com/api/inbox/' + encodeURIComponent(contactId) + '?limit=10', {
+      headers: { 'Authorization': authHeader() }
+    });
+    if (!r.ok) return null;
+    const d = await r.json().catch(() => null);
+    const msgs = (d && (Array.isArray(d.data) ? d.data : (Array.isArray(d) ? d : []))) || [];
+    const recus = msgs.filter(m => m && TYPES_RECUS.has(m.type) && (m.message || m.text));
+    if (!recus.length) return null;
+    recus.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    return nettoyerReponse(recus[0].message || recus[0].text);
+  } catch (_) { return null; }
 }
 
 // Libellés FR pour la chronologie
@@ -159,14 +196,26 @@ export default async function handler(req, res) {
         // Nom du lead concerné dans le détail (ex : "SoReach SDR · Jean-Pierre Doutaux")
         // pour identifier qui a ouvert/répondu même hors du contexte de la fiche
         const lead = [b.firstName || b.leadFirstName, b.lastName || b.leadLastName].filter(Boolean).join(' ');
-        const detail = [b.campaignName, lead].filter(Boolean).join(' · ') || null;
+        // Le lead a répondu -> on va chercher le CONTENU de sa réponse dans l'Inbox Lemlist
+        let reponse = null;
+        if (TYPES_REPONSE.includes(type)) {
+          reponse = nettoyerReponse(b.text || b.message || '') || await recupererReponseInbox(b.contactId);
+        }
+        let detail = [b.campaignName, lead].filter(Boolean).join(' · ');
+        if (reponse) detail = (detail ? detail + '\n' : '') + '💬 « ' + reponse + ' »';
+        detail = detail || null;
         const titre = LIBELLES[type] || type;
         // Au plus UNE alerte Slack par lead par 24 h (tous types confondus) : un lead qui
         // re-reagit plus tard re-declenche (ex : email re-ouvert 2 jours apres), sans spammer
-        // le SDR a chaque ouverture rapprochee. Verifie AVANT l'insertion de l'evenement courant.
+        // le SDR a chaque ouverture rapprochee. Exception : une REPONSE alerte toujours
+        // (fenetre anti-doublon d'1 h seulement, ex : warmed + emailsReplied pour le meme message).
+        // Verifie AVANT l'insertion de l'evenement courant.
         let alerter = false;
         if (ALERTE.includes(type)) {
-          const v = await sql`SELECT 1 FROM activites WHERE fiche_cle = ${email} AND type = ANY(${ALERTE}) AND ts > NOW() - INTERVAL '24 hours' LIMIT 1`;
+          const estReponse = TYPES_REPONSE.includes(type);
+          const typesVus = estReponse ? TYPES_REPONSE : ALERTE;
+          const fenetre = estReponse ? '1 hour' : '24 hours';
+          const v = await sql`SELECT 1 FROM activites WHERE fiche_cle = ${email} AND type = ANY(${typesVus}) AND ts > NOW() - ${fenetre}::interval LIMIT 1`;
           alerter = (v.length === 0);
         }
         await sql`INSERT INTO activites (fiche_cle, source, type, titre, detail, auteur, ref, ts)
@@ -178,7 +227,7 @@ export default async function handler(req, res) {
           await sql`UPDATE taches SET faite = TRUE WHERE fiche_cle = ${email} AND faite = FALSE`;
         }
         // Signal d'engagement -> alerte Slack immediate au SDR (max 1/lead/24 h)
-        if (alerter) await alerterSdr(email, titre, b, detail);
+        if (alerter) await alerterSdr(email, titre, b, b.campaignName || null, reponse);
       }
     } catch (e) { /* on repond 200 quoi qu il arrive */ }
     return res.status(200).json({ ok: true });
