@@ -461,6 +461,39 @@ export default async function handler(req, res) {
       const r = await resoudreHolding(q, '', apiKey);
       return res.status(200).json({ holding: r.holding, acronyme: r.acronyme, probes: r.probes, candidats: r.candidats });
     }
+    // ?debug=1&endpoint=entreprise&siren=… -> teste les champs_supplementaires Pappers
+    // (liens capitalistiques / participations…) : quelles clés apparaissent, quelles erreurs.
+    // L'essai « xxx » (invalide) force Pappers à lister les valeurs autorisées dans son erreur.
+    if (req.query.endpoint === 'entreprise') {
+      const sirenDbg = String(req.query.siren || '').replace(/\s/g, '');
+      if (!sirenDbg) return res.status(400).json({ erreur: 'siren requis' });
+      const essais = ['', 'xxx', 'liens_capitalistiques', 'participations', 'filiales', 'associes', 'actionnaires'];
+      const out = {};
+      let clesBase = new Set();
+      for (const champ of essais) {
+        const p = new URLSearchParams({ api_token: apiKey, siren: sirenDbg });
+        if (champ) p.set('champs_supplementaires', champ);
+        try {
+          const r = await fetch('https://api.pappers.fr/v2/entreprise?' + p.toString());
+          const txt = await r.text(); let d = null; try { d = JSON.parse(txt); } catch (_) {}
+          if (!champ) {
+            clesBase = new Set(Object.keys(d || {}));
+            out.base = { status: r.status, cles: [...clesBase] };
+          } else {
+            const nouvelles = d ? Object.keys(d).filter(k => !clesBase.has(k)) : [];
+            const extrait = {};
+            for (const k of nouvelles) { const v = d[k]; extrait[k] = Array.isArray(v) ? v.slice(0, 3) : v; }
+            out[champ] = {
+              status: r.status,
+              cles_nouvelles: nouvelles,
+              extrait: nouvelles.length ? extrait : undefined,
+              erreur: !r.ok ? ((d && (d.erreur || d.error || d.message)) || txt.slice(0, 300)) : undefined
+            };
+          }
+        } catch (e) { out[champ || 'base'] = { erreur: e.message }; }
+      }
+      return res.status(200).json(out);
+    }
     if (req.query.endpoint === 'recherche') {
       const p = new URLSearchParams({ api_token: apiKey, q, par_page: '5', precision: 'standard' });
       const r = await fetch('https://api.pappers.fr/v2/recherche?' + p.toString());
