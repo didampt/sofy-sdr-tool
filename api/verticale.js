@@ -341,15 +341,36 @@ async function resoudreHolding(nom, siren, apiKey) {
       + (c.ca > 10000000 || c.effectif_min >= 50 ? 2 : (c.ca > 1000000 || c.effectif_min >= 10 ? 1 : 0));
   }
 
-  // Sonde de mandats pour les candidats issus de /recherche : comptage dans les pages déjà
-  // scannées (filtré par LEUR siren) — aucune requête supplémentaire.
+  // Sonde de mandats gratuite : comptage dans les pages déjà scannées (filtré par LEUR siren)
   for (const c of candidats) {
     if (c.mandats !== undefined) continue;
     c.mandats = filialesDepuisResultats(rsScan, c).filter(f => !f.cessee).length;
   }
 
-  // Tri final : le nombre de mandats détenus prime (signal registre), le score de base départage
-  candidats.sort((a, b) => (b.mandats || 0) - (a.mandats || 0) || b._score - a._score);
+  // Sonde CIBLÉE pour les candidats sérieux restés à 0 mandat : la page partagée est saturée
+  // d'homonymes personnes physiques (cas « L. LORET ET CIE » invisible dans 500 dirigeants
+  // « loret »). Requête dédiée sur le nom épuré du candidat (« SA L LORET ET CIE » -> « l loret »)
+  // -> peu de résultats, son mandat de tête de groupe ressort. Comptage filtré par SON siren.
+  const serieux = candidats
+    .filter(c => (c.mandats || 0) === 0 && (c._score >= 2 || c.ca >= 1000000 || c.effectif_min >= 10 || NAF_HOLDING.has(String(c.naf || ''))))
+    .sort((a, b) => (b.ca || 0) - (a.ca || 0) || b._score - a._score);
+  const dejaQ = new Map();
+  let sondes = 0;
+  for (const c of serieux) {
+    if (sondes >= 8) break;
+    const qS = c.nom.split(/\s+/).filter(m => { const n = normaliser(m); return n && !MOTS_GENERIQUES.has(n); }).join(' ') || c.nom;
+    let rs = dejaQ.get(qS);
+    if (rs === undefined) {
+      sondes++; probes++;
+      const r = await pageRechercheDirigeants(qS, 1, apiKey, 'q');
+      rs = (r.ok && (r.data.resultats || [])) || [];
+      dejaQ.set(qS, rs);
+    }
+    c.mandats = Math.max(c.mandats || 0, filialesDepuisResultats(rs, c).filter(f => !f.cessee).length);
+  }
+
+  // Tri final : mandats détenus (signal registre) > score de nom > taille (CA)
+  candidats.sort((a, b) => (b.mandats || 0) - (a.mandats || 0) || b._score - a._score || (b.ca || 0) - (a.ca || 0));
   return { holding: candidats[0] || null, candidats, acronyme, probes };
 }
 
