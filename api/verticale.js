@@ -121,7 +121,7 @@ function motDistinctif(nom) {
 //  A. mandats de la holding PERSONNE MORALE (récursif sur les sous-holdings) — ex : GBH
 //  B. dirigeants COMMUNS : les personnes physiques qui dirigent la holding -> leurs mandats — groupes familiaux
 //  C. nom ÉPONYME : sociétés actives dont le nom porte le patronyme du groupe — ex : BARBOTTEAU DISTRIBUTION
-async function arbreGroupe(racine, apiKey) {
+async function arbreGroupe(racine, apiKey, nomUsuel) {
   const vues = new Set([racine.siren]);
   const filiales = new Map();
   let requetes = 0;
@@ -182,7 +182,9 @@ async function arbreGroupe(racine, apiKey) {
   } catch (_) {}
 
   // ── C. Nom éponyme (patronyme distinctif dans la dénomination) ──
-  const token = motDistinctif(racine.nom);
+  // Le nom TAPÉ par le SDR porte souvent le patronyme (« Groupe Barbotteau ») même quand
+  // la dénomination légale de la racine ne le porte pas (« GB ») -> on essaie les deux.
+  const token = motDistinctif(nomUsuel || '') || motDistinctif(racine.nom);
   if (token && requetes < 45) {
     try {
       const p = new URLSearchParams({ api_token: apiKey, q: token, par_page: '100', precision: 'standard' });
@@ -218,7 +220,7 @@ async function arbreGroupe(racine, apiKey) {
 // Résout la holding racine : siren fourni, sinon meilleure correspondance Pappers (+ candidats).
 // Repli : beaucoup de groupes sont enregistrés sous leur ACRONYME (« Groupe Bernard Hayot » -> « GBH »).
 async function chercherEntreprises(q, apiKey) {
-  const p = new URLSearchParams({ api_token: apiKey, q, par_page: '5', precision: 'standard' });
+  const p = new URLSearchParams({ api_token: apiKey, q, par_page: '10', precision: 'standard' });
   const r = await fetch('https://api.pappers.fr/v2/recherche?' + p.toString());
   const d = r.ok ? await r.json().catch(() => ({})) : {};
   return (d.resultats || []).map(e => ({
@@ -226,6 +228,9 @@ async function chercherEntreprises(q, apiKey) {
     ville: (e.siege && e.siege.ville) || '', naf: e.code_naf || null, activite: e.libelle_code_naf || null
   })).filter(c => c.siren);
 }
+// La recherche Pappers exige TOUS les mots -> « Groupe Barbotteau » ne matche aucune société.
+// On essaie donc : nom complet, puis nom SANS les mots génériques (« Barbotteau »), puis acronyme
+// (« Groupe Bernard Hayot » -> « GBH »), et on fusionne les candidats avant de trier.
 async function resoudreHolding(nom, siren, apiKey) {
   if (siren) {
     const r = await fetch(`https://api.pappers.fr/v2/entreprise?api_token=${apiKey}&siren=${encodeURIComponent(siren)}`);
@@ -233,20 +238,33 @@ async function resoudreHolding(nom, siren, apiKey) {
     if (e && e.siren) return { holding: { siren: String(e.siren), nom: e.nom_entreprise || e.denomination || nom || '' }, candidats: [] };
     return { holding: null, candidats: [] };
   }
-  let candidats = await chercherEntreprises(nom, apiKey);
-  let acronyme = null;
-  if (!candidats.length) {
-    const mots = nom.split(/\s+/).filter(Boolean);
-    if (mots.length >= 2) {
-      acronyme = mots.map(w => w[0]).join('').toUpperCase(); // « Groupe Bernard Hayot » -> « GBH »
-      candidats = await chercherEntreprises(acronyme, apiKey);
+  const mots = nom.split(/\s+/).filter(Boolean);
+  // « générique » = dans la liste OU vidé par la normalisation (groupe, sas… y sont déjà retirés)
+  const motsUtiles = mots.filter(m => { const n = normaliser(m); return n && !MOTS_GENERIQUES.has(n); });
+  const acronyme = mots.length >= 2 ? mots.map(w => w[0]).join('').toUpperCase() : null;
+  const essais = [nom];
+  if (motsUtiles.length && motsUtiles.join(' ').toLowerCase() !== nom.toLowerCase()) essais.push(motsUtiles.join(' '));
+  if (acronyme) essais.push(acronyme);
+  const vus = new Set();
+  const candidats = [];
+  for (const q of essais) {
+    if (candidats.length >= 12) break;
+    for (const c of await chercherEntreprises(q, apiKey)) {
+      if (vus.has(c.siren)) continue;
+      vus.add(c.siren); candidats.push(c);
     }
   }
-  // Priorité à une entité qui ressemble à une holding / au nom exact (ou à l'acronyme)
+  // Priorité : NAF holding, nom exact (ou acronyme exact), présence du mot distinctif du groupe
   const cible = normaliser(nom);
   const cibleAcro = acronyme ? normaliser(acronyme) : null;
+  const token = motDistinctif(nom);
   candidats.sort((a, b) => {
-    const score = (c) => (normaliser(c.nom) === cible || (cibleAcro && normaliser(c.nom) === cibleAcro) ? 2 : 0) + (NAF_HOLDING.has(String(c.naf || '')) ? 1 : 0);
+    const score = (c) => {
+      const n = normaliser(c.nom);
+      return (n === cible || (cibleAcro && n === cibleAcro) ? 2 : 0)
+        + (NAF_HOLDING.has(String(c.naf || '')) ? 2 : 0)
+        + (token && n.includes(token) ? 1 : 0);
+    };
     return score(b) - score(a);
   });
   return { holding: candidats[0] || null, candidats, acronyme };
@@ -327,7 +345,7 @@ export default async function handler(req, res) {
       const { holding, candidats } = await resoudreHolding(nom, siren, apiKey);
       if (!holding) return res.status(404).json({ erreur: `Groupe introuvable sur Pappers : « ${nom || siren} »`, candidats });
 
-      const { filiales, requetes } = await arbreGroupe(holding, apiKey);
+      const { filiales, requetes } = await arbreGroupe(holding, apiKey, nom);
       const actives = filiales.filter(f => !f.cessee);
 
       if (mode === 'estimer') {
