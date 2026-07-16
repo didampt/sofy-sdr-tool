@@ -81,8 +81,10 @@ function filialesDepuisResultats(resultats, holding) {
 }
 
 // Mandats d'un dirigeant PERSONNE PHYSIQUE (stratégie « dirigeants communs ») : toutes les
-// sociétés qu'il dirige actuellement. Match prudent par nom + prénom normalisés.
-function mandatsPersonnePhysique(resultats, prenom, nom) {
+// sociétés qu'il dirige actuellement. Anti-homonymes (les « Michel Gonnet » sont légion) :
+// la DATE DE NAISSANCE tranche quand les deux côtés l'ont ; sinon on exige que la société
+// soit dans l'EMPREINTE GÉOGRAPHIQUE du groupe (départements de la racine + stratégie A).
+function mandatsPersonnePhysique(resultats, prenom, nom, annee, empreinte) {
   const cp = normaliser(prenom), cn = normaliser(nom);
   const out = [];
   for (const r of (Array.isArray(resultats) ? resultats : [])) {
@@ -91,6 +93,9 @@ function mandatsPersonnePhysique(resultats, prenom, nom) {
     const complet = normaliser(r.nom_complet || (r.prenom || '') + ' ' + (r.nom || ''));
     const match = (rp && rn) ? (rp === cp && rn === cn) : (complet === normaliser(prenom + ' ' + nom));
     if (!match) continue;
+    const aR = anneeNaissance(r.date_de_naissance_formate || r.date_de_naissance || r.date_de_naissance_complete_formate);
+    const datesSures = !!(annee && aR);
+    if (datesSures && annee !== aR) continue; // homonyme certain -> écarté
     const qualite = r.qualite || (Array.isArray(r.qualites) && r.qualites[0]) || '';
     if (/commissaire|liquidateur|administrateur judiciaire/i.test(qualite)) continue;
     for (const ent of (Array.isArray(r.entreprises) ? r.entreprises : [])) {
@@ -98,6 +103,11 @@ function mandatsPersonnePhysique(resultats, prenom, nom) {
       if (!siren) continue;
       const actuel = (ent.dirigeant_actuel !== undefined) ? !!ent.dirigeant_actuel : (r.actuel !== false);
       if (!actuel) continue;
+      // Sans date pour trancher l'homonymie : seule l'empreinte géo du groupe fait foi
+      if (!datesSures) {
+        const dep = depDeCp((ent.siege && ent.siege.code_postal) || '');
+        if (!empreinte || !empreinte.size || !empreinte.has(dep)) continue;
+      }
       out.push({
         siren, nom: ent.nom_entreprise || ent.denomination || '',
         naf: ent.code_naf || null, activite: ent.libelle_code_naf || null,
@@ -119,6 +129,13 @@ function motDistinctif(nom) {
   if (!mots.length) return null;
   return mots[mots.length - 1]; // « Groupe Amédée Barbotteau » -> « barbotteau », « Groupe Bernard Hayot » -> « hayot »
 }
+// Mots « utiles » d'une dénomination pour interroger recherche-dirigeants : le plein texte exige
+// TOUS les mots (« SA L LORET ET CIE » ne trouve rien, « L LORET » trouve le mandat).
+function motsRequete(nom) {
+  return String(nom || '').split(/\s+/).filter(m => { const n = normaliser(m); return n && !MOTS_GENERIQUES.has(n); }).join(' ') || String(nom || '');
+}
+function anneeNaissance(s) { const m = String(s || '').match(/(19|20)\d{2}/); return m ? m[0] : null; }
+function depDeCp(cp) { cp = String(cp || ''); return /^9[78]/.test(cp) ? cp.slice(0, 3) : cp.slice(0, 2); }
 
 // Arbre du groupe — 3 stratégies combinées, dédoublonnées par SIREN :
 //  A. mandats de la holding PERSONNE MORALE (récursif sur les sous-holdings) — ex : GBH
@@ -145,7 +162,7 @@ async function arbreGroupe(racine, apiKey, nomUsuel) {
       let page = 1;
       while (page <= 5 && requetes < 30) {
         requetes++;
-        const r = await pageRechercheDirigeants(h.nom, page, apiKey);
+        const r = await pageRechercheDirigeants(motsRequete(h.nom), page, apiKey);
         if (!r.ok) break;
         const rs = r.data.resultats || [];
         for (const f of filialesDepuisResultats(rs, h)) {
@@ -163,11 +180,14 @@ async function arbreGroupe(racine, apiKey, nomUsuel) {
   }
 
   // ── B. Dirigeants communs (personnes physiques de la holding -> leurs mandats) ──
+  // Anti-homonymes : date de naissance quand disponible, sinon empreinte géo (racine + A).
   try {
     const r = await fetch(`https://api.pappers.fr/v2/entreprise?api_token=${apiKey}&siren=${encodeURIComponent(racine.siren)}`);
     requetes++;
     const e = r.ok ? await r.json().catch(() => null) : null;
-    if (e && e.siege && e.siege.code_postal) racine.code_postal = e.siege.code_postal; // empreinte géo (stratégie C)
+    if (e && e.siege && e.siege.code_postal) racine.code_postal = e.siege.code_postal; // empreinte géo (B et C)
+    const empreinteAB = new Set([...filiales.values()].map(f => depDeCp(f.code_postal)).filter(Boolean));
+    if (racine.code_postal) empreinteAB.add(depDeCp(racine.code_postal));
     const physiques = ((e && e.representants) || [])
       .filter(p => !p.personne_morale && (p.nom || p.nom_complet) && !/commissaire|liquidateur/i.test(p.qualite || ''))
       .slice(0, 4);
@@ -176,10 +196,11 @@ async function arbreGroupe(racine, apiKey, nomUsuel) {
       const prenom = String(p.prenom || '').split(',')[0].trim();
       const nomP = p.nom || p.nom_complet || '';
       if (!nomP) continue;
+      const annee = anneeNaissance(p.date_de_naissance_formate || p.date_de_naissance || p.date_de_naissance_complete_formate || (p.age ? '' : ''));
       requetes++;
       const rd = await pageRechercheDirigeants((prenom + ' ' + nomP).trim(), 1, apiKey);
       if (!rd.ok) continue;
-      for (const f of mandatsPersonnePhysique(rd.data.resultats || [], prenom, nomP)) {
+      for (const f of mandatsPersonnePhysique(rd.data.resultats || [], prenom, nomP, annee, empreinteAB)) {
         ajouter(f, 1, (prenom + ' ' + nomP).trim(), 'dirigeant_commun');
       }
     }
@@ -191,9 +212,8 @@ async function arbreGroupe(racine, apiKey, nomUsuel) {
   // Deux garde-fous anti-bruit : (1) les entreprises individuelles homonymes sont exclues
   // (« BARBOTTEAU VANESSA · vente à domicile »), (2) on reste dans l'EMPREINTE GÉOGRAPHIQUE
   // du groupe = les départements de la racine et des entités trouvées par les stratégies A/B.
-  const depDe = (cp) => { cp = String(cp || ''); return /^9[78]/.test(cp) ? cp.slice(0, 3) : cp.slice(0, 2); };
-  const empreinte = new Set([...filiales.values()].map(f => depDe(f.code_postal)).filter(Boolean));
-  if (racine.code_postal) empreinte.add(depDe(racine.code_postal));
+  const empreinte = new Set([...filiales.values()].map(f => depDeCp(f.code_postal)).filter(Boolean));
+  if (racine.code_postal) empreinte.add(depDeCp(racine.code_postal));
   const token = motDistinctif(nomUsuel || '') || motDistinctif(racine.nom);
   if (token && empreinte.size && requetes < 45) {
     try {
@@ -209,7 +229,7 @@ async function arbreGroupe(racine, apiKey, nomUsuel) {
           if (ent.entreprise_cessee === true || ent.entreprise_cessee === 1) continue;
           if (/entrepreneur individuel|micro-entrepreneur|artisan|commer[cç]ant/i.test(ent.forme_juridique || '')) continue;
           const cp = (ent.siege && ent.siege.code_postal) || '';
-          if (!empreinte.has(depDe(cp))) continue;
+          if (!empreinte.has(depDeCp(cp))) continue;
           const siren = String(ent.siren || '').replace(/\s/g, '');
           if (!siren) continue;
           ajouter({
@@ -358,7 +378,7 @@ async function resoudreHolding(nom, siren, apiKey) {
   let sondes = 0;
   for (const c of serieux) {
     if (sondes >= 8) break;
-    const qS = c.nom.split(/\s+/).filter(m => { const n = normaliser(m); return n && !MOTS_GENERIQUES.has(n); }).join(' ') || c.nom;
+    const qS = motsRequete(c.nom);
     let rs = dejaQ.get(qS);
     if (rs === undefined) {
       sondes++; probes++;
