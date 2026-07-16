@@ -33,8 +33,11 @@ function normaliser(s) {
 const RE_HOLDING = /holding|groupe|participation|invest|financ|patrimoin|développement|developpement/i;
 const NAF_HOLDING = new Set(['6420Z', '64.20Z', '7010Z', '70.10Z']);
 
-async function pageRechercheDirigeants(q, page, apiKey) {
-  const p = new URLSearchParams({ api_token: apiKey, q, par_page: '100', page: String(page) });
+async function pageRechercheDirigeants(q, page, apiKey, champ) {
+  // champ='denomination' -> recherche UNIQUEMENT parmi les dirigeants personnes morales
+  // (évite de paginer des centaines d'homonymes personnes physiques, cas « Loret »)
+  const p = new URLSearchParams({ api_token: apiKey, par_page: '100', page: String(page) });
+  p.set(champ === 'denomination' ? 'denomination' : 'q', q);
   const r = await fetch('https://api.pappers.fr/v2/recherche-dirigeants?' + p.toString());
   const data = await r.json().catch(() => ({}));
   return { ok: r.ok, status: r.status, data };
@@ -274,28 +277,32 @@ async function resoudreHolding(nom, siren, apiKey) {
   const qDir = (motsUtiles.length ? motsUtiles.join(' ') : nom);
   try {
     let trouvesPM = 0;
-    for (let page = 1; page <= 3; page++) {
-      probes++;
-      const rd = await pageRechercheDirigeants(qDir, page, apiKey);
-      if (!rd.ok) break;
-      const rs = rd.data.resultats || [];
-      for (const r of rs) {
-        if (r.personne_morale !== true) continue;
-        const qualite = r.qualite || (Array.isArray(r.qualites) && r.qualites[0]) || '';
-        if (/commissaire|liquidateur/i.test(qualite)) continue;
-        const siren = String(r.siren || '').replace(/\s/g, '');
-        const denomination = r.denomination || r.nom_complet || '';
-        if (!siren || !denomination) continue;
-        const mandats = r.nb_entreprises_total || (Array.isArray(r.entreprises) ? r.entreprises.length : 0);
-        trouvesPM++;
-        const existant = candidats.find(c => c.siren === siren);
-        if (existant) { existant.mandats = Math.max(existant.mandats || 0, mandats); continue; }
-        if (vus.has(siren)) continue;
-        vus.add(siren);
-        candidats.push({ siren, nom: denomination, ville: '', naf: null, activite: null, effectif_min: 0, ca: 0, mandats });
+    // 1er essai : champ 'denomination' (personnes morales uniquement) ; repli : 'q' plein texte
+    for (const champ of ['denomination', 'q']) {
+      for (let page = 1; page <= 3; page++) {
+        probes++;
+        const rd = await pageRechercheDirigeants(qDir, page, apiKey, champ);
+        if (!rd.ok) break;
+        const rs = rd.data.resultats || [];
+        for (const r of rs) {
+          if (r.personne_morale !== true) continue;
+          const qualite = r.qualite || (Array.isArray(r.qualites) && r.qualites[0]) || '';
+          if (/commissaire|liquidateur/i.test(qualite)) continue;
+          const siren = String(r.siren || '').replace(/\s/g, '');
+          const denomination = r.denomination || r.nom_complet || '';
+          if (!siren || !denomination) continue;
+          const mandats = r.nb_entreprises_total || (Array.isArray(r.entreprises) ? r.entreprises.length : 0);
+          trouvesPM++;
+          const existant = candidats.find(c => c.siren === siren);
+          if (existant) { existant.mandats = Math.max(existant.mandats || 0, mandats); continue; }
+          if (vus.has(siren)) continue;
+          vus.add(siren);
+          candidats.push({ siren, nom: denomination, ville: '', naf: null, activite: null, effectif_min: 0, ca: 0, mandats });
+        }
+        const total = rd.data.total || rs.length;
+        if (!rs.length || page * 100 >= total) break;
       }
-      const total = rd.data.total || rs.length;
-      if (trouvesPM >= 5 || !rs.length || page * 100 >= total) break;
+      if (trouvesPM) break; // le champ denomination a fonctionné -> pas besoin du repli plein texte
     }
   } catch (_) {}
   // Score de base : NAF holding, nom exact (ou acronyme), mot distinctif, taille (CA / effectif)
@@ -495,20 +502,28 @@ export default async function handler(req, res) {
       let nbAppels = 0;
 
       if (mode === 'estimer') {
-        // 8 départements représentatifs (métropole + DOM), 1 page chacun -> extrapolation
-        let trouves = 0; const echantillon = []; const parDep = {};
-        for (const code of DEP_ECHANTILLON) {
+        // L'échantillon suit le PÉRIMÈTRE choisi : DOM -> comptage réel des 5 départements ;
+        // métropole/France -> 8 départements représentatifs + extrapolation sur le périmètre.
+        const DOM_CODES = ['971', '972', '973', '974', '976'];
+        const METRO_ECHANTILLON = ['75', '13', '69', '33', '59', '44', '31', '67'];
+        const per = (b.perimetre === 'dom' || b.perimetre === 'metropole') ? b.perimetre : 'france';
+        const sample = per === 'dom' ? DOM_CODES : (per === 'metropole' ? METRO_ECHANTILLON : DEP_ECHANTILLON);
+        const nbDepsPerimetre = per === 'dom' ? DOM_CODES.length : (per === 'metropole' ? DEPARTEMENTS.length - DOM_CODES.length : DEPARTEMENTS.length);
+        const exact = per === 'dom';
+        let trouves = 0; const echantillon = []; const parDep = {}; const vusEst = new Set();
+        for (const code of sample) {
           const d = await pageTextSearch({ query: enseigne + ' ' + nomDep(code) }, key); nbAppels++;
-          const ok = (d.results || []).filter(r => r.place_id && porteEnseigne(r.name, enseigne));
+          const ok = (d.results || []).filter(r => r.place_id && !vusEst.has(r.place_id) && porteEnseigne(r.name, enseigne));
+          ok.forEach(r => vusEst.add(r.place_id));
           parDep[code] = ok.length; trouves += ok.length;
-          for (const r of ok.slice(0, 1)) echantillon.push({ nom: r.name, dep: nomDep(code), note: (typeof r.rating === 'number') ? r.rating : null, avis: r.user_ratings_total || 0 });
+          for (const r of ok.slice(0, exact ? 2 : 1)) echantillon.push({ nom: r.name, dep: nomDep(code), note: (typeof r.rating === 'number') ? r.rating : null, avis: r.user_ratings_total || 0 });
         }
         await loggerConso(user, 'google_places', nbAppels, b.liste_id || null);
         return res.status(200).json({
-          moteur: 'enseigne', enseigne,
-          trouves_echantillon: trouves, par_departement: parDep, echantillon,
-          estimation_france: Math.round((trouves / DEP_ECHANTILLON.length) * DEPARTEMENTS.length),
-          departements_total: DEPARTEMENTS.length,
+          moteur: 'enseigne', enseigne, perimetre: per, comptage_exact: exact,
+          trouves_echantillon: trouves, departements_testes: sample.length, par_departement: parDep, echantillon,
+          estimation_perimetre: exact ? trouves : Math.round((trouves / sample.length) * nbDepsPerimetre),
+          departements_perimetre: nbDepsPerimetre,
           info: 'Création par lots : envoie mode=creer avec departements=[codes] (max 10 par appel).'
         });
       }

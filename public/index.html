@@ -593,7 +593,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
             <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:13.5px;line-height:1.45"><input type="radio" name="vert-moteur" value="groupe" onchange="majModeVerticale()" style="margin-top:2px"><span><b>🏢 Groupe / holding multi-enseignes</b> — l'arbre des filiales au registre (Pappers) : dirigeants, CA, effectif. Ex : Groupe Bernard Hayot.</span></label>
           </div>
           <div id="vert-perimetre-box" style="margin-top:12px"><label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">Périmètre du balayage</label>
-            <select class="field" id="vert-perimetre" style="width:100%"><option value="france">🇫🇷 France entière (101 départements — plusieurs minutes)</option><option value="dom">🌴 DOM uniquement (971, 972, 973, 974, 976)</option><option value="metropole">Métropole uniquement</option></select>
+            <select class="field" id="vert-perimetre" style="width:100%" onchange="var b=document.getElementById('vert-estim');if(b)b.style.display='none'"><option value="france">🇫🇷 France entière (101 départements — plusieurs minutes)</option><option value="dom">🌴 DOM uniquement (971, 972, 973, 974, 976)</option><option value="metropole">Métropole uniquement</option></select>
           </div>
           <div id="vert-estim" style="display:none;background:var(--paper);border-radius:10px;padding:14px 16px;margin-top:16px;font-size:13px;line-height:1.6"></div>
           <h2 style="margin-top:20px;font-size:17px">Identification</h2>
@@ -1870,7 +1870,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v232';
+const VERSION='v233';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2562,12 +2562,17 @@ async function estimerVerticale(){
     if(!d.total)toast('0 filiale trouvée — essaye un autre candidat ci-dessous ou le SIREN exact');
    }
   }else{
-   const r=await api('/api/verticale',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({moteur:'enseigne',mode:'estimer',enseigne:nom})});
+   var perEst=(document.getElementById('vert-perimetre')||{}).value||'france';
+   const r=await api('/api/verticale',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({moteur:'enseigne',mode:'estimer',enseigne:nom,perimetre:perEst})});
    const d=await r.json();
    if(d.erreur){toast('Erreur : '+d.erreur);}
    else{
     var ech2=(d.echantillon||[]).map(function(e){return '<div style="padding:5px 0;border-top:1px solid var(--line)"><b>'+escapeHtml(e.nom)+'</b> — '+(e.note!=null?e.note.toLocaleString('fr-FR')+' ★':'sans note')+' ('+e.avis+' avis) <span style="color:var(--ink-soft)">· '+escapeHtml(e.dep)+'</span></div>';}).join('');
-    box.innerHTML='<b>'+d.trouves_echantillon+'</b> point'+(d.trouves_echantillon>1?'s':'')+' de vente sur 8 départements testés → <b>≈ '+d.estimation_france+'</b> estimés France entière.'+(ech2?'<div style="margin-top:8px;font-weight:700">Échantillon :</div>'+ech2:'');
+    var libPer={france:'France entière',dom:'sur les DOM',metropole:'en métropole'}[d.perimetre||'france'];
+    var entete=d.comptage_exact
+     ?'<b>'+d.trouves_echantillon+'</b> point'+(d.trouves_echantillon>1?'s':'')+' de vente sur les '+d.departements_testes+' départements DOM (comptage réel).'
+     :'<b>'+d.trouves_echantillon+'</b> point'+(d.trouves_echantillon>1?'s':'')+' de vente sur '+d.departements_testes+' départements testés → <b>≈ '+d.estimation_perimetre+'</b> estimés '+libPer+'.';
+    box.innerHTML=entete+(ech2?'<div style="margin-top:8px;font-weight:700">Échantillon :</div>'+ech2:'');
     box.style.display='block';
    }
   }
