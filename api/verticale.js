@@ -77,12 +77,64 @@ function filialesDepuisResultats(resultats, holding) {
   return out;
 }
 
-// Arbre du groupe : filiales directes puis récursion sur les sous-holdings (2 niveaux max)
+// Mandats d'un dirigeant PERSONNE PHYSIQUE (stratégie « dirigeants communs ») : toutes les
+// sociétés qu'il dirige actuellement. Match prudent par nom + prénom normalisés.
+function mandatsPersonnePhysique(resultats, prenom, nom) {
+  const cp = normaliser(prenom), cn = normaliser(nom);
+  const out = [];
+  for (const r of (Array.isArray(resultats) ? resultats : [])) {
+    if (!r || typeof r !== 'object' || r.personne_morale === true) continue;
+    const rp = normaliser(r.prenom || ''), rn = normaliser(r.nom || '');
+    const complet = normaliser(r.nom_complet || (r.prenom || '') + ' ' + (r.nom || ''));
+    const match = (rp && rn) ? (rp === cp && rn === cn) : (complet === normaliser(prenom + ' ' + nom));
+    if (!match) continue;
+    const qualite = r.qualite || (Array.isArray(r.qualites) && r.qualites[0]) || '';
+    if (/commissaire|liquidateur|administrateur judiciaire/i.test(qualite)) continue;
+    for (const ent of (Array.isArray(r.entreprises) ? r.entreprises : [])) {
+      const siren = String(ent.siren || '').replace(/\s/g, '');
+      if (!siren) continue;
+      const actuel = (ent.dirigeant_actuel !== undefined) ? !!ent.dirigeant_actuel : (r.actuel !== false);
+      if (!actuel) continue;
+      out.push({
+        siren, nom: ent.nom_entreprise || ent.denomination || '',
+        naf: ent.code_naf || null, activite: ent.libelle_code_naf || null,
+        ville: (ent.siege && ent.siege.ville) || '', code_postal: (ent.siege && ent.siege.code_postal) || '',
+        adresse: (ent.siege && ent.siege.adresse_ligne_1) || '',
+        effectif: ent.effectif || null, chiffre_affaires: ent.chiffre_affaires || null,
+        forme: ent.forme_juridique || null, qualite,
+        cessee: !!ent.entreprise_cessee || ent.statut_consolide === 'radié'
+      });
+    }
+  }
+  return out;
+}
+
+// Mot distinctif du nom du groupe pour la stratégie « nom éponyme » (patronyme ≈ dernier mot utile)
+const MOTS_GENERIQUES = new Set(['groupe', 'holding', 'societe', 'société', 'cie', 'compagnie', 'ets', 'etablissements', 'établissements', 'sas', 'sarl', 'sa', 'distribution', 'automobile', 'automobiles', 'participations', 'invest', 'investissement', 'finance', 'financiere', 'financière', 'et', 'de', 'du', 'des', 'la', 'le', 'les']);
+function motDistinctif(nom) {
+  const mots = String(nom || '').split(/[\s\-']+/).map(m => normaliser(m)).filter(m => m.length >= 4 && !MOTS_GENERIQUES.has(m));
+  if (!mots.length) return null;
+  return mots[mots.length - 1]; // « Groupe Amédée Barbotteau » -> « barbotteau », « Groupe Bernard Hayot » -> « hayot »
+}
+
+// Arbre du groupe — 3 stratégies combinées, dédoublonnées par SIREN :
+//  A. mandats de la holding PERSONNE MORALE (récursif sur les sous-holdings) — ex : GBH
+//  B. dirigeants COMMUNS : les personnes physiques qui dirigent la holding -> leurs mandats — groupes familiaux
+//  C. nom ÉPONYME : sociétés actives dont le nom porte le patronyme du groupe — ex : BARBOTTEAU DISTRIBUTION
 async function arbreGroupe(racine, apiKey) {
   const vues = new Set([racine.siren]);
   const filiales = new Map();
-  let front = [racine];
   let requetes = 0;
+  const ajouter = (f, niveau, via, lien) => {
+    if (vues.has(f.siren)) return null;
+    vues.add(f.siren);
+    f.niveau = niveau; f.via = via; f.lien = lien;
+    filiales.set(f.siren, f);
+    return f;
+  };
+
+  // ── A. Mandats personne morale, récursif (sous-holdings) ──
+  let front = [racine];
   for (let niveau = 1; niveau <= 3 && front.length; niveau++) {
     const prochaines = [];
     for (const h of front) {
@@ -94,11 +146,8 @@ async function arbreGroupe(racine, apiKey) {
         if (!r.ok) break;
         const rs = r.data.resultats || [];
         for (const f of filialesDepuisResultats(rs, h)) {
-          if (vues.has(f.siren)) continue;
-          vues.add(f.siren);
-          f.niveau = niveau; f.via = h.nom;
-          filiales.set(f.siren, f);
-          if (!f.cessee && (NAF_HOLDING.has(String(f.naf || '')) || RE_HOLDING.test(f.nom))) {
+          const aj = ajouter(f, niveau, h.nom, 'mandat');
+          if (aj && !f.cessee && (NAF_HOLDING.has(String(f.naf || '')) || RE_HOLDING.test(f.nom))) {
             prochaines.push({ siren: f.siren, nom: f.nom });
           }
         }
@@ -109,6 +158,60 @@ async function arbreGroupe(racine, apiKey) {
     }
     front = prochaines.slice(0, 15); // max 15 sous-holdings explorées par niveau
   }
+
+  // ── B. Dirigeants communs (personnes physiques de la holding -> leurs mandats) ──
+  try {
+    const r = await fetch(`https://api.pappers.fr/v2/entreprise?api_token=${apiKey}&siren=${encodeURIComponent(racine.siren)}`);
+    requetes++;
+    const e = r.ok ? await r.json().catch(() => null) : null;
+    const physiques = ((e && e.representants) || [])
+      .filter(p => !p.personne_morale && (p.nom || p.nom_complet) && !/commissaire|liquidateur/i.test(p.qualite || ''))
+      .slice(0, 4);
+    for (const p of physiques) {
+      if (requetes >= 40) break;
+      const prenom = String(p.prenom || '').split(',')[0].trim();
+      const nomP = p.nom || p.nom_complet || '';
+      if (!nomP) continue;
+      requetes++;
+      const rd = await pageRechercheDirigeants((prenom + ' ' + nomP).trim(), 1, apiKey);
+      if (!rd.ok) continue;
+      for (const f of mandatsPersonnePhysique(rd.data.resultats || [], prenom, nomP)) {
+        ajouter(f, 1, (prenom + ' ' + nomP).trim(), 'dirigeant_commun');
+      }
+    }
+  } catch (_) {}
+
+  // ── C. Nom éponyme (patronyme distinctif dans la dénomination) ──
+  const token = motDistinctif(racine.nom);
+  if (token && requetes < 45) {
+    try {
+      const p = new URLSearchParams({ api_token: apiKey, q: token, par_page: '100', precision: 'standard' });
+      requetes++;
+      const r = await fetch('https://api.pappers.fr/v2/recherche?' + p.toString());
+      const d = r.ok ? await r.json().catch(() => ({})) : {};
+      const rs = d.resultats || [];
+      // Trop d'homonymes (patronyme courant) -> stratégie écartée pour ne pas polluer la liste
+      if ((d.total || rs.length) <= 200) {
+        for (const ent of rs) {
+          if (!normaliser(ent.nom_entreprise || '').includes(token)) continue;
+          if (ent.entreprise_cessee === true || ent.entreprise_cessee === 1) continue;
+          const siren = String(ent.siren || '').replace(/\s/g, '');
+          if (!siren) continue;
+          ajouter({
+            siren, nom: ent.nom_entreprise || '',
+            naf: ent.code_naf || null, activite: ent.libelle_code_naf || null,
+            ville: (ent.siege && ent.siege.ville) || '', code_postal: (ent.siege && ent.siege.code_postal) || '',
+            adresse: (ent.siege && ent.siege.adresse_ligne_1) || '',
+            effectif: ent.effectif || ent.tranche_effectif || null,
+            chiffre_affaires: ent.dernier_chiffre_affaires || null,
+            forme: ent.forme_juridique || null, qualite: 'nom éponyme',
+            cessee: false
+          }, 1, token, 'nom');
+        }
+      }
+    } catch (_) {}
+  }
+
   return { filiales: [...filiales.values()], requetes };
 }
 
@@ -228,10 +331,14 @@ export default async function handler(req, res) {
       const actives = filiales.filter(f => !f.cessee);
 
       if (mode === 'estimer') {
+        // Répartition par stratégie de rattachement (mandat / dirigeant commun / nom éponyme)
+        const repartition = {};
+        for (const f of actives) repartition[f.lien || 'mandat'] = (repartition[f.lien || 'mandat'] || 0) + 1;
         await loggerConso(user, 'pappers', requetes, b.liste_id || null);
         return res.status(200).json({
           moteur: 'groupe', holding, candidats,
           total: actives.length, cessees: filiales.length - actives.length,
+          repartition,
           filiales: actives, requetes_pappers: requetes,
           credits_detail_estimes: Math.min(actives.length, 300)
         });
@@ -259,7 +366,7 @@ export default async function handler(req, res) {
           date_creation: d.date_creation || null,
           dirigeant: d.dirigeant || null,
           enseigne: d.enseigne || null,
-          groupe: holding.nom, groupe_niveau: f.niveau, groupe_via: f.via, groupe_qualite: f.qualite || null,
+          groupe: holding.nom, groupe_niveau: f.niveau, groupe_via: f.via, groupe_qualite: f.qualite || null, groupe_lien: f.lien || null,
           detail_charge: details[i] !== null,
           _cessee: d.cessee === true, _proc: d.procedure_collective === true
         };
