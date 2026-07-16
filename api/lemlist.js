@@ -53,8 +53,12 @@ export default async function handler(req, res) {
     const urlEmail = `https://api.lemlist.com/api/campaigns/${encodeURIComponent(campagne)}/leads/${encodeURIComponent(contact.email)}`;
     const diag = {};
 
+    // snEid : email encodé en base64 pour l'Identity Layer Snitcher — à utiliser dans les templates
+    // Lemlist sur les liens vers sofy.fr (…?sn_eid={{snEid}}) pour que la visite soit nominative
+    const snEid = Buffer.from(String(contact.email).trim().toLowerCase()).toString('base64');
+
     // Corps du lead (variables perso de campagne) : on nettoie (drop vides + coerce chaîne)
-    const brut = { firstName: contact.prenom || '', lastName: contact.nom || '', companyName: variables.companyName || '', ...variables, ...(ownerEmail ? { contactOwner: ownerEmail } : {}) };
+    const brut = { firstName: contact.prenom || '', lastName: contact.nom || '', companyName: variables.companyName || '', ...variables, snEid, ...(ownerEmail ? { contactOwner: ownerEmail } : {}) };
     const corps = {};
     for (const [k, v] of Object.entries(brut)) {
       if (v === null || v === undefined || v === '') continue;

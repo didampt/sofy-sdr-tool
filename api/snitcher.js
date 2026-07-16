@@ -69,8 +69,18 @@ function extraireItems(corps) {
     if (co && typeof co === 'object') {
       const loc = co.location || {};
       const sess = bloc.session || {};
+      // Visiteur identifié par l'Identity Layer Snitcher (lien email ?sn_eid=…, formulaire, login) :
+      // on ratisse plusieurs noms de champs possibles — ajuster au vu du payload réel
+      // journalisé dans config('snitcher_last') quand le premier événement identifié arrivera.
+      const vis = bloc.visitor || bloc.lead || bloc.identity || bloc.contact || sess.visitor || null;
+      const visEmail = (vis && (vis.email || vis.identified_email)) || bloc.identified_email || sess.identified_email || null;
       items.push({
-        prenom: '', nom: '', email: null, telephone: null, linkedin: null, fonction: '',
+        prenom: (vis && (vis.first_name || vis.firstName)) || '',
+        nom: (vis && (vis.last_name || vis.lastName)) || '',
+        email: visEmail ? String(visEmail).toLowerCase() : null,
+        telephone: (vis && vis.phone) || null,
+        linkedin: (vis && (vis.linkedin_url || vis.linkedin)) || null,
+        fonction: (vis && (vis.title || vis.headline)) || '',
         entreprise: co.name || co.company_name || '', domaine: co.domain || co.website || null,
         industrie: co.industry || null,
         effectif: co.employee_range || co.employee_count || co.size || null,
