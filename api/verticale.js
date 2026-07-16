@@ -276,7 +276,9 @@ async function resoudreHolding(nom, siren, apiKey) {
   const mots = nom.split(/\s+/).filter(Boolean);
   // « générique » = dans la liste OU vidé par la normalisation (groupe, sas… y sont déjà retirés)
   const motsUtiles = mots.filter(m => { const n = normaliser(m); return n && !MOTS_GENERIQUES.has(n); });
-  const acronyme = mots.length >= 2 ? mots.map(w => w[0]).join('').toUpperCase() : null;
+  // Acronyme seulement à partir de 3 mots (« Groupe Bernard Hayot » -> « GBH ») : à 2 lettres
+  // (« Groupe Ampiot » -> « GA ») il matche n'importe quoi et invente des groupes loufoques.
+  const acronyme = mots.length >= 3 ? mots.map(w => w[0]).join('').toUpperCase() : null;
   const essais = [nom];
   if (motsUtiles.length && motsUtiles.join(' ').toLowerCase() !== nom.toLowerCase()) essais.push(motsUtiles.join(' '));
   if (acronyme) essais.push(acronyme);
