@@ -1873,7 +1873,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v237';
+const VERSION='v238';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -3931,17 +3931,23 @@ function poserMobile(c,mob,src){
  if(!estMobile(c.enrich.telephone)){if(!c.enrich.telephone_fixe)c.enrich.telephone_fixe=c.enrich.telephone;c.enrich.telephone=mob;c.enrich.tel_source=src;return true;}
  return false;
 }
-function telBtns(t){
+// Journalise l'ouverture de WhatsApp dans le bloc-notes (l'envoi lui-même se fait dans WhatsApp)
+function journaliserWhatsApp(i,tel,qui){
+ if(i==null||!REAL[i])return;
+ enregistrerActivite(REAL[i],null,'whatsapp','💬 Message WhatsApp',(qui?qui+' · ':'')+tel);
+}
+function telBtns(t,i,qui){
  const n=telNorm(t);
  let h=` <a class="act act-call" style="padding:4px 10px;font-size:12px" href="tel:${n}" title="Appeler (extension Ringover click-to-call)">📞</a>`;
  if(estMobile(t)){
-  h+=` <a class="act" style="padding:4px 10px;font-size:12px;background:#25D366;color:#fff" href="${waLink(t)}" target="_blank" title="Ouvrir WhatsApp (depuis votre compte) avec un message prérempli">🟢 WA</a>`;
+  const quiJs=String(qui||'').replace(/[\\'"<>]/g,'');
+  h+=` <a class="act" style="padding:4px 10px;font-size:12px;background:#25D366;color:#fff" href="${waLink(t)}" target="_blank" onclick="journaliserWhatsApp(${i==null?'null':i},'${telNorm(t)}','${quiJs}')" title="Ouvrir WhatsApp (depuis votre compte) avec un message prérempli — journalisé dans le bloc-notes">🟢 WA</a>`;
  }
  if(aAppelRingover(t))h+=` <button class="act" style="padding:4px 10px;font-size:12px;background:#7C3AED;color:#fff" onclick="ouvrirAppelsRingover('${n}')" title="Réécouter l'appel + résumé IA (Ringover)">🎧</button>`;
  return h;
 }
 
-function gmbHtml(g){
+function gmbHtml(g,i){
  if(!g)return '';
  if(!g.trouve)return `<p class="hint" style="margin-top:14px">Aucune fiche Google trouvée — angle Soview : « vous n'êtes pas visible sur Google Maps ».</p>`;
  const comp=g.concurrents?`<div class="gmb-cell gmb-comp"><b>${String(g.concurrents.note_moyenne).replace('.',',')} ★</b>Moyenne ${g.concurrents.secteur} (${g.concurrents.zone}, ${g.concurrents.nb_analyses} analysés)</div>`:'';
@@ -3951,7 +3957,7 @@ function gmbHtml(g){
  const nbF=g.nb_fiches||1;
  return `
   <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);margin:16px 0 8px">Google Business — ${noteTxt} ★ (${(g.total_avis||0).toLocaleString('fr-FR')} avis · ${nbF} fiche${nbF>1?'s':''})${ecart>0?` · <span style="color:var(--danger)">${String(ecart).replace('.',',')} pt sous les concurrents</span>`:''}</h3>
-  ${g.telephone?`<div class="contact-line" style="margin-bottom:8px">☎️ Standard : <b>${g.telephone}</b>${telBtns(g.telephone)} <span class="badge b-gmb">source GMB</span></div>`:''}
+  ${g.telephone?`<div class="contact-line" style="margin-bottom:8px">☎️ Standard : <b>${g.telephone}</b>${telBtns(g.telephone,i,'Standard')} <span class="badge b-gmb">source GMB</span></div>`:''}
   ${(g.pire_fiche||comp)?`<div class="gmb-vs">
    ${g.pire_fiche?`<div class="gmb-cell gmb-bad"><b>${String(g.pire_fiche.note).replace('.',',')} ★ (${g.pire_fiche.nb_avis} avis)</b>Pire fiche : <a href="${g.pire_fiche.lien}" target="_blank">${g.pire_fiche.nom}</a></div>`:''}
    ${comp}
@@ -3972,7 +3978,7 @@ function contactHtml(c,i,j){
   <div class="contact-line" style="display:flex;align-items:center;gap:8px">${photo}<span><b>${(c.prenom+' '+c.nom).trim()}</b> — ${fonctionAff} <span class="badge b-gmb">${c.source}</span>${(prof&&prof.company_size)?` <span class="badge b-gmb" title="Taille d'entreprise (LinkedIn)">${prof.company_size}</span>`:''}</span></div>
   ${en?`
    ${en.email?`<div class="contact-line">✉️ <b>${en.email}</b> <a class="act act-call" style="padding:4px 10px;font-size:12px" href="mailto:${en.email}" title="Écrire un email">📧</a> <button class="act act-copy" style="padding:4px 10px;font-size:12px" onclick="navigator.clipboard.writeText('${en.email}');toast('Email copié ✓')" title="Copier l'adresse">📋</button>${en.email_qualification?` <span class="badge b-new">${en.email_qualification}</span>`:''}</div>`:'<div class="contact-line" style="color:var(--ink-soft)">✉️ Email non trouvé (Dropcontact) — repli FullEnrich à venir</div>'}
-   ${en.telephone?`<div class="contact-line">${estMobile(en.telephone)?'📱':'☎️'} <b>${en.telephone}</b>${telBtns(en.telephone)}${(function(){var so=en.tel_source||en.telephone_source;return so?' <span class="badge b-gmb">'+(({fullenrich:'FullEnrich',kaspr:'Kaspr',lemlist:'Lemlist'})[so]||so)+'</span>':'';})()}</div>`:''}${(en.telephone_fixe&&en.telephone_fixe!==en.telephone)?`<div class="contact-line">☎️ <b>${en.telephone_fixe}</b> <span class="badge b-gmb">fixe</span>${telBtns(en.telephone_fixe)}</div>`:''}
+   ${en.telephone?`<div class="contact-line">${estMobile(en.telephone)?'📱':'☎️'} <b>${en.telephone}</b>${telBtns(en.telephone,i,(c.prenom+' '+c.nom).trim())}${(function(){var so=en.tel_source||en.telephone_source;return so?' <span class="badge b-gmb">'+(({fullenrich:'FullEnrich',kaspr:'Kaspr',lemlist:'Lemlist'})[so]||so)+'</span>':'';})()}</div>`:''}${(en.telephone_fixe&&en.telephone_fixe!==en.telephone)?`<div class="contact-line">☎️ <b>${en.telephone_fixe}</b> <span class="badge b-gmb">fixe</span>${telBtns(en.telephone_fixe,i,(c.prenom+' '+c.nom).trim())}</div>`:''}
    ${en.linkedin?`<div class="contact-line">💼 <a href="${en.linkedin.startsWith('http')?en.linkedin:'https://'+en.linkedin}" target="_blank">Profil LinkedIn ✓</a></div>`:(prof&&prof.linkedin_url?`<div class="contact-line">💼 <a href="${prof.linkedin_url.startsWith('http')?prof.linkedin_url:'https://'+prof.linkedin_url}" target="_blank">Profil LinkedIn ✓</a> <span class="badge b-gmb">Lemlist</span></div>`:'')}`
   :`<button class="act act-lemlist" id="enrbtn${i}_${j}" onclick="enrichir(${i},${j})" style="margin-top:4px">✉️ Enrichir ce contact</button>`}
   ${en&&(!en.email||!en.telephone)?`<button class="act act-copy" style="margin-top:4px" id="febtn${i}_${j}" onclick="lancerFE(${i},${j})" title="Cascade 15+ sources : email de repli + mobile">${en.fe_fait?'↻ FullEnrich (re-tenter)':'🔁 FullEnrich'}</button>`:''}
@@ -4143,7 +4149,7 @@ function ficheReal(e,i){
    <div class="fiche-cols">
     <div>
      <div class="col-title">Contact</div>
-     ${(!(e.gmb&&e.gmb.telephone))&&e.ia&&e.ia.telephone?`<div class="contact-line">☎️ Standard : <b>${e.ia.telephone}</b>${telBtns(e.ia.telephone)} <span class="badge b-signal">trouvé sur le web (IA)</span></div>`:''}
+     ${(!(e.gmb&&e.gmb.telephone))&&e.ia&&e.ia.telephone?`<div class="contact-line">☎️ Standard : <b>${e.ia.telephone}</b>${telBtns(e.ia.telephone,i,'Standard')} <span class="badge b-signal">trouvé sur le web (IA)</span></div>`:''}
      ${(!(e.gmb&&e.gmb.trouve))&&e.ia&&e.ia.adresse?`<div class="contact-line" style="color:var(--ink-soft)">📍 ${e.ia.adresse} <span class="badge b-gmb">source web</span></div>`:''}
      ${contacts.map((c,j)=>contactHtml(c,i,j)).join('')||'<div class="hint">Aucun contact identifié — lance 🚀 Fiche.</div>'}
      ${e.linkedin_entreprise?`<div class="contact-line">🏢 <a href="${e.linkedin_entreprise.startsWith('http')?e.linkedin_entreprise:'https://'+e.linkedin_entreprise}" target="_blank">Page LinkedIn entreprise ✓</a></div>`:''}
@@ -4151,7 +4157,7 @@ function ficheReal(e,i){
       ${tel?`<a class="btn-cta btn-cta-green" href="tel:${telNorm(tel)}" style="text-decoration:none;display:inline-block">📞 Appeler</a>`:''}
       <button class="btn-cta btn-cta-orange" onclick="ouvrirSms(${i})">💬 SMS / RCS (Sofy)</button>
      </div>
-     ${gmbHtml(e.gmb)}
+     ${gmbHtml(e.gmb,i)}
      ${e.score?`
      <div class="col-title">Synthèse pour l'appel</div>
      <div class="review-box" style="background:#F4F6FF;border-color:#D9DEFF;color:var(--ink)">
@@ -5194,6 +5200,8 @@ function famTypeAct(a){
  const t=(a.type||'').toLowerCase();
  if(so==='note'||t==='note')return 'note';
  if(so==='rdv'||t==='rdv'||t.indexOf('rdv')>=0)return 'rdv';
+ if(so==='rappel'||t.indexOf('rappel')>=0)return 'rdv';
+ if(so==='whatsapp'||t.indexOf('whatsapp')>=0)return 'sms';
  if(so==='ringover'||t.indexOf('appel')>=0||t.indexOf('call')>=0||t.indexOf('aircall')>=0)return 'appel';
  if(so==='sms'||t.indexOf('sms')===0)return 'sms';
  if(t.indexOf('repl')>=0||t==='warmed'||t.indexOf('open')>=0||t.indexOf('click')>=0||t.indexOf('email')>=0||t.indexOf('interest')>=0||t.indexOf('unsub')>=0)return 'email';
@@ -5714,7 +5722,8 @@ async function envoyerSms(){
   const r=await api('/api/sms',{method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({to:dest.mobile,message,liste_id:state.savedId})});
   const dd=await r.json();
-  if(dd.ok)okN++;else err=(dd.erreur||'')+(dd.detail?' — '+dd.detail:'');
+  if(dd.ok){okN++;enregistrerActivite(REAL[SMS_CTX.i],null,'sms','💬 SMS envoyé (SoReach)',dest.nom+' · '+dest.mobile+' — « '+message.slice(0,140)+(message.length>140?'…':'')+' »');}
+  else err=(dd.erreur||'')+(dd.detail?' — '+dd.detail:'');
  }
  if(!okN){toast('SMS : '+err);return;}
  toast(`💬 ${okN}/${choisis.length} SMS envoyé(s) ✓`);const d={ok:true};
@@ -6157,7 +6166,7 @@ function filtrerTaches(cat){
  rendreTaches();
 }
 function ficheDepuisTache(id){var t=TACHES_INDEX[id]||{};if(t.liste_id){ouvrirListe(t.liste_id,null,t.entreprise_nom||'');}else{toast('Fiche non rattachée à une liste');}}
-function tacheAppeler(id){var t=TACHES_INDEX[id]||{};if(t.telephone){window.location.href='tel:'+String(t.telephone).replace(/[^+0-9]/g,'');return;}ficheDepuisTache(id);}
+function tacheAppeler(id){var t=TACHES_INDEX[id]||{};tacheTerminerAuto(id);if(t.telephone){window.location.href='tel:'+String(t.telephone).replace(/[^+0-9]/g,'');return;}ficheDepuisTache(id);}
 function tacheLinkedin(id){var t=TACHES_INDEX[id]||{};if(t.linkedin){window.open(String(t.linkedin).indexOf('http')===0?t.linkedin:'https://'+t.linkedin,'_blank');return;}ficheDepuisTache(id);}
 function tacheEmail(id){var t=TACHES_INDEX[id]||{};var em=(t.fiche_cle&&t.fiche_cle.indexOf('@')>=0)?t.fiche_cle:'';if(!em){ficheDepuisTache(id);return;}window.location.href='mailto:'+em;}
 function tacheRdvDepuisTache(id){
@@ -6226,9 +6235,16 @@ function formatRappel(d){
  if(d.toDateString()===demain.toDateString())return `Demain ${h}`;
  return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})+' '+h;
 }
+// Le SDR AGIT sur la tâche (ouvrir la fiche, appeler) -> elle est marquée faite automatiquement
+async function tacheTerminerAuto(id){
+ const t=TACHES_INDEX[id]||{};
+ try{await api('/api/taches',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(t.fiche_cle?{fiche_cle:t.fiche_cle,sdr:t.sdr,faite:true}:{id,faite:true})});}catch(e){}
+ toast('✅ Rappel marqué fait');
+ setTimeout(chargerTaches,400);
+}
 async function ouvrirTache(id){
  const t=TACHES_INDEX[id]||{};
- // Ouvre seulement la fiche — ne marque PAS la tâche faite (seul le bouton ✅ Fait la termine)
+ tacheTerminerAuto(id);
  if(t.liste_id){ ouvrirListe(t.liste_id,null,t.entreprise_nom||''); }
  else{ toast('Fiche non rattachée à une liste'); }
 }

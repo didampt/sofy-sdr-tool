@@ -100,6 +100,24 @@ export default async function handler(req, res) {
       });
     }
 
+    // Rappels / tâches de la fiche : programmés (⏰) et effectués (✅)
+    try {
+      const tks = await sql`
+        SELECT description, date_rappel, faite, sdr, created_at
+        FROM taches WHERE lower(fiche_cle) = ANY(${emails})
+        ORDER BY created_at DESC LIMIT 50`;
+      for (const t of tks) {
+        out.push({
+          source: 'rappel',
+          type: t.faite ? 'rappel_fait' : 'rappel_programme',
+          titre: t.faite ? '✅ Rappel effectué' : '⏰ Rappel programmé',
+          detail: [t.description, t.date_rappel ? 'pour le ' + new Date(t.date_rappel).toLocaleDateString('fr-FR') : ''].filter(Boolean).join(' — '),
+          auteur: t.sdr || null,
+          ts: t.created_at
+        });
+      }
+    } catch (_) {}
+
     out.sort((a, b) => new Date(b.ts || 0) - new Date(a.ts || 0));
 
     // Profils LinkedIn captés via Lemlist (photo miniature, poste…) pour les contacts de la fiche
