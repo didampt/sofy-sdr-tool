@@ -1873,7 +1873,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v238';
+const VERSION='v239';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -3317,7 +3317,9 @@ function ouvrirRappel(i){
  const e=REAL[i];
  const c=contactsDe(e)[0];
  const contactNom=(c&&c.nom)?`${c.prenom||''} ${c.nom}`.trim():'';
- RAPPEL_CTX={i,entreprise:enseigneDe(e)||e.nom,contact:contactNom,fiche_cle:'fr'+i};
+ // Clé STABLE (email du contact, sinon clé de fiche) : celle que la timeline du bloc-notes
+ // interroge — l'ancien 'fr'+i (index de ligne !) rendait le rappel invisible et ambigu.
+ RAPPEL_CTX={i,entreprise:enseigneDe(e)||e.nom,contact:contactNom,fiche_cle:(ficheEmails(e)[0]||cleFiche(e))};
  document.getElementById('rappel-dest').textContent=(enseigneDe(e)||e.nom||'').slice(0,40);
  // Pré-remplir : demain 10h par défaut
  const d=new Date();d.setDate(d.getDate()+1);d.setHours(10,0,0,0);
@@ -3346,7 +3348,16 @@ async function creerRappel(){
   const r=await api('/api/taches',{method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({liste_id:(RAPPEL_CTX.liste_id||state.savedId),fiche_cle:RAPPEL_CTX.fiche_cle,entreprise_nom:RAPPEL_CTX.entreprise,contact_nom:RAPPEL_CTX.contact,description:note,date_rappel:new Date(val).toISOString()})});
   const d=await r.json();
-  if(d.ok){toast('🔁 Rappel planifié ✓');document.getElementById('rappel-modal').style.display='none';}
+  if(d.ok){
+   toast('🔁 Rappel planifié ✓');document.getElementById('rappel-modal').style.display='none';
+   // Écho immédiat dans le bloc-notes de la fiche (la version serveur arrive au prochain chargement)
+   const ef=REAL[RAPPEL_CTX.i];
+   if(ef){
+    ef._act=ef._act||[];ef._actLoaded=true;
+    ef._act.unshift({source:'rappel',type:'rappel_programme',titre:'⏰ Rappel programmé',detail:[note,'pour le '+new Date(val).toLocaleDateString('fr-FR')+' '+new Date(val).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})].filter(Boolean).join(' — '),auteur:(state.user&&state.user.nom)||'',ts:new Date().toISOString()});
+    rerender(RAPPEL_CTX.i);
+   }
+  }
   else toast('Erreur : '+(d.erreur||'création impossible'));
  }catch(e){toast('Erreur réseau : '+e.message);}
 }
