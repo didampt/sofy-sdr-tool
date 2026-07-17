@@ -1873,7 +1873,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v236';
+const VERSION='v237';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4213,7 +4213,7 @@ function ficheReal(e,i){
    <div class="act-row" style="border-top:1px solid var(--line);padding-top:12px;margin-top:16px">
     <button class="act act-call" onclick="lancerFiche(${i})" title="Pipeline complet sur cette fiche">🚀 Fiche</button>
     <button class="act act-export" id="gmbbtn${i}" onclick="analyserFiche(${i})">${!e.gmb?'⭐ Analyser (GMB + IA)':'↻ Analyser'}</button>
-    <button class="act act-copy" onclick="(async()=>{if(REAL[${i}]._busy){toast('Analyse en cours ⏳');return;}REAL[${i}]._busy=true;rerender(${i});try{toast('👥 Recherche des personas (IA)…');await chercherPersonas(${i});}finally{REAL[${i}]._busy=false;rerender(${i});}})()">👥 Personas</button>
+    <button class="act act-copy" onclick="if(REAL[${i}]._busy){toast('Analyse en cours ⏳');}else{ouvrirChoixPersonas(${i});}" title="Chercher des fonctions ciblées (LinkedIn) — la fenêtre de choix s'ouvre toujours">👥 Personas</button>
     <button class="act ${e.score?'act-copy':'act-call'}" onclick="lancerScore(${i})">${e.score?'↻ Re-scorer':'🎯 Scorer + synthèse'}</button>
     <button class="act act-copy" onclick="ouvrirInfo(${i})">ℹ️</button>
     <button class="act act-copy" onclick="document.getElementById('edit${i}').style.display=document.getElementById('edit${i}').style.display==='none'?'block':'none'">✏️</button>
@@ -4636,6 +4636,8 @@ function jobsCibles(){
 const JOBS_PERSONAS=["Directeur Commercial","Directeur Marketing","Responsable Communication","Directeur Relation Client","Directeur Expérience Client (CX)","Directeur Omnicanal / Digital","Responsable Service Client","Directeur CRM","Directeur Réseau / Retail"];
 function ouvrirChoixPersonas(i){
  const deja=new Set(jobsCibles());
+ // Hot Lead (Signaux / Signups) sans fonctions mémorisées : personas C-level pré-cochés
+ if(!deja.size&&REAL[i]&&estVisiteSite(REAL[i])){['Directeur Commercial','Directeur Marketing','Responsable Communication'].forEach(function(j){deja.add(j);});}
  document.getElementById('personas-choix').innerHTML=`
   <div style="font-size:18px;font-weight:700;margin-bottom:6px">👥 Quelles fonctions chercher ?</div>
   <div style="font-size:13px;color:var(--ink-soft);line-height:1.5;margin-bottom:14px">Cette liste ne cible que « Dirigeant / PDG » — il est déjà fourni par Pappers sur chaque fiche. Coche les fonctions à chercher sur LinkedIn : elles seront <b>mémorisées pour toute la liste</b> (bouton 👥 et enrichissement).</div>
