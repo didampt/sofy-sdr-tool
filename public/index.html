@@ -1873,7 +1873,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v239';
+const VERSION='v240';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -3339,14 +3339,19 @@ function rappelRaccourci(heures){
  const d=new Date();d.setHours(d.getHours()+heures);
  document.getElementById('rappel-date').value=isoLocal(d);
 }
+let RAPPEL_ENVOI=false; // anti double-clic (2 clics = 2 rappels)
 async function creerRappel(){
- if(!RAPPEL_CTX)return;
+ if(!RAPPEL_CTX||RAPPEL_ENVOI)return;
  const val=document.getElementById('rappel-date').value;
  if(!val){toast('Choisis une date/heure');return;}
  const note=document.getElementById('rappel-note').value.trim();
+ // La RAISON du rappel = le statut de la fiche (« Pas de réponse », « Absent »…), en tête de la description
+ const raison=(RAPPEL_CTX.i!=null&&REAL[RAPPEL_CTX.i]&&REAL[RAPPEL_CTX.i].statut_appel)||'';
+ const description=[raison,note].filter(Boolean).join(' — ');
+ RAPPEL_ENVOI=true;
  try{
   const r=await api('/api/taches',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({liste_id:(RAPPEL_CTX.liste_id||state.savedId),fiche_cle:RAPPEL_CTX.fiche_cle,entreprise_nom:RAPPEL_CTX.entreprise,contact_nom:RAPPEL_CTX.contact,description:note,date_rappel:new Date(val).toISOString()})});
+   body:JSON.stringify({liste_id:(RAPPEL_CTX.liste_id||state.savedId),fiche_cle:RAPPEL_CTX.fiche_cle,entreprise_nom:RAPPEL_CTX.entreprise,contact_nom:RAPPEL_CTX.contact,description:description,date_rappel:new Date(val).toISOString()})});
   const d=await r.json();
   if(d.ok){
    toast('🔁 Rappel planifié ✓');document.getElementById('rappel-modal').style.display='none';
@@ -3354,12 +3359,13 @@ async function creerRappel(){
    const ef=REAL[RAPPEL_CTX.i];
    if(ef){
     ef._act=ef._act||[];ef._actLoaded=true;
-    ef._act.unshift({source:'rappel',type:'rappel_programme',titre:'⏰ Rappel programmé',detail:[note,'pour le '+new Date(val).toLocaleDateString('fr-FR')+' '+new Date(val).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})].filter(Boolean).join(' — '),auteur:(state.user&&state.user.nom)||'',ts:new Date().toISOString()});
+    ef._act.unshift({source:'rappel',type:'rappel_programme',titre:'⏰ Rappel programmé',detail:[description,'pour le '+new Date(val).toLocaleDateString('fr-FR')+' '+new Date(val).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})].filter(Boolean).join(' — '),auteur:(state.user&&state.user.nom)||'',ts:new Date().toISOString()});
     rerender(RAPPEL_CTX.i);
    }
   }
   else toast('Erreur : '+(d.erreur||'création impossible'));
  }catch(e){toast('Erreur réseau : '+e.message);}
+ finally{RAPPEL_ENVOI=false;}
 }
 function majTraites(){
  const kt=document.getElementById('k-traites');
@@ -6225,14 +6231,9 @@ function sectionTaches(titre,taches,coul){
     <div class="lead-name">${(t.entreprise_nom||'Fiche').replace(/</g,'&lt;')}${t.contact_nom?' — '+t.contact_nom.replace(/</g,'&lt;'):''}</div>
     ${t.description?`<div class="lead-meta">${t.description.replace(/</g,'&lt;')}</div>`:''}
     <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
-     <button class="act act-call" onclick="tacheAppeler(${t.id})">📞 Appeler</button>
-     <button class="act act-copy" onclick="tacheLinkedin(${t.id})">💼 LinkedIn</button>
-     <button class="act act-copy" onclick="tacheEmail(${t.id})">✉️ Email</button>
-     <button class="act act-copy" onclick="tacheRdvDepuisTache(${t.id})">🤝 RDV</button>
-     <button class="act act-copy" onclick="nouvelleTacheDepuisTache(${t.id})">➕ Tâche</button>
+     <button class="act act-export" onclick="ouvrirTache(${t.id})" title="Ouvre la fiche et marque le rappel fait">📂 Ouvrir la fiche</button>
      <span style="flex:1"></span>
-     <button class="act act-export" onclick="ouvrirTache(${t.id})">📂 Ouvrir</button>
-     <button class="act" style="background:var(--ok);color:#fff" onclick="tacheFait(${t.id})" title="Marquer comme faite">✅ Fait</button>
+     <button class="act" style="background:var(--ok);color:#fff" onclick="tacheFait(${t.id})" title="Marquer comme faite sans ouvrir">✅ Fait</button>
      <button class="act" style="background:#fff;color:var(--danger)" onclick="tacheSupprimer(${t.id})" title="Supprimer ce rappel">🗑️</button>
     </div>
    </div>`;
