@@ -1873,7 +1873,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v240';
+const VERSION='v241';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -6403,12 +6403,16 @@ function rafraichirListes(){
 }
 async function archiverListe(id,nom,archiver){
  const action=archiver?'archiver':'désarchiver';
- const ok=await confirmSofy(archiver?'🗄️ Archiver la liste':'♻️ Désarchiver la liste',`Voulez-vous ${action} « ${nom} » ?${archiver?'\n\nElle sera masquée de l\'historique (récupérable à tout moment).':''}`,archiver?'Archiver':'Désarchiver');
+ const ok=await confirmSofy(archiver?'🗄️ Archiver la liste':'♻️ Désarchiver la liste',`Voulez-vous ${action} « ${nom} » ?${archiver?'\n\nElle sera masquée de l\'historique (récupérable à tout moment).\nSes rappels en attente seront supprimés et ses SMS programmés annulés.':''}`,archiver?'Archiver':'Désarchiver');
  if(!ok)return;
  try{
   const r=await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,archiver})});
   const d=await r.json();
-  if(d.ok){toast(archiver?'🗄️ Liste archivée':'♻️ Liste désarchivée');rafraichirListes();}
+  if(d.ok){
+   var bilan='';
+   if(archiver&&(d.rappels_supprimes||d.sms_annules))bilan=' · '+[d.rappels_supprimes?d.rappels_supprimes+' rappel'+(d.rappels_supprimes>1?'s':'')+' supprimé'+(d.rappels_supprimes>1?'s':''):'',d.sms_annules?d.sms_annules+' SMS annulé'+(d.sms_annules>1?'s':''):''].filter(Boolean).join(' · ');
+   toast((archiver?'🗄️ Liste archivée':'♻️ Liste désarchivée')+bilan);rafraichirListes();
+  }
   else toast('Erreur : '+(d.erreur||'action impossible'));
  }catch(e){toast('Erreur réseau : '+e.message);}
 }

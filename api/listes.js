@@ -274,7 +274,19 @@ export default async function handler(req, res) {
           if (rows[0].sdr !== user.nom) return res.status(403).json({ erreur: 'Vous ne pouvez archiver que vos propres listes' });
         }
         await sql`UPDATE listes SET archivee = ${!!archiver} WHERE id = ${parseInt(id)}`;
-        return res.status(200).json({ ok: true, archivee: !!archiver });
+        // Archiver = sortir la liste du jeu : on SUPPRIME ses rappels non faits et on ANNULE
+        // ses SMS programmés en attente (sinon les alertes et les envois continuent !).
+        // Le désarchivage ne restaure rien : le SDR reprogramme ce dont il a besoin.
+        let rappelsSupprimes = 0, smsAnnules = 0;
+        if (archiver) {
+          try {
+            const rt = await sql`DELETE FROM taches WHERE liste_id = ${parseInt(id)} AND faite = FALSE RETURNING id`;
+            rappelsSupprimes = rt.length;
+            const rs = await sql`UPDATE sms_programmes SET statut = 'cancelled' WHERE liste_id = ${parseInt(id)} AND statut = 'pending' RETURNING id`;
+            smsAnnules = rs.length;
+          } catch (_) {}
+        }
+        return res.status(200).json({ ok: true, archivee: !!archiver, rappels_supprimes: rappelsSupprimes, sms_annules: smsAnnules });
       }
       if (veille !== undefined) {
         const fin = veille ? new Date(Date.now() + (parseInt(veille_jours) || 60) * 24 * 3600 * 1000) : null;
