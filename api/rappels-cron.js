@@ -59,5 +59,45 @@ export default async function handler(req, res) {
     await sql`UPDATE taches SET alertee = TRUE WHERE id = ${t.id}`;
   }
 
-  return res.status(200).json({ ok: true, dues: dues.length, envoyes, sansSlack, erreurs });
+  // ── Auto-archivage des listes en NURTURING dont l'activité est épuisée ──
+  // Une liste nurturing est archivée automatiquement quand : plus AUCUN rappel ni SMS en
+  // attente, ET aucun événement (Lemlist, notes, appels journalisés) sur ses fiches depuis
+  // 30 jours, ET au moins 7 jours passés en nurturing. Le SDR reçoit un bilan en DM Slack.
+  let autoArchivees = 0;
+  try {
+    const nurt = await sql`
+      SELECT l.id, l.nom, l.sdr, l.stats, l.total, l.entreprises, l.statut_depuis, s.slack_id
+      FROM listes l LEFT JOIN sdrs s ON s.nom = l.sdr
+      WHERE l.statut = 'nurturing' AND l.statut_depuis < NOW() - INTERVAL '7 days'
+      LIMIT 20`;
+    for (const l of nurt) {
+      const [tp] = await sql`SELECT COUNT(*)::int AS n FROM taches WHERE liste_id = ${l.id} AND faite = FALSE`;
+      const [sp] = await sql`SELECT COUNT(*)::int AS n FROM sms_programmes WHERE liste_id = ${l.id} AND statut = 'pending'`;
+      if ((tp && tp.n) || (sp && sp.n)) continue; // encore des rappels/SMS -> on laisse vivre
+
+      // Emails des fiches -> dernier événement journalisé (Lemlist, notes, WhatsApp, SMS…)
+      const emails = new Set();
+      for (const e of (l.entreprises || [])) {
+        for (const c of (e.contacts || [])) if (c && c.enrich && c.enrich.email) emails.add(String(c.enrich.email).toLowerCase());
+        if (e.enrich && e.enrich.email) emails.add(String(e.enrich.email).toLowerCase());
+      }
+      let dernier = null, reponses = 0;
+      if (emails.size) {
+        const arr = [...emails];
+        const [d] = await sql`SELECT MAX(ts) AS dernier FROM activites WHERE lower(fiche_cle) = ANY(${arr})`;
+        dernier = d && d.dernier;
+        const [rp] = await sql`SELECT COUNT(*)::int AS n FROM activites WHERE lower(fiche_cle) = ANY(${arr}) AND type = ANY(${['warmed', 'emailsReplied', 'linkedinReplied', 'whatsappReplied', 'smsReplied']})`;
+        reponses = (rp && rp.n) || 0;
+      }
+      if (dernier && new Date(dernier) > new Date(Date.now() - 30 * 24 * 3600 * 1000)) continue; // activité récente
+
+      await sql`UPDATE listes SET archivee = TRUE, statut = 'archivee', statut_depuis = NOW(), veille = FALSE WHERE id = ${l.id}`;
+      autoArchivees++;
+      const st = l.stats || {};
+      const bilan = `🗄️ *Liste archivée automatiquement* — « ${l.nom} » (activité épuisée : séquences terminées, plus de rappel ni de SMS, aucun signal depuis 30 j)\n📊 Bilan : ${l.total || 0} fiche(s) · ${reponses} réponse(s) · ${st.rdv || 0} RDV\n♻️ Récupérable à tout moment dans Archives : ${APP_URL}`;
+      if (l.slack_id) await envoyerDM(l.slack_id, bilan);
+    }
+  } catch (_) {}
+
+  return res.status(200).json({ ok: true, dues: dues.length, envoyes, sansSlack, erreurs, listes_auto_archivees: autoArchivees });
 }

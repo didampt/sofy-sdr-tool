@@ -140,20 +140,20 @@ export default async function handler(req, res) {
         const estNum = digits.length >= 4 && /^[0-9\s.()+\-]+$/.test(recherche);
         const likeDigits = '%' + digits + '%';
         rows = toutVoir
-          ? await sql`SELECT id, nom, sdr, createur, archivee, stats, total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+          ? await sql`SELECT id, nom, sdr, createur, archivee, statut, statut_depuis, stats, total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                       WHERE (nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like}
                              OR (${estNum} AND regexp_replace(entreprises::text, '[^0-9]', '', 'g') ILIKE ${likeDigits}))
                       ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`
-          : await sql`SELECT id, nom, sdr, createur, archivee, stats, total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+          : await sql`SELECT id, nom, sdr, createur, archivee, statut, statut_depuis, stats, total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                       WHERE (sdr = ${moi} OR criteres->>'auto' = 'hotleads')
                         AND (nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like}
                              OR (${estNum} AND regexp_replace(entreprises::text, '[^0-9]', '', 'g') ILIKE ${likeDigits}))
                       ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`;
       } else {
         rows = toutVoir
-          ? await sql`SELECT id, nom, sdr, createur, archivee, stats, total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+          ? await sql`SELECT id, nom, sdr, createur, archivee, statut, statut_depuis, stats, total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                       ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`
-          : await sql`SELECT id, nom, sdr, createur, archivee, stats, total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+          : await sql`SELECT id, nom, sdr, createur, archivee, statut, statut_depuis, stats, total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
                       WHERE (sdr = ${moi} OR criteres->>'auto' = 'hotleads')
                       ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`;
       }
@@ -166,11 +166,24 @@ export default async function handler(req, res) {
           cr.forEach(c => { couts[c.liste_id] = Number(c.cout) || 0; });
         } catch (_) {}
       }
+      // Activité résiduelle par liste (nurturing) : rappels et SMS encore en attente
+      const pendants = {};
+      try {
+        const tp = await sql`SELECT liste_id, COUNT(*)::int AS n FROM taches WHERE faite = FALSE AND liste_id IS NOT NULL GROUP BY liste_id`;
+        for (const r of tp) pendants[r.liste_id] = { rappels: r.n, sms: 0 };
+        const sp = await sql`SELECT liste_id, COUNT(*)::int AS n FROM sms_programmes WHERE statut = 'pending' AND liste_id IS NOT NULL GROUP BY liste_id`;
+        for (const r of sp) { (pendants[r.liste_id] = pendants[r.liste_id] || { rappels: 0, sms: 0 }).sms = r.n; }
+      } catch (_) {}
       // Stats déjà pré-calculées et stockées en base (colonne stats) → aucun gros JSON chargé.
       const voirArchivees = archivees === '1' || archivees === 'true';
       const listes = rows
         .filter(r => voirArchivees ? true : !r.archivee)
-        .map(r => ({ ...r, cout: couts[r.id] || 0, stats: r.stats || null }));
+        .map(r => ({
+          ...r, cout: couts[r.id] || 0, stats: r.stats || null,
+          statut: r.statut || (r.archivee ? 'archivee' : 'active'),
+          rappels_pendants: (pendants[r.id] || {}).rappels || 0,
+          sms_pendants: (pendants[r.id] || {}).sms || 0
+        }));
       return res.status(200).json({ listes });
     }
 
@@ -265,28 +278,39 @@ export default async function handler(req, res) {
         await sql`UPDATE listes SET sdr = ${assigner_a.trim()} WHERE id = ${parseInt(id)}`;
         return res.status(200).json({ ok: true, assigne: assigner_a.trim() });
       }
-      // Archiver / désarchiver : admin = toutes les listes ; SDR = uniquement SES propres listes
-      if (archiver !== undefined) {
+      // ── Cycle de vie : active | nurturing | archivee ──
+      // active    = le SDR travaille la liste
+      // nurturing = SDR terminé, la MACHINE continue (séquences Lemlist, rappels, alertes,
+      //             veille Snitcher activée 60 j) — la liste sort de la vue « En cours »
+      // archivee  = terminal : rappels supprimés, SMS annulés, veille coupée
+      // Rétro-compatible : l'ancien paramètre `archiver` est mappé sur statut.
+      let statutCible = (typeof req.body.statut === 'string') ? req.body.statut : undefined;
+      if (statutCible === undefined && archiver !== undefined) statutCible = archiver ? 'archivee' : 'active';
+      if (statutCible !== undefined) {
+        if (!['active', 'nurturing', 'archivee'].includes(statutCible)) return res.status(400).json({ erreur: 'statut invalide (active | nurturing | archivee)' });
         const adminA = ['admin', 'superadmin'].includes(user.role);
         if (!adminA) {
           const rows = await sql`SELECT sdr FROM listes WHERE id = ${parseInt(id)}`;
           if (!rows.length) return res.status(404).json({ erreur: 'Liste introuvable' });
-          if (rows[0].sdr !== user.nom) return res.status(403).json({ erreur: 'Vous ne pouvez archiver que vos propres listes' });
+          if (rows[0].sdr !== user.nom) return res.status(403).json({ erreur: 'Vous ne pouvez modifier que vos propres listes' });
         }
-        await sql`UPDATE listes SET archivee = ${!!archiver} WHERE id = ${parseInt(id)}`;
-        // Archiver = sortir la liste du jeu : on SUPPRIME ses rappels non faits et on ANNULE
-        // ses SMS programmés en attente (sinon les alertes et les envois continuent !).
-        // Le désarchivage ne restaure rien : le SDR reprogramme ce dont il a besoin.
         let rappelsSupprimes = 0, smsAnnules = 0;
-        if (archiver) {
+        if (statutCible === 'archivee') {
+          await sql`UPDATE listes SET archivee = TRUE, statut = 'archivee', statut_depuis = NOW(), veille = FALSE WHERE id = ${parseInt(id)}`;
+          // Archiver = sortir la liste du jeu : rappels non faits supprimés, SMS en attente annulés
+          // (sinon les alertes et les envois continuent !). Le désarchivage ne restaure rien.
           try {
             const rt = await sql`DELETE FROM taches WHERE liste_id = ${parseInt(id)} AND faite = FALSE RETURNING id`;
             rappelsSupprimes = rt.length;
             const rs = await sql`UPDATE sms_programmes SET statut = 'cancelled' WHERE liste_id = ${parseInt(id)} AND statut = 'pending' RETURNING id`;
             smsAnnules = rs.length;
           } catch (_) {}
+        } else if (statutCible === 'nurturing') {
+          await sql`UPDATE listes SET archivee = FALSE, statut = 'nurturing', statut_depuis = NOW(), veille = TRUE, veille_fin = NOW() + INTERVAL '60 days' WHERE id = ${parseInt(id)}`;
+        } else {
+          await sql`UPDATE listes SET archivee = FALSE, statut = 'active', statut_depuis = NOW() WHERE id = ${parseInt(id)}`;
         }
-        return res.status(200).json({ ok: true, archivee: !!archiver, rappels_supprimes: rappelsSupprimes, sms_annules: smsAnnules });
+        return res.status(200).json({ ok: true, statut: statutCible, archivee: statutCible === 'archivee', rappels_supprimes: rappelsSupprimes, sms_annules: smsAnnules });
       }
       if (veille !== undefined) {
         const fin = veille ? new Date(Date.now() + (parseInt(veille_jours) || 60) * 24 * 3600 * 1000) : null;

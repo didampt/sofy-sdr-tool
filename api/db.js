@@ -21,6 +21,11 @@ export async function ensureSchema() {
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`;
   await sql`CREATE INDEX IF NOT EXISTS idx_listes_hash ON listes(criteres_hash)`;
+  // Cycle de vie des listes : active (SDR au travail) | nurturing (séquences/rappels encore
+  // vivants, alertes conservées) | archivee (terminal). Rétro-compatible avec `archivee`.
+  await sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS statut TEXT`;
+  await sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS statut_depuis TIMESTAMPTZ`;
+  await sql`UPDATE listes SET statut = CASE WHEN archivee THEN 'archivee' ELSE 'active' END, statut_depuis = COALESCE(statut_depuis, NOW()) WHERE statut IS NULL`;
   await sql`CREATE TABLE IF NOT EXISTS sdrs (
     id SERIAL PRIMARY KEY,
     nom TEXT NOT NULL UNIQUE,
