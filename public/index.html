@@ -1874,7 +1874,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v242';
+const VERSION='v243';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -6080,11 +6080,11 @@ async function supprSdr(id,nom){
 
 /* ───────── HISTORIQUE DES LISTES ───────── */
 function rendreLigneListe(l,champRecherche){
- const date=new Date(l.created_at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+ const date=new Date(l.created_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});
  const cr=l.criteres||{};
  const st=l.stats;
  const q=st?st.qualite:null;
- const qcol=q===null?'#94A3B8':(q>=60?'#14532d':(q>=40?'#B45309':'#991B1B'));
+ const qcol=q===null?'#94A3B8':(q>=60?'#15803D':(q>=40?'#B45309':'#B91C1C'));
  const admin=state.user&&['admin','superadmin'].includes(state.user.role);
  const superA=state.user&&state.user.role==='superadmin';
  const estMien=state.user&&l.sdr===state.user.nom;
@@ -6092,40 +6092,41 @@ function rendreLigneListe(l,champRecherche){
  const champ=champRecherche||'hist-search';
  const statutListe=l.statut||(l.archivee?'archivee':'active');
  const nomJs=(l.nom||'').replace(/'/g,"\\'");
- // Activité résiduelle (surtout utile en nurturing) + suggestion nurturing quand 100 % traité
- const resid=(statutListe!=='archivee'&&(l.rappels_pendants||l.sms_pendants))?`<span class="stat-pill" title="Activité encore programmée sur cette liste">🔁 ${[l.rappels_pendants?l.rappels_pendants+' rappel'+(l.rappels_pendants>1?'s':''):'',l.sms_pendants?l.sms_pendants+' SMS':''].filter(Boolean).join(' · ')}</span>`:'';
- const suggestion=(statutListe==='active'&&st&&st.pct_tag>=100&&cr.auto!=='hotleads')?`<span class="stat-pill good" style="cursor:pointer" onclick="changerStatutListe(${l.id},'${nomJs}','nurturing')" title="Liste 100 % traitée — la passer en nurturing (la machine continue, alertes conservées)">✅ Terminée → 🌱 Nurturing ?</span>`:'';
- const badgeNurt=statutListe==='nurturing'?`<span class="stat-pill" style="background:#166534" title="SDR terminé — séquences, rappels et alertes toujours actifs, veille Snitcher ON">🌱 Nurturing</span>`:'';
- const pastilles=st?`<div style="margin-top:8px">
-   ${badgeNurt}
-   <span class="stat-pill">${st.pct_complete}% complété</span>
-   <span class="stat-pill">coût ${(l.cout||0).toFixed(2)} €</span>
-   ${st.rdv?`<span class="stat-pill good">🤝 ${st.rdv} RDV pris</span>`:''}
-   ${st.pct_mauvais_num?`<span class="stat-pill bad">${st.pct_mauvais_num}% ❌ numéros</span>`:''}
-   ${st.pct_pas_interesse?`<span class="stat-pill bad">${st.pct_pas_interesse}% ❌ intéressé</span>`:''}
-   ${st.pct_pas_reponse?`<span class="stat-pill bad">${st.pct_pas_reponse}% ❌ réponse</span>`:''}
-   ${cr.auto!=='hotleads'?`<span class="stat-pill" style="background:${st.pct_tag>=100?'#14532d':'#475569'}">✋ ${st.pct_tag||0}% traités${st.pct_tag>=100?' ✓':''}</span>`:''}
-   ${resid}
-   ${suggestion}
- </div>`:(badgeNurt||resid?`<div style="margin-top:8px">${badgeNurt}${resid}</div>`:'');
- return `<div class="fiche"><div class="fiche-top" style="grid-template-columns:1fr auto auto;align-items:center;gap:14px">
-  <div>
-   <div class="lead-name">${l.nom}${cr.auto!=='hotleads'?` <span onclick="renommerListe(${l.id},this)" data-nom="${(l.nom||'').replace(/"/g,'&quot;')}" title="Renommer la liste" style="cursor:pointer;font-size:14px;opacity:.5;font-weight:normal">✏️</span>`:''}</div>
-   <div class="lead-meta">SDR : <b>${l.sdr}</b>${(l.createur&&l.createur!==l.sdr)?` · créée par <b>${l.createur}</b>`:''} · ${date} · ${l.total||l.nb_entreprises||0} entreprise${(l.total||l.nb_entreprises||0)>1?'s':''}${cr.auto==='hotleads'?' · 🔥 liste automatique':cr.ia?` · 🤖 Liste intelligente${(cr.criteres_ia&&cr.criteres_ia.activite_libre)?' · '+cr.criteres_ia.activite_libre:''}`:cr.gmb?` · 📍 Google Maps · ${cr.activite||''}${(cr.villes||[]).length?' · '+cr.villes.join(', '):''}${cr.note_max?' · note ≤ '+cr.note_max+' ★':''}`:cr.manuelle?' · ✍️ Liste manuelle':` · 🏢 Pappers · ${(cr.naf||[]).join(', ')} · ${(cr.pays||[]).join(' + ')} · ~${l.credits_estimes||0} crédits`}</div>
-   ${pastilles}
+ const auto=cr.auto==='hotleads';
+ const source=auto?'Hot Leads (auto)':cr.ia?'Liste intelligente':cr.gmb?('Google Maps'+(cr.activite?' \u00b7 '+cr.activite:(cr.cible?' \u00b7 '+cr.cible:''))):cr.verticale?('Verticale \u00b7 '+(cr.cible||'')):cr.manuelle?'Manuelle':('Pappers'+((cr.naf||[]).length?' \u00b7 '+cr.naf.join(', '):''));
+ // Tags de cycle de vie + score qualite : sobres, sans emoji
+ const tagStatut=statutListe==='nurturing'
+  ?'<span style="font-size:10.5px;font-weight:700;letter-spacing:.06em;color:#15803D;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:6px;padding:3px 8px;white-space:nowrap">NURTURING</span>'
+  :(statutListe==='archivee'?'<span style="font-size:10.5px;font-weight:700;letter-spacing:.06em;color:#64748B;background:#F1F5F9;border:1px solid #E2E8F0;border-radius:6px;padding:3px 8px;white-space:nowrap">ARCHIV\u00c9E</span>':'');
+ const badgeQ=(q!==null&&st&&st.pct_tag>=100)?`<span title="Score qualit\u00e9 (liste 100 % trait\u00e9e)" style="font-size:12px;font-weight:700;color:#fff;background:${qcol};border-radius:6px;padding:3px 9px;white-space:nowrap">${q} %</span>`:'';
+ const pill=(txt,type,extra)=>{const c=type==='good'?'color:#15803D;background:#F0FDF4;border-color:#BBF7D0':(type==='bad'?'color:#B91C1C;background:#FEF2F2;border-color:#FECACA':'color:var(--ink-soft);background:var(--paper);border-color:var(--line)');return `<span style="font-size:12px;border:1px solid;border-radius:6px;padding:3px 9px;white-space:nowrap;${c}" ${extra||''}>${txt}</span>`;};
+ const pills=[];
+ if(st&&!auto)pills.push(pill((st.pct_tag||0)+' % trait\u00e9s',st.pct_tag>=100?'good':''));
+ if(st&&st.rdv)pills.push(pill(st.rdv+' RDV pris','good'));
+ if(st&&st.pct_pas_interesse)pills.push(pill(st.pct_pas_interesse+' % refus','bad'));
+ if(statutListe!=='archivee'&&(l.rappels_pendants||l.sms_pendants))pills.push(pill([l.rappels_pendants?l.rappels_pendants+' rappel'+(l.rappels_pendants>1?'s':''):'',l.sms_pendants?l.sms_pendants+' SMS':''].filter(Boolean).join(' \u00b7 ')+' \u00e0 venir',''));
+ if(statutListe==='active'&&st&&st.pct_tag>=100&&!auto&&peutArchiver)pills.push(`<span onclick="changerStatutListe(${l.id},'${nomJs}','nurturing')" title="La liste est 100 % trait\u00e9e : la passer en nurturing (s\u00e9quences, rappels et alertes restent actifs)" style="cursor:pointer;font-size:12px;font-weight:600;color:#15803D;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:6px;padding:3px 9px;white-space:nowrap">Termin\u00e9e \u2014 passer en nurturing \u2192</span>`);
+ const btn=(label,onclick,cls,titre)=>`<button class="act ${cls||'act-export'}" onclick="${onclick}"${titre?` title="${titre}"`:''}>${label}</button>`;
+ const actions=[
+  btn('Ouvrir',`ouvrirListe(${l.id},null,document.getElementById('${champ}').value.trim())`,'act-call','Rouvrir la liste (gratuit)'),
+  btn('Mettre \u00e0 jour',`majListe(${l.id})`),
+  btn(l.veille?'Veille : ON':'Veille : OFF',`basculerVeille(${l.id},${l.veille?'false':'true'})`,l.veille?'act-copy':'act-export',l.veille?'Signaux surveill\u00e9s \u2014 cliquer pour arr\u00eater':'Surveiller les signaux (60 j)'),
+  (peutArchiver&&!auto&&statutListe==='active')?btn('Passer en nurturing',`changerStatutListe(${l.id},'${nomJs}','nurturing')`,'act-copy','SDR termin\u00e9, la machine continue (s\u00e9quences, rappels, alertes, veille)'):'',
+  (peutArchiver&&!auto&&statutListe==='nurturing')?btn('R\u00e9activer',`changerStatutListe(${l.id},'${nomJs}','active')`,'act-copy'):'',
+  (peutArchiver&&!auto)?btn(l.archivee?'D\u00e9sarchiver':'Archiver',`archiverListe(${l.id},'${nomJs}',${l.archivee?'false':'true'})`):'',
+  (admin&&!auto)?btn('Transf\u00e9rer',`transfererListe(${l.id},'${nomJs}')`):'',
+  (!auto)?`<button class="act act-export" data-nom="${(l.nom||'').replace(/"/g,'&quot;')}" onclick="renommerListe(${l.id},this)">Renommer</button>`:'',
+  (superA&&!auto)?`<button class="act act-export" style="color:#B91C1C;border-color:#FECACA" onclick="supprimerListe(${l.id},'${nomJs}')">Supprimer</button>`:''
+ ].filter(Boolean).join('');
+ return `<div class="fiche" style="padding:16px 18px">
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+   <div class="lead-name" style="flex:1;min-width:240px">${l.nom}</div>
+   ${tagStatut}${badgeQ}
   </div>
-  ${(q!==null&&st&&st.pct_tag>=100)?`<div class="qbadge" style="background:${qcol}" title="Score qualité (liste 100% traitée)">${q}%</div>`:''}
-  <div class="act-row" style="margin:0">
-   <button class="act ${l.veille?'act-call':'act-copy'}" onclick="basculerVeille(${l.id},${l.veille?'false':'true'})" title="${l.veille?'Veille active — cliquer pour arrêter':'Surveiller les signaux LinkedIn (60 j)'}">${l.veille?'🔔 Veille ON':'🔕 Veille'}</button>
-   <button class="act act-copy" onclick="ouvrirListe(${l.id},null,document.getElementById('${champ}').value.trim())">📂 Ouvrir (gratuit)</button>
-   ${(admin&&cr.auto!=='hotleads')?`<button class="act act-copy" onclick="transfererListe(${l.id},'${(l.nom||'').replace(/'/g,"\\'")}')">👤 Transférer</button>`:''}
-   ${(peutArchiver&&cr.auto!=='hotleads'&&statutListe==='active')?`<button class="act act-copy" onclick="changerStatutListe(${l.id},'${nomJs}','nurturing')" title="SDR terminé, la machine continue (séquences, rappels, alertes, veille)">🌱 Nurturing</button>`:''}
-   ${(peutArchiver&&cr.auto!=='hotleads'&&statutListe==='nurturing')?`<button class="act act-copy" onclick="changerStatutListe(${l.id},'${nomJs}','active')">▶️ Réactiver</button>`:''}
-   ${(peutArchiver&&cr.auto!=='hotleads')?`<button class="act act-copy" onclick="archiverListe(${l.id},'${nomJs}',${l.archivee?'false':'true'})">${l.archivee?'♻️ Désarchiver':'🗄️ Archiver'}</button>`:''}
-   ${(superA&&cr.auto!=='hotleads')?`<button class="act act-export" style="color:#991B1B;border-color:#FCA5A5" onclick="supprimerListe(${l.id},'${(l.nom||'').replace(/'/g,"\\'")}')">🗑️</button>`:''}
-   <button class="act act-export" onclick="majListe(${l.id})">↻ Mettre à jour</button>
-  </div>
- </div></div>`;
+  <div class="lead-meta" style="margin-top:3px">SDR : <b>${l.sdr}</b>${(l.createur&&l.createur!==l.sdr)?` \u00b7 cr\u00e9\u00e9e par <b>${l.createur}</b>`:''} \u00b7 ${date} \u00b7 ${l.total||l.nb_entreprises||0} entreprise${(l.total||l.nb_entreprises||0)>1?'s':''} \u00b7 ${source} \u00b7 co\u00fbt ${(l.cout||0).toFixed(2).replace('.',',')} \u20ac</div>
+  ${pills.length?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">${pills.join('')}</div>`:''}
+  <div class="act-row" style="margin:12px 0 0;padding-top:12px;border-top:1px solid var(--line)">${actions}</div>
+ </div>`;
 }
 async function chargerArchives(){
  const zone=document.getElementById('arch-liste');
@@ -6308,8 +6309,8 @@ async function chargerHistorique(){
   const nb={active:0,nurturing:0,archivee:0};
   toutes.forEach(l=>{nb[statutDe(l)]=(nb[statutDe(l)]||0)+1;});
   const fz=document.getElementById('hist-filtres');
-  if(fz)fz.innerHTML=[['active','🟢 En cours',nb.active],['nurturing','🌱 Nurturing',nb.nurturing],['archivee','🗄️ Archivées',nb.archivee]]
-   .map(function(x){return '<button class="act '+(HIST_STATUT===x[0]?'act-call':'act-copy')+'" onclick="setHistStatut(\''+x[0]+'\')">'+x[1]+' ('+(x[2]||0)+')</button>';}).join('');
+  if(fz)fz.innerHTML=[['active','En cours',nb.active],['nurturing','Nurturing',nb.nurturing],['archivee','Archivées',nb.archivee]]
+   .map(function(x){var sel=HIST_STATUT===x[0];return '<button onclick="setHistStatut(\''+x[0]+'\')" style="font-size:13px;font-weight:600;padding:7px 16px;border-radius:8px;cursor:pointer;border:1px solid '+(sel?'var(--ink)':'var(--line)')+';background:'+(sel?'var(--ink)':'var(--card)')+';color:'+(sel?'#fff':'var(--ink-soft)')+'">'+x[1]+'<span style="opacity:.65;font-weight:500"> · '+(x[2]||0)+'</span></button>';}).join('');
   const listes=toutes.filter(l=>statutDe(l)===HIST_STATUT);
   if(!listes.length){zone.innerHTML='<p style="color:var(--ink-soft)">Aucune liste '+({active:'en cours',nurturing:'en nurturing',archivee:'archivée'})[HIST_STATUT]+(q?' pour « '+q+' »':'')+'.</p>';return;}
   // Hot Leads (auto) toujours en tête (sécurité front en plus du tri serveur)
