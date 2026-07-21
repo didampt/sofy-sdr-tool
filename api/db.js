@@ -174,6 +174,7 @@ export async function ensureSchema() {
   await sql`CREATE INDEX IF NOT EXISTS idx_sms_prog ON sms_programmes (statut, envoyer_le)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_conso_liste ON consommations (liste_id)`;
   await sql`INSERT INTO tarifs (api, prix) VALUES ('soreach', 0.07) ON CONFLICT (api) DO NOTHING`;
+  await sql`INSERT INTO tarifs (api, prix) VALUES ('basile', 0.01) ON CONFLICT (api) DO NOTHING`;
   ready = true;
 }
 
