@@ -11,14 +11,54 @@ export const config = { maxDuration: 30 };
 const KEY = process.env.LEMLIST_API_KEY;
 const authHeader = () => 'Basic ' + Buffer.from(':' + (KEY || '')).toString('base64');
 
+// Un téléphone plausible (9+ chiffres) ; les mobiles FR (06/07/+336/+337) sont préférés.
+function telValide(v) {
+  if (typeof v !== 'string') return '';
+  const chiffres = v.replace(/[^\d+]/g, '');
+  return chiffres.replace(/^\+/, '').length >= 9 && /[\d]/.test(v) ? v.trim() : '';
+}
+const estMobileFr = t => /^(?:\+33|0033|0)\s*[67]/.test(String(t).replace(/[\s.\-()]/g, ''));
+
+// Balayage récursif : collecte toute valeur texte sous une clé phone/mobile/tel,
+// quel que soit le format de réponse Lemlist (objet, tableau, champ plat…).
+function scanTelephones(obj, out = [], prof = 0) {
+  if (!obj || typeof obj !== 'object' || prof > 6) return out;
+  for (const [k, v] of Object.entries(obj)) {
+    const cleTel = /phone|mobile|(^|_)tel/i.test(k);
+    if (typeof v === 'string') { if (cleTel) { const t = telValide(v); if (t) out.push(t); } }
+    else if (Array.isArray(v)) {
+      for (const it of v) {
+        if (typeof it === 'string') { if (cleTel) { const t = telValide(it); if (t) out.push(t); } }
+        else scanTelephones(it, out, prof + 1);
+      }
+    } else if (v && typeof v === 'object') scanTelephones(v, out, prof + 1);
+  }
+  return out;
+}
+function scanEmails(obj, out = [], prof = 0) {
+  if (!obj || typeof obj !== 'object' || prof > 6) return out;
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === 'string' && /email/i.test(k) && /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(v.trim())) out.push(v.trim());
+    else if (Array.isArray(v)) { for (const it of v) { if (it && typeof it === 'object') scanEmails(it, out, prof + 1); } }
+    else if (v && typeof v === 'object') scanEmails(v, out, prof + 1);
+  }
+  return out;
+}
+
 function parseResultat(d) {
   const data = (d && d.data) || {};
   const em = data.email || data.find_email || {};
   const ph = data.phone || data.find_phone || {};
   const lk = data.linkedin_enrichment || data.linkedinEnrichment || {};
-  const email = (em && em.notFound !== true && (em.email || em.value)) || (typeof data.email === 'string' ? data.email : '') || '';
-  const telephone = (ph && (ph.phone || ph.value || ph.number)) || (typeof data.phone === 'string' ? data.phone : '') || '';
+  let email = (em && em.notFound !== true && (em.email || em.value)) || (typeof data.email === 'string' ? data.email : '') || '';
+  let telephone = (ph && (ph.phone || ph.value || ph.number)) || (typeof data.phone === 'string' ? data.phone : '') || '';
   const linkedin = (lk && lk.linkedinUrl) || data.linkedinUrl || '';
+  // Repli : balayage complet de la réponse (les champs Lemlist varient selon le fournisseur du waterfall)
+  if (!telephone) {
+    const tels = scanTelephones(d);
+    telephone = tels.find(estMobileFr) || tels[0] || '';
+  }
+  if (!email) email = scanEmails(d)[0] || '';
   return { email: email || '', telephone: telephone || '', linkedin: linkedin || '' };
 }
 
@@ -29,7 +69,11 @@ async function lire(id) {
   if (!r.ok) return { erreur: 'Lemlist GET ' + r.status };
   const statut = d.enrichmentStatus || d.status || (d.type === 'enrichmentDone' ? 'done' : '');
   if (statut && statut !== 'done') return { pending: true, enrichment_id: id };
-  return { resultat: parseResultat(d), enrichment_id: id };
+  const resultat = parseResultat(d);
+  const out = { resultat, enrichment_id: id };
+  // Diagnostic : si rien n'est extrait, on renvoie la réponse brute (visible en console, ignorée par le front)
+  if (!resultat.email && !resultat.telephone && !resultat.linkedin) out.brut = JSON.stringify(d).slice(0, 600);
+  return out;
 }
 
 export default async function handler(req, res) {
