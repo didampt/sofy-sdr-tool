@@ -51,18 +51,17 @@ function parseResultat(d) {
   const ph = data.phone || data.find_phone || {};
   const lk = data.linkedin_enrichment || data.linkedinEnrichment || {};
   let email = (em && em.notFound !== true && (em.email || em.value)) || (typeof data.email === 'string' ? data.email : '') || '';
-  let telephone = (ph && (ph.phone || ph.value || ph.number)) || (typeof data.phone === 'string' ? data.phone : '') || '';
+  const telExplicite = (ph && (ph.phone || ph.value || ph.number)) || (typeof data.phone === 'string' ? data.phone : '') || '';
   const linkedin = (lk && lk.linkedinUrl) || data.linkedinUrl || '';
-  // Repli : balayage complet de la réponse (les champs Lemlist varient selon le fournisseur du waterfall)
-  if (!telephone) {
-    const tels = scanTelephones(d);
-    telephone = tels.find(estMobileFr) || tels[0] || '';
-  }
+  // Balayage complet : un MOBILE trouvé n'importe où dans la réponse prime sur un fixe
+  // du champ principal (Lemlist peut renvoyer les deux). Sinon champ principal, sinon 1er trouvé.
+  const tels = scanTelephones(d);
+  const telephone = tels.find(estMobileFr) || telExplicite || tels[0] || '';
   if (!email) email = scanEmails(d)[0] || '';
   return { email: email || '', telephone: telephone || '', linkedin: linkedin || '' };
 }
 
-async function lire(id) {
+async function lire(id, avecBrut) {
   const r = await fetch(`https://api.lemlist.com/api/enrich/${encodeURIComponent(id)}`, { headers: { 'Authorization': authHeader() } });
   if (r.status === 202) return { pending: true, enrichment_id: id };
   const d = await r.json().catch(() => ({}));
@@ -71,8 +70,8 @@ async function lire(id) {
   if (statut && statut !== 'done') return { pending: true, enrichment_id: id };
   const resultat = parseResultat(d);
   const out = { resultat, enrichment_id: id };
-  // Diagnostic : si rien n'est extrait, on renvoie la réponse brute (visible en console, ignorée par le front)
-  if (!resultat.email && !resultat.telephone && !resultat.linkedin) out.brut = JSON.stringify(d).slice(0, 600);
+  // Diagnostic : réponse brute si rien n'est extrait, ou sur demande (?brut=1) — ignorée par le front
+  if (avecBrut || (!resultat.email && !resultat.telephone && !resultat.linkedin)) out.brut = JSON.stringify(d).slice(0, 1500);
   return out;
 }
 
@@ -85,7 +84,7 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       const id = String(req.query.enrichment_id || '').trim();
       if (!id) return res.status(400).json({ erreur: 'enrichment_id requis' });
-      return res.status(200).json(await lire(id));
+      return res.status(200).json(await lire(id, req.query.brut === '1'));
     }
 
     const b = req.body || {};
