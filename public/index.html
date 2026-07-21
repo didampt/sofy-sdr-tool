@@ -1874,7 +1874,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v243';
+const VERSION='v244';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2020,6 +2020,23 @@ function retourChoixMode(){
  document.getElementById('mode-ia').style.display='none';
  document.getElementById('mode-gmb').style.display='none';
  document.getElementById('mode-verticale').style.display='none';
+}
+// ── Liste lookalike : Liste intelligente préremplie avec les données réelles d'une fiche ──
+// (l'IA gère déjà « comme X » dans son prompt ; ici on lui donne le NAF/effectif/zone exacts au lieu de la laisser deviner)
+function creerLookalike(i){
+ const e=REAL[i];
+ const bouts=['Je veux des entreprises similaires à « '+(enseigneDe(e)||e.nom)+' »'];
+ const act=(e.activite||'').trim()||(e.gmb&&e.gmb.categorie)||'';
+ if(act)bouts.push('activité : '+act);
+ if(e.naf)bouts.push('code NAF '+e.naf);
+ if(e.effectif)bouts.push('effectif ~'+e.effectif);
+ const cp=String(e.code_postal||'');
+ bouts.push(cp.startsWith('97')?('zone : DOM ('+cp.slice(0,3)+')'):'zone : France métropolitaine');
+ const prompt=bouts.join(', ')+'.\nPostes recherchés : ';
+ nav('wizard');choisirMode('ia');
+ const ta=document.getElementById('ia-prompt');
+ if(ta){ta.value=prompt;ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);}
+ toast('👯 Complète les postes recherchés puis lance l’analyse — l’IA ciblera des entreprises similaires');
 }
 // ───────── LISTE INTELLIGENTE (IA) ─────────
 let IA_CRITERES=null;      // critères extraits par l'IA (pour l'estimation/création)
@@ -4238,6 +4255,7 @@ function ficheReal(e,i){
     <button class="act act-call" onclick="lancerFiche(${i})" title="Pipeline complet sur cette fiche">🚀 Fiche</button>
     <button class="act act-export" id="gmbbtn${i}" onclick="analyserFiche(${i})">${!e.gmb?'⭐ Analyser (GMB + IA)':'↻ Analyser'}</button>
     <button class="act act-copy" onclick="if(REAL[${i}]._busy){toast('Analyse en cours ⏳');}else{ouvrirChoixPersonas(${i});}" title="Chercher des fonctions ciblées (LinkedIn) — la fenêtre de choix s'ouvre toujours">👥 Personas</button>
+    <button class="act act-copy" onclick="creerLookalike(${i})" title="Créer une liste d'entreprises similaires à cette fiche (Liste intelligente préremplie avec l'activité, le NAF, l'effectif et la zone réels)">👯 Lookalike</button>
     <button class="act ${e.score?'act-copy':'act-call'}" onclick="lancerScore(${i})">${e.score?'↻ Re-scorer':'🎯 Scorer + synthèse'}</button>
     <button class="act act-copy" onclick="ouvrirInfo(${i})">ℹ️</button>
     <button class="act act-copy" onclick="document.getElementById('edit${i}').style.display=document.getElementById('edit${i}').style.display==='none'?'block':'none'">✏️</button>
@@ -4571,6 +4589,41 @@ function lancerLemlist(i,j){
  if(e._busy){toast('Analyse en cours ⏳');return;}
  e._busy=true;rerender(i);
  (async()=>{try{toast('🔵 Lemlist en cours… (peut prendre ~1 min)');await enrichirLemlist(i,j);}finally{e._busy=false;rerender(i);}})();
+}
+// Reprise automatique des enrichissements Lemlist restés en attente (relecture gratuite, zéro clic SDR).
+// Appelée à l'ouverture d'une liste : si Lemlist a fini entre-temps, la donnée tombe sur la fiche.
+let LEMLIST_REPRISE_EN_COURS=false;
+async function reprendreLemlistEnAttente(){
+ if(LEMLIST_REPRISE_EN_COURS)return;
+ const attente=[];
+ for(let i=0;i<REAL.length;i++){
+  const cs=contactsDe(REAL[i]);
+  for(let j=0;j<cs.length;j++){const c=cs[j];if(c&&c.enrich&&c.enrich.lemlist_id)attente.push([i,j]);}
+ }
+ if(!attente.length)return;
+ LEMLIST_REPRISE_EN_COURS=true;
+ let gains=0,change=false;
+ try{
+  for(const [i,j] of attente){
+   const c=contactsDe(REAL[i])[j];
+   if(!c||!c.enrich||!c.enrich.lemlist_id)continue;
+   try{
+    const r=await api('/api/lemlist-enrich?enrichment_id='+encodeURIComponent(c.enrich.lemlist_id));
+    const d=await r.json();
+    if(d.erreur){c.enrich.lemlist_id=null;change=true;continue;}
+    if(d.pending)continue; // toujours en cours chez Lemlist → on retentera à la prochaine ouverture
+    c.enrich.lemlist_id=null;change=true;
+    const re=d.resultat||{};
+    let gain=false;
+    if(re.email&&!c.enrich.email){c.enrich.email=re.email;c.enrich.email_source='lemlist';c.enrich.email_qualification='Lemlist';gain=true;}
+    if(re.telephone&&poserMobile(c,re.telephone,'lemlist'))gain=true;
+    if(re.linkedin&&!c.enrich.linkedin){c.enrich.linkedin=re.linkedin;gain=true;}
+    if(gain){gains++;rerender(i);}
+   }catch(_){/* erreur réseau : on garde l'id, retentative à la prochaine ouverture */}
+  }
+ }finally{LEMLIST_REPRISE_EN_COURS=false;}
+ if(change)persister();
+ if(gains)toast('🔵 Lemlist : '+gains+' contact(s) complété(s) automatiquement (enrichissement fini entre-temps)');
 }
 function lancerKaspr(i,j){
  const e=REAL[i],c=contactsDe(e)[j];
@@ -6585,6 +6638,7 @@ async function ouvrirListe(id,cibleFiche,termeRecherche){
   showRealResults(l.total,l.criteres);
   if((l.criteres||{}).auto!=='hotleads')document.getElementById('res-sub').textContent+=' · Rouverte depuis l\'historique (0 crédit)';
   majCoutListe();
+  reprendreLemlistEnAttente(); // enrichissements Lemlist en attente : relecture gratuite en arrière-plan
   // ── Hot Leads : enrichissement automatique ──
   const moi=state.user?state.user.nom:'';
   const verrouRecent=e=>e.enrichi_par&&e.enrichi_par!==moi&&e.enrich_lock_ts&&(Date.now()-e.enrich_lock_ts<5*60*1000)&&!e.score;
