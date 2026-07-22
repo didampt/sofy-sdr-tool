@@ -22,7 +22,33 @@ async function envoyerDM(slackId, texte) {
   } catch (_) {}
 }
 
+// Localise la fiche du lead dans les listes actives : liste_id + clé fiche (deep link ?liste=&fiche=)
+// + meilleur numéro à appeler (mobile FR de préférence, sinon fixe du contact, sinon standard GMB).
+async function localiserLead(email) {
+  try {
+    const rows = await sql`SELECT id, entreprises FROM listes
+      WHERE archivee = FALSE AND entreprises::text ILIKE ${'%' + email + '%'}
+      ORDER BY id DESC LIMIT 1`;
+    if (!rows.length) return null;
+    const l = rows[0];
+    const estMobileFr = t => /^(?:\+33|0033|0)\s*[67]/.test(String(t || '').replace(/[\s.\-()]/g, ''));
+    for (const e of (Array.isArray(l.entreprises) ? l.entreprises : [])) {
+      const contacts = [...(e.contacts || [])];
+      if (e.enrich) contacts.push({ enrich: e.enrich });
+      for (const c of contacts) {
+        if (!c || !c.enrich || String(c.enrich.email || '').toLowerCase() !== email) continue;
+        const cle = ((e.signal && e.signal.date) ? e.signal.date : '') + (e.nom || ''); // = cleSignal() côté front
+        const tels = [c.enrich.telephone, e.enrich && e.enrich.telephone, e.gmb && e.gmb.telephone].filter(Boolean);
+        const mobile = tels.find(estMobileFr) || null;
+        return { liste_id: l.id, cle, tel: mobile || tels[0] || null, est_mobile: !!mobile };
+      }
+    }
+    return { liste_id: l.id, cle: null, tel: null, est_mobile: false };
+  } catch (_) { return null; }
+}
+
 // Trouve le SDR proprietaire du lead (celui qui l'a pousse en sequence) et lui envoie une alerte Slack
+// avec le numéro à appeler + un lien profond vers la fiche. L'alerte est journalisée au bloc-notes.
 async function alerterSdr(email, titre, b, campagne, reponse) {
   try {
     const own = await sql`SELECT auteur FROM activites WHERE fiche_cle = ${email} AND type = 'sequenceAdded' AND auteur IS NOT NULL ORDER BY ts DESC LIMIT 1`;
@@ -32,9 +58,17 @@ async function alerterSdr(email, titre, b, campagne, reponse) {
     if (!s.length) return;
     const qui = [b.firstName || b.leadFirstName, b.lastName || b.leadLastName].filter(Boolean).join(' ');
     const ent = b.companyName || b.company || '';
-    const url = process.env.APP_URL || 'https://sofy-sdr-tool.vercel.app';
-    const txt = `🔥 *${titre}* — ${qui || email}${ent ? ' · ' + ent : ''}\nCampagne : ${campagne || '—'}${reponse ? '\n💬 « ' + reponse.slice(0, 300) + ' »' : ''}\n👉 Le lead reagit, recontacte-le a chaud : ${url}`;
+    const url = (process.env.APP_URL || 'https://sofy-sdr-tool.vercel.app').replace(/\/$/, '');
+    const loc = await localiserLead(email);
+    const lien = (loc && loc.liste_id)
+      ? `${url}/?liste=${loc.liste_id}${loc.cle ? '&fiche=' + encodeURIComponent(loc.cle) : ''}`
+      : url;
+    const ligneTel = (loc && loc.tel) ? `\n${loc.est_mobile ? '📱' : '☎️'} ${loc.tel} — appelle à chaud` : '';
+    const txt = `🔥 *${titre}* — ${qui || email}${ent ? ' · ' + ent : ''}\nCampagne : ${campagne || '—'}${reponse ? '\n💬 « ' + reponse.slice(0, 300) + ' »' : ''}${ligneTel}\n👉 Ouvre la fiche : ${lien}`;
     await envoyerDM(s[0].slack_id, txt);
+    // Trace au bloc-notes de la fiche : le SDR (et l'équipe) voit que l'alerte est partie
+    await sql`INSERT INTO activites (fiche_cle, source, type, titre, detail, auteur, ts)
+      VALUES (${email}, 'alerte', 'alerte_slack', '🔔 Alerte Slack envoyée', ${'DM à ' + sdrNom + ' — ' + titre}, 'système', NOW())`;
   } catch (_) {}
 }
 
