@@ -1880,7 +1880,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v249';
+const VERSION='v250';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4119,6 +4119,7 @@ function ficheReal(e,i){
      ${statutTagHtml(e)}
      ${badgeEngagement(e)}
      ${e.gmb&&e.gmb.trouve&&typeof e.gmb.note_moyenne==='number'?`<span class="badge b-gmb">GMB ${String(e.gmb.note_moyenne).replace('.',',')} ★ (${e.gmb.total_avis} avis)</span>`:''}
+     ${technosHtml(e)}
      ${e.maps_url?`<span class="badge b-new"><a href="${e.maps_url}" target="_blank" onclick="event.stopPropagation()" style="color:inherit">📍 Google Maps</a></span>`:''}
      ${(()=>{var sf=sourceFiche(e);return sf?`<span class="badge ${sf.cls}">${sf.label}</span>`:'';})()}
      ${e.signal_hot?`<span class="badge b-signal">${(e.signal&&e.signal.emoji)?e.signal.emoji:'🔥'} ${(e.signal&&e.signal.interaction)?e.signal.interaction:'Signal détecté'}${(e.signal&&e.signal.concurrent)?' · '+e.signal.concurrent:''}</span>`:''}
@@ -4661,6 +4662,28 @@ function lancerKaspr(i,j){
 }
 
 /* ───────── SCORING + SYNTHÈSE D'APPEL + EMAIL (IA) ───────── */
+// Détection des technologies du site (outil d'avis concurrent, chat, marketing) — gratuit, 1 fetch serveur
+async function detecterTechnos(i){
+ const e=REAL[i];
+ const site=domaineDe(e);
+ if(!site)return false;
+ try{
+  const r=await api('/api/techno',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({site})});
+  const d=await r.json();
+  if(d&&d.ok){e.technos=d.technos||[];if(d.scanne)e.technos_fait=true;rerender(i);persister();}
+  return true;
+ }catch(_){return false;}
+}
+function technosHtml(e){
+ if(!e.technos_fait)return '';
+ const t=e.technos||[];
+ let h='';
+ for(const x of t.filter(x=>x.cat==='avis'))h+=`<span class="badge b-signal" title="Outil d'avis détecté sur le site — angle switch : ils investissent déjà dans leur e-réputation">⚔️ Équipé : ${x.nom}</span>`;
+ if(!t.some(x=>x.cat==='avis'))h+=`<span class="badge b-new" title="Aucun outil de gestion d'avis détecté sur le site — terrain vierge pour Soview">🟢 Aucun outil d'avis</span>`;
+ for(const x of t.filter(x=>x.cat==='chat'))h+=`<span class="badge b-source" title="Messagerie web détectée — ils gèrent déjà des conversations clients : angle SoConnect (centralisation + agent IA Budy)">💬 ${x.nom}</span>`;
+ for(const x of t.filter(x=>x.cat==='marketing'))h+=`<span class="badge b-source" title="Outil marketing détecté — l'entreprise investit déjà dans la relation client">📣 ${x.nom}</span>`;
+ return h;
+}
 function donneesPourScore(e){
  const g=e.gmb&&e.gmb.trouve?{note:e.gmb.note_moyenne,total_avis:e.gmb.total_avis,nb_fiches:e.gmb.nb_fiches,
   pire_fiche:e.gmb.pire_fiche,concurrents:e.gmb.concurrents,avis_negatif:e.gmb.avis_negatif?{note:e.gmb.avis_negatif.note,date:e.gmb.avis_negatif.date,texte:e.gmb.avis_negatif.texte}:null,
@@ -4674,6 +4697,7 @@ function donneesPourScore(e){
  return {nom:e.nom,enseigne:enseigneDe(e)||null,activite:e.activite,naf:e.naf,ville:e.ville,code_postal:e.code_postal,
   effectif:e.effectif,chiffre_affaires:e.chiffre_affaires,nb_etablissements:e.nb_etablissements,
   site_web:domaineDe(e)||null,google_business:g,
+  technos_detectees:(e.technos&&e.technos.length)?e.technos.map(t=>({nom:t.nom,categorie:t.cat,concurrent_sofy:!!t.concurrent})):(e.technos_fait?'aucun outil détecté sur le site':null),
   signal:sig,pages_visitees:pages,
   contexte_ia:(e.ia&&e.ia.explication)||null,contexte_personas:(e.personas_info&&e.personas_info.explication)||null,
   contacts:contactsDe(e).filter(c=>c.nom).map(c=>({prenom:c.prenom,nom:c.nom,fonction:(c.enrich&&c.enrich.fonction)||c.fonction,source:c.source,
@@ -4896,6 +4920,11 @@ async function pipelineFiche(i){
    wfSet(i,'ia',(e.ia&&(e.ia.site_web||e.ia.nom_commercial))?'ok':'ko');
   }else{
    wfSet(i,'ia',e.ia&&(e.ia.site_web||e.ia.nom_commercial)?'ok':(domaineDe(e)?'ok':'—'));
+  }
+  // ── 2.6 Technologies du site (gratuit, 1 fetch) : outil d'avis concurrent, chat, marketing ──
+  if(!e.technos_fait&&domaineDe(e)){
+   prog(i,30,'Étape 2 bis · 🔎 Technologies du site (outils d’avis, chat)…');
+   await detecterTechnos(i);
   }
   prog(i,35,'Étape 3/7 · 👥 Recherche des personas LinkedIn…');
   // ── 2.5 Personas (si la liste en cible OU Hot Lead, et que la fiche a un domaine/enseigne/LinkedIn) ──

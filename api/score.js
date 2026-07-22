@@ -49,6 +49,11 @@ Conséquences OBLIGATOIRES quand une page produit précise est visitée :
    - Monte le score global (un visiteur est bien plus chaud qu'un nom froid de Pappers).
    - Synthèse, accroche, objet d'email, corps d'email ET SMS sont CENTRÉS sur le produit de la page. Exemple visite /so-reach-sms : l'email parle de campagnes SMS pour fidéliser/relancer leurs clients, PAS de leur fiche Google.
    - Mentionne le signal avec élégance ("j'ai vu que les campagnes SMS vous intéressaient", "suite à votre passage sur notre page SMS") — warm call, prétexte naturel. Ne dis JAMAIS "notre outil vous a tracké".
+⚡ TECHNOS DÉTECTÉES SUR LE SITE (champ "technos_detectees", si présent) :
+- Un outil d'AVIS concurrent (Partoo, Guest Suite, Avis Vérifiés, Trustpilot…) = le prospect PAIE DÉJÀ pour son e-réputation → monte le score Soview, et l'angle devient le "switch" : reconnais leur effort ("vous êtes déjà équipés pour vos avis"), positionne Sofy comme la solution plus complète (avis + messagerie + SMS dans une seule plateforme). Ne dénigre JAMAIS le concurrent.
+- "aucun outil détecté sur le site" + fiche Google faible = terrain vierge → angle pédagogique Soview (ils perdent des clients sans le savoir).
+- Un outil de CHAT (Crisp, Tawk, Intercom…) ou WhatsApp = ils gèrent déjà des conversations clients → monte SoConnect, angle : centraliser tous les canaux + l'agent IA Budy qui répond 24/7.
+
 3. **Signaux** : liste courte des éléments concrets exploitables (max 4), formulés pour un SDR
 4. **Synthèse d'appel** (4-6 phrases) : qui appeler, contexte de l'entreprise, LE point de douleur n°1 avec les chiffres exacts (note, avis, concurrents), et l'angle d'attaque produit recommandé
 5. **Accroche d'appel** : LA première phrase que le SDR peut dire après bonjour (naturelle, factuelle, pas commerciale agressive)

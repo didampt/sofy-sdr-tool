@@ -45,6 +45,7 @@ Consignes :
 - Objet court (max ~6 mots), intriguant, sans le mot "Sofy", qui donne envie d'ouvrir.
 - Corps de 80-120 mots, ton direct et humain, UNE seule idee forte, accroche basee sur une donnee reelle du prospect (note Google, avis, concurrents, multi-sites, activite…).
 - Si un signal d'intention existe (champ "signal" ou "pages_visitees"), accroche dessus avec elegance (jamais "notre outil vous a tracke").
+- Si "technos_detectees" mentionne un outil d'avis concurrent (Partoo, Guest Suite, Avis Verifies…) : angle "switch" elegant — reconnais leur investissement e-reputation, positionne Sofy comme plus complet (avis + messagerie + SMS), ne denigre JAMAIS le concurrent. Si "aucun outil detecte sur le site" : angle terrain vierge. Si un outil de chat est detecte : angle SoConnect (centraliser + agent IA Budy).
 - CTA : proposer un echange de 15 min ou reserver sur sofy.fr/demo.
 - Signature : ${sdr || "L'equipe Sofy"} — Sofy.
 - Ecris en francais. Si le produit est "generique", choisis les 1-2 benefices les plus pertinents parmi les 3 modules pour CE prospect.
