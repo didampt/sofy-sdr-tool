@@ -67,7 +67,7 @@ function motsClesJobs(jobs) {
   return { mots: [...mots], generique };
 }
 
-const EXCLUS_FONCTION = /commissaire|liquidateur|administrateur judiciaire|stagiaire|alternant|apprenti|assistant/i;
+const EXCLUS_FONCTION = /commissaire|liquidateur|administrateur judiciaire|stagiaire|alternant|apprenti|assistant|technico/i;
 const REPLI_DECIDEUR = /fondat|founder|\bceo\b|\bcoo\b|\bdg\b|\bpdg\b|president|directeur|directrice|gerant/;
 
 async function personasBasile(entreprise, jobs, cle) {
