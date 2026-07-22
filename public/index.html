@@ -1880,7 +1880,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v247';
+const VERSION='v248';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -6289,21 +6289,67 @@ async function chargerCockpit(){
   rendreCockpit(sdrVoulu||d.sdr);
  }catch(e){zone.innerHTML='<p style="color:var(--ink-soft)">Erreur : '+e.message+'</p>';}
 }
-function ckActions(listeId,cle,tel,rowId,avecStatut){
- const b=[];
- if(tel)b.push(`<a class="act act-call" style="text-decoration:none" href="tel:${htmlSafe(String(tel).replace(/[^\d+]/g,''))}">📞 Appeler</a>`);
- if(listeId&&cle!=null)b.push(`<button class="act act-copy" onclick="ouvrirListe(${listeId},decodeURIComponent('${jsArg(cle)}'))">Fiche</button>`);
- else if(listeId)b.push(`<button class="act act-copy" onclick="ouvrirListe(${listeId},null)">Liste</button>`);
- if(avecStatut&&listeId&&cle)b.push(`<select class="field" style="padding:6px 8px;font-size:12px;max-width:170px" onchange="ckStatuer(${listeId},'${jsArg(cle)}',this)"><option value="">Statuer…</option>${STATUTS_APPEL.map(s=>`<option value="${htmlSafe(s.v)}">${s.e} ${s.v}</option>`).join('')}</select>`);
- return b.join('');
+let CK_ITEMS={};
+function ckRow(it,inner,bord,avecStatut,estRappel){
+ const rid='ckr'+(++CK_ROW);CK_ITEMS[rid]=it;
+ const btns=[];
+ if(it.tel)btns.push(`<a class="act act-call" style="text-decoration:none" href="tel:${htmlSafe(telNorm(it.tel))}">\ud83d\udcde Appeler</a>`);
+ btns.push(`<button class="act act-copy" id="${rid}-b" onclick="ckToggle('${rid}')" title="D\u00e9plier : tous les contacts (appel, WhatsApp, SMS), accroche et synth\u00e8se d'appel">D\u00e9plier \u25be</button>`);
+ if(estRappel)btns.push(`<button class="act act-export" onclick="ckRappelFait(${it.id})" title="Marquer le rappel comme fait">Fait \u2713</button>`);
+ if(avecStatut&&it.liste_id&&it.cle)btns.push(`<select class="field" style="padding:6px 8px;font-size:12px;max-width:170px" onchange="ckStatuer(${it.liste_id},'${jsArg(it.cle)}',this)"><option value="">Statuer\u2026</option>${STATUTS_APPEL.map(s=>`<option value="${htmlSafe(s.v)}">${s.e} ${s.v}</option>`).join('')}</select>`);
+ return `<div style="border:1px solid var(--line);${bord||''}border-radius:10px;padding:10px 14px;margin-bottom:8px;background:var(--card)">
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">${inner}<div style="display:flex;gap:6px;flex-wrap:wrap">${btns.join('')}</div></div>
+  <div id="${rid}-d" style="display:none"></div>
+ </div>`;
 }
-function ckRow(inner,bord){
- CK_ROW++;
- return `<div style="border:1px solid var(--line);${bord||''}border-radius:10px;padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--card)">${inner}</div>`;
+function ckToggle(rid){
+ const pnl=document.getElementById(rid+'-d'),b=document.getElementById(rid+'-b');
+ if(!pnl)return;
+ if(pnl.style.display!=='none'){pnl.style.display='none';if(b)b.innerHTML='D\u00e9plier \u25be';return;}
+ if(!pnl.innerHTML)pnl.innerHTML=ckDetailHtml(CK_ITEMS[rid]||{});
+ pnl.style.display='block';if(b)b.innerHTML='Replier \u25b4';
+}
+function ckContactLigne(c,it){
+ const acts=[];
+ if(c.tel){
+  acts.push(`<a class="act act-call" style="padding:4px 10px;font-size:12px;text-decoration:none" href="tel:${htmlSafe(telNorm(c.tel))}" title="Appeler (Ringover click-to-call)">\ud83d\udcde</a>`);
+  if(estMobile(c.tel)){
+   const em=jsArg(c.email||it.email_cle||'');
+   const det=jsArg((c.nom||'')+' \u00b7 '+telNorm(c.tel));
+   acts.push(`<a class="act" style="padding:4px 10px;font-size:12px;background:#25D366;color:#fff;text-decoration:none" href="${waLink(c.tel)}" target="_blank" onclick="ckJournal('${em}','whatsapp','\ud83d\udcac Message WhatsApp','${det}')" title="Ouvrir WhatsApp \u2014 journalis\u00e9 au bloc-notes">\ud83d\udfe2 WA</a>`);
+   acts.push(`<a class="act" style="padding:4px 10px;font-size:12px;background:#F97316;color:#fff;text-decoration:none" href="sms:${htmlSafe(telNorm(c.tel))}" onclick="ckJournal('${em}','sms','\ud83d\udcac SMS direct','${det}')" title="SMS direct (application Messages) \u2014 journalis\u00e9. Pour un SMS SoReach : ouvrir la fiche compl\u00e8te">\ud83d\udcac SMS</a>`);
+  }
+ }
+ return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 0;border-top:1px dashed var(--line)">
+  <div style="flex:1;min-width:180px">
+   <span style="font-weight:600;font-size:13px">${htmlSafe(c.nom)}</span>${c.fonction?` <span style="font-size:12px;color:var(--ink-soft)">\u2014 ${htmlSafe(c.fonction)}</span>`:''}
+   ${c.email?`<div style="font-size:12px;color:var(--ink-soft)">\u2709\ufe0f ${htmlSafe(c.email)}</div>`:''}
+   ${c.tel?`<div style="font-size:12.5px;font-weight:600">${htmlSafe(c.tel)}${estMobile(c.tel)?' <span style="font-size:10px;font-weight:400;color:var(--ink-soft)">mobile</span>':''}</div>`:''}
+  </div>
+  <div style="display:flex;gap:4px">${acts.join('')}</div>
+ </div>`;
+}
+function ckDetailHtml(it){
+ let h='<div style="margin-top:10px">';
+ if(it.accroche)h+=`<div style="font-size:12.5px;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-bottom:8px">\ud83c\udfaf <b>Accroche :</b> ${htmlSafe(it.accroche)}</div>`;
+ if(it.synthese)h+=`<div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;line-height:1.5">${htmlSafe(it.synthese)}</div>`;
+ const cs=it.contacts_detail||[];
+ if(cs.length)h+=cs.map(c=>ckContactLigne(c,it)).join('');
+ else if(!it.cle)h+='<p style="font-size:12px;color:var(--ink-soft);margin:4px 0">Fiche non retrouv\u00e9e dans tes listes actives (liste en nurturing ou archiv\u00e9e) \u2014 marque le rappel \u00ab Fait \u00bb apr\u00e8s l\u2019appel, ou retrouve la fiche via la recherche de l\u2019Historique.</p>';
+ else h+='<p style="font-size:12px;color:var(--ink-soft);margin:4px 0">Aucun contact nominatif sur cette fiche \u2014 ouvre la fiche compl\u00e8te pour enrichir.</p>';
+ if(it.tel_standard)h+=`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px dashed var(--line)"><div style="flex:1;font-size:12.5px"><span style="font-weight:600">Standard</span> \u00b7 ${htmlSafe(it.tel_standard)}</div><a class="act act-call" style="padding:4px 10px;font-size:12px;text-decoration:none" href="tel:${htmlSafe(telNorm(it.tel_standard))}">\ud83d\udcde</a></div>`;
+ if(it.liste_id)h+=`<div style="margin-top:10px"><button class="act act-copy" onclick="ouvrirListe(${it.liste_id}${it.cle?`,decodeURIComponent('${jsArg(it.cle)}')`:',null'})" title="Bloc-notes, SMS SoReach, email Lemlist, enrichissement\u2026">Ouvrir la fiche compl\u00e8te \u2192</button></div>`;
+ return h+'</div>';
+}
+async function ckJournal(emailEnc,source,titre,detailEnc){
+ const email=decodeURIComponent(emailEnc||'');
+ if(!email)return;
+ try{await api('/api/activite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email,source:source,type:source,titre:titre,detail:decodeURIComponent(detailEnc||'')})});}catch(_){}
 }
 function rendreCockpit(sdrAffiche){
  const zone=document.getElementById('ck-zone'),head=document.getElementById('ck-head');
  const d=CK;if(!d)return;
+ CK_ITEMS={};CK_ROW=0;
  const admin=state.user&&['admin','superadmin'].includes(state.user.role);
  const nR=(d.rappels.retard||[]).length,nA=(d.rappels.aujourdhui||[]).length;
  const enAttente=d.chauds.length+nR+nA+Math.min(d.restants,25);
@@ -6314,12 +6360,12 @@ function rendreCockpit(sdrAffiche){
  head.innerHTML=`
   <div style="display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:10px">
    <div>
-    <h1 style="margin:0">☀️ Ma journée — ${dateFr}</h1>
-    <p class="sub" style="margin:2px 0 0">${htmlSafe(sdrAffiche||d.sdr)} · ${d.chauds.length} signal${d.chauds.length>1?'aux':''} chaud${d.chauds.length>1?'s':''} · ${nR+nA} rappel${(nR+nA)>1?'s':''} du${(nR+nA)>1?'s':''} · ${d.restants} fiche${d.restants>1?'s':''} à prospecter</p>
+    <h1 style="margin:0">\u2600\ufe0f Ma journ\u00e9e \u2014 ${dateFr}</h1>
+    <p class="sub" style="margin:2px 0 0">${htmlSafe(sdrAffiche||d.sdr)} \u00b7 ${d.chauds.length} signal${d.chauds.length>1?'aux':''} chaud${d.chauds.length>1?'s':''} \u00b7 ${nR+nA} rappel${(nR+nA)>1?'s':''} du${(nR+nA)>1?'s':''} \u00b7 ${d.restants} fiche${d.restants>1?'s':''} \u00e0 prospecter</p>
    </div>
    <div style="display:flex;gap:18px;align-items:flex-end">
     ${admin?`<label style="font-size:11px;color:var(--ink-soft)">Vue SDR<br><select id="ck-sdr" class="field" style="padding:6px 8px;font-size:12px" onchange="chargerCockpit()"></select></label>`:''}
-    <div style="text-align:right;font-size:11px;color:var(--ink-soft)">Statuées aujourd'hui<br><span style="font-size:22px;font-weight:800;color:var(--ink)">${fait}</span></div>
+    <div style="text-align:right;font-size:11px;color:var(--ink-soft)">Statu\u00e9es aujourd'hui<br><span style="font-size:22px;font-weight:800;color:var(--ink)">${fait}</span></div>
     <div style="text-align:right;font-size:11px;color:var(--ink-soft)">RDV pris<br><span style="font-size:22px;font-weight:800;color:#15803D">${d.bilan.rdv_jour||0}</span></div>
    </div>
   </div>
@@ -6327,38 +6373,34 @@ function rendreCockpit(sdrAffiche){
   <p style="font-size:11.5px;color:var(--ink-soft);margin:0 0 6px">${fait} / ${total} actions du jour</p>`;
  const hFr=x=>new Date(x).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
  let h='';
- // ── 1. Signaux chauds ──
- h+=`<div style="font-size:13px;font-weight:800;margin:14px 0 8px;color:#B45309">🔥 À appeler maintenant — signaux des dernières 24 h (${d.chauds.length})</div>`;
- if(!d.chauds.length)h+='<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 6px">Aucun signal chaud pour l’instant — les ouvertures, clics et réponses des dernières 24 h apparaissent ici.</p>';
+ h+=`<div style="font-size:13px;font-weight:800;margin:14px 0 8px;color:#B45309">\ud83d\udd25 \u00c0 appeler maintenant \u2014 signaux des derni\u00e8res 24 h (${d.chauds.length})</div>`;
+ if(!d.chauds.length)h+='<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 6px">Aucun signal chaud pour l\u2019instant \u2014 les ouvertures, clics et r\u00e9ponses des derni\u00e8res 24 h apparaissent ici.</p>';
  for(const c of d.chauds){
-  h+=ckRow(`<div style="flex:1;min-width:220px">
-   <div style="font-size:14px;font-weight:700">${htmlSafe(c.nom)}${c.contact?` <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">· ${htmlSafe(c.contact)}${c.fonction?', '+htmlSafe(c.fonction):''}</span>`:''}</div>
-   <div style="font-size:12px;color:#B45309;margin-top:2px">${htmlSafe(c.signal)} · ${hFr(c.signal_ts)} · ${htmlSafe(c.liste_nom||'')}</div>
-  </div>${c.tel?`<span style="font-size:13px;font-weight:700;white-space:nowrap">${htmlSafe(c.tel)}</span>`:''}
-  <div style="display:flex;gap:6px;flex-wrap:wrap">${ckActions(c.liste_id,c.cle,c.tel,null,true)}</div>`,'border-left:3px solid #F59E0B;border-radius:0 10px 10px 0;');
+  h+=ckRow(c,`<div style="flex:1;min-width:220px">
+   <div style="font-size:14px;font-weight:700">${htmlSafe(c.nom)}${c.contact?` <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">\u00b7 ${htmlSafe(c.contact)}${c.fonction?', '+htmlSafe(c.fonction):''}</span>`:''}</div>
+   <div style="font-size:12px;color:#B45309;margin-top:2px">${htmlSafe(c.signal)} \u00b7 ${hFr(c.signal_ts)} \u00b7 ${htmlSafe(c.liste_nom||'')}</div>
+  </div>${c.tel?`<span style="font-size:13px;font-weight:700;white-space:nowrap">${htmlSafe(c.tel)}</span>`:''}`,
+  'border-left:3px solid #F59E0B;border-radius:0 10px 10px 0;',true,false);
  }
- // ── 2. Rappels dus ──
- h+=`<div style="font-size:13px;font-weight:800;margin:18px 0 8px;color:#185FA5">⏰ Rappels dus (${nR} en retard · ${nA} aujourd'hui)</div>`;
- if(!(nR+nA))h+='<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 6px">Aucun rappel dû aujourd’hui.</p>';
+ h+=`<div style="font-size:13px;font-weight:800;margin:18px 0 8px;color:#185FA5">\u23f0 Rappels dus (${nR} en retard \u00b7 ${nA} aujourd'hui)</div>`;
+ if(!(nR+nA))h+='<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 6px">Aucun rappel d\u00fb aujourd\u2019hui.</p>';
  for(const t of [...d.rappels.retard.map(x=>({...x,_retard:true})),...d.rappels.aujourdhui]){
-  h+=ckRow(`<div style="flex:1;min-width:220px">
-   <div style="font-size:14px;font-weight:700">${htmlSafe(t.entreprise)}${t.contact?` <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">· ${htmlSafe(t.contact)}</span>`:''} <span style="font-weight:400;font-size:12px;color:${t._retard?'#B91C1C':'var(--ink-soft)'}">· ${t._retard?'promis pour ':''}${hFr(t.date_rappel)}</span></div>
+  h+=ckRow(t,`<div style="flex:1;min-width:220px">
+   <div style="font-size:14px;font-weight:700">${htmlSafe(t.entreprise)}${t.contact?` <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">\u00b7 ${htmlSafe(t.contact)}</span>`:''} <span style="font-weight:400;font-size:12px;color:${t._retard?'#B91C1C':'var(--ink-soft)'}">\u00b7 ${t._retard?'promis pour ':''}${hFr(t.date_rappel)}</span></div>
    ${t.description?`<div style="font-size:12px;color:var(--ink-soft);margin-top:2px">${htmlSafe(t.description)}</div>`:''}
-  </div>${t.tel?`<span style="font-size:13px;font-weight:700;white-space:nowrap">${htmlSafe(t.tel)}</span>`:''}
-  <div style="display:flex;gap:6px;flex-wrap:wrap">${ckActions(t.liste_id,t.cle,t.tel,null,false)}<button class="act act-export" onclick="ckRappelFait(${t.id})" title="Marquer le rappel comme fait">Fait ✓</button></div>`,
-  `border-left:3px solid ${t._retard?'#E24B4A':'#378ADD'};border-radius:0 10px 10px 0;`);
+  </div>${t.tel?`<span style="font-size:13px;font-weight:700;white-space:nowrap">${htmlSafe(t.tel)}</span>`:''}`,
+  `border-left:3px solid ${t._retard?'#E24B4A':'#378ADD'};border-radius:0 10px 10px 0;`,!!(t.liste_id&&t.cle),true);
  }
- // ── 3. À prospecter ensuite ──
- h+=`<div style="font-size:13px;font-weight:800;margin:18px 0 8px">📋 À prospecter ensuite <span style="font-weight:400;color:var(--ink-soft)">(${d.restants} fiche${d.restants>1?'s':''} sans issue d'appel, les mieux scorées d'abord${d.restants>25?' — top 25 affiché':''})</span></div>`;
- if(!d.prospecter.length)h+='<p style="font-size:12.5px;color:var(--ink-soft)">Rien à prospecter : toutes les fiches enrichies de tes listes actives ont une issue d’appel 💪</p>';
+ h+=`<div style="font-size:13px;font-weight:800;margin:18px 0 8px">\ud83d\udccb \u00c0 prospecter ensuite <span style="font-weight:400;color:var(--ink-soft)">(${d.restants} fiche${d.restants>1?'s':''} sans issue d'appel, les mieux scor\u00e9es d'abord${d.restants>25?' \u2014 top 25 affich\u00e9':''})</span></div>`;
+ if(!d.prospecter.length)h+='<p style="font-size:12.5px;color:var(--ink-soft)">Rien \u00e0 prospecter : toutes les fiches enrichies de tes listes actives ont une issue d\u2019appel \ud83d\udcaa</p>';
  for(const p of d.prospecter){
   const sc=p.score||0,scCol=sc>=60?'#15803D':(sc>=40?'#B45309':'#64748B'),scBg=sc>=60?'#F0FDF4':(sc>=40?'#FFFBEB':'#F1F5F9');
-  h+=ckRow(`<span style="font-size:12px;font-weight:700;color:${scCol};background:${scBg};border:1px solid var(--line);border-radius:6px;padding:2px 8px">${sc}</span>
+  h+=ckRow(p,`<span style="font-size:12px;font-weight:700;color:${scCol};background:${scBg};border:1px solid var(--line);border-radius:6px;padding:2px 8px">${sc}</span>
   <div style="flex:1;min-width:200px">
-   <div style="font-size:14px;font-weight:700">${htmlSafe(p.nom)}${p.ville?` <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">· ${htmlSafe(p.ville)}</span>`:''} <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">· ${htmlSafe(p.liste_nom||'')}</span></div>
-   <div style="font-size:12px;color:var(--ink-soft);margin-top:2px">${htmlSafe(p.angle||'')}${p.contacts?` · ${p.contacts} contact${p.contacts>1?'s':''}`:''}</div>
-  </div>${p.tel?`<span style="font-size:13px;font-weight:700;white-space:nowrap">${htmlSafe(p.tel)}</span>`:''}
-  <div style="display:flex;gap:6px;flex-wrap:wrap">${ckActions(p.liste_id,p.cle,p.tel,null,true)}</div>`);
+   <div style="font-size:14px;font-weight:700">${htmlSafe(p.nom)}${p.ville?` <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">\u00b7 ${htmlSafe(p.ville)}</span>`:''} <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">\u00b7 ${htmlSafe(p.liste_nom||'')}</span></div>
+   <div style="font-size:12px;color:var(--ink-soft);margin-top:2px">${htmlSafe(p.angle||'')}${p.contacts?` \u00b7 ${p.contacts} contact${p.contacts>1?'s':''}`:''}</div>
+  </div>${p.tel?`<span style="font-size:13px;font-weight:700;white-space:nowrap">${htmlSafe(p.tel)}</span>`:''}`,
+  '',true,false);
  }
  zone.innerHTML=h;
  if(admin){remplirSelectSdr('ck-sdr').then(()=>{const s=document.getElementById('ck-sdr');if(s&&sdrAffiche)s.value=sdrAffiche;});}

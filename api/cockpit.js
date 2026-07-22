@@ -59,21 +59,33 @@ export default async function handler(req, res) {
         const c0 = cs.find(c => c && c.enrich && (c.enrich.telephone || c.enrich.email)) || cs[0] || null;
         const statut = e.statut_appel || (e.tags_sdr || [])[0] || null;
         if (statut && e.traite_le && new Date(e.traite_le) >= debutJour) statueesJour++;
+        // Détail pour le panneau déplié du cockpit : tous les contacts + synthèse d'appel
+        const contactsDetail = cs.filter(c => c && c.nom).slice(0, 5).map(c => ({
+          nom: ((c.prenom || '') + ' ' + (c.nom || '')).trim(),
+          fonction: c.fonction || (c.enrich && c.enrich.fonction) || '',
+          email: (c.enrich && c.enrich.email) || null,
+          tel: (c.enrich && c.enrich.telephone) || null
+        }));
+        const emailCle = (cs.find(c => c && c.enrich && c.enrich.email) || {}).enrich;
         const info = {
           liste_id: l.id, liste_nom: l.nom, cle,
           nom: e.enseigne_ia || e.enseigne || e.nom, ville: e.ville || '',
           contact: c0 ? ((c0.prenom || '') + ' ' + (c0.nom || '')).trim() : '',
           fonction: (c0 && (c0.fonction || (c0.enrich && c0.enrich.fonction))) || '',
-          tel: telDe(e, c0), statut, traite_le: e.traite_le || null
+          tel: telDe(e, c0), statut, traite_le: e.traite_le || null,
+          email_cle: (emailCle && emailCle.email) ? String(emailCle.email).toLowerCase() : ((e.enrich && e.enrich.email) ? String(e.enrich.email).toLowerCase() : null),
+          tel_standard: (e.gmb && e.gmb.telephone) || null,
+          accroche: (e.score && e.score.accroche) || null,
+          synthese: (e.score && e.score.synthese) || null,
+          contacts_detail: contactsDetail
         };
         for (const c of cs) if (c && c.enrich && c.enrich.email) parEmail.set(String(c.enrich.email).toLowerCase(), info);
         if (e.enrich && e.enrich.email) parEmail.set(String(e.enrich.email).toLowerCase(), info);
         if (!statut && (e.score || (e.gmb && e.gmb.trouve))) {
           prospecter.push({
-            liste_id: info.liste_id, liste_nom: info.liste_nom, cle: info.cle, nom: info.nom, ville: info.ville,
-            contact: info.contact, fonction: info.fonction, tel: info.tel,
+            ...info,
             score: (e.score && e.score.scores && e.score.scores.global) || 0,
-            angle: angleDe(e), contacts: cs.filter(c => c && c.nom).length
+            angle: angleDe(e), contacts: contactsDetail.length
           });
         }
       }
@@ -92,8 +104,7 @@ export default async function handler(req, res) {
         const f = parEmail.get(String(ev.fiche_cle).toLowerCase());
         if (!f) continue;
         if (f.traite_le && new Date(f.traite_le) > new Date(ev.ts)) continue; // déjà recontacté après le signal
-        chauds.push({ liste_id: f.liste_id, liste_nom: f.liste_nom, cle: f.cle, nom: f.nom, ville: f.ville,
-          contact: f.contact, fonction: f.fonction, tel: f.tel, signal: ev.titre || ev.type, signal_ts: ev.ts });
+        chauds.push({ ...f, signal: ev.titre || ev.type, signal_ts: ev.ts });
       }
       chauds.sort((a, b) => new Date(b.signal_ts) - new Date(a.signal_ts));
     }
@@ -110,7 +121,10 @@ export default async function handler(req, res) {
       const r = {
         id: t.id, entreprise: t.entreprise_nom || (f && f.nom) || 'Fiche', contact: t.contact_nom || (f && f.contact) || '',
         description: t.description || '', date_rappel: t.date_rappel,
-        liste_id: t.liste_id || (f && f.liste_id) || null, cle: f ? f.cle : null, tel: f ? f.tel : null
+        liste_id: t.liste_id || (f && f.liste_id) || null, cle: f ? f.cle : null, tel: f ? f.tel : null,
+        email_cle: f ? f.email_cle : null, tel_standard: f ? f.tel_standard : null,
+        accroche: f ? f.accroche : null, synthese: f ? f.synthese : null,
+        contacts_detail: f ? f.contacts_detail : []
       };
       (new Date(t.date_rappel) < mtn ? rappels.retard : rappels.aujourdhui).push(r);
     }
