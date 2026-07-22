@@ -33,7 +33,7 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
-      const rows = await sql`SELECT id, nom, email, email_envoi, limite_credits, actif, role, ringover_numero, slack_id, lien_rdv, (password_hash IS NOT NULL) AS mdp_defini FROM sdrs ORDER BY nom`;
+      const rows = await sql`SELECT id, nom, email, email_envoi, limite_credits, actif, role, ringover_numero, slack_id, lien_rdv, objectif_appels_jour, objectif_rdv_mois, (password_hash IS NOT NULL) AS mdp_defini FROM sdrs ORDER BY nom`;
       return res.status(200).json({ sdrs: rows });
     }
 
@@ -49,7 +49,7 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'PUT') {
-      const { id, nom, email, email_envoi, limite_credits, actif, ringover_numero, role, slack_id, lien_rdv } = req.body || {};
+      const { id, nom, email, email_envoi, limite_credits, actif, ringover_numero, role, slack_id, lien_rdv, objectif_appels_jour, objectif_rdv_mois } = req.body || {};
       if (!id) return res.status(400).json({ erreur: 'id requis' });
       const cur = await sql`SELECT * FROM sdrs WHERE id = ${parseInt(id)}`;
       if (!cur.length) return res.status(404).json({ erreur: 'SDR introuvable' });
@@ -72,9 +72,11 @@ export default async function handler(req, res) {
           ringover_numero = ${ringover_numero !== undefined ? normNumero(ringover_numero) : c.ringover_numero},
           slack_id = ${slack_id !== undefined ? (slack_id.trim() || null) : c.slack_id},
           lien_rdv = ${lien_rdv !== undefined ? (lien_rdv.trim() || null) : c.lien_rdv},
+          objectif_appels_jour = ${objectif_appels_jour !== undefined ? (objectif_appels_jour === '' || objectif_appels_jour === null ? null : parseInt(objectif_appels_jour)) : c.objectif_appels_jour},
+          objectif_rdv_mois = ${objectif_rdv_mois !== undefined ? (objectif_rdv_mois === '' || objectif_rdv_mois === null ? null : parseInt(objectif_rdv_mois)) : c.objectif_rdv_mois},
           role = ${user.role === 'superadmin' && role !== undefined && ['sdr','ae','admin','superadmin'].includes(role) ? role : c.role}
         WHERE id = ${parseInt(id)}
-        RETURNING id, nom, email, email_envoi, limite_credits, actif, ringover_numero, slack_id, lien_rdv, role`;
+        RETURNING id, nom, email, email_envoi, limite_credits, actif, ringover_numero, slack_id, lien_rdv, role, objectif_appels_jour, objectif_rdv_mois`;
       return res.status(200).json({ ok: true, sdr: rows[0] });
     }
 

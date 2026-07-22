@@ -135,6 +135,9 @@ export async function ensureSchema() {
   await sql`ALTER TABLE sdrs ADD COLUMN IF NOT EXISTS slack_id TEXT`;
   await sql`ALTER TABLE sdrs ADD COLUMN IF NOT EXISTS email_envoi TEXT`;
   await sql`ALTER TABLE sdrs ADD COLUMN IF NOT EXISTS lien_rdv TEXT`;
+  // Objectifs du cockpit « Ma journée » (défauts appliqués côté code : 50 appels/j, 20 RDV/mois)
+  await sql`ALTER TABLE sdrs ADD COLUMN IF NOT EXISTS objectif_appels_jour INTEGER`;
+  await sql`ALTER TABLE sdrs ADD COLUMN IF NOT EXISTS objectif_rdv_mois INTEGER`;
   await sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS stats JSONB`;
   // Anti-brute-force : suivi des tentatives de connexion par email
   await sql`CREATE TABLE IF NOT EXISTS enrich_actif (

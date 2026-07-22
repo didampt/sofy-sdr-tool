@@ -45,13 +45,56 @@ export default async function handler(req, res) {
   try {
     const debutJour = new Date(); debutJour.setHours(0, 0, 0, 0);
 
+    // ── Mode différé ?appels=1 : stats d'appels Ringover du jour pour ce SDR (chargées après le rendu) ──
+    if (req.query.appels === '1') {
+      const cleRing = process.env.RINGOVER_API_KEY;
+      if (!cleRing) return res.status(200).json({ ok: true, appels: null });
+      const cle9 = s => String(s || '').replace(/\D/g, '').slice(-9);
+      const [srow] = await sql`SELECT email, ringover_numero FROM sdrs WHERE nom = ${sdr} LIMIT 1`;
+      const emailSdr = (srow && srow.email) ? srow.email.toLowerCase().trim() : '';
+      const numSdr = srow ? cle9(srow.ringover_numero) : '';
+      let total = 0, decroches = 0, dureeSum = 0;
+      for (let p = 0; p < 2; p++) {
+        const r = await fetch(`https://public-api.ringover.com/v2/calls?limit_count=1000&limit_offset=${p * 1000}`, { headers: { 'Authorization': cleRing } });
+        let dd = null; try { dd = await r.json(); } catch (_) {}
+        const liste = (dd && dd.call_list) || [];
+        if (!liste.length) break;
+        let resteAujourdhui = false;
+        for (const c of liste) {
+          const ts = c.start_time ? new Date(c.start_time) : null;
+          if (!ts || ts < debutJour) continue;
+          resteAujourdhui = true;
+          if (c.direction !== 'out') continue;
+          const em = c.user && c.user.email ? c.user.email.toLowerCase().trim() : '';
+          const ligne = cle9(c.from_number);
+          if (!((emailSdr && em === emailSdr) || (numSdr && ligne === numSdr))) continue;
+          total++;
+          if (c.is_answered) { decroches++; dureeSum += (c.incall_duration || 0); }
+        }
+        if (!resteAujourdhui || liste.length < 1000) break;
+      }
+      return res.status(200).json({ ok: true, appels: {
+        total, decroches, taux: total ? Math.round(decroches / total * 100) : 0,
+        duree_moy_sec: decroches ? Math.round(dureeSum / decroches) : 0
+      }});
+    }
+
+    // Objectifs du SDR (Paramètres) — défauts : 50 appels/jour, 20 RDV/mois
+    let objAppels = 50, objRdv = 20;
+    try {
+      const [orow] = await sql`SELECT objectif_appels_jour, objectif_rdv_mois FROM sdrs WHERE nom = ${sdr} LIMIT 1`;
+      if (orow) { if (orow.objectif_appels_jour) objAppels = orow.objectif_appels_jour; if (orow.objectif_rdv_mois) objRdv = orow.objectif_rdv_mois; }
+    } catch (_) {}
+
     // ── 1. Fiches des listes ACTIVES du SDR : index par email + candidates « à prospecter » ──
     const listes = await sql`SELECT id, nom, entreprises FROM listes
       WHERE archivee = FALSE AND (statut IS NULL OR statut = 'active') AND sdr = ${sdr}
       ORDER BY id DESC LIMIT 40`;
     const parEmail = new Map();
     const prospecter = [];
-    let statueesJour = 0;
+    let statueesJour = 0, traitees7j = 0;
+    const il7j = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+    let lookalikeRef = null; // dernière fiche « RDV pris » : sert au bouton Lookalike de la bannière
     for (const l of listes) {
       for (const e of (Array.isArray(l.entreprises) ? l.entreprises : [])) {
         const cle = ((e.signal && e.signal.date) ? e.signal.date : '') + (e.nom || ''); // = cleSignal() côté front
@@ -59,6 +102,15 @@ export default async function handler(req, res) {
         const c0 = cs.find(c => c && c.enrich && (c.enrich.telephone || c.enrich.email)) || cs[0] || null;
         const statut = e.statut_appel || (e.tags_sdr || [])[0] || null;
         if (statut && e.traite_le && new Date(e.traite_le) >= debutJour) statueesJour++;
+        if (statut && e.traite_le && new Date(e.traite_le) >= il7j) traitees7j++;
+        if ((statut === 'RDV pris' || statut === '🤝 RDV pris' || (e.tags_sdr || []).includes('🤝 RDV pris'))
+            && (!lookalikeRef || (e.traite_le && (!lookalikeRef.traite_le || new Date(e.traite_le) > new Date(lookalikeRef.traite_le))))) {
+          lookalikeRef = {
+            nom: e.nom, enseigne: e.enseigne_ia || e.enseigne || null, activite: e.activite || null,
+            gmb_categorie: (e.gmb && e.gmb.categorie) || null, naf: e.naf || null,
+            effectif: e.effectif || null, code_postal: e.code_postal || '', traite_le: e.traite_le || null
+          };
+        }
         // Détail pour le panneau déplié du cockpit : tous les contacts + synthèse d'appel
         const contactsDetail = cs.filter(c => c && c.nom).slice(0, 5).map(c => ({
           nom: ((c.prenom || '') + ' ' + (c.nom || '')).trim(),
@@ -129,11 +181,15 @@ export default async function handler(req, res) {
       (new Date(t.date_rappel) < mtn ? rappels.retard : rappels.aujourdhui).push(r);
     }
 
-    // ── 4. Bilan du jour ──
-    let rdvJour = 0;
+    // ── 4. Bilan du jour + RDV du mois (vs objectif) ──
+    let rdvJour = 0, rdvMois = 0;
+    const debutMois = new Date(); debutMois.setDate(1); debutMois.setHours(0, 0, 0, 0);
     try {
-      const [r1] = await sql`SELECT COUNT(*)::int AS n FROM activites WHERE source = 'rdv' AND auteur = ${sdr} AND ts >= ${debutJour.toISOString()}`;
-      rdvJour = (r1 && r1.n) || 0;
+      const [r1] = await sql`SELECT
+        COUNT(*) FILTER (WHERE ts >= ${debutJour.toISOString()})::int AS jour,
+        COUNT(*)::int AS mois
+        FROM activites WHERE source = 'rdv' AND auteur = ${sdr} AND ts >= ${debutMois.toISOString()}`;
+      rdvJour = (r1 && r1.jour) || 0; rdvMois = (r1 && r1.mois) || 0;
     } catch (_) {}
 
     return res.status(200).json({
@@ -142,7 +198,10 @@ export default async function handler(req, res) {
       rappels,
       prospecter: prospecter.slice(0, 25),
       restants,
-      bilan: { statuees_jour: statueesJour, rdv_jour: rdvJour }
+      bilan: { statuees_jour: statueesJour, rdv_jour: rdvJour, rdv_mois: rdvMois },
+      objectifs: { appels_jour: objAppels, rdv_mois: objRdv },
+      rythme_7j: Math.round(traitees7j / 7 * 10) / 10,
+      lookalike_ref: lookalikeRef
     });
   } catch (e) {
     return res.status(500).json({ erreur: 'Cockpit indisponible', detail: String(e.message || e).slice(0, 200) });

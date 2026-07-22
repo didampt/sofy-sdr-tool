@@ -1068,7 +1068,7 @@ Spot-Hit</textarea>
         <h2>👥 SDR & utilisateurs</h2>
         <div class="role">Limite de crédits : montant maximum de crédits consommables par mois. Vide = illimité.</div>
         <div style="overflow-x:auto"><table class="map-table" id="sdr-table" style="min-width:1280px">
-          <tr><th>Nom</th><th>Email</th><th>☎️ Ringover</th><th>Rôle</th><th>Limite € / mois</th><th>Mot de passe</th><th>Actif</th><th></th></tr>
+          <tr><th>Nom</th><th>Email</th><th>☎️ Ringover</th><th>Rôle</th><th>🎯 Appels/j</th><th>🏆 RDV/mois</th><th>Limite € / mois</th><th>Mot de passe</th><th>Actif</th><th></th></tr>
         </table></div>
         <div class="map-sub">Ajouter un SDR / utilisateur</div>
         <div class="row3">
@@ -1880,7 +1880,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v248';
+const VERSION='v249';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2031,8 +2031,12 @@ function retourChoixMode(){
 // (l'IA gère déjà « comme X » dans son prompt ; ici on lui donne le NAF/effectif/zone exacts au lieu de la laisser deviner)
 function creerLookalike(i){
  const e=REAL[i];
- const bouts=['Je veux des entreprises similaires à « '+(enseigneDe(e)||e.nom)+' »'];
- const act=(e.activite||'').trim()||(e.gmb&&e.gmb.categorie)||'';
+ creerLookalikeDepuis({nom:e.nom,enseigne:enseigneDe(e),activite:e.activite,gmb_categorie:e.gmb&&e.gmb.categorie,naf:e.naf,effectif:e.effectif,code_postal:e.code_postal});
+}
+function creerLookalikeDepuis(e){
+ if(!e)return;
+ const bouts=['Je veux des entreprises similaires à « '+(e.enseigne||e.nom)+' »'];
+ const act=(e.activite||'').trim()||e.gmb_categorie||'';
  if(act)bouts.push('activité : '+act);
  if(e.naf)bouts.push('code NAF '+e.naf);
  if(e.effectif)bouts.push('effectif ~'+e.effectif);
@@ -6096,6 +6100,8 @@ async function chargerSdrs(){
       <option value="admin" ${s.role==='admin'?'selected':''}>Admin (paramètres + stats)</option>
       <option value="superadmin" ${s.role==='superadmin'?'selected':''}>Superadmin</option>
     </select></td>
+    <td><input class="field" type="number" min="0" value="${s.objectif_appels_jour??''}" placeholder="50" id="so${s.id}" title="Objectif d'appels sortants par jour (cockpit Ma journée) — vide = 50"></td>
+    <td><input class="field" type="number" min="0" value="${s.objectif_rdv_mois??''}" placeholder="20" id="sv${s.id}" title="Objectif de RDV pris par mois (cockpit Ma journée) — vide = 20"></td>
     <td><input class="field" type="number" min="0" value="${s.limite_credits??''}" placeholder="Illimité" id="sl${s.id}"></td>
     <td><input class="field" type="password" placeholder="${s.mdp_defini?'Défini ✓ (remplacer)':'À définir'}" id="sp${s.id}"></td>
     <td style="text-align:center"><input type="checkbox" ${s.actif?'checked':''} id="sa${s.id}" style="width:18px;height:18px;accent-color:var(--accent)"></td>
@@ -6126,6 +6132,8 @@ async function majSdr(id){
    slack_id:(document.getElementById('ss'+id)||{}).value,
    lien_rdv:(document.getElementById('srdv'+id)||{}).value,
    role:(document.getElementById('sg'+id)||{}).value,
+   objectif_appels_jour:(document.getElementById('so'+id)||{}).value,
+   objectif_rdv_mois:(document.getElementById('sv'+id)||{}).value,
    password:document.getElementById('sp'+id).value||undefined})});
  const d=await r.json();
  if(d.erreur){toast(d.erreur);return;}
@@ -6352,27 +6360,44 @@ function rendreCockpit(sdrAffiche){
  CK_ITEMS={};CK_ROW=0;
  const admin=state.user&&['admin','superadmin'].includes(state.user.role);
  const nR=(d.rappels.retard||[]).length,nA=(d.rappels.aujourdhui||[]).length;
- const enAttente=d.chauds.length+nR+nA+Math.min(d.restants,25);
  const fait=d.bilan.statuees_jour||0;
- const total=fait+enAttente;
- const pct=total?Math.round(fait/total*100):100;
+ const obj=d.objectifs||{appels_jour:50,rdv_mois:20};
  const dateFr=new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
+ const tuile=(label,valHtml,sub,vert)=>`<div style="background:${vert?'#F0FDF4':'var(--paper)'};border:1px solid ${vert?'#BBF7D0':'var(--line)'};border-radius:8px;padding:10px 12px;min-width:0"><div style="font-size:11px;color:${vert?'#15803D':'var(--ink-soft)'}">${label}</div><div style="font-size:21px;font-weight:800;line-height:1.2;color:${vert?'#15803D':'var(--ink)'}">${valHtml}</div><div style="font-size:11px;color:${vert?'#15803D':'var(--ink-soft)'}">${sub}</div></div>`;
  head.innerHTML=`
   <div style="display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:10px">
    <div>
     <h1 style="margin:0">\u2600\ufe0f Ma journ\u00e9e \u2014 ${dateFr}</h1>
     <p class="sub" style="margin:2px 0 0">${htmlSafe(sdrAffiche||d.sdr)} \u00b7 ${d.chauds.length} signal${d.chauds.length>1?'aux':''} chaud${d.chauds.length>1?'s':''} \u00b7 ${nR+nA} rappel${(nR+nA)>1?'s':''} du${(nR+nA)>1?'s':''} \u00b7 ${d.restants} fiche${d.restants>1?'s':''} \u00e0 prospecter</p>
    </div>
-   <div style="display:flex;gap:18px;align-items:flex-end">
-    ${admin?`<label style="font-size:11px;color:var(--ink-soft)">Vue SDR<br><select id="ck-sdr" class="field" style="padding:6px 8px;font-size:12px" onchange="chargerCockpit()"></select></label>`:''}
-    <div style="text-align:right;font-size:11px;color:var(--ink-soft)">Statu\u00e9es aujourd'hui<br><span style="font-size:22px;font-weight:800;color:var(--ink)">${fait}</span></div>
-    <div style="text-align:right;font-size:11px;color:var(--ink-soft)">RDV pris<br><span style="font-size:22px;font-weight:800;color:#15803D">${d.bilan.rdv_jour||0}</span></div>
-   </div>
+   ${admin?`<label style="font-size:11px;color:var(--ink-soft)">Vue SDR<br><select id="ck-sdr" class="field" style="padding:6px 8px;font-size:12px" onchange="chargerCockpit()"></select></label>`:''}
   </div>
-  <div style="height:6px;background:var(--paper);border:1px solid var(--line);border-radius:3px;margin:12px 0 4px;overflow:hidden"><div style="width:${pct}%;height:100%;background:#1D9E75"></div></div>
-  <p style="font-size:11.5px;color:var(--ink-soft);margin:0 0 6px">${fait} / ${total} actions du jour</p>`;
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:12px">
+   ${tuile('\ud83d\udce4 Appels pass\u00e9s','<span id="ck-t-appels">\u2026</span>','Ringover \u00b7 sortants')}
+   ${tuile('\ud83d\udcde D\u00e9croch\u00e9s','<span id="ck-t-dec">\u2026</span>','taux de joignabilit\u00e9')}
+   ${tuile('\u23f1\ufe0f Dur\u00e9e moy.','<span id="ck-t-duree">\u2026</span>','par appel d\u00e9croch\u00e9')}
+   ${tuile('\u2705 Statu\u00e9es',fait,"issues d'appel pos\u00e9es")}
+   ${tuile('\ud83c\udfc6 RDV pris',d.bilan.rdv_jour||0,(d.bilan.rdv_mois||0)+' / '+obj.rdv_mois+' ce mois-ci',true)}
+  </div>
+  <div id="ck-bar" style="display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--paper);border:1px solid var(--line);margin:12px 0 4px"></div>
+  <p id="ck-bar-lbl" style="font-size:11.5px;color:var(--ink-soft);margin:0 0 6px">Objectif du jour : ${obj.appels_jour} appels \u2014 chargement des appels Ringover\u2026</p>`;
  const hFr=x=>new Date(x).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
  let h='';
+ if(d.restants<50){
+  const vide=d.restants===0;
+  const rythme=d.rythme_7j||0;
+  const jours=(!vide&&rythme>0)?Math.ceil(d.restants/rythme):null;
+  h+=`<div style="margin:4px 0 14px;background:${vide?'#FEF2F2':'#FFFBEB'};border:1px solid ${vide?'#FECACA':'#FDE68A'};border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+   <div style="flex:1;min-width:220px;font-size:13px;color:${vide?'#B91C1C':'#92400E'}">
+    <b>${vide?'Plus aucune fiche \u00e0 prospecter.':'Plus que '+d.restants+' fiche'+(d.restants>1?'s':'')+' \u00e0 prospecter.'}</b>
+    ${jours?` \u00c0 ton rythme (~${String(rythme).replace('.',',')} fiche${rythme>1?'s':''} statu\u00e9e${rythme>1?'s':''}/jour), le gisement est vide dans ~${jours} jour${jours>1?'s':''}.`:''} Pr\u00e9pare ta prochaine liste d\u00e8s maintenant.
+   </div>
+   <div style="display:flex;gap:6px;flex-wrap:wrap">
+    <button class="act act-call" onclick="nav('wizard',document.querySelector('[data-view=wizard]'))">\ud83c\udfaf Cr\u00e9er une liste</button>
+    ${d.lookalike_ref?`<button class="act act-copy" onclick="creerLookalikeDepuis(CK.lookalike_ref)" title="Liste intelligente pr\u00e9remplie depuis ta derni\u00e8re fiche \u00ab RDV pris \u00bb : ${htmlSafe(d.lookalike_ref.enseigne||d.lookalike_ref.nom||'')}">\ud83d\udc6f Lookalike de mon dernier RDV</button>`:''}
+   </div>
+  </div>`;
+ }
  h+=`<div style="font-size:13px;font-weight:800;margin:14px 0 8px;color:#B45309">\ud83d\udd25 \u00c0 appeler maintenant \u2014 signaux des derni\u00e8res 24 h (${d.chauds.length})</div>`;
  if(!d.chauds.length)h+='<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 6px">Aucun signal chaud pour l\u2019instant \u2014 les ouvertures, clics et r\u00e9ponses des derni\u00e8res 24 h apparaissent ici.</p>';
  for(const c of d.chauds){
@@ -6404,6 +6429,29 @@ function rendreCockpit(sdrAffiche){
  }
  zone.innerHTML=h;
  if(admin){remplirSelectSdr('ck-sdr').then(()=>{const s=document.getElementById('ck-sdr');if(s&&sdrAffiche)s.value=sdrAffiche;});}
+ ckChargerAppels(sdrAffiche||d.sdr);
+}
+async function ckChargerAppels(sdr){
+ try{
+  const r=await api('/api/cockpit?appels=1'+(sdr?'&sdr='+encodeURIComponent(sdr):''));
+  const d=await r.json();
+  if(!d.ok||!d.appels)return;
+  const a=d.appels;
+  const obj=(CK&&CK.objectifs&&CK.objectifs.appels_jour)||50;
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  set('ck-t-appels',a.total);
+  set('ck-t-dec',a.total?(a.decroches+' \u00b7 '+a.taux+' %'):'0');
+  const mm=Math.floor((a.duree_moy_sec||0)/60),ss=String((a.duree_moy_sec||0)%60).padStart(2,'0');
+  set('ck-t-duree',a.decroches?(mm+':'+ss):'\u2014');
+  const bar=document.getElementById('ck-bar');
+  if(bar){
+   const pDec=Math.min(100,Math.round(a.decroches/obj*100));
+   const pNon=Math.max(0,Math.min(100-pDec,Math.round((a.total-a.decroches)/obj*100)));
+   bar.innerHTML=`<div style="width:${pDec}%;background:#0F6E56" title="${a.decroches} d\u00e9croch\u00e9s"></div><div style="width:${pNon}%;background:#9FE1CB" title="${a.total-a.decroches} sans r\u00e9ponse"></div>`;
+  }
+  const lbl=document.getElementById('ck-bar-lbl');
+  if(lbl)lbl.innerHTML=`Objectif du jour : <b>${a.total} / ${obj} appels</b> \u00b7 <span style="color:#0F6E56">\u25a0</span> d\u00e9croch\u00e9s (${a.decroches}) \u00b7 <span style="color:#5DCAA5">\u25a0</span> sans r\u00e9ponse (${a.total-a.decroches})${a.total<obj?` \u00b7 reste ${obj-a.total} appel${(obj-a.total)>1?'s':''}`:' \u00b7 objectif atteint \ud83c\udf89'}`;
+ }catch(_){}
 }
 async function ckStatuer(listeId,cleEnc,sel){
  const statut=sel.value;if(!statut)return;
