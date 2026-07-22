@@ -8,7 +8,7 @@
 
 - **Sofy Scrap** = outil SDR interne (listes de prospection, enrichissement, scoring, actions Ringover/Lemlist/HubSpot/Slack/SMS).
 - **Prod : https://www.sofyscrap.com** — ⚠️ l'apex `sofyscrap.com` répond **308** vers www → **tout webhook externe doit viser `www.`** (Ringover et Snitcher corrigés ; Lemlist est enregistré sur `sofy-sdr-tool.vercel.app` et fonctionne — ne pas y toucher).
-- Front = `public/index.html`, **VERSION courante = v253** (en prod, 22/07/2026). Monter `const VERSION='vNNN'` à chaque livraison front.
+- Front = `public/index.html`, **VERSION courante = v255** (en prod, 22/07/2026). Monter `const VERSION='vNNN'` à chaque livraison front.
 - Rôles : Didier=superadmin ; Romain (Head of Sales, à passer superadmin) ; SDRs : Alicia, Franck, Etienne, Sarah. Manon Bouly = coordinatrice AE (ne prospecte pas).
 - IA serveur : **claude-sonnet-4-6 partout** (Opus non utilisable sur la clé).
 - Interdit absolu : ne jamais mentionner **Apollo** ni **Vibe Prospecting**.
@@ -120,6 +120,8 @@ Feuille de route arbitrée avec Didier (inspirée des pratiques SDR B2B SaaS US 
 - **v252 — Veille e-réputation GMB** (commit fe01893) : `api/veille-gmb.js`, cron quotidien 03:00 — re-lit la note (Place Details rating, ~0,005 $) des fiches des listes **veille/nurturing**, ~1×/mois/fiche, plafond 40/jour, conso sous 'veille-gmb'. Déclencheurs : −0,2★ / nouveaux avis qui font baisser / passage sous 4,0★. Actions : DM Slack au SDR (avant→après + lien profond), `e.signal_gmb` (badge 📉 45 j), trace bloc-notes, e.gmb rafraîchi, `alerte_note_google` au scoring.
 - **v253 — Journal automatique des journées** (commit 8fc606e) : table `journees_sdr` + `api/journee-cron.js` (cron 17:00 UTC lun-ven ≈ 19 h Paris) — journée dérivée des actions réelles (Ringover : début/fin/appels/décrochés/durée ; traite_le : statuées ; bloc-notes : RDV), **aucun pointage manuel** (choix explicite de Didier contre un bouton démarrer/clôturer). DM Slack de bilan du soir (+comparaison moy. 7 j, record semaine). Cockpit : deltas ▲/▼ vs moy. 7 j sur Appels/Décrochés/Statuées (s'allument dès 1 jour d'historique).
 - Divers : `warmed` ajouté aux types d'alerte Slack Lemlist (eebcdf2) ; personas — exclusion des technico-commerciaux (31bf2b3).
+- **v254 — Performance** (commit 317d52c) : suite au ressenti « plus lent » de Didier. ⚠️ PIÈGE MAJEUR : `ensureSchema()` (api/db.js) est désormais gardé par la constante **`SCHEMA_VERSION`** comparée à `config.schema_version` en base — les ~53 requêtes de migration ne tournent que si la constante a été incrémentée (sinon 1 SELECT ; avant : 1,5-2,5 s de latence Neon à CHAQUE démarrage à froid de CHAQUE fonction). **Toute nouvelle table/colonne dans ensureSchema = incrémenter SCHEMA_VERSION dans le même commit**, sinon la migration ne s'exécute jamais en prod (symptôme : « column does not exist »). + cockpit : Statuer…/Fait ✓ en mise à jour locale (zéro refetch des 40 listes) et cache 60 s des stats Ringover.
+- **v255 — Séquences par température** (commit c26e687, SCHEMA_VERSION 2) : `api/sequences-cron.js` (cron 06:00 UTC lun-ven, **`?dry=1` = simulation sans envoi**) — bascule auto vers Lemlist des leads ❄️ froids (Pas de réponse/Message vocal/Absent + **3 tentatives** = 1 statut + 2 rappels faits) et 🌡️ tièdes (Demande doc immédiat ; Rappel demandé sans suite 7 j sans rappel pendant). Campagne du produit dominant (**V1 partagée**, variable `temperature` pour les templates), mêmes variables que l'envoi manuel (email IA `objet_perso`/`email_perso` inclus), plafond 50/SDR/24 h partagé + 100/run, exclus si STOP/HubSpot/déjà en séquence. Traces : sequenceAdded + note bloc-notes + badge ✈️ Séq. auto + DM Slack récap. **Interrupteur « Séq. auto : ON/OFF » par liste (défaut ON, opt-out)**. + garde-fou création : un SDR avec 3 listes actives < 50 % enrichies ne peut plus créer de liste (admin passe) ; bannière cockpit « liste jamais enrichie ». **1re simulation (22/07) : 6 leads sur 35 listes — validée par Didier, 1er run réel au cron du 23/07 8 h.**
 
 ## Backlog (ordre Didier)
 
@@ -127,7 +129,7 @@ Feuille de route arbitrée avec Didier (inspirée des pratiques SDR B2B SaaS US 
 1bis. ~~Liste « lookalike » depuis une fiche~~ → **LIVRÉ en v244** (bouton 👯 Lookalike, voir « Fait le 21-22 juillet »).
 2. Couper RB2B une fois Snitcher validé sur de vraies alertes (vérifier le mapping réel via `config('snitcher_last')`).
 3. Domaine : passer proprement en www principal (`APP_URL=https://www.sofyscrap.com` + Redeploy), puis ré-enregistrer le hook Lemlist.
-4. [Projet séparé] Lemlist : transfert auto des leads non joints → séquences par produit + température.
+4. ~~[Projet séparé] Lemlist : transfert auto des leads non joints → séquences par produit + température~~ → **LIVRÉ en v255** (sequences-cron, voir ci-dessus). Reste en V2 : campagnes « tièdes » dédiées côté Lemlist (8 campagnes au lieu de 4 partagées).
 5. Fix `ringover-record` : la regex anti-SSRF n'autorise que `cdn.ringover.com/records/` → 400 sur les URLs `/messages/`.
 6. Re-tagging IA des transcriptions Ringover (17 statuts d'appel).
 7. SoReach SMS + WhatsApp dans le dashboard ; pagination des fiches.
