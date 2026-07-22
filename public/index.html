@@ -1880,7 +1880,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v252';
+const VERSION='v253';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -6385,6 +6385,12 @@ async function ckJournal(emailEnc,source,titre,detailEnc){
  if(!email)return;
  try{await api('/api/activite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email,source:source,type:source,titre:titre,detail:decodeURIComponent(detailEnc||'')})});}catch(_){}
 }
+function ckDelta(cur,ref){
+ if(ref==null||cur==null)return '';
+ const d=Math.round(cur-ref);
+ if(!d)return ' \u00b7 = moy. 7 j';
+ return ` \u00b7 <span style="color:${d>0?'#15803D':'#B45309'};font-weight:700">${d>0?'\u25b2 +':'\u25bc '}${d}</span> vs moy. 7 j`;
+}
 function rendreCockpit(sdrAffiche){
  const zone=document.getElementById('ck-zone'),head=document.getElementById('ck-head');
  const d=CK;if(!d)return;
@@ -6404,10 +6410,10 @@ function rendreCockpit(sdrAffiche){
    ${admin?`<label style="font-size:11px;color:var(--ink-soft)">Vue SDR<br><select id="ck-sdr" class="field" style="padding:6px 8px;font-size:12px" onchange="chargerCockpit()"></select></label>`:''}
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:12px">
-   ${tuile('\ud83d\udce4 Appels pass\u00e9s','<span id="ck-t-appels">\u2026</span>','Ringover \u00b7 sortants')}
-   ${tuile('\ud83d\udcde D\u00e9croch\u00e9s','<span id="ck-t-dec">\u2026</span>','taux de joignabilit\u00e9')}
+   ${tuile('\ud83d\udce4 Appels pass\u00e9s','<span id="ck-t-appels">\u2026</span>','Ringover \u00b7 sortants<span id="ck-d-appels"></span>')}
+   ${tuile('\ud83d\udcde D\u00e9croch\u00e9s','<span id="ck-t-dec">\u2026</span>','taux de joignabilit\u00e9<span id="ck-d-dec"></span>')}
    ${tuile('\u23f1\ufe0f Dur\u00e9e moy.','<span id="ck-t-duree">\u2026</span>','par appel d\u00e9croch\u00e9')}
-   ${tuile('\u2705 Statu\u00e9es',fait,"issues d'appel pos\u00e9es")}
+   ${tuile('\u2705 Statu\u00e9es',fait,"issues d'appel pos\u00e9es"+(d.moy7?ckDelta(fait,d.moy7.statuees):''))}
    ${tuile('\ud83c\udfc6 RDV pris',d.bilan.rdv_jour||0,(d.bilan.rdv_mois||0)+' / '+obj.rdv_mois+' ce mois-ci',true)}
   </div>
   <div id="ck-bar" style="display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--paper);border:1px solid var(--line);margin:12px 0 4px"></div>
@@ -6472,6 +6478,9 @@ async function ckChargerAppels(sdr){
   const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
   set('ck-t-appels',a.total);
   set('ck-t-dec',a.total?(a.decroches+' \u00b7 '+a.taux+' %'):'0');
+  const m7=CK&&CK.moy7;
+  if(m7){const da=document.getElementById('ck-d-appels');if(da)da.innerHTML=ckDelta(a.total,m7.appels);
+   const dd=document.getElementById('ck-d-dec');if(dd)dd.innerHTML=ckDelta(a.decroches,m7.decroches);}
   const mm=Math.floor((a.duree_moy_sec||0)/60),ss=String((a.duree_moy_sec||0)%60).padStart(2,'0');
   set('ck-t-duree',a.decroches?(mm+':'+ss):'\u2014');
   const bar=document.getElementById('ck-bar');

@@ -86,6 +86,15 @@ export default async function handler(req, res) {
       if (orow) { if (orow.objectif_appels_jour) objAppels = orow.objectif_appels_jour; if (orow.objectif_rdv_mois) objRdv = orow.objectif_rdv_mois; }
     } catch (_) {}
 
+    // Comparaisons : moyenne des 7 derniers jours consignés par journee-cron (journal automatique)
+    let moy7 = null;
+    try {
+      const [m] = await sql`SELECT ROUND(AVG(appels))::int AS appels, ROUND(AVG(decroches))::int AS decroches,
+        ROUND(AVG(statuees))::int AS statuees
+        FROM journees_sdr WHERE sdr = ${sdr} AND jour < CURRENT_DATE AND jour >= CURRENT_DATE - 7`;
+      if (m && m.appels != null) moy7 = m;
+    } catch (_) {}
+
     // ── 1. Fiches des listes ACTIVES du SDR : index par email + candidates « à prospecter » ──
     const listes = await sql`SELECT id, nom, entreprises FROM listes
       WHERE archivee = FALSE AND (statut IS NULL OR statut = 'active') AND sdr = ${sdr}
@@ -200,6 +209,7 @@ export default async function handler(req, res) {
       restants,
       bilan: { statuees_jour: statueesJour, rdv_jour: rdvJour, rdv_mois: rdvMois },
       objectifs: { appels_jour: objAppels, rdv_mois: objRdv },
+      moy7,
       rythme_7j: Math.round(traitees7j / 7 * 10) / 10,
       lookalike_ref: lookalikeRef
     });

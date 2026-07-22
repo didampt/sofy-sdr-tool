@@ -138,6 +138,17 @@ export async function ensureSchema() {
   // Objectifs du cockpit « Ma journée » (défauts appliqués côté code : 50 appels/j, 20 RDV/mois)
   await sql`ALTER TABLE sdrs ADD COLUMN IF NOT EXISTS objectif_appels_jour INTEGER`;
   await sql`ALTER TABLE sdrs ADD COLUMN IF NOT EXISTS objectif_rdv_mois INTEGER`;
+  // Journal automatique des journées SDR (snapshot du cron du soir — aucun pointage manuel) :
+  // début/fin dérivés des appels Ringover réels, stats du jour pour les comparaisons du cockpit
+  await sql`CREATE TABLE IF NOT EXISTS journees_sdr (
+    id SERIAL PRIMARY KEY,
+    sdr TEXT NOT NULL,
+    jour DATE NOT NULL,
+    debut TIMESTAMPTZ, fin TIMESTAMPTZ,
+    appels INTEGER DEFAULT 0, decroches INTEGER DEFAULT 0, duree_sec INTEGER DEFAULT 0,
+    statuees INTEGER DEFAULT 0, rdv INTEGER DEFAULT 0,
+    UNIQUE (sdr, jour)
+  )`;
   await sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS stats JSONB`;
   // Anti-brute-force : suivi des tentatives de connexion par email
   await sql`CREATE TABLE IF NOT EXISTS enrich_actif (
