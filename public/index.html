@@ -1880,7 +1880,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v253';
+const VERSION='v254';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -6468,12 +6468,19 @@ function rendreCockpit(sdrAffiche){
  if(admin){remplirSelectSdr('ck-sdr').then(()=>{const s=document.getElementById('ck-sdr');if(s&&sdrAffiche)s.value=sdrAffiche;});}
  ckChargerAppels(sdrAffiche||d.sdr);
 }
+let CK_APPELS_CACHE=null;
 async function ckChargerAppels(sdr){
  try{
+  if(CK_APPELS_CACHE&&CK_APPELS_CACHE.sdr===sdr&&(Date.now()-CK_APPELS_CACHE.ts)<60000){ckPeindreAppels(CK_APPELS_CACHE.a);return;}
   const r=await api('/api/cockpit?appels=1'+(sdr?'&sdr='+encodeURIComponent(sdr):''));
   const d=await r.json();
   if(!d.ok||!d.appels)return;
-  const a=d.appels;
+  CK_APPELS_CACHE={sdr:sdr,ts:Date.now(),a:d.appels};
+  ckPeindreAppels(d.appels);
+ }catch(_){}
+}
+function ckPeindreAppels(a){
+ try{
   const obj=(CK&&CK.objectifs&&CK.objectifs.appels_jour)||50;
   const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
   set('ck-t-appels',a.total);
@@ -6499,7 +6506,21 @@ async function ckStatuer(listeId,cleEnc,sel){
  try{
   const r=await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:listeId,fiche_cle:decodeURIComponent(cleEnc),statut_appel:statut})});
   const d=await r.json();
-  if(d.ok){toast('✓ '+statut);chargerCockpit();}
+  if(d.ok){
+   // Mise à jour LOCALE (pas de rechargement des listes : le cockpit re-rend depuis CK)
+   toast('✓ '+statut);
+   if(CK){
+    const cle=decodeURIComponent(cleEnc);
+    const match=x=>x&&x.liste_id===listeId&&x.cle===cle;
+    const dansProspecter=(CK.prospecter||[]).some(match);
+    CK.chauds=(CK.chauds||[]).filter(x=>!match(x));
+    CK.prospecter=(CK.prospecter||[]).filter(x=>!match(x));
+    if(dansProspecter&&typeof CK.restants==='number'&&CK.restants>0)CK.restants--;
+    CK.bilan.statuees_jour=(CK.bilan.statuees_jour||0)+1;
+    if(/RDV pris/.test(statut)){CK.bilan.rdv_jour=(CK.bilan.rdv_jour||0)+1;CK.bilan.rdv_mois=(CK.bilan.rdv_mois||0)+1;}
+    rendreCockpit(CK.sdr);
+   }
+  }
   else{sel.disabled=false;toast('Erreur : '+(d.erreur||'statut non enregistré'));}
  }catch(e){sel.disabled=false;toast('Erreur réseau : '+e.message);}
 }
@@ -6507,7 +6528,10 @@ async function ckRappelFait(id){
  try{
   const r=await api('/api/taches',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,faite:true})});
   const d=await r.json();
-  if(d.ok||r.ok){toast('✅ Rappel marqué fait');chargerCockpit();}
+  if(d.ok||r.ok){
+   toast('✅ Rappel marqué fait');
+   if(CK){CK.rappels.retard=(CK.rappels.retard||[]).filter(t=>t.id!==id);CK.rappels.aujourdhui=(CK.rappels.aujourdhui||[]).filter(t=>t.id!==id);rendreCockpit(CK.sdr);}
+  }
   else toast('Erreur : '+(d.erreur||'action impossible'));
  }catch(e){toast('Erreur réseau : '+e.message);}
 }

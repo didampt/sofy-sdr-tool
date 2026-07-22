@@ -7,8 +7,17 @@ const url = process.env.DATABASE_URL || process.env.POSTGRES_URL;
 export const sql = url ? neon(url) : null;
 
 let ready = false;
+// ⚡ Garde de version : les ~50 requêtes de migration ne tournent que si le schéma a changé.
+// À INCRÉMENTER à chaque ajout de table/colonne dans ensureSchema — sinon la migration ne
+// s'exécutera pas en prod. En régime de croisière : 1 seul SELECT par démarrage à froid
+// (au lieu de ~50 allers-retours Neon ≈ 1,5-2,5 s sur chaque fonction).
+const SCHEMA_VERSION = 1;
 export async function ensureSchema() {
   if (ready || !sql) return;
+  try {
+    const v = await sql`SELECT valeur FROM config WHERE cle = 'schema_version'`;
+    if (v.length && Number(v[0].valeur) >= SCHEMA_VERSION) { ready = true; return; }
+  } catch (_) { /* table config absente = première installation : on migre */ }
   await sql`CREATE TABLE IF NOT EXISTS listes (
     id SERIAL PRIMARY KEY,
     nom TEXT NOT NULL,
@@ -189,6 +198,8 @@ export async function ensureSchema() {
   await sql`CREATE INDEX IF NOT EXISTS idx_conso_liste ON consommations (liste_id)`;
   await sql`INSERT INTO tarifs (api, prix) VALUES ('soreach', 0.07) ON CONFLICT (api) DO NOTHING`;
   await sql`INSERT INTO tarifs (api, prix) VALUES ('basile', 0.01) ON CONFLICT (api) DO NOTHING`;
+  await sql`INSERT INTO config (cle, valeur) VALUES ('schema_version', ${JSON.stringify(SCHEMA_VERSION)})
+    ON CONFLICT (cle) DO UPDATE SET valeur = ${JSON.stringify(SCHEMA_VERSION)}`;
   ready = true;
 }
 
