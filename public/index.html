@@ -1874,7 +1874,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v244';
+const VERSION='v245';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -6162,11 +6162,12 @@ function rendreLigneListe(l,champRecherche){
  const btn=(label,onclick,cls,titre)=>`<button class="act ${cls||'act-export'}" onclick="${onclick}"${titre?` title="${titre}"`:''}>${label}</button>`;
  const actions=[
   btn('Ouvrir',`ouvrirListe(${l.id},null,document.getElementById('${champ}').value.trim())`,'act-call','Rouvrir la liste (gratuit)'),
+  btn('Stats',`toggleStatsListe(${l.id})`,'act-copy','Statistiques d\u00e9taill\u00e9es : traitement, entonnoir Lemlist, activit\u00e9 SDR, co\u00fbts (charg\u00e9es \u00e0 la demande)'),
   btn('Mettre \u00e0 jour',`majListe(${l.id})`),
   btn(l.veille?'Veille : ON':'Veille : OFF',`basculerVeille(${l.id},${l.veille?'false':'true'})`,l.veille?'act-copy':'act-export',l.veille?'Signaux surveill\u00e9s \u2014 cliquer pour arr\u00eater':'Surveiller les signaux (60 j)'),
   (peutArchiver&&!auto&&statutListe==='active')?btn('Passer en nurturing',`changerStatutListe(${l.id},'${nomJs}','nurturing')`,'act-copy','SDR termin\u00e9, la machine continue (s\u00e9quences, rappels, alertes, veille)'):'',
   (peutArchiver&&!auto&&statutListe==='nurturing')?btn('R\u00e9activer',`changerStatutListe(${l.id},'${nomJs}','active')`,'act-copy'):'',
-  (peutArchiver&&!auto)?btn(l.archivee?'D\u00e9sarchiver':'Archiver',`archiverListe(${l.id},'${nomJs}',${l.archivee?'false':'true'})`):'',
+  (peutArchiver&&!auto)?btn(l.archivee?'D\u00e9sarchiver':'Archiver',`archiverListe(${l.id},'${nomJs}',${l.archivee?'false':'true'},${(st&&typeof st.pct_tag==='number')?st.pct_tag:100})`):'',
   (admin&&!auto)?btn('Transf\u00e9rer',`transfererListe(${l.id},'${nomJs}')`):'',
   (!auto)?`<button class="act act-export" data-nom="${(l.nom||'').replace(/"/g,'&quot;')}" onclick="renommerListe(${l.id},this)">Renommer</button>`:'',
   (superA&&!auto)?`<button class="act act-export" style="color:#B91C1C;border-color:#FECACA" onclick="supprimerListe(${l.id},'${nomJs}')">Supprimer</button>`:''
@@ -6179,6 +6180,75 @@ function rendreLigneListe(l,champRecherche){
   <div class="lead-meta" style="margin-top:3px">SDR : <b>${l.sdr}</b>${(l.createur&&l.createur!==l.sdr)?` \u00b7 cr\u00e9\u00e9e par <b>${l.createur}</b>`:''} \u00b7 ${date} \u00b7 ${l.total||l.nb_entreprises||0} entreprise${(l.total||l.nb_entreprises||0)>1?'s':''} \u00b7 ${source} \u00b7 co\u00fbt ${(l.cout||0).toFixed(2).replace('.',',')} \u20ac</div>
   ${pills.length?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">${pills.join('')}</div>`:''}
   <div class="act-row" style="margin:12px 0 0;padding-top:12px;border-top:1px solid var(--line)">${actions}</div>
+  <div id="lstats-${l.id}" style="display:none"></div>
+ </div>`;
+}
+// ── Panneau « Stats » d'une liste : chargé au clic (1 requête), visible par tous les SDR ──
+async function toggleStatsListe(id){
+ const z=document.getElementById('lstats-'+id);if(!z)return;
+ if(z.style.display!=='none'){z.style.display='none';return;}
+ z.style.display='block';
+ z.innerHTML='<p style="color:var(--ink-soft);font-size:13px;margin:12px 0 0">Chargement des statistiques…</p>';
+ try{
+  const r=await api('/api/listes?stats_detail='+id);
+  const d=await r.json();
+  if(!d.ok){z.innerHTML='<p style="color:var(--ink-soft);font-size:13px;margin:12px 0 0">'+(d.erreur||'Stats indisponibles')+'</p>';return;}
+  z.innerHTML=htmlStatsListe(d.stats);
+ }catch(e){z.innerHTML='<p style="color:var(--ink-soft);font-size:13px;margin:12px 0 0">Erreur : '+e.message+'</p>';}
+}
+function htmlStatsListe(s){
+ const fd=x=>x?new Date(x).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'}):'—';
+ const eur=x=>(x||0).toFixed(2).replace('.',',')+' €';
+ const creele=s.cree_le?new Date(s.cree_le):null;
+ const derniere=s.derniere_action?new Date(s.derniere_action):null;
+ const dureeJ=(creele&&derniere&&derniere>creele)?Math.max(1,Math.round((derniere-creele)/86400000)):null;
+ const parJour=(s.jours_actifs&&s.traites)?(Math.round(s.traites/s.jours_actifs*10)/10):null;
+ const tuile=(label,val,sub)=>`<div style="background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-width:0"><div style="font-size:11px;color:var(--ink-soft)">${label}</div><div style="font-size:20px;font-weight:700;line-height:1.2">${val}</div>${sub?`<div style="font-size:11px;color:var(--ink-soft)">${sub}</div>`:''}</div>`;
+ const total=s.total||0;
+ const ligne=(label,n,coul)=>{const w=total?Math.max(n?2:0,Math.round(n/total*100)):0;return `<div style="display:flex;align-items:center;gap:8px;margin:3px 0;font-size:12px;color:var(--ink-soft)"><span style="width:120px;flex-shrink:0">${label}</span><div style="flex:1;height:12px;background:var(--paper);border-radius:3px;overflow:hidden"><div style="height:100%;width:${w}%;background:${coul}"></div></div><span style="width:34px;text-align:right;font-weight:600;color:var(--ink)">${n}</span></div>`;};
+ const c=s.categories||{};
+ const nonTraite=Math.max(0,total-(s.traites||0));
+ const segs=[['#15803D',c.positif,'RDV / intéressé'],['#2563EB',c.rappel,'rappel / doc'],['#94A3B8',c.sans_reponse,'sans réponse'],['#B91C1C',c.refus,'refus'],['#F1A5A5',c.mauvais_num,'mauvais numéro'],['#CBD5E1',(c.autres||0)+nonTraite,'autre / non traité']].filter(x=>x[1]>0);
+ const totSeg=segs.reduce((a,x)=>a+x[1],0)||1;
+ const barre=segs.map(x=>`<div title="${x[2]} : ${x[1]}" style="width:${Math.max(1.5,x[1]/totSeg*100)}%;background:${x[0]}"></div>`).join('');
+ const legende=segs.map(x=>`<span style="white-space:nowrap"><span style="color:${x[0]}">■</span> ${x[2]} (${x[1]})</span>`).join(' · ');
+ const info=(label,val)=>`<tr><td style="padding:2px 0;color:var(--ink-soft)">${label}</td><td style="text-align:right;font-weight:600">${val}</td></tr>`;
+ return `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">
+   ${tuile('Traitement',(s.pct_tag||0)+' %',(s.traites||0)+' / '+total+' fiches')}
+   ${tuile('RDV pris',s.rdv||0,(s.rdv_dates&&s.rdv_dates.length?'1er le '+fd(s.rdv_dates[0])+' · ':'')+(s.rdv?eur((s.cout||0)/s.rdv)+'/RDV':'—'))}
+   ${tuile('Réponses',s.reponses||0,s.pousses?Math.round((s.reponses||0)/s.pousses*100)+' % des envois':'—')}
+   ${tuile('Coût',eur(s.cout),total?eur((s.cout||0)/total)+'/fiche':'')}
+  </div>
+  <div style="font-size:12px;font-weight:700;margin:14px 0 6px">Entonnoir de prospection</div>
+  ${ligne('Fiches',total,'#B5D4F4')}
+  ${ligne('Enrichies',s.enrichies||0,'#B5D4F4')}
+  ${ligne('Email trouvé',s.avec_email||0,'#85B7EB')}
+  ${ligne('Poussées Lemlist',s.pousses||0,'#85B7EB')}
+  ${ligne('Ouvertures',s.ouvertures||0,'#378ADD')}
+  ${ligne('Réponses',s.reponses||0,'#185FA5')}
+  ${ligne('RDV pris',s.rdv||0,'#15803D')}
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:14px">
+   <div><div style="font-size:12px;font-weight:700;margin-bottom:6px">Activité SDR</div>
+    <table style="width:100%;font-size:12px;border-collapse:collapse">
+     ${info('WhatsApp envoyés',s.whatsapp||0)}
+     ${info('SMS (directs · SoReach)',(s.sms_directs||0)+' · '+(s.sms_envoyes||0))}
+     ${info('Rappels faits / à venir',(s.rappels_faits||0)+' / '+(s.rappels_pendants||0))}
+     ${info('Notes au bloc-notes',s.notes||0)}
+     ${info('Alertes Slack reçues',s.alertes||0)}
+    </table></div>
+   <div><div style="font-size:12px;font-weight:700;margin-bottom:6px">Rythme</div>
+    <table style="width:100%;font-size:12px;border-collapse:collapse">
+     ${info('Créée le',fd(s.cree_le))}
+     ${info('Dernière action',fd(s.derniere_action))}
+     ${info('Temps de traitement',dureeJ?dureeJ+' j':'—')}
+     ${info('Jours actifs',s.jours_actifs||0)}
+     ${info('Fiches traitées / jour actif',parJour!=null?String(parJour).replace('.',','):'—')}
+    </table></div>
+  </div>
+  <div style="font-size:12px;font-weight:700;margin:14px 0 6px">Issues d'appel</div>
+  <div style="display:flex;height:14px;border-radius:4px;overflow:hidden">${barre||'<div style="width:100%;background:var(--paper)"></div>'}</div>
+  <div style="font-size:11px;color:var(--ink-soft);margin-top:5px">${legende||'Aucune fiche traitée pour l’instant'}</div>
  </div>`;
 }
 async function chargerArchives(){
@@ -6490,18 +6560,37 @@ function rafraichirListes(){
  if(vArch&&vArch.classList.contains('on'))chargerArchives();
  else chargerHistorique();
 }
-async function archiverListe(id,nom,archiver){
+async function archiverListe(id,nom,archiver,pct){
+ // Garde-fou : une liste ne s'archive que traitée à 100 % (issue d'appel sur chaque fiche, exclues non comptées).
+ // SDR -> orienté vers le nurturing (rappels/SMS conservés). Admin -> peut forcer. Le serveur re-vérifie (403 non_terminee).
+ if(archiver&&typeof pct==='number'&&pct<100){
+  const admin=state.user&&['admin','superadmin'].includes(state.user.role);
+  if(!admin){
+   const ok=await confirmSofy('⛔ Archivage impossible — liste traitée à '+pct+' %','« '+nom+' » a encore des fiches sans issue d\'appel : une liste s\'archive quand chaque fiche a un statut (« Pas de réponse » et « Faux numéro » comptent) ou est exclue 🗑.\n\nPour la mettre en pause sans perdre les rappels et SMS programmés, passe-la en nurturing.','🌱 Passer en nurturing');
+   if(ok)changerStatutListe(id,nom,'nurturing');
+   return;
+  }
+  const ok=await confirmSofy('⚠️ Liste traitée à '+pct+' % seulement','« '+nom+' » n\'est pas terminée : l\'archivage supprimera ses rappels en attente et annulera ses SMS programmés.\n\n(Réservé admin) Archiver quand même ?','Archiver quand même');
+  if(!ok)return;
+  await archiverPUT(id,true,true);
+  return;
+ }
  const action=archiver?'archiver':'désarchiver';
  const ok=await confirmSofy(archiver?'🗄️ Archiver la liste':'♻️ Désarchiver la liste',`Voulez-vous ${action} « ${nom} » ?${archiver?'\n\nElle sera masquée de l\'historique (récupérable à tout moment).\nSes rappels en attente seront supprimés et ses SMS programmés annulés.':''}`,archiver?'Archiver':'Désarchiver');
  if(!ok)return;
+ await archiverPUT(id,archiver,false);
+}
+async function archiverPUT(id,archiver,forcer){
  try{
-  const r=await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,archiver})});
+  const corps=forcer?{id,archiver,forcer:true}:{id,archiver};
+  const r=await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(corps)});
   const d=await r.json();
   if(d.ok){
    var bilan='';
    if(archiver&&(d.rappels_supprimes||d.sms_annules))bilan=' · '+[d.rappels_supprimes?d.rappels_supprimes+' rappel'+(d.rappels_supprimes>1?'s':'')+' supprimé'+(d.rappels_supprimes>1?'s':''):'',d.sms_annules?d.sms_annules+' SMS annulé'+(d.sms_annules>1?'s':''):''].filter(Boolean).join(' · ');
    toast((archiver?'🗄️ Liste archivée':'♻️ Liste désarchivée')+bilan);rafraichirListes();
   }
+  else if(d.erreur==='non_terminee')toast('⛔ '+(d.message||'Liste non terminée à 100 % — passe-la en nurturing'));
   else toast('Erreur : '+(d.erreur||'action impossible'));
  }catch(e){toast('Erreur réseau : '+e.message);}
 }

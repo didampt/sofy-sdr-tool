@@ -107,6 +107,77 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, migrees: n });
       }
 
+      // ── Statistiques détaillées d'une liste (chargées au clic sur « Stats », visibles par tous) ──
+      if (req.query.stats_detail) {
+        const lid = parseInt(req.query.stats_detail);
+        const rows = await sql`SELECT id, nom, total, entreprises, created_at FROM listes WHERE id = ${lid}`;
+        if (!rows.length) return res.status(404).json({ erreur: 'Liste introuvable' });
+        const l = rows[0];
+        const ents = Array.isArray(l.entreprises) ? l.entreprises : [];
+        const base = calculerStatsListe(ents) || { total: 0, traites: 0, pct_tag: 0, rdv: 0 };
+        let enrichies = 0, avecEmail = 0;
+        const emails = new Set();
+        const cats = { positif: 0, rappel: 0, sans_reponse: 0, refus: 0, mauvais_num: 0, autres: 0 };
+        for (const e of ents) {
+          if (e.score || (e.gmb && e.gmb.trouve) || e.ia) enrichies++;
+          let em = false;
+          for (const c of (e.contacts || [])) if (c && c.enrich && c.enrich.email) { emails.add(String(c.enrich.email).toLowerCase()); em = true; }
+          if (e.enrich && e.enrich.email) { emails.add(String(e.enrich.email).toLowerCase()); em = true; }
+          if (em) avecEmail++;
+          const s = e.statut_appel || (e.tags_sdr || [])[0] || null;
+          if (!s) continue;
+          if (s === '🤝 RDV pris' || s === 'Intéressé – RDV à prendre') cats.positif++;
+          else if (s === 'Rappel demandé / occupé' || s === 'Demande email / envoyer doc') cats.rappel++;
+          else if (s === 'Pas de réponse' || s === 'Message vocal laissé' || s === 'Absent' || s === 'Barrage secrétaire / standard') cats.sans_reponse++;
+          else if (s.indexOf('Refus') === 0 || s === 'Négatif (refus ferme)') cats.refus++;
+          else if (s === 'Faux numéro' || s === 'Numéro perso – ne plus appeler' || s === 'Opt-out téléphone') cats.mauvais_num++;
+          else cats.autres++;
+        }
+        const arr = [...emails];
+        let act = { pousses: 0, ouvertures: 0, reponses: 0, whatsapp: 0, sms_directs: 0, notes: 0, alertes: 0, premiere: null, derniere: null, jours: 0 };
+        let rdvDates = [];
+        if (arr.length) {
+          try {
+            const TYPES_REP = ['warmed', 'emailsReplied', 'linkedinReplied', 'whatsappReplied', 'smsReplied'];
+            const [ag] = await sql`SELECT
+              COUNT(DISTINCT fiche_cle) FILTER (WHERE type = 'sequenceAdded')::int AS pousses,
+              COUNT(DISTINCT fiche_cle) FILTER (WHERE type IN ('emailsOpened','linkedinOpened','hooked'))::int AS ouvertures,
+              COUNT(DISTINCT fiche_cle) FILTER (WHERE type = ANY(${TYPES_REP}))::int AS reponses,
+              COUNT(*) FILTER (WHERE source = 'whatsapp')::int AS whatsapp,
+              COUNT(*) FILTER (WHERE source = 'sms')::int AS sms_directs,
+              COUNT(*) FILTER (WHERE source = 'note')::int AS notes,
+              COUNT(*) FILTER (WHERE source = 'alerte')::int AS alertes,
+              MIN(ts) AS premiere, MAX(ts) AS derniere,
+              COUNT(DISTINCT ts::date)::int AS jours
+              FROM activites WHERE lower(fiche_cle) = ANY(${arr})`;
+            if (ag) act = ag;
+            const rd = await sql`SELECT ts FROM activites WHERE lower(fiche_cle) = ANY(${arr}) AND source = 'rdv' ORDER BY ts ASC LIMIT 10`;
+            rdvDates = rd.map(x => x.ts);
+          } catch (_) {}
+        }
+        let tk = { faits: 0, pendants: 0 }, sp = { envoyes: 0, attente: 0 }, cout = 0;
+        try {
+          const [t1] = await sql`SELECT COUNT(*) FILTER (WHERE faite)::int AS faits, COUNT(*) FILTER (WHERE NOT faite)::int AS pendants FROM taches WHERE liste_id = ${lid}`;
+          if (t1) tk = t1;
+          const [s1] = await sql`SELECT COUNT(*) FILTER (WHERE statut = 'sent')::int AS envoyes, COUNT(*) FILTER (WHERE statut = 'pending')::int AS attente FROM sms_programmes WHERE liste_id = ${lid}`;
+          if (s1) sp = s1;
+          const [c1] = await sql`SELECT COALESCE(SUM(c.quantite * COALESCE(t.prix, 0)), 0)::float AS cout FROM consommations c LEFT JOIN tarifs t ON t.api = c.api WHERE c.liste_id = ${lid}`;
+          if (c1) cout = Math.round((c1.cout || 0) * 100) / 100;
+        } catch (_) {}
+        return res.status(200).json({ ok: true, stats: {
+          nom: l.nom, cree_le: l.created_at,
+          total: base.total, traites: base.traites, pct_tag: base.pct_tag, rdv: base.rdv,
+          enrichies, avec_email: avecEmail,
+          pousses: act.pousses || 0, ouvertures: act.ouvertures || 0, reponses: act.reponses || 0,
+          whatsapp: act.whatsapp || 0, sms_directs: act.sms_directs || 0, notes: act.notes || 0, alertes: act.alertes || 0,
+          premiere_action: act.premiere || null, derniere_action: act.derniere || null, jours_actifs: act.jours || 0,
+          rdv_dates: rdvDates,
+          rappels_faits: tk.faits || 0, rappels_pendants: tk.pendants || 0,
+          sms_envoyes: sp.envoyes || 0, sms_attente: sp.attente || 0,
+          cout, categories: cats
+        }});
+      }
+
       if (id) {
         const rows = await sql`SELECT * FROM listes WHERE id = ${parseInt(id)}`;
         if (!rows.length) return res.status(404).json({ erreur: 'Liste introuvable' });
@@ -296,6 +367,21 @@ export default async function handler(req, res) {
         }
         let rappelsSupprimes = 0, smsAnnules = 0;
         if (statutCible === 'archivee') {
+          // Garde-fou : une liste ne s'archive que traitée à 100 % (issue d'appel sur chaque fiche).
+          // Un admin peut forcer (forcer:true = bouton « Archiver quand même »). Le SDR est orienté
+          // vers le nurturing, qui conserve rappels/SMS. L'auto-archivage du cron n'est pas concerné
+          // (il passe en SQL direct et ne vise que des nurturing à l'activité épuisée).
+          const forcerA = req.body.forcer === true && adminA;
+          if (!forcerA) {
+            const lr = await sql`SELECT entreprises FROM listes WHERE id = ${parseInt(id)}`;
+            const stG = lr.length ? calculerStatsListe(lr[0].entreprises) : null;
+            if (stG && stG.pct_tag < 100) {
+              return res.status(403).json({
+                erreur: 'non_terminee', pct: stG.pct_tag, restantes: stG.total - stG.traites,
+                message: `Liste traitée à ${stG.pct_tag} % — ${stG.total - stG.traites} fiche(s) sans issue d'appel. Termine le traitement ou passe-la en nurturing${adminA ? ' (ou force l\'archivage)' : ''}.`
+              });
+            }
+          }
           await sql`UPDATE listes SET archivee = TRUE, statut = 'archivee', statut_depuis = NOW(), veille = FALSE WHERE id = ${parseInt(id)}`;
           // Archiver = sortir la liste du jeu : rappels non faits supprimés, SMS en attente annulés
           // (sinon les alertes et les envois continuent !). Le désarchivage ne restaure rien.
