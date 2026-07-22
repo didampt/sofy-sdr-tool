@@ -545,6 +545,15 @@ function resetOtpStep() {
   if (!signupCompleted) submitBtn.textContent = 'Créer mon compte';
 }
 
+function showExistingEmailError() {
+  setError('Cette adresse email est déjà utilisée. Veuillez réessayer<br><button id="returnToSignupStep" class="link-button" type="button">Retour à la première étape</button>');
+  document.querySelector('#returnToSignupStep')?.addEventListener('click', () => {
+    resetOtpStep();
+    setError('');
+    document.querySelector('[name="first_name"]')?.focus();
+  });
+}
+
 async function requestOtp(payload) {
   submitBtn.disabled = true;
   submitBtn.textContent = 'Envoi du code...';
@@ -562,6 +571,7 @@ async function requestOtp(payload) {
     otpToken = data.otp_token || '';
     if (!otpToken) throw new Error('Code envoyé, mais jeton de validation manquant.');
     pendingSignupPayload = payload;
+    setOtpValue('', 0, false);
     showOtpStep();
     setError('<div>Code envoyé par SMS. Il expire dans 10 minutes.</div>', 'info');
   } catch (err) {
@@ -598,13 +608,22 @@ async function submitSignup(payload) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const details = data.errors ? data.errors.join('<br>') : (data.detail || data.error || 'Erreur inconnue');
-      throw new Error(details);
+      if (data.code === 'EMAIL_ALREADY_EXISTS') {
+        showExistingEmailError();
+        return;
+      }
+      if (data.errors || response.status === 401 || response.status === 429) {
+        const details = data.errors ? data.errors.join('<br>') : (data.detail || data.error || 'Erreur inconnue');
+        setError(details);
+        return;
+      }
+      setError('Une erreur est survenue, veuillez réessayer en vérifiant vos informations.');
+      return;
     }
     signupCompleted = true;
     renderReceivedView();
   } catch (err) {
-    setError(err.message);
+    setError('Une erreur est survenue, veuillez réessayer en vérifiant vos informations.');
   } finally {
     if (!signupCompleted) {
       submitBtn.disabled = false;

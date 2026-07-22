@@ -41,6 +41,14 @@ async function sendOtpSms({ to, code }) {
   return data;
 }
 
+function smsErrorMessage(error) {
+  const message = String(error?.message || '');
+  if (/please provide a mobile phone number as ['"]to['"] parameter/i.test(message)) {
+    return 'Veuillez renseigner un numéro de téléphone mobile valide.';
+  }
+  return message;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { error: 'POST only' });
 
@@ -76,6 +84,6 @@ export default async function handler(req, res) {
       sms_id: sms.id || null
     });
   } catch (err) {
-    return json(res, 502, { error: 'Impossible d’envoyer le code SMS.', detail: err.message });
+    return json(res, 502, { error: 'Impossible d’envoyer le code SMS.', detail: smsErrorMessage(err) });
   }
 }

@@ -37,6 +37,12 @@ async function capture(name, promise) {
   }
 }
 
+function isExistingAuth0UserError(error) {
+  const message = String(error?.message || '');
+  return /status\s*=\s*409/i.test(message)
+    && (/auth0_idp_error/i.test(message) || /the user already exists/i.test(message));
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { error: 'POST only' });
 
@@ -82,6 +88,10 @@ export default async function handler(req, res) {
       capture('sofy-sdr-tool', postJson(hotleadUrl, hotleadToken, normalized)),
       capture('HubSpot', syncSignupToHubSpot(normalized))
     ]);
+
+    if (!accountResult.ok && isExistingAuth0UserError(accountResult.error)) {
+      return json(res, 409, { code: 'EMAIL_ALREADY_EXISTS' });
+    }
 
     const failures = [accountResult, hotleadResult]
       .filter(result => !result.ok)
