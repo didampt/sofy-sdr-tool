@@ -1880,7 +1880,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v246';
+const VERSION='v247';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -6278,8 +6278,10 @@ async function chargerCockpit(){
  const sdrVoulu=selSdr?selSdr.value:'';
  try{
   const r=await api('/api/cockpit'+(sdrVoulu?'?sdr='+encodeURIComponent(sdrVoulu):''));
-  const d=await r.json();
-  if(!d.ok){zone.innerHTML='<p style="color:var(--ink-soft)">'+(d.erreur||'Cockpit indisponible')+'</p>';return;}
+  let d;
+  try{d=await r.json();}
+  catch(_){zone.innerHTML='<p style="color:var(--ink-soft)">Cockpit indisponible (HTTP '+r.status+') — un déploiement est peut-être en cours, réessaie dans une minute.</p>';return;}
+  if(!d.ok){zone.innerHTML='<p style="color:var(--ink-soft)">'+(d.erreur||'Cockpit indisponible')+(d.detail?' — '+d.detail:'')+'</p>';return;}
   CK=d;
   // Badge sidebar = rappels en retard
   const bd=document.getElementById('taches-badge');
