@@ -211,20 +211,20 @@ export default async function handler(req, res) {
         const estNum = digits.length >= 4 && /^[0-9\s.()+\-]+$/.test(recherche);
         const likeDigits = '%' + digits + '%';
         rows = toutVoir
-          ? await sql`SELECT id, nom, sdr, createur, archivee, statut, statut_depuis, stats, total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+          ? await sql`SELECT id, nom, sdr, createur, archivee, statut, statut_depuis, stats, total, credits_estimes, criteres, created_at, veille, veille_fin, sequences_auto FROM listes
                       WHERE (nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like}
                              OR (${estNum} AND regexp_replace(entreprises::text, '[^0-9]', '', 'g') ILIKE ${likeDigits}))
                       ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`
-          : await sql`SELECT id, nom, sdr, createur, archivee, statut, statut_depuis, stats, total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+          : await sql`SELECT id, nom, sdr, createur, archivee, statut, statut_depuis, stats, total, credits_estimes, criteres, created_at, veille, veille_fin, sequences_auto FROM listes
                       WHERE (sdr = ${moi} OR criteres->>'auto' = 'hotleads')
                         AND (nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like}
                              OR (${estNum} AND regexp_replace(entreprises::text, '[^0-9]', '', 'g') ILIKE ${likeDigits}))
                       ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`;
       } else {
         rows = toutVoir
-          ? await sql`SELECT id, nom, sdr, createur, archivee, statut, statut_depuis, stats, total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+          ? await sql`SELECT id, nom, sdr, createur, archivee, statut, statut_depuis, stats, total, credits_estimes, criteres, created_at, veille, veille_fin, sequences_auto FROM listes
                       ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`
-          : await sql`SELECT id, nom, sdr, createur, archivee, statut, statut_depuis, stats, total, credits_estimes, criteres, created_at, veille, veille_fin FROM listes
+          : await sql`SELECT id, nom, sdr, createur, archivee, statut, statut_depuis, stats, total, credits_estimes, criteres, created_at, veille, veille_fin, sequences_auto FROM listes
                       WHERE (sdr = ${moi} OR criteres->>'auto' = 'hotleads')
                       ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`;
       }
@@ -269,6 +269,22 @@ export default async function handler(req, res) {
       const memeNom = await sql`SELECT id FROM listes WHERE LOWER(TRIM(nom)) = ${nom.trim().toLowerCase()} AND archivee = FALSE LIMIT 1`;
       if (memeNom.length) {
         return res.status(409).json({ erreur: 'Une liste active porte déjà ce nom. Choisis un nom différent (ou archive l\'ancienne).' });
+      }
+      // Garde-fou anti-listes mortes : un SDR ne crée pas de nouvelle liste s'il a déjà 3 listes
+      // actives enrichies à moins de 50 % (stats.pct_complete). Admin/superadmin passent outre.
+      if (!['admin', 'superadmin'].includes(user.role)) {
+        try {
+          const actives = await sql`SELECT nom, stats, total FROM listes
+            WHERE archivee = FALSE AND (statut IS NULL OR statut = 'active') AND sdr = ${sdr}`;
+          const mortes = actives.filter(l => (l.total || 0) > 0 && l.stats && (l.stats.pct_complete || 0) < 50);
+          if (mortes.length >= 3) {
+            const detail = mortes.slice(0, 4).map(l => `« ${l.nom} » (${l.stats.pct_complete || 0} % enrichie)`).join(', ');
+            return res.status(403).json({
+              code: 'listes_non_enrichies',
+              erreur: `Tu as déjà ${mortes.length} listes actives enrichies à moins de 50 % : ${detail}. Enrichis-les (🚀) ou archive-les avant d'en créer une nouvelle.`
+            });
+          }
+        } catch (_) {}
       }
       const h = hashCriteres(criteres);
       const statsInit = calculerStatsListe(entreprises);
@@ -423,6 +439,10 @@ export default async function handler(req, res) {
           await sql`UPDATE listes SET archivee = FALSE, statut = 'active', statut_depuis = NOW() WHERE id = ${parseInt(id)}`;
         }
         return res.status(200).json({ ok: true, statut: statutCible, archivee: statutCible === 'archivee', rappels_supprimes: rappelsSupprimes, sms_annules: smsAnnules });
+      }
+      if (req.body.sequences_auto !== undefined) {
+        await sql`UPDATE listes SET sequences_auto = ${!!req.body.sequences_auto} WHERE id = ${parseInt(id)}`;
+        return res.status(200).json({ ok: true, sequences_auto: !!req.body.sequences_auto });
       }
       if (veille !== undefined) {
         const fin = veille ? new Date(Date.now() + (parseInt(veille_jours) || 60) * 24 * 3600 * 1000) : null;

@@ -1880,7 +1880,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v254';
+const VERSION='v255';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4131,7 +4131,7 @@ function ficheReal(e,i){
      ${e.dedup_hubspot?`<span class="badge b-dup" title="Déjà dans HubSpot (${e.dedup_hubspot.stage||'contact'}) — enrichissement bloqué pour économiser des crédits">♻️ Déjà HubSpot</span>`:''}
      ${e.dedup_liste?`<span class="badge b-dup" title="Déjà présent dans une autre liste">📋 Existe déjà dans : ${(e.dedup_liste.nom||'').replace(/"/g,'&quot;').slice(0,30)}</span>`:''}
      ${e.deja_extrait?'<span class="badge b-dup" title="Société déjà extraite et enrichie dans une liste précédente — email/tél réutilisés, pas de nouvel enrichissement">♻️ Déjà extrait</span>':''}
-     ${e.lemlist_envoye?'<span class="badge b-new">✈️ Lemlist ✓</span>':''}${e.hubspot_envoye?'<span class="badge b-new">🤝 HubSpot ✓</span>':''}${e.sms_envoye?'<span class="badge b-new">💬 SMS ✓</span>':''}
+     ${e.sequence_auto?`<span class="badge b-new" title="Basculé automatiquement en séquence ${e.sequence_auto.temperature==='froid'?'froide (appels sans réponse)':'tiède'} le ${new Date(e.sequence_auto.date).toLocaleDateString('fr-FR')}">✈️ Séq. auto</span>`:(e.lemlist_envoye?'<span class="badge b-new">✈️ Lemlist ✓</span>':'')}${e.hubspot_envoye?'<span class="badge b-new">🤝 HubSpot ✓</span>':''}${e.sms_envoye?'<span class="badge b-new">💬 SMS ✓</span>':''}
      ${siteWeb?`<span class="badge b-new"><a href="${siteWeb.startsWith('http')?siteWeb:'https://'+siteWeb}" target="_blank" onclick="event.stopPropagation()" style="color:inherit">🌐 ${siteWeb.replace(/^https?:\/\/(www\.)?/,'').split('/')[0]}</a></span>`:''}
     </div>
    </div>
@@ -6212,6 +6212,7 @@ function rendreLigneListe(l,champRecherche){
   btn(l.veille?'Veille : ON':'Veille : OFF',`basculerVeille(${l.id},${l.veille?'false':'true'})`,l.veille?'act-copy':'act-export',l.veille?'Signaux surveill\u00e9s \u2014 cliquer pour arr\u00eater':'Surveiller les signaux (60 j)'),
   (peutArchiver&&!auto&&statutListe==='active')?btn('Passer en nurturing',`changerStatutListe(${l.id},'${nomJs}','nurturing')`,'act-copy','SDR termin\u00e9, la machine continue (s\u00e9quences, rappels, alertes, veille)'):'',
   (peutArchiver&&!auto&&statutListe==='nurturing')?btn('R\u00e9activer',`changerStatutListe(${l.id},'${nomJs}','active')`,'act-copy'):'',
+  (peutArchiver&&!auto&&statutListe!=='archivee')?btn(l.sequences_auto===false?'S\u00e9q. auto : OFF':'S\u00e9q. auto : ON',`basculerSequencesAuto(${l.id},${l.sequences_auto===false?'true':'false'})`,l.sequences_auto===false?'act-export':'act-copy','Bascule automatique des leads non joints (3 appels) ou ti\u00e8des vers les s\u00e9quences Lemlist \u2014 cron chaque matin'):'',
   (peutArchiver&&!auto)?btn(l.archivee?'D\u00e9sarchiver':'Archiver',`archiverListe(${l.id},'${nomJs}',${l.archivee?'false':'true'},${(st&&typeof st.pct_tag==='number')?st.pct_tag:100})`):'',
   (admin&&!auto)?btn('Transf\u00e9rer',`transfererListe(${l.id},'${nomJs}')`):'',
   (!auto)?`<button class="act act-export" data-nom="${(l.nom||'').replace(/"/g,'&quot;')}" onclick="renommerListe(${l.id},this)">Renommer</button>`:'',
@@ -6420,6 +6421,12 @@ function rendreCockpit(sdrAffiche){
   <p id="ck-bar-lbl" style="font-size:11.5px;color:var(--ink-soft);margin:0 0 6px">Objectif du jour : ${obj.appels_jour} appels \u2014 chargement des appels Ringover\u2026</p>`;
  const hFr=x=>new Date(x).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
  let h='';
+ if(d.listes_a_enrichir&&d.listes_a_enrichir.length){
+  h+=`<div style="margin:4px 0 10px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+   <div style="flex:1;min-width:220px;font-size:13px;color:#92400E"><b>\u26a0\ufe0f Liste${d.listes_a_enrichir.length>1?'s':''} jamais enrichie${d.listes_a_enrichir.length>1?'s':''} :</b> ${d.listes_a_enrichir.map(x=>`\u00ab ${htmlSafe(x.nom)} \u00bb (${x.pct} %)`).join(' \u00b7 ')} \u2014 ces fiches sont invisibles de ta file tant que \ud83d\ude80 n'est pas lanc\u00e9.</div>
+   <div style="display:flex;gap:6px;flex-wrap:wrap">${d.listes_a_enrichir.map(x=>`<button class="act act-call" onclick="ouvrirListe(${x.id},null)">Ouvrir \u00ab ${htmlSafe((x.nom||'').slice(0,18))}${(x.nom||'').length>18?'\u2026':''} \u00bb</button>`).join('')}</div>
+  </div>`;
+ }
  if(d.restants<50){
   const vide=d.restants===0;
   const rythme=d.rythme_7j||0;
@@ -6830,6 +6837,14 @@ function rafraichirListes(){
  const vArch=document.getElementById('view-archives');
  if(vArch&&vArch.classList.contains('on'))chargerArchives();
  else chargerHistorique();
+}
+async function basculerSequencesAuto(id,valeur){
+ try{
+  const r=await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,sequences_auto:valeur})});
+  const d=await r.json();
+  if(d.ok){toast(valeur?'✈️ Séquences auto activées — les leads non joints basculeront en séquence email chaque matin':'⏸️ Séquences auto désactivées pour cette liste');rafraichirListes();}
+  else toast('Erreur : '+(d.erreur||'action impossible'));
+ }catch(e){toast('Erreur réseau : '+e.message);}
 }
 async function archiverListe(id,nom,archiver,pct){
  // Garde-fou : une liste ne s'archive que traitée à 100 % (issue d'appel sur chaque fiche, exclues non comptées).

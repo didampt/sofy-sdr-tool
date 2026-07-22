@@ -11,7 +11,7 @@ let ready = false;
 // À INCRÉMENTER à chaque ajout de table/colonne dans ensureSchema — sinon la migration ne
 // s'exécutera pas en prod. En régime de croisière : 1 seul SELECT par démarrage à froid
 // (au lieu de ~50 allers-retours Neon ≈ 1,5-2,5 s sur chaque fonction).
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 export async function ensureSchema() {
   if (ready || !sql) return;
   try {
@@ -144,6 +144,8 @@ export async function ensureSchema() {
   await sql`ALTER TABLE sdrs ADD COLUMN IF NOT EXISTS slack_id TEXT`;
   await sql`ALTER TABLE sdrs ADD COLUMN IF NOT EXISTS email_envoi TEXT`;
   await sql`ALTER TABLE sdrs ADD COLUMN IF NOT EXISTS lien_rdv TEXT`;
+  // Séquences par température : bascule auto des leads non joints vers Lemlist (défaut ON par liste)
+  await sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS sequences_auto BOOLEAN DEFAULT TRUE`;
   // Objectifs du cockpit « Ma journée » (défauts appliqués côté code : 50 appels/j, 20 RDV/mois)
   await sql`ALTER TABLE sdrs ADD COLUMN IF NOT EXISTS objectif_appels_jour INTEGER`;
   await sql`ALTER TABLE sdrs ADD COLUMN IF NOT EXISTS objectif_rdv_mois INTEGER`;

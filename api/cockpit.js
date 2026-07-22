@@ -96,9 +96,14 @@ export default async function handler(req, res) {
     } catch (_) {}
 
     // ── 1. Fiches des listes ACTIVES du SDR : index par email + candidates « à prospecter » ──
-    const listes = await sql`SELECT id, nom, entreprises FROM listes
+    const listes = await sql`SELECT id, nom, stats, total, entreprises FROM listes
       WHERE archivee = FALSE AND (statut IS NULL OR statut = 'active') AND sdr = ${sdr}
       ORDER BY id DESC LIMIT 40`;
+    // Listes créées mais jamais enrichies : invisibles de la file (ni score ni GMB) → on les signale
+    const listesAEnrichir = listes
+      .filter(l => (l.total || 0) > 0 && l.stats && (l.stats.pct_complete || 0) < 50)
+      .map(l => ({ id: l.id, nom: l.nom, pct: (l.stats.pct_complete || 0) }))
+      .slice(0, 3);
     const parEmail = new Map();
     const prospecter = [];
     let statueesJour = 0, traitees7j = 0;
@@ -211,7 +216,8 @@ export default async function handler(req, res) {
       objectifs: { appels_jour: objAppels, rdv_mois: objRdv },
       moy7,
       rythme_7j: Math.round(traitees7j / 7 * 10) / 10,
-      lookalike_ref: lookalikeRef
+      lookalike_ref: lookalikeRef,
+      listes_a_enrichir: listesAEnrichir
     });
   } catch (e) {
     return res.status(500).json({ erreur: 'Cockpit indisponible', detail: String(e.message || e).slice(0, 200) });

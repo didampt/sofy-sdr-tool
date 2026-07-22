@@ -23,6 +23,10 @@
     {
       "path": "/api/journee-cron",
       "schedule": "0 17 * * 1-5"
+    },
+    {
+      "path": "/api/sequences-cron",
+      "schedule": "0 6 * * 1-5"
     }
   ],
   "headers": [
