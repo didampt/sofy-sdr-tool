@@ -138,7 +138,10 @@ const STOP = [
 ];
 
 // Le lead a REAGI -> on alerte le SDR sur Slack pour qu'il recontacte a chaud
+// ('warmed' = "A répondu" générique, parfois envoyé seul par Lemlist sans événement de canal ;
+//  le doublon warmed + emailsReplied est absorbé par l'anti-doublon réponse d'1 h)
 const ALERTE = [
+  'warmed',
   'emailsOpened', 'emailsClicked', 'emailsReplied', 'emailsInterested',
   'linkedinOpened', 'linkedinReplied', 'linkedinInviteAccepted', 'linkedinInterested',
   'whatsappReplied', 'smsReplied',
