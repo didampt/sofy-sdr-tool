@@ -1880,7 +1880,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v251';
+const VERSION='v252';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4120,6 +4120,7 @@ function ficheReal(e,i){
      ${badgeEngagement(e)}
      ${e.gmb&&e.gmb.trouve&&typeof e.gmb.note_moyenne==='number'?`<span class="badge b-gmb">GMB ${String(e.gmb.note_moyenne).replace('.',',')} ★ (${e.gmb.total_avis} avis)</span>`:''}
      ${technosHtml(e)}
+     ${e.signal_gmb&&(Date.now()-new Date(e.signal_gmb.date).getTime())<45*24*3600*1000?`<span class="badge b-signal" title="Veille e-réputation (cron mensuel) : la note Google décroche — signal d'achat Soview, appelle pendant que ça fait mal">📉 Note ${String(e.signal_gmb.avant).replace('.',',')}★ → ${String(e.signal_gmb.apres).replace('.',',')}★${e.signal_gmb.nouveaux_avis?' (+'+e.signal_gmb.nouveaux_avis+' avis)':''}</span>`:''}
      ${e.maps_url?`<span class="badge b-new"><a href="${e.maps_url}" target="_blank" onclick="event.stopPropagation()" style="color:inherit">📍 Google Maps</a></span>`:''}
      ${(()=>{var sf=sourceFiche(e);return sf?`<span class="badge ${sf.cls}">${sf.label}</span>`:'';})()}
      ${e.signal_hot?`<span class="badge b-signal">${(e.signal&&e.signal.emoji)?e.signal.emoji:'🔥'} ${(e.signal&&e.signal.interaction)?e.signal.interaction:'Signal détecté'}${(e.signal&&e.signal.concurrent)?' · '+e.signal.concurrent:''}</span>`:''}
@@ -4698,6 +4699,7 @@ function donneesPourScore(e){
   effectif:e.effectif,chiffre_affaires:e.chiffre_affaires,nb_etablissements:e.nb_etablissements,
   site_web:domaineDe(e)||null,google_business:g,
   technos_detectees:(e.technos&&e.technos.length)?e.technos.map(t=>({nom:t.nom,categorie:t.cat,concurrent_sofy:!!t.concurrent})):(e.technos_fait?'aucun outil détecté sur le site':null),
+  alerte_note_google:e.signal_gmb?{date:e.signal_gmb.date,note_avant:e.signal_gmb.avant,note_apres:e.signal_gmb.apres,nouveaux_avis:e.signal_gmb.nouveaux_avis||0}:null,
   signal:sig,pages_visitees:pages,
   contexte_ia:(e.ia&&e.ia.explication)||null,contexte_personas:(e.personas_info&&e.personas_info.explication)||null,
   contacts:contactsDe(e).filter(c=>c.nom).map(c=>({prenom:c.prenom,nom:c.nom,fonction:(c.enrich&&c.enrich.fonction)||c.fonction,source:c.source,

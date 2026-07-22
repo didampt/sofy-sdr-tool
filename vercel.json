@@ -15,6 +15,10 @@
     {
       "path": "/api/sms-cron",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/veille-gmb",
+      "schedule": "0 3 * * *"
     }
   ],
   "headers": [
