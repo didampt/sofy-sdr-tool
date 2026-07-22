@@ -1,0 +1,136 @@
+// /api/cockpit.js — « Ma journée » : file de travail priorisée du SDR.
+// GET (?sdr=Nom réservé admin — vue manager) →
+//   { ok, sdr, chauds:[...], rappels:{retard,aujourdhui}, prospecter:[...], restants, bilan }
+// 3 étages : signaux chauds 24 h (activites ALERTE) → rappels dus (taches) → fiches sans
+// issue d'appel des listes ACTIVES du SDR, triées par score global (top 25).
+// Tout est calculé à la lecture : aucune table nouvelle.
+
+import { verifierToken, sql, ensureSchema } from './db.js';
+
+export const config = { maxDuration: 30 };
+
+const ALERTE = ['warmed', 'emailsOpened', 'emailsClicked', 'emailsReplied', 'emailsInterested',
+  'linkedinOpened', 'linkedinReplied', 'linkedinInviteAccepted', 'linkedinInterested',
+  'whatsappReplied', 'smsReplied', 'interested', 'aircallInterested', 'manualInterested'];
+
+const estMobileFr = t => /^(?:\+33|0033|0)\s*[67]/.test(String(t || '').replace(/[\s.\-()]/g, ''));
+
+function telDe(e, c) {
+  const tels = [c && c.enrich && c.enrich.telephone, e.enrich && e.enrich.telephone, e.gmb && e.gmb.telephone].filter(Boolean);
+  return tels.find(estMobileFr) || tels[0] || null;
+}
+
+// Ligne d'angle affichée dans la file : produit dominant + état GMB (l'accroche d'appel en 5 mots)
+function angleDe(e) {
+  const s = e.score && e.score.scores;
+  let produit = null;
+  if (s) {
+    const m = [['Soview', s.soview], ['SoConnect', s.soconnect], ['SoReach', s.soreach]].sort((a, b) => (b[1] || 0) - (a[1] || 0))[0];
+    produit = (m && m[1]) ? m[0] : null;
+  }
+  const bouts = [];
+  if (produit) bouts.push('Angle ' + produit);
+  if (e.gmb && e.gmb.trouve && e.gmb.note != null) bouts.push(e.gmb.note + '★' + (e.gmb.nb_avis ? ' (' + e.gmb.nb_avis + ' avis)' : ''));
+  else if (e.gmb && e.gmb.trouve === false) bouts.push('aucune fiche Google');
+  return bouts.join(' · ') || null;
+}
+
+export default async function handler(req, res) {
+  const user = verifierToken(req);
+  if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
+  await ensureSchema();
+  const admin = ['admin', 'superadmin'].includes(user.role);
+  const sdr = (admin && req.query.sdr) ? String(req.query.sdr) : user.nom;
+
+  try {
+    const debutJour = new Date(); debutJour.setHours(0, 0, 0, 0);
+
+    // ── 1. Fiches des listes ACTIVES du SDR : index par email + candidates « à prospecter » ──
+    const listes = await sql`SELECT id, nom, entreprises FROM listes
+      WHERE archivee = FALSE AND (statut IS NULL OR statut = 'active') AND sdr = ${sdr}
+      ORDER BY id DESC LIMIT 40`;
+    const parEmail = new Map();
+    const prospecter = [];
+    let statueesJour = 0;
+    for (const l of listes) {
+      for (const e of (Array.isArray(l.entreprises) ? l.entreprises : [])) {
+        const cle = ((e.signal && e.signal.date) ? e.signal.date : '') + (e.nom || ''); // = cleSignal() côté front
+        const cs = e.contacts || [];
+        const c0 = cs.find(c => c && c.enrich && (c.enrich.telephone || c.enrich.email)) || cs[0] || null;
+        const statut = e.statut_appel || (e.tags_sdr || [])[0] || null;
+        if (statut && e.traite_le && new Date(e.traite_le) >= debutJour) statueesJour++;
+        const info = {
+          liste_id: l.id, liste_nom: l.nom, cle,
+          nom: e.enseigne_ia || e.enseigne || e.nom, ville: e.ville || '',
+          contact: c0 ? ((c0.prenom || '') + ' ' + (c0.nom || '')).trim() : '',
+          fonction: (c0 && (c0.fonction || (c0.enrich && c0.enrich.fonction))) || '',
+          tel: telDe(e, c0), statut, traite_le: e.traite_le || null
+        };
+        for (const c of cs) if (c && c.enrich && c.enrich.email) parEmail.set(String(c.enrich.email).toLowerCase(), info);
+        if (e.enrich && e.enrich.email) parEmail.set(String(e.enrich.email).toLowerCase(), info);
+        if (!statut && (e.score || (e.gmb && e.gmb.trouve))) {
+          prospecter.push({
+            liste_id: info.liste_id, liste_nom: info.liste_nom, cle: info.cle, nom: info.nom, ville: info.ville,
+            contact: info.contact, fonction: info.fonction, tel: info.tel,
+            score: (e.score && e.score.scores && e.score.scores.global) || 0,
+            angle: angleDe(e), contacts: cs.filter(c => c && c.nom).length
+          });
+        }
+      }
+    }
+    prospecter.sort((a, b) => b.score - a.score);
+    const restants = prospecter.length;
+
+    // ── 2. Signaux chauds des dernières 24 h (dernier événement par lead, fiches non re-traitées depuis) ──
+    let chauds = [];
+    const emails = [...parEmail.keys()];
+    if (emails.length) {
+      const evs = await sql`SELECT DISTINCT ON (fiche_cle) fiche_cle, type, titre, ts FROM activites
+        WHERE lower(fiche_cle) = ANY(${emails}) AND type = ANY(${ALERTE}) AND ts > NOW() - INTERVAL '24 hours'
+        ORDER BY fiche_cle, ts DESC`;
+      for (const ev of evs) {
+        const f = parEmail.get(String(ev.fiche_cle).toLowerCase());
+        if (!f) continue;
+        if (f.traite_le && new Date(f.traite_le) > new Date(ev.ts)) continue; // déjà recontacté après le signal
+        chauds.push({ liste_id: f.liste_id, liste_nom: f.liste_nom, cle: f.cle, nom: f.nom, ville: f.ville,
+          contact: f.contact, fonction: f.fonction, tel: f.tel, signal: ev.titre || ev.type, signal_ts: ev.ts });
+      }
+      chauds.sort((a, b) => new Date(b.signal_ts) - new Date(a.signal_ts));
+    }
+
+    // ── 3. Rappels dus (en retard + aujourd'hui) ──
+    const finJour = new Date(); finJour.setHours(23, 59, 59, 999);
+    const tks = await sql`SELECT id, fiche_cle, entreprise_nom, contact_nom, description, date_rappel, liste_id
+      FROM taches WHERE sdr = ${sdr} AND faite = FALSE AND date_rappel IS NOT NULL AND date_rappel <= ${finJour.toISOString()}
+      ORDER BY date_rappel ASC LIMIT 60`;
+    const rappels = { retard: [], aujourdhui: [] };
+    const mtn = new Date();
+    for (const t of tks) {
+      const f = (t.fiche_cle && t.fiche_cle.includes('@')) ? parEmail.get(String(t.fiche_cle).toLowerCase()) : null;
+      const r = {
+        id: t.id, entreprise: t.entreprise_nom || (f && f.nom) || 'Fiche', contact: t.contact_nom || (f && f.contact) || '',
+        description: t.description || '', date_rappel: t.date_rappel,
+        liste_id: t.liste_id || (f && f.liste_id) || null, cle: f ? f.cle : null, tel: f ? f.tel : null
+      };
+      (new Date(t.date_rappel) < mtn ? rappels.retard : rappels.aujourdhui).push(r);
+    }
+
+    // ── 4. Bilan du jour ──
+    let rdvJour = 0;
+    try {
+      const [r1] = await sql`SELECT COUNT(*)::int AS n FROM activites WHERE source = 'rdv' AND auteur = ${sdr} AND ts >= ${debutJour.toISOString()}`;
+      rdvJour = (r1 && r1.n) || 0;
+    } catch (_) {}
+
+    return res.status(200).json({
+      ok: true, sdr,
+      chauds: chauds.slice(0, 15),
+      rappels,
+      prospecter: prospecter.slice(0, 25),
+      restants,
+      bilan: { statuees_jour: statueesJour, rdv_jour: rdvJour }
+    });
+  } catch (e) {
+    return res.status(500).json({ erreur: 'Cockpit indisponible', detail: String(e.message || e).slice(0, 200) });
+  }
+}

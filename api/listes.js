@@ -342,6 +342,32 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, nom: nom.trim().slice(0, 120) });
       }
       // Transfert d'une liste à un autre SDR (réservé admin/superadmin)
+      // ── Statuer UNE fiche depuis le cockpit (mise à jour chirurgicale du JSONB, sans recharger la liste) ──
+      // PUT { id, fiche_cle, statut_appel } — fiche_cle = clé cleSignal() (signal.date + nom).
+      if (req.body.fiche_cle !== undefined && req.body.statut_appel !== undefined) {
+        const rowsF = await sql`SELECT sdr, entreprises FROM listes WHERE id = ${parseInt(id)}`;
+        if (!rowsF.length) return res.status(404).json({ erreur: 'Liste introuvable' });
+        const adminF = ['admin', 'superadmin'].includes(user.role);
+        if (!adminF && rowsF[0].sdr !== user.nom) return res.status(403).json({ erreur: 'Cette liste appartient à un autre SDR' });
+        const entsF = Array.isArray(rowsF[0].entreprises) ? rowsF[0].entreprises : [];
+        const cleDe = e => ((e.signal && e.signal.date) ? e.signal.date : '') + (e.nom || '');
+        const fiche = entsF.find(e => cleDe(e) === String(req.body.fiche_cle));
+        if (!fiche) return res.status(404).json({ erreur: 'Fiche introuvable (liste modifiée entre-temps ?)' });
+        const statutF = String(req.body.statut_appel || '').slice(0, 60);
+        if (statutF) {
+          fiche.statut_appel = statutF;
+          fiche.tags_sdr = [statutF === 'RDV pris' ? '🤝 RDV pris' : statutF];
+          fiche.traite_par = user.nom;
+          fiche.traite_le = new Date().toISOString();
+        } else {
+          fiche.statut_appel = null;
+          if (!(fiche.tags_sdr || []).includes('🤝 RDV pris')) { fiche.tags_sdr = []; fiche.traite_par = null; fiche.traite_le = null; }
+        }
+        const stF = calculerStatsListe(entsF);
+        await sql`UPDATE listes SET entreprises = ${JSON.stringify(entsF)}, stats = ${JSON.stringify(stF)} WHERE id = ${parseInt(id)}`;
+        return res.status(200).json({ ok: true, statut_appel: fiche.statut_appel, stats: stF });
+      }
+
       if (assigner_a !== undefined && typeof assigner_a === 'string' && assigner_a.trim()) {
         if (!['admin', 'superadmin'].includes(user.role)) {
           return res.status(403).json({ erreur: 'Seuls les administrateurs peuvent transférer une liste' });
