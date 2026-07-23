@@ -457,8 +457,48 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
    <textarea class="field" id="rappel-note" rows="2" style="width:100%;resize:vertical" placeholder="Ex : rappeler après 17h, demander le gérant…"></textarea>
   </div>
   <div class="wf-foot">
-   <button class="btn" style="background:var(--paper)" onclick="document.getElementById('rappel-modal').style.display='none'">Annuler</button>
+   <button class="btn" style="background:var(--paper)" onclick="annulerRappel()">Annuler</button>
    <button class="btn btn-primary" onclick="creerRappel()">✅ Créer le rappel</button>
+  </div>
+ </div>
+</div>
+<div id="conc-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:901;align-items:center;justify-content:center;padding:20px">
+ <div class="wf-panel" style="width:min(420px,94vw)">
+  <div class="wf-head">🥊 Refus – concurrence : perdu contre qui ?</div>
+  <div style="padding:18px 24px">
+   <select class="field" id="conc-nom" style="width:100%" onchange="document.getElementById('conc-autre').style.display=this.value==='Autre'?'block':'none'">
+    <option value="">— Choisir le concurrent —</option>
+    <option>Partoo</option><option>Digitaleo</option><option>Uberall</option><option>Solocal</option>
+    <option>Localnord</option><option>Local Ranker</option><option>smsmode</option><option>SMSEnvoi</option>
+    <option>Esendex</option><option>MTarget</option><option>Sinch</option><option>Autre</option>
+   </select>
+   <input class="field" id="conc-autre" placeholder="Nom du concurrent" style="width:100%;margin-top:8px;display:none">
+   <p style="font-size:12px;color:var(--ink-soft);margin:10px 0 0">Alimente les stats « pertes par concurrent » et la fiche garde l'info pour une relance dans 6 mois.</p>
+  </div>
+  <div class="wf-foot">
+   <button class="btn" style="background:var(--paper)" onclick="validerConcurrent(true)">Passer</button>
+   <button class="btn btn-primary" onclick="validerConcurrent(false)">Enregistrer</button>
+  </div>
+ </div>
+</div>
+<div id="ckseq-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:901;align-items:center;justify-content:center;padding:20px">
+ <div class="wf-panel" style="width:min(440px,94vw)">
+  <div class="wf-head">✈️ Envoyer en séquence Lemlist — <span id="ckseq-dest"></span></div>
+  <div style="padding:18px 24px">
+   <label style="font-size:13px;font-weight:600;color:var(--ink-soft);display:block;margin-bottom:6px">Contact à envoyer</label>
+   <select class="field" id="ckseq-contact" style="width:100%"></select>
+   <label style="font-size:13px;font-weight:600;color:var(--ink-soft);display:block;margin:14px 0 6px">Séquence (produit)</label>
+   <select class="field" id="ckseq-produit" style="width:100%">
+    <option value="soview">⭐ Soview — avis & visibilité Google</option>
+    <option value="soconnect">💬 SoConnect — messagerie + IA Budy</option>
+    <option value="soreach">📱 SoReach — SMS / RCS</option>
+    <option value="generique">🎯 Générique — suite Sofy</option>
+   </select>
+   <p style="font-size:12px;color:var(--ink-soft);margin:10px 0 0">Le lead part avec les variables de la fiche (note Google, accroche, email IA…). Plafond 50/jour partagé.</p>
+  </div>
+  <div class="wf-foot">
+   <button class="btn" style="background:var(--paper)" onclick="document.getElementById('ckseq-modal').style.display='none'">Annuler</button>
+   <button class="btn btn-primary" onclick="envoyerCkSequence()">✈️ Envoyer</button>
   </div>
  </div>
 </div>
@@ -1886,7 +1926,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v256';
+const VERSION='v257';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -3350,20 +3390,82 @@ function setStatutAppel(i,statut){
   e.traite_le=new Date().toISOString();
  }
  rerender(i);persister();majTraites();
- // Statuts qui déclenchent la modale de rappel (le SDR choisit la date)
- const STATUTS_RAPPEL=['Rappel demandé','Pas de réponse','Message vocal laissé','Absent'];
- if(statut&&STATUTS_RAPPEL.some(p=>statut.indexOf(p)===0))ouvrirRappel(i);
+ if(!statut)return;
+ // Rappel demandé = promesse faite au client → modale OBLIGATOIRE (fermée sans date = rappel demain 9 h)
+ if(statut.indexOf('Rappel demandé')===0){ouvrirRappel(i,true);return;}
+ // Pas de réponse / Message vocal / Absent → re-tentative AUTO à J+2, sans friction
+ // (remplacée/close si le SDR recontacte avant — l'anti-doublon par fiche de /api/taches gère)
+ if(['Pas de réponse','Message vocal laissé','Absent'].some(p=>statut.indexOf(p)===0)){
+  const c0=contactsDe(e)[0];
+  programmerRetenter((ficheEmails(e)[0]||cleFiche(e)),enseigneDe(e)||e.nom,(c0&&c0.nom)?((c0.prenom||'')+' '+c0.nom).trim():'',statut,state.savedId);
+  return;
+ }
+ // Refus – concurrence → qui a pris le deal ?
+ if(statut.indexOf('Refus – concurrence')===0){ouvrirConcurrent({mode:'fiche',i:i});return;}
+ // Non décisionnaire → hors file d'appel : on cherche le bon contact (Personas)
+ if(statut.indexOf('Non décisionnaire')===0){toast('👥 Non décisionnaire — cherchons le bon contact');ouvrirChoixPersonas(i);cloreRappels(ficheEmails(e)[0]||cleFiche(e));return;}
+ // Statut terminal (RDV, refus, faux numéro…) → on clôt les rappels/re-tentatives en attente de la fiche
+ cloreRappels(ficheEmails(e)[0]||cleFiche(e));
+}
+// Re-tentative automatique à J+2 9 h 30 (statuts « injoignable ») — arbitrage Didier 23/07
+async function programmerRetenter(cle,entreprise,contact,statut,listeId){
+ if(!cle)return;
+ try{
+  const d=new Date();d.setDate(d.getDate()+2);d.setHours(9,30,0,0);
+  await api('/api/taches',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({liste_id:listeId||null,fiche_cle:cle,entreprise_nom:entreprise,contact_nom:contact||'',description:statut+' — re-tentative auto',date_rappel:d.toISOString()})});
+  toast('🔁 Re-tentative programmée après-demain 9 h 30 (annulée si recontact avant)');
+ }catch(_){}
+}
+// Clôt les rappels/re-tentatives en attente d'une fiche (le SDR a recontacté : ils sont obsolètes)
+async function cloreRappels(cle){
+ if(!cle)return;
+ try{await api('/api/taches',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({fiche_cle:cle,faite:true})});}catch(_){}
+}
+// ── Modale concurrent (fiche + cockpit) ──
+let CONC_CTX=null;
+function ouvrirConcurrent(ctx){
+ CONC_CTX=ctx;
+ document.getElementById('conc-nom').value='';
+ document.getElementById('conc-autre').style.display='none';
+ document.getElementById('conc-autre').value='';
+ document.getElementById('conc-modal').style.display='flex';
+}
+async function validerConcurrent(passer){
+ const ctx=CONC_CTX;if(!ctx){document.getElementById('conc-modal').style.display='none';return;}
+ let nom='';
+ if(!passer){
+  nom=document.getElementById('conc-nom').value;
+  if(nom==='Autre')nom=document.getElementById('conc-autre').value.trim();
+  if(!nom){toast('Choisis le concurrent (ou « Passer »)');return;}
+ }
+ document.getElementById('conc-modal').style.display='none';CONC_CTX=null;
+ if(ctx.mode==='fiche'){
+  const e=REAL[ctx.i];if(!e)return;
+  if(nom){
+   e.concurrent_perdu={nom:nom,date:new Date().toISOString()};
+   persister();rerender(ctx.i);
+   enregistrerActivite(e,null,'note','🥊 Perdu contre '+nom,'Refus – concurrence');
+   toast('🥊 Perdu contre '+nom+' — noté (relance possible dans 6 mois)');
+  }
+  cloreRappels(ficheEmails(e)[0]||cleFiche(e));
+ }else if(ctx.mode==='ck'){
+  await ckPoserStatut(ctx.listeId,ctx.cle,'Refus – concurrence',nom?{concurrent:nom}:null);
+  if(nom&&ctx.email)ckJournal(encodeURIComponent(ctx.email),'note','🥊 Perdu contre '+nom,encodeURIComponent('Refus – concurrence'));
+  if(ctx.email)cloreRappels(ctx.email);
+  if(nom)toast('🥊 Perdu contre '+nom+' — noté');
+ }
 }
 // Compat : d'anciens appels peuvent encore référencer toggleTag
 function toggleTag(i,tag){setStatutAppel(i,tag);}
 let RAPPEL_CTX=null;
-function ouvrirRappel(i){
+function ouvrirRappel(i,obligatoire){
  const e=REAL[i];
  const c=contactsDe(e)[0];
  const contactNom=(c&&c.nom)?`${c.prenom||''} ${c.nom}`.trim():'';
  // Clé STABLE (email du contact, sinon clé de fiche) : celle que la timeline du bloc-notes
  // interroge — l'ancien 'fr'+i (index de ligne !) rendait le rappel invisible et ambigu.
- RAPPEL_CTX={i,entreprise:enseigneDe(e)||e.nom,contact:contactNom,fiche_cle:(ficheEmails(e)[0]||cleFiche(e))};
+ RAPPEL_CTX={i,obligatoire:!!obligatoire,entreprise:enseigneDe(e)||e.nom,contact:contactNom,fiche_cle:(ficheEmails(e)[0]||cleFiche(e))};
  document.getElementById('rappel-dest').textContent=(enseigneDe(e)||e.nom||'').slice(0,40);
  // Pré-remplir : demain 10h par défaut
  const d=new Date();d.setDate(d.getDate()+1);d.setHours(10,0,0,0);
@@ -3383,6 +3485,21 @@ function rappelRaccourci(heures){
  const d=new Date();d.setHours(d.getHours()+heures);
  document.getElementById('rappel-date').value=isoLocal(d);
 }
+// Fermeture du modal : si le rappel est OBLIGATOIRE (« Rappel demandé » = promesse au client),
+// on crée quand même un rappel par défaut demain 9 h — la promesse ne se perd jamais.
+async function annulerRappel(){
+ const ctx=RAPPEL_CTX;
+ document.getElementById('rappel-modal').style.display='none';
+ if(!ctx||!ctx.obligatoire){RAPPEL_CTX=null;return;}
+ try{
+  const d=new Date();d.setDate(d.getDate()+1);d.setHours(9,0,0,0);
+  await api('/api/taches',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({liste_id:ctx.liste_id||state.savedId||null,fiche_cle:ctx.fiche_cle,entreprise_nom:ctx.entreprise,contact_nom:ctx.contact||'',description:'Rappel demandé / occupé — rappel par défaut (non planifié)',date_rappel:d.toISOString()})});
+  toast('⏰ Rappel par défaut créé pour demain 9 h — la promesse au client est conservée');
+ }catch(_){}
+ if(ctx.mode==='ck')await ckPoserStatut(ctx.listeId,ctx.cle,'Rappel demandé / occupé',null);
+ RAPPEL_CTX=null;
+}
 let RAPPEL_ENVOI=false; // anti double-clic (2 clics = 2 rappels)
 async function creerRappel(){
  if(!RAPPEL_CTX||RAPPEL_ENVOI)return;
@@ -3390,7 +3507,7 @@ async function creerRappel(){
  if(!val){toast('Choisis une date/heure');return;}
  const note=document.getElementById('rappel-note').value.trim();
  // La RAISON du rappel = le statut de la fiche (« Pas de réponse », « Absent »…), en tête de la description
- const raison=(RAPPEL_CTX.i!=null&&REAL[RAPPEL_CTX.i]&&REAL[RAPPEL_CTX.i].statut_appel)||'';
+ const raison=RAPPEL_CTX.statut||((RAPPEL_CTX.i!=null&&REAL[RAPPEL_CTX.i]&&REAL[RAPPEL_CTX.i].statut_appel)||'');
  const description=[raison,note].filter(Boolean).join(' — ');
  RAPPEL_ENVOI=true;
  try{
@@ -3399,6 +3516,8 @@ async function creerRappel(){
   const d=await r.json();
   if(d.ok){
    toast('🔁 Rappel planifié ✓');document.getElementById('rappel-modal').style.display='none';
+   // Mode cockpit : le statut « Rappel demandé » se pose à la validation du rappel
+   if(RAPPEL_CTX.mode==='ck'){const ctx=RAPPEL_CTX;RAPPEL_CTX=null;await ckPoserStatut(ctx.listeId,ctx.cle,'Rappel demandé / occupé',null);return;}
    // Écho immédiat dans le bloc-notes de la fiche (la version serveur arrive au prochain chargement)
    const ef=REAL[RAPPEL_CTX.i];
    if(ef){
@@ -6365,7 +6484,7 @@ function ckToggle(rid){
  const pnl=document.getElementById(rid+'-d'),b=document.getElementById(rid+'-b');
  if(!pnl)return;
  if(pnl.style.display!=='none'){pnl.style.display='none';if(b)b.innerHTML='D\u00e9plier \u25be';return;}
- if(!pnl.innerHTML)pnl.innerHTML=ckDetailHtml(CK_ITEMS[rid]||{});
+ if(!pnl.innerHTML)pnl.innerHTML=ckDetailHtml(CK_ITEMS[rid]||{},rid);
  pnl.style.display='block';if(b)b.innerHTML='Replier \u25b4';
 }
 function ckContactLigne(c,it){
@@ -6388,7 +6507,7 @@ function ckContactLigne(c,it){
   <div style="display:flex;gap:4px">${acts.join('')}</div>
  </div>`;
 }
-function ckDetailHtml(it){
+function ckDetailHtml(it,rid){
  let h='<div style="margin-top:10px">';
  if(it.accroche)h+=`<div style="font-size:12.5px;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-bottom:8px">\ud83c\udfaf <b>Accroche :</b> ${htmlSafe(it.accroche)}</div>`;
  if(it.synthese)h+=`<div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;line-height:1.5">${htmlSafe(it.synthese)}</div>`;
@@ -6397,8 +6516,43 @@ function ckDetailHtml(it){
  else if(!it.cle)h+='<p style="font-size:12px;color:var(--ink-soft);margin:4px 0">Fiche non retrouv\u00e9e dans tes listes actives (liste en nurturing ou archiv\u00e9e) \u2014 marque le rappel \u00ab Fait \u00bb apr\u00e8s l\u2019appel, ou retrouve la fiche via la recherche de l\u2019Historique.</p>';
  else h+='<p style="font-size:12px;color:var(--ink-soft);margin:4px 0">Aucun contact nominatif sur cette fiche \u2014 ouvre la fiche compl\u00e8te pour enrichir.</p>';
  if(it.tel_standard)h+=`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px dashed var(--line)"><div style="flex:1;font-size:12.5px"><span style="font-weight:600">Standard</span> \u00b7 ${htmlSafe(it.tel_standard)}</div><a class="act act-call" style="padding:4px 10px;font-size:12px;text-decoration:none" href="tel:${htmlSafe(telNorm(it.tel_standard))}">\ud83d\udcde</a></div>`;
- if(it.liste_id)h+=`<div style="margin-top:10px"><button class="act act-copy" onclick="ouvrirListe(${it.liste_id}${it.cle?`,decodeURIComponent('${jsArg(it.cle)}')`:',null'})" title="Bloc-notes, SMS SoReach, email Lemlist, enrichissement\u2026">Ouvrir la fiche compl\u00e8te \u2192</button></div>`;
+ const aEmail=(it.contacts_detail||[]).some(c=>c&&c.email);
+ h+=`<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">${aEmail&&!it.statut?`<button class="act act-call" onclick="ouvrirCkSequence('${rid}')" title="Pousser un contact de la fiche en s\u00e9quence Lemlist (m\u00eames variables que depuis la fiche)">\u2708\ufe0f S\u00e9quence Lemlist\u2026</button>`:''}${it.liste_id?`<button class="act act-copy" onclick="ouvrirListe(${it.liste_id}${it.cle?`,decodeURIComponent('${jsArg(it.cle)}')`:',null'})" title="Bloc-notes, SMS SoReach, email Lemlist, enrichissement\u2026">Ouvrir la fiche compl\u00e8te \u2192</button>`:''}</div>`;
  return h+'</div>';
+}
+let CKSEQ_CTX=null;
+function ouvrirCkSequence(rid){
+ const it=CK_ITEMS[rid];if(!it)return;
+ const cs=(it.contacts_detail||[]).filter(c=>c&&c.email);
+ if(!cs.length){toast('Aucun contact avec email sur cette fiche');return;}
+ CKSEQ_CTX={it:it};
+ document.getElementById('ckseq-dest').textContent=(it.nom||'').slice(0,36);
+ document.getElementById('ckseq-contact').innerHTML=cs.map((c,k)=>`<option value="${k}">${htmlSafe(c.nom)}${c.fonction?' — '+htmlSafe(c.fonction):''} (${htmlSafe(c.email)})</option>`).join('');
+ const sp=document.getElementById('ckseq-produit');
+ if(it.produit_dominant&&sp.querySelector(`option[value="${it.produit_dominant}"]`))sp.value=it.produit_dominant;
+ document.getElementById('ckseq-modal').style.display='flex';
+}
+async function envoyerCkSequence(){
+ const ctx=CKSEQ_CTX;if(!ctx)return;
+ const it=ctx.it;
+ const cs=(it.contacts_detail||[]).filter(c=>c&&c.email);
+ const c=cs[parseInt(document.getElementById('ckseq-contact').value)||0];
+ const produit=document.getElementById('ckseq-produit').value;
+ if(!c){toast('Contact introuvable');return;}
+ document.getElementById('ckseq-modal').style.display='none';CKSEQ_CTX=null;
+ toast('✈️ Envoi en cours…');
+ try{
+  const r=await api('/api/lemlist',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({liste_id:it.liste_id,produit:produit,proprietaire:(CK&&CK.sdr)||(state.user&&state.user.nom)||'',
+    contact:{email:c.email,prenom:c.prenom||'',nom:c.nom_seul||''},
+    variables:{...(it.vars||{}),phone:c.tel||'',linkedinUrl:c.linkedin||''}})});
+  const d=await r.json();
+  if(r.status===429){toast('⛔ '+(d.erreur||'Plafond Lemlist atteint'));return;}
+  if(!d.ok){toast('Erreur Lemlist : '+(d.erreur||'envoi refusé')+(d.detail?' — '+String(d.detail).slice(0,80):''));return;}
+  toast('✈️ '+(c.nom||c.email)+' envoyé en séquence '+produit+' ✓ (rappel J+5 créé)');
+  // Marque la fiche (cohérence flux fiche + sequences-cron) — sans toucher au statut
+  try{await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:it.liste_id,fiche_cle:it.cle,marquer_lemlist:true})});}catch(_){}
+ }catch(e){toast('Erreur réseau : '+e.message);}
 }
 async function ckJournal(emailEnc,source,titre,detailEnc){
  const email=decodeURIComponent(emailEnc||'');
@@ -6526,29 +6680,62 @@ function ckPeindreAppels(a){
   if(lbl)lbl.innerHTML=`Objectif du jour : <b>${a.total} / ${obj} appels</b> \u00b7 <span style="color:#0F6E56">\u25a0</span> d\u00e9croch\u00e9s (${a.decroches}) \u00b7 <span style="color:#5DCAA5">\u25a0</span> sans r\u00e9ponse (${a.total-a.decroches})${a.total<obj?` \u00b7 reste ${obj-a.total} appel${(obj-a.total)>1?'s':''}`:' \u00b7 objectif atteint \ud83c\udf89'}`;
  }catch(_){}
 }
+function ckItemDe(listeId,cle){
+ const match=x=>x&&x.liste_id===listeId&&x.cle===cle;
+ return (CK&&(((CK.chauds||[]).find(match))||((CK.prospecter||[]).find(match))))||null;
+}
+// PUT serveur + mise à jour locale du cockpit (zéro refetch)
+async function ckPoserStatut(listeId,cle,statut,extra){
+ try{
+  const body={id:listeId,fiche_cle:cle,statut_appel:statut};
+  if(extra&&extra.concurrent)body.concurrent=extra.concurrent;
+  const r=await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d=await r.json();
+  if(!d.ok){toast('Erreur : '+(d.erreur||'statut non enregistré'));return false;}
+  toast('✓ '+statut);
+  if(CK){
+   const match=x=>x&&x.liste_id===listeId&&x.cle===cle;
+   const dansProspecter=(CK.prospecter||[]).some(match);
+   CK.chauds=(CK.chauds||[]).filter(x=>!match(x));
+   CK.prospecter=(CK.prospecter||[]).filter(x=>!match(x));
+   if(dansProspecter&&typeof CK.restants==='number'&&CK.restants>0)CK.restants--;
+   CK.bilan.statuees_jour=(CK.bilan.statuees_jour||0)+1;
+   if(/RDV pris/.test(statut)){CK.bilan.rdv_jour=(CK.bilan.rdv_jour||0)+1;CK.bilan.rdv_mois=(CK.bilan.rdv_mois||0)+1;}
+   rendreCockpit(CK.sdr);
+  }
+  return true;
+ }catch(e){toast('Erreur réseau : '+e.message);return false;}
+}
 async function ckStatuer(listeId,cleEnc,sel){
  const statut=sel.value;if(!statut)return;
+ const cle=decodeURIComponent(cleEnc);
+ const it=ckItemDe(listeId,cle)||{};
+ // Rappel demandé → modale rappel OBLIGATOIRE (le statut sera posé à la validation ou au fallback)
+ if(statut.indexOf('Rappel demandé')===0){
+  sel.value='';
+  RAPPEL_CTX={mode:'ck',listeId:listeId,cle:cle,liste_id:listeId,statut:statut,obligatoire:true,
+   entreprise:it.nom||'Fiche',contact:it.contact||'',fiche_cle:it.email_cle||null};
+  document.getElementById('rappel-dest').textContent=(it.nom||'').slice(0,40);
+  const dd=new Date();dd.setDate(dd.getDate()+1);dd.setHours(10,0,0,0);
+  document.getElementById('rappel-date').value=isoLocal(dd);
+  document.getElementById('rappel-note').value='';
+  document.getElementById('rappel-modal').style.display='flex';
+  return;
+ }
+ // Refus – concurrence → qui a pris le deal ?
+ if(statut.indexOf('Refus – concurrence')===0){sel.value='';ouvrirConcurrent({mode:'ck',listeId:listeId,cle:cle,email:it.email_cle||null});return;}
  sel.disabled=true;
- try{
-  const r=await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:listeId,fiche_cle:decodeURIComponent(cleEnc),statut_appel:statut})});
-  const d=await r.json();
-  if(d.ok){
-   // Mise à jour LOCALE (pas de rechargement des listes : le cockpit re-rend depuis CK)
-   toast('✓ '+statut);
-   if(CK){
-    const cle=decodeURIComponent(cleEnc);
-    const match=x=>x&&x.liste_id===listeId&&x.cle===cle;
-    const dansProspecter=(CK.prospecter||[]).some(match);
-    CK.chauds=(CK.chauds||[]).filter(x=>!match(x));
-    CK.prospecter=(CK.prospecter||[]).filter(x=>!match(x));
-    if(dansProspecter&&typeof CK.restants==='number'&&CK.restants>0)CK.restants--;
-    CK.bilan.statuees_jour=(CK.bilan.statuees_jour||0)+1;
-    if(/RDV pris/.test(statut)){CK.bilan.rdv_jour=(CK.bilan.rdv_jour||0)+1;CK.bilan.rdv_mois=(CK.bilan.rdv_mois||0)+1;}
-    rendreCockpit(CK.sdr);
-   }
-  }
-  else{sel.disabled=false;toast('Erreur : '+(d.erreur||'statut non enregistré'));}
- }catch(e){sel.disabled=false;toast('Erreur réseau : '+e.message);}
+ const ok=await ckPoserStatut(listeId,cle,statut,null);
+ if(!ok){sel.disabled=false;return;}
+ // Suites automatiques (mêmes règles que la fiche)
+ if(['Pas de réponse','Message vocal laissé','Absent'].some(p=>statut.indexOf(p)===0)){
+  if(it.email_cle)programmerRetenter(it.email_cle,it.nom||'',it.contact||'',statut,listeId);
+ }else if(statut.indexOf('Non décisionnaire')===0){
+  if(it.email_cle)cloreRappels(it.email_cle);
+  toast('👥 Non décisionnaire — ouvre la fiche complète pour chercher le bon contact (bouton Personas)');
+ }else if(it.email_cle){
+  cloreRappels(it.email_cle);
+ }
 }
 async function ckRappelFait(id){
  try{

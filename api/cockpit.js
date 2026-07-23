@@ -128,10 +128,26 @@ export default async function handler(req, res) {
         // Détail pour le panneau déplié du cockpit : tous les contacts + synthèse d'appel
         const contactsDetail = cs.filter(c => c && c.nom).slice(0, 5).map(c => ({
           nom: ((c.prenom || '') + ' ' + (c.nom || '')).trim(),
+          prenom: c.prenom || '', nom_seul: c.nom || '',
           fonction: c.fonction || (c.enrich && c.enrich.fonction) || '',
           email: (c.enrich && c.enrich.email) || null,
-          tel: (c.enrich && c.enrich.telephone) || null
+          tel: (c.enrich && c.enrich.telephone) || null,
+          linkedin: (c.enrich && c.enrich.linkedin) || null
         }));
+        // Variables Lemlist prêtes à l'envoi (miroir de varsLemlist côté fiche) pour « ✈️ Séquence » du panneau
+        const gV = e.gmb || {}, scV = e.score || {};
+        const prodV = scV.scores ? ([['soview', scV.scores.soview], ['soconnect', scV.scores.soconnect], ['soreach', scV.scores.soreach]].sort((a, b) => (b[1] || 0) - (a[1] || 0))[0]) : null;
+        const varsLem = {
+          companyName: e.enseigne_ia || e.enseigne || e.nom,
+          gmb_note: gV.trouve ? String(gV.note_moyenne) : '',
+          gmb_pire_fiche: gV.trouve && gV.pire_fiche ? `${gV.pire_fiche.nom} (${gV.pire_fiche.note}★)` : '',
+          avis_negatif: gV.avis_negatif ? String(gV.avis_negatif.texte || '').slice(0, 180) : '',
+          gmb_concurrents: gV.concurrents ? String(gV.concurrents.note_moyenne) : '',
+          produit_score: (prodV && prodV[1]) ? `${prodV[0]} ${prodV[1]}` : '',
+          accroche: scV.accroche || '',
+          objet_perso: scV.email ? scV.email.objet : '',
+          email_perso: scV.email ? scV.email.corps : ''
+        };
         const emailCle = (cs.find(c => c && c.enrich && c.enrich.email) || {}).enrich;
         const info = {
           liste_id: l.id, liste_nom: l.nom, cle,
@@ -143,7 +159,9 @@ export default async function handler(req, res) {
           tel_standard: (e.gmb && e.gmb.telephone) || null,
           accroche: (e.score && e.score.accroche) || null,
           synthese: (e.score && e.score.synthese) || null,
-          contacts_detail: contactsDetail
+          contacts_detail: contactsDetail,
+          vars: varsLem,
+          produit_dominant: (prodV && prodV[1]) ? prodV[0] : null
         };
         for (const c of cs) if (c && c.enrich && c.enrich.email) parEmail.set(String(c.enrich.email).toLowerCase(), info);
         if (e.enrich && e.enrich.email) parEmail.set(String(e.enrich.email).toLowerCase(), info);

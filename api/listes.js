@@ -353,7 +353,7 @@ export default async function handler(req, res) {
       // Transfert d'une liste à un autre SDR (réservé admin/superadmin)
       // ── Statuer UNE fiche depuis le cockpit (mise à jour chirurgicale du JSONB, sans recharger la liste) ──
       // PUT { id, fiche_cle, statut_appel } — fiche_cle = clé cleSignal() (signal.date + nom).
-      if (req.body.fiche_cle !== undefined && req.body.statut_appel !== undefined) {
+      if (req.body.fiche_cle !== undefined && (req.body.statut_appel !== undefined || req.body.marquer_lemlist === true)) {
         const rowsF = await sql`SELECT sdr, entreprises FROM listes WHERE id = ${parseInt(id)}`;
         if (!rowsF.length) return res.status(404).json({ erreur: 'Liste introuvable' });
         const adminF = ['admin', 'superadmin'].includes(user.role);
@@ -362,13 +362,18 @@ export default async function handler(req, res) {
         const cleDe = e => ((e.signal && e.signal.date) ? e.signal.date : '') + (e.nom || '');
         const fiche = entsF.find(e => cleDe(e) === String(req.body.fiche_cle));
         if (!fiche) return res.status(404).json({ erreur: 'Fiche introuvable (liste modifiée entre-temps ?)' });
-        const statutF = String(req.body.statut_appel || '').slice(0, 60);
+        const statutF = (req.body.statut_appel !== undefined) ? String(req.body.statut_appel || '').slice(0, 60) : null;
+        const statutFourni = req.body.statut_appel !== undefined;
+        // Refus – concurrence : mémorise QUI a pris le deal (stats pertes par concurrent + rappel dans 6 mois)
+        if (req.body.concurrent) fiche.concurrent_perdu = { nom: String(req.body.concurrent).slice(0, 60), date: new Date().toISOString() };
+        // Envoi Lemlist depuis le cockpit : marque la fiche (cohérence avec le flux fiche + sequences-cron)
+        if (req.body.marquer_lemlist === true) fiche.lemlist_envoye = true;
         if (statutF) {
           fiche.statut_appel = statutF;
           fiche.tags_sdr = [statutF === 'RDV pris' ? '🤝 RDV pris' : statutF];
           fiche.traite_par = user.nom;
           fiche.traite_le = new Date().toISOString();
-        } else {
+        } else if (statutFourni) {
           fiche.statut_appel = null;
           if (!(fiche.tags_sdr || []).includes('🤝 RDV pris')) { fiche.tags_sdr = []; fiche.traite_par = null; fiche.traite_le = null; }
         }
