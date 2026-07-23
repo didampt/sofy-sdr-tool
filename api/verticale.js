@@ -61,13 +61,18 @@ function filialesDepuisResultats(resultats, holding) {
     if (r.personne_morale !== true) continue;
     const dirSiren = String(r.siren || '').replace(/\s/g, '');
     if (!holding.siren || !dirSiren || dirSiren !== String(holding.siren)) continue;
-    const qualite = r.qualite || (Array.isArray(r.qualites) && r.qualites[0]) || '';
-    if (/commissaire|liquidateur|administrateur judiciaire/i.test(qualite)) continue;
+    const qualiteRecord = r.qualite || (Array.isArray(r.qualites) && r.qualites[0]) || '';
     for (const ent of (Array.isArray(r.entreprises) ? r.entreprises : [])) {
       const siren = String(ent.siren || '').replace(/\s/g, '');
       if (!siren || siren === dirSiren) continue;
       const actuel = (ent.dirigeant_actuel !== undefined) ? !!ent.dirigeant_actuel : (r.actuel !== false);
       if (!actuel) continue;
+      // Qualité vérifiée mandat par mandat : au niveau de l'enregistrement elle mélange tout
+      // (cas Citadelle : « Liquidateur » de deux GIE dissous masquait les mandats sains).
+      const qualites = (ent.dirigeant && (Array.isArray(ent.dirigeant.qualites) ? ent.dirigeant.qualites : [ent.dirigeant.qualite])) || [qualiteRecord];
+      const utiles = qualites.filter(q => q && !/commissaire|liquidateur|administrateur judiciaire/i.test(q));
+      if (qualites.some(Boolean) && !utiles.length) continue;
+      const qualite = utiles[0] || qualiteRecord;
       out.push({
         siren,
         nom: ent.nom_entreprise || ent.denomination || '',
@@ -169,8 +174,33 @@ async function arbreGroupe(racine, apiKey, nomUsuel) {
     return f;
   };
 
-  // ── A. Mandats personne morale, récursif (sous-holdings) ──
-  let front = [racine];
+  // ── Fiche de la racine (CP = empreinte géo ; représentants -> B et remontée ; BE -> D) ──
+  let ficheRacine = null;
+  try {
+    const r0 = await fetch(`https://api.pappers.fr/v2/entreprise?api_token=${apiKey}&siren=${encodeURIComponent(racine.siren)}`);
+    requetes++;
+    ficheRacine = r0.ok ? await r0.json().catch(() => null) : null;
+    if (ficheRacine && ficheRacine.siege && ficheRacine.siege.code_postal) racine.code_postal = ficheRacine.siege.code_postal;
+  } catch (_) {}
+
+  // ── REMONTÉE : le dirigeant PERSONNE MORALE de la racine est souvent la vraie tête du
+  // groupe (cas Citadelle : présidée par GROUPE COMTE-SERRES, qui préside aussi les
+  // concessions). On l'explore comme une co-racine : ses mandats (A), ses dirigeants
+  // physiques (B) et ses bénéficiaires effectifs (D).
+  const tetes = [];
+  for (const p of ((ficheRacine && ficheRacine.representants) || [])) {
+    if (tetes.length >= 2) break;
+    if (p.personne_morale !== true) continue;
+    if (/commissaire|liquidateur|administrateur judiciaire/i.test(p.qualite || '')) continue;
+    const s = String(p.siren || '').replace(/\s/g, '');
+    const n = p.denomination || p.nom_complet || p.nom || '';
+    if (!s || !n || vues.has(s)) continue;
+    vues.add(s); // la tête est AU-DESSUS du groupe : explorée, mais pas listée comme filiale
+    tetes.push({ siren: s, nom: n });
+  }
+
+  // ── A. Mandats personne morale (racine + têtes), récursif (sous-holdings) ──
+  let front = [racine, ...tetes];
   for (let niveau = 1; niveau <= 3 && front.length; niveau++) {
     const prochaines = [];
     for (const h of front) {
@@ -195,20 +225,28 @@ async function arbreGroupe(racine, apiKey, nomUsuel) {
     front = prochaines.slice(0, 15); // max 15 sous-holdings explorées par niveau
   }
 
-  // ── B. Dirigeants communs (personnes physiques de la holding -> leurs mandats) ──
+  // ── B. Dirigeants communs (personnes physiques de la holding ET des têtes -> leurs mandats) ──
   // Anti-homonymes : date de naissance quand disponible, sinon empreinte géo (racine + A).
   let empreinteAB = new Set();
   let beneficiaires = [];
   try {
-    const r = await fetch(`https://api.pappers.fr/v2/entreprise?api_token=${apiKey}&siren=${encodeURIComponent(racine.siren)}`);
-    requetes++;
-    const e = r.ok ? await r.json().catch(() => null) : null;
-    if (e && e.siege && e.siege.code_postal) racine.code_postal = e.siege.code_postal; // empreinte géo (B, C, D)
-    beneficiaires = (e && Array.isArray(e.beneficiaires_effectifs)) ? e.beneficiaires_effectifs : [];
+    const fiches = [ficheRacine];
+    for (const t of tetes) {
+      if (requetes >= 38) break;
+      try {
+        const rt = await fetch(`https://api.pappers.fr/v2/entreprise?api_token=${apiKey}&siren=${encodeURIComponent(t.siren)}`);
+        requetes++;
+        const et = rt.ok ? await rt.json().catch(() => null) : null;
+        if (et) fiches.push(et);
+      } catch (_) {}
+    }
+    beneficiaires = fiches.flatMap(f => (f && Array.isArray(f.beneficiaires_effectifs)) ? f.beneficiaires_effectifs : []);
     empreinteAB = new Set([...filiales.values()].map(f => depDeCp(f.code_postal)).filter(Boolean));
     if (racine.code_postal) empreinteAB.add(depDeCp(racine.code_postal));
-    const physiques = ((e && e.representants) || [])
-      .filter(p => !p.personne_morale && (p.nom || p.nom_complet) && !/commissaire|liquidateur/i.test(p.qualite || ''))
+    const vusPhys = new Set();
+    const physiques = fiches.flatMap(f => ((f && f.representants) || []))
+      .filter(p => p && !p.personne_morale && (p.nom || p.nom_complet) && !/commissaire|liquidateur/i.test(p.qualite || ''))
+      .filter(p => { const k = normaliser((p.prenom || '') + ' ' + (p.nom || p.nom_complet || '')); if (vusPhys.has(k)) return false; vusPhys.add(k); return true; })
       .slice(0, 4);
     for (const p of physiques) {
       if (requetes >= 40) break;
@@ -231,7 +269,10 @@ async function arbreGroupe(racine, apiKey, nomUsuel) {
   // concessions/télécom détenues par la holding mais dirigées par des managers salariés).
   // Anti-homonymes : la date de naissance est passée en PARAMÈTRE de recherche quand connue.
   try {
-    const bes = beneficiaires.filter(b => b && !b.personne_morale && b.nom).slice(0, 4);
+    const vusBes = new Set();
+    const bes = beneficiaires.filter(b => b && !b.personne_morale && b.nom)
+      .filter(b => { const k = normaliser((((Array.isArray(b.prenoms) && b.prenoms[0]) || b.prenom || '') + ' ' + b.nom)); if (vusBes.has(k)) return false; vusBes.add(k); return true; })
+      .slice(0, 4);
     for (const be of bes) {
       if (requetes >= 50) break;
       const prenom = String((Array.isArray(be.prenoms) && be.prenoms[0]) || be.prenom || '').split(',')[0].trim();
