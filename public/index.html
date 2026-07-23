@@ -1931,7 +1931,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v263';
+const VERSION='v264';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -7460,7 +7460,16 @@ async function ouvrirListe(id,cibleFiche,termeRecherche){
      // filtrerFiches réécrit #fiches : la 1ère carte affichée EST la 1ère fiche trouvée
      setTimeout(()=>{
       const cible=document.querySelector('#fiches .fiche');
-      if(cible){cible.scrollIntoView({behavior:'smooth',block:'center'});cible.style.transition='box-shadow .4s';cible.style.boxShadow='0 0 0 3px var(--accent)';setTimeout(()=>cible.style.boxShadow='',2800);toast(`🔎 Fiche(s) trouvée(s) pour « ${termeRecherche} »`);}
+      if(cible){
+       // La fiche trouvée s'OUVRE directement (détail déplié) — l'id de la carte porte l'index REAL
+       const idxT=parseInt((cible.id||'').replace('fr',''),10);
+       if(!isNaN(idxT)&&REAL[idxT]&&!REAL[idxT]._open)toggleFiche(idxT);
+       setTimeout(()=>{
+        const el=(!isNaN(idxT)&&document.getElementById('fr'+idxT))||cible;
+        el.scrollIntoView({behavior:'smooth',block:'start'});el.style.transition='box-shadow .4s';el.style.boxShadow='0 0 0 3px var(--accent)';setTimeout(()=>el.style.boxShadow='',2800);
+       },250);
+       toast(`🔎 Fiche(s) trouvée(s) pour « ${termeRecherche} »`);
+      }
       else{toast(`Aucune fiche pour « ${termeRecherche} » dans cette liste`);}
      },400);
     }
