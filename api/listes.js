@@ -203,31 +203,24 @@ export default async function handler(req, res) {
       // #3 Visibilité par rôle : un 'sdr' ne voit QUE ses listes + la liste Hot Leads auto ; admin/superadmin voient tout.
       const toutVoir = ['admin', 'superadmin'].includes(user.role);
       const moi = user.nom;
-      let rows;
-      if (recherche) {
-        const like = '%' + recherche + '%';
-        // Recherche par numéro : on compare les chiffres du terme au JSON débarrassé de ses espaces/ponctuation
-        const digits = recherche.replace(/[^0-9]/g, '');
-        const estNum = digits.length >= 4 && /^[0-9\s.()+\-]+$/.test(recherche);
-        const likeDigits = '%' + digits + '%';
-        rows = toutVoir
-          ? await sql`SELECT id, nom, sdr, createur, archivee, statut, statut_depuis, stats, total, credits_estimes, criteres, created_at, veille, veille_fin, sequences_auto FROM listes
-                      WHERE (nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like}
-                             OR (${estNum} AND regexp_replace(entreprises::text, '[^0-9]', '', 'g') ILIKE ${likeDigits}))
-                      ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`
-          : await sql`SELECT id, nom, sdr, createur, archivee, statut, statut_depuis, stats, total, credits_estimes, criteres, created_at, veille, veille_fin, sequences_auto FROM listes
-                      WHERE (sdr = ${moi} OR criteres->>'auto' = 'hotleads')
-                        AND (nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like}
-                             OR (${estNum} AND regexp_replace(entreprises::text, '[^0-9]', '', 'g') ILIKE ${likeDigits}))
-                      ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`;
-      } else {
-        rows = toutVoir
-          ? await sql`SELECT id, nom, sdr, createur, archivee, statut, statut_depuis, stats, total, credits_estimes, criteres, created_at, veille, veille_fin, sequences_auto FROM listes
-                      ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`
-          : await sql`SELECT id, nom, sdr, createur, archivee, statut, statut_depuis, stats, total, credits_estimes, criteres, created_at, veille, veille_fin, sequences_auto FROM listes
-                      WHERE (sdr = ${moi} OR criteres->>'auto' = 'hotleads')
-                      ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 50`;
-      }
+      // Filtres Historique : sdr_filtre (admin — vue par SDR/AE) + client (recherche dédiée dans les fiches)
+      const clientQ = String(req.query.client || '').trim();
+      const sdrF = toutVoir ? String(req.query.sdr_filtre || '').trim() : '';
+      const like = '%' + recherche + '%';
+      const likeClient = '%' + clientQ + '%';
+      // Recherche par numéro : on compare les chiffres du terme au JSON débarrassé de ses espaces/ponctuation
+      const digits = recherche.replace(/[^0-9]/g, '');
+      const estNum = digits.length >= 4 && /^[0-9\s.()+\-]+$/.test(recherche);
+      const likeDigits = '%' + digits + '%';
+      // Requête unifiée : chaque filtre est neutralisé par son booléen quand il est vide.
+      // LIMIT 200 (avant : 50 tous statuts confondus → les vieilles archives devenaient introuvables).
+      const rows = await sql`SELECT id, nom, sdr, createur, archivee, statut, statut_depuis, stats, total, credits_estimes, criteres, created_at, veille, veille_fin, sequences_auto FROM listes
+        WHERE (${toutVoir} OR sdr = ${moi} OR criteres->>'auto' = 'hotleads')
+          AND (${recherche === ''} OR nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like}
+               OR (${estNum} AND regexp_replace(entreprises::text, '[^0-9]', '', 'g') ILIKE ${likeDigits}))
+          AND (${clientQ === ''} OR entreprises::text ILIKE ${likeClient})
+          AND (${sdrF === ''} OR sdr = ${sdrF})
+        ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 200`;
       // Récupérer les coûts par liste en une requête (table consommations)
       const ids = rows.map(r => r.id);
       let couts = {};

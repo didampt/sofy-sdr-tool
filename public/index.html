@@ -23,6 +23,7 @@ input,select,textarea{font-family:inherit;font-size:15px}
 a{color:var(--accent)}
 
 .app{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+.app.sb-min{grid-template-columns:0 1fr}.app.sb-min .side{display:none}
 .side{background:var(--ink);color:#fff;padding:28px 20px;display:flex;flex-direction:column;gap:6px;position:sticky;top:0;height:100vh}
 .logo{font-family:'Space Grotesk';font-weight:700;font-size:22px;letter-spacing:-.5px;margin-bottom:4px}
 .logo span{color:#8FA0FF}
@@ -487,14 +488,15 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
 </div>
 <div class="app">
 
+  <button id="sb-toggle" onclick="basculerSidebar()" title="Réduire / agrandir le menu (plein écran pour Ma journée)" style="position:fixed;left:10px;bottom:12px;z-index:60;width:34px;height:34px;border-radius:8px;border:1px solid var(--line);background:var(--card);cursor:pointer;font-size:15px;box-shadow:0 1px 4px rgba(0,0,0,.08)">⇄</button>
   <aside class="side">
     <div class="logo" style="display:flex;align-items:center;gap:9px"><img src="/logo-icon.png" alt="" style="width:28px;height:28px" onerror="this.style.display='none'">Sofy <span>Scrap</span></div>
     <div class="tagline">Listes d'appel SDR<span id="bonjour-sdr" style="display:block;margin-top:6px;color:#E8EAF5;font-size:13px;font-weight:600"></span></div>
+    <button class="nav-btn" data-view="cockpit" onclick="nav('cockpit',this);chargerCockpit()">☀️ Ma journée <span id="taches-badge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:2px"></span></button>
     <button class="nav-btn" data-view="signaux" onclick="ouvrirSignaux(this)">🔥 Signaux</button>
     <button class="nav-btn" data-view="signups" onclick="nav('signups',this);chargerSignups()">🆕 Signups <span id="signups-badge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:2px"></span></button>
     <button class="nav-btn active" data-view="wizard" onclick="nav('wizard',this)">🎯 Nouvelle liste</button>
     <button class="nav-btn" data-view="results" onclick="nav('results',this)">📞 Résultats</button>
-    <button class="nav-btn" data-view="cockpit" onclick="nav('cockpit',this);chargerCockpit()">☀️ Ma journée <span id="taches-badge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:2px"></span></button>
     <button class="nav-btn" data-view="history" onclick="nav('history',this);chargerHistorique()">🗂 Historique</button>
     <button class="nav-btn" id="nav-archives" data-view="archives" onclick="nav('archives',this);chargerArchives()">🗄️ Archives</button>
     <button class="nav-btn" data-view="mapping" onclick="nav('mapping',this);chargerEnvois();chargerConcurrents()">⚙️ Envois & mapping</button>
@@ -822,7 +824,11 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
       <div class="eyebrow">Mémoire des listes</div>
       <h1>Historique</h1>
       <p class="sub">Toutes les listes générées, sauvegardées automatiquement. Rouvre une liste sans consommer de crédits, ou relance-la pour une mise à jour.</p>
-      <input class="field" id="hist-search" placeholder="🔍 Rechercher : nom de liste, SDR, société, contact, email…" style="max-width:480px;margin-bottom:14px" oninput="clearTimeout(window._ht);window._ht=setTimeout(chargerHistorique,300)">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+       <input class="field" id="hist-search" placeholder="🔍 Recherche libre : liste, société, contact, email, n° de tél…" style="flex:1;min-width:220px;max-width:420px" oninput="clearTimeout(window._ht);window._ht=setTimeout(chargerHistorique,300)">
+       <input class="field" id="hist-client" placeholder="🏢 Nom du client / société" style="width:220px" oninput="clearTimeout(window._ht2);window._ht2=setTimeout(chargerHistorique,300)">
+       <select class="field" id="hist-sdr" style="width:170px;display:none" onchange="chargerHistorique()"><option value="">Tous les SDR/AE</option></select>
+      </div>
       <div id="hist-filtres" style="display:flex;gap:8px;margin-bottom:18px"></div>
       <div id="hist-liste"><p style="color:var(--ink-soft)">Chargement…</p></div>
     </section>
@@ -1880,7 +1886,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v255';
+const VERSION='v256';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -1943,6 +1949,9 @@ function demarrerApp(u){
  chargerSdrChips();
  chargerStatut();
  chargerSignupBadge();
+ // Vue par défaut : Ma journée (la file du SDR) + état du menu mémorisé
+ try{if(localStorage.getItem('sb_min')==='1')document.querySelector('.app').classList.add('sb-min');}catch(_){}
+ nav('cockpit');chargerCockpit();
  // Lien direct vers une liste (ex : depuis Slack → ?liste=ID)
  const params=new URLSearchParams(location.search);
  const lid=params.get('liste');
@@ -1984,7 +1993,14 @@ async function ouvrirSignaux(btn){
   else{ toast('Aucune liste Hot Leads pour le moment'); }
  }catch(e){ toast('Erreur : '+e.message); }
 }
+function basculerSidebar(){
+ const app=document.querySelector('.app');
+ app.classList.toggle('sb-min');
+ try{localStorage.setItem('sb_min',app.classList.contains('sb-min')?'1':'0');}catch(_){}
+}
+let CK_TIMER=null;
 function nav(v,btn){
+ if(v!=='cockpit'&&CK_TIMER){clearInterval(CK_TIMER);CK_TIMER=null;}
  document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
  document.getElementById('view-'+v).classList.add('on');
  document.querySelectorAll('.nav-btn').forEach(x=>x.classList.remove('active'));
@@ -6327,6 +6343,9 @@ async function chargerCockpit(){
   const bd=document.getElementById('taches-badge');
   if(bd){const nR=(d.rappels&&d.rappels.retard||[]).length;bd.textContent=nR;bd.style.display=nR?'inline-block':'none';}
   rendreCockpit(sdrVoulu||d.sdr);
+  // Tuiles Ringover : rafraîchissement auto toutes les 5 min tant que l'onglet est affiché
+  if(CK_TIMER)clearInterval(CK_TIMER);
+  CK_TIMER=setInterval(()=>{if(!document.getElementById('view-cockpit').classList.contains('on'))return;CK_APPELS_CACHE=null;ckChargerAppels((document.getElementById('ck-sdr')||{}).value||(CK&&CK.sdr));},300000);
  }catch(e){zone.innerHTML='<p style="color:var(--ink-soft)">Erreur : '+e.message+'</p>';}
 }
 let CK_ITEMS={};
@@ -6697,11 +6716,19 @@ function setHistStatut(s){HIST_STATUT=s;chargerHistorique();}
 async function chargerHistorique(){
  const zone=document.getElementById('hist-liste');
  const q=document.getElementById('hist-search').value.trim();
+ const cl=(document.getElementById('hist-client')||{value:''}).value.trim();
+ const selS=document.getElementById('hist-sdr');
+ const sf=selS?selS.value:'';
+ // Filtre SDR/AE : visible et rempli pour admin/superadmin (une seule fois)
+ if(selS&&state.user&&['admin','superadmin'].includes(state.user.role)){
+  selS.style.display='';
+  if(selS.options.length<=1){try{const rs=await api('/api/sdrs');const ds=await rs.json();(ds.sdrs||[]).filter(x=>x.actif).forEach(x=>{const o=document.createElement('option');o.value=x.nom;o.textContent=x.nom+(x.role==='ae'?' (AE)':'');selS.appendChild(o);});}catch(_){}}
+ }
  // Affiche l'onglet Archives pour admin/superadmin
  const na=document.getElementById('nav-archives');
  if(na)na.style.display='';  // Archives visible pour tous (chacun voit SES listes archivées)
  try{
-  const r=await api('/api/listes?archivees=1'+(q?'&q='+encodeURIComponent(q):''));
+  const r=await api('/api/listes?archivees=1'+(q?'&q='+encodeURIComponent(q):'')+(cl?'&client='+encodeURIComponent(cl):'')+(sf?'&sdr_filtre='+encodeURIComponent(sf):''));
   const d=await r.json();
   if(d.erreur){zone.innerHTML='<p style="color:var(--ink-soft)">'+d.erreur+'</p>';return;}
   const toutes=d.listes||[];
@@ -6712,8 +6739,11 @@ async function chargerHistorique(){
   const fz=document.getElementById('hist-filtres');
   if(fz)fz.innerHTML=[['active','En cours',nb.active],['nurturing','Nurturing',nb.nurturing],['archivee','Archivées',nb.archivee]]
    .map(function(x){var sel=HIST_STATUT===x[0];return '<button onclick="setHistStatut(\''+x[0]+'\')" style="font-size:13px;font-weight:600;padding:7px 16px;border-radius:8px;cursor:pointer;border:1px solid '+(sel?'var(--ink)':'var(--line)')+';background:'+(sel?'var(--ink)':'var(--card)')+';color:'+(sel?'#fff':'var(--ink-soft)')+'">'+x[1]+'<span style="opacity:.65;font-weight:500"> · '+(x[2]||0)+'</span></button>';}).join('');
-  const listes=toutes.filter(l=>statutDe(l)===HIST_STATUT);
-  if(!listes.length){zone.innerHTML='<p style="color:var(--ink-soft)">Aucune liste '+({active:'en cours',nurturing:'en nurturing',archivee:'archivée'})[HIST_STATUT]+(q?' pour « '+q+' »':'')+'.</p>';return;}
+  // En mode recherche, on montre TOUS les statuts (fix : une liste archivée/nurturing trouvée restait invisible)
+  const enRecherche=!!(q||cl);
+  const listes=enRecherche?toutes:toutes.filter(l=>statutDe(l)===HIST_STATUT);
+  if(!listes.length){zone.innerHTML='<p style="color:var(--ink-soft)">Aucune liste '+(enRecherche?'trouvée':({active:'en cours',nurturing:'en nurturing',archivee:'archivée'})[HIST_STATUT])+((q||cl)?' pour « '+(q||cl)+' »':'')+'.</p>';return;}
+  if(enRecherche&&fz)fz.innerHTML='<span style="font-size:12.5px;color:var(--ink-soft)">🔍 Résultats sur tous les statuts (en cours, nurturing, archivées) — vider la recherche pour retrouver les onglets</span>';
   // Hot Leads (auto) toujours en tête (sécurité front en plus du tri serveur)
   listes.sort((a,b)=>{const aa=((a.criteres||{}).auto==='hotleads')?1:0,bb=((b.criteres||{}).auto==='hotleads')?1:0;if(aa!==bb)return bb-aa;return new Date(b.created_at)-new Date(a.created_at);});
 	  zone.innerHTML=listes.map(l=>rendreLigneListe(l,'hist-search')).join('');
