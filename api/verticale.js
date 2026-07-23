@@ -442,7 +442,7 @@ async function resoudreHolding(nom, siren, apiKey, dep) {
   // Ville/CP systématiques sur le top des candidats (cas « Groupe Citadelle » : 20+ homonymes,
   // chips sans ville = choix aveugle ; le vrai groupe était au Lamentin 972). 1 crédit /entreprise
   // par candidat sans ville, plafonné à 8 — uniquement à la résolution, pas à chaque estimation.
-  const aEnrichir = candidats.slice(0, 8).filter(c => !c.ville);
+  const aEnrichir = candidats.slice(0, dep ? 16 : 8).filter(c => !c.ville);
   for (const c of aEnrichir) {
     try {
       probes++;
@@ -457,17 +457,19 @@ async function resoudreHolding(nom, siren, apiKey, dep) {
     } catch (_) {}
   }
 
-  // Indice département (optionnel, décisif pour les groupes DOM) : gros bonus aux candidats du bon dép.
+  // Indice département (optionnel, décisif pour les groupes DOM) : le SDR nous DIT où est la
+  // tête -> les candidats du bon département passent devant tout le reste, mandats compris
+  // (sinon un homonyme métropole à 5 mandats écrase le vrai groupe, cas Citadelle 972).
   if (dep) {
     const d3 = String(dep).replace(/\D/g, '');
     for (const c of candidats) {
       const cp = String(c.code_postal || '');
-      if (d3 && cp && cp.startsWith(d3)) c._score += 4;
+      if (d3 && cp && cp.startsWith(d3)) { c._dep = 1; c._score += 4; }
     }
   }
 
-  // Tri final : mandats détenus (signal registre) > score de nom (+ bonus département) > taille (CA)
-  candidats.sort((a, b) => (b.mandats || 0) - (a.mandats || 0) || b._score - a._score || (b.ca || 0) - (a.ca || 0));
+  // Tri final : département indiqué > mandats détenus (signal registre) > score de nom > taille (CA)
+  candidats.sort((a, b) => (b._dep || 0) - (a._dep || 0) || (b.mandats || 0) - (a.mandats || 0) || b._score - a._score || (b.ca || 0) - (a.ca || 0));
   return { holding: candidats[0] || null, candidats, acronyme, probes };
 }
 
@@ -736,6 +738,36 @@ export default async function handler(req, res) {
         } catch (e) { out[champ || 'base'] = { erreur: e.message }; }
       }
       return res.status(200).json(out);
+    }
+    // ?debug=1&endpoint=arbre&siren=… -> diagnostic complet des 4 stratégies de l'arbre du groupe :
+    // représentants et bénéficiaires effectifs de la racine (matière des stratégies B et D),
+    // mandats trouvés au nom de la holding (stratégie A), puis l'arbre réellement construit.
+    if (req.query.endpoint === 'arbre') {
+      const sirenA = String(req.query.siren || '').replace(/\s/g, '');
+      if (!sirenA) return res.status(400).json({ erreur: 'siren requis' });
+      const rE = await fetch(`https://api.pappers.fr/v2/entreprise?api_token=${apiKey}&siren=${sirenA}`);
+      const e = rE.ok ? await rE.json().catch(() => null) : null;
+      if (!e || !e.siren) return res.status(404).json({ erreur: 'SIREN introuvable sur Pappers' });
+      const nomA = String(req.query.nom || e.nom_entreprise || e.denomination || '');
+      const rD = await pageRechercheDirigeants(motsRequete(nomA), 1, apiKey);
+      const rsD = (rD.data && rD.data.resultats) || [];
+      const pmMemeSiren = rsD.filter(r => r && r.personne_morale === true && String(r.siren || '').replace(/\s/g, '') === sirenA);
+      const racine = { siren: sirenA, nom: nomA, code_postal: (e.siege && e.siege.code_postal) || '' };
+      const { filiales, requetes } = await arbreGroupe(racine, apiKey, nomA);
+      const repartition = {};
+      for (const f of filiales) repartition[f.lien || 'mandat'] = (repartition[f.lien || 'mandat'] || 0) + 1;
+      return res.status(200).json({
+        racine: { siren: sirenA, nom: nomA, ville: (e.siege && e.siege.ville) || '', cp: racine.code_postal },
+        cles_entreprise: Object.keys(e),
+        representants: (e.representants || []).map(p => ({ pm: !!p.personne_morale, nom: p.nom_complet || ((p.prenom || '') + ' ' + (p.nom || '')).trim(), qualite: p.qualite || null, naissance: p.date_de_naissance_formate || p.date_de_naissance || null, actuel: p.actuel !== false })),
+        beneficiaires_effectifs: (Array.isArray(e.beneficiaires_effectifs) ? e.beneficiaires_effectifs : []).map(b => ({ pm: !!b.personne_morale, nom: (((Array.isArray(b.prenoms) && b.prenoms[0]) || b.prenom || '') + ' ' + (b.nom || '')).trim(), naissance: dateNaissanceParam(b), pct: b.pourcentage_parts || b.pourcentage_parts_directes || null })),
+        strategie_A: {
+          requete: motsRequete(nomA), statut: rD.status, resultats_page1: rsD.length, total: (rD.data && rD.data.total) || null,
+          dirigeants_pm_meme_siren: pmMemeSiren.length,
+          mandats_apercu: pmMemeSiren.flatMap(r => (r.entreprises || []).slice(0, 8).map(x => ({ nom: x.nom_entreprise || x.denomination, actuel: x.dirigeant_actuel })))
+        },
+        arbre: { total: filiales.length, requetes, repartition, apercu: filiales.slice(0, 25).map(f => ({ nom: f.nom, siren: f.siren, ville: f.ville, lien: f.lien, via: f.via, cessee: !!f.cessee })) }
+      });
     }
     // ?debug=1&endpoint=beneficiaires&q=Prénom Nom[&naissance=DD-MM-YYYY] -> recherche-beneficiaires brut
     if (req.query.endpoint === 'beneficiaires') {
