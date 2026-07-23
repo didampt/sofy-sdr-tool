@@ -868,6 +868,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
        <input class="field" id="hist-search" placeholder="🔍 Recherche libre : liste, société, contact, email, n° de tél…" style="flex:1;min-width:220px;max-width:420px" oninput="clearTimeout(window._ht);window._ht=setTimeout(chargerHistorique,300)">
        <input class="field" id="hist-client" placeholder="🏢 Nom du client / société" style="width:220px" oninput="clearTimeout(window._ht2);window._ht2=setTimeout(chargerHistorique,300)">
        <select class="field" id="hist-sdr" style="width:170px;display:none" onchange="chargerHistorique()"><option value="">Tous les SDR/AE</option></select>
+       <button class="act act-export" onclick="reinitFiltresHist()" title="Vider la recherche, le client et le filtre SDR">↺ Réinitialiser</button>
       </div>
       <div id="hist-filtres" style="display:flex;gap:8px;margin-bottom:18px"></div>
       <div id="hist-liste"><p style="color:var(--ink-soft)">Chargement…</p></div>
@@ -1926,7 +1927,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v259';
+const VERSION='v260';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -6312,6 +6313,13 @@ async function supprSdr(id,nom){
 }
 
 /* ───────── HISTORIQUE DES LISTES ───────── */
+// Terme à cibler à l'ouverture d'une liste depuis l'Historique : recherche libre OU champ « Nom du client »
+// (un contact peut être dans plusieurs listes : chaque carte ouvre SA liste, ciblée sur le terme cherché)
+function histTerme(champ){
+ const a=(document.getElementById(champ)||{value:''}).value.trim();
+ if(a)return a;
+ return (document.getElementById('hist-client')||{value:''}).value.trim();
+}
 function rendreLigneListe(l,champRecherche){
  const date=new Date(l.created_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});
  const cr=l.criteres||{};
@@ -6341,7 +6349,7 @@ function rendreLigneListe(l,champRecherche){
  if(statutListe==='active'&&st&&st.pct_tag>=100&&!auto&&peutArchiver)pills.push(`<span onclick="changerStatutListe(${l.id},'${nomJs}','nurturing')" title="La liste est 100 % trait\u00e9e : la passer en nurturing (s\u00e9quences, rappels et alertes restent actifs)" style="cursor:pointer;font-size:12px;font-weight:600;color:#15803D;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:6px;padding:3px 9px;white-space:nowrap">Termin\u00e9e \u2014 passer en nurturing \u2192</span>`);
  const btn=(label,onclick,cls,titre)=>`<button class="act ${cls||'act-export'}" onclick="${onclick}"${titre?` title="${titre}"`:''}>${label}</button>`;
  const actions=[
-  btn('Ouvrir',`ouvrirListe(${l.id},null,document.getElementById('${champ}').value.trim())`,'act-call','Rouvrir la liste (gratuit)'),
+  btn('Ouvrir',`ouvrirListe(${l.id},null,histTerme('${champ}'))`,'act-call','Rouvrir la liste (gratuit) — si une recherche est en cours, la fiche trouvée s\u2019ouvre directement'),
   btn('Stats',`toggleStatsListe(${l.id})`,'act-copy','Statistiques d\u00e9taill\u00e9es : traitement, entonnoir Lemlist, activit\u00e9 SDR, co\u00fbts (charg\u00e9es \u00e0 la demande)'),
   btn('Mettre \u00e0 jour',`majListe(${l.id})`),
   btn(l.veille?'Veille : ON':'Veille : OFF',`basculerVeille(${l.id},${l.veille?'false':'true'})`,l.veille?'act-copy':'act-export',l.veille?'Signaux surveill\u00e9s \u2014 cliquer pour arr\u00eater':'Surveiller les signaux (60 j)'),
@@ -7027,6 +7035,12 @@ function majBadgeTaches(taches){
 }
 let HIST_STATUT='active'; // cycle de vie affiché : active | nurturing | archivee
 function setHistStatut(s){HIST_STATUT=s;chargerHistorique();}
+function reinitFiltresHist(){
+ const a=document.getElementById('hist-search');if(a)a.value='';
+ const b=document.getElementById('hist-client');if(b)b.value='';
+ const c=document.getElementById('hist-sdr');if(c)c.value='';
+ chargerHistorique();
+}
 async function chargerHistorique(){
  const zone=document.getElementById('hist-liste');
  const q=document.getElementById('hist-search').value.trim();
