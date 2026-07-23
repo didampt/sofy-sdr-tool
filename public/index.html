@@ -632,7 +632,8 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
           <input class="field" id="vert-nom" placeholder="Ex : BigMat · Groupe Bernard Hayot · Gedimat…" style="width:100%;margin-bottom:12px" autocomplete="off" oninput="VERT_HOLDING=null">
           <div style="display:flex;flex-direction:column;gap:8px">
             <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:13.5px;line-height:1.45"><input type="radio" name="vert-moteur" value="enseigne" checked onchange="majModeVerticale()" style="margin-top:2px"><span><b>🏪 Réseau / franchise à vitrines</b> — balayage Google Maps de tous les points de vente (note, avis, téléphone inclus). Ex : BigMat, Gedimat, Point S.</span></label>
-            <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:13.5px;line-height:1.45"><input type="radio" name="vert-moteur" value="groupe" onchange="majModeVerticale()" style="margin-top:2px"><span><b>🏢 Groupe / holding multi-enseignes</b> — l'arbre des filiales au registre (Pappers) : dirigeants, CA, effectif. Ex : Groupe Bernard Hayot.</span></label>
+            <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:13.5px;line-height:1.45"><input type="radio" name="vert-moteur" value="groupe" onchange="majModeVerticale()" style="margin-top:2px"><span><b>🏢 Groupe / holding multi-enseignes</b> — l'arbre des filiales au registre (Pappers) : dirigeants, CA, effectif. Ex : Groupe Bernard Hayot. <i>Astuce : tape directement le SIREN (9 chiffres) de la holding si tu le connais.</i></span></label>
+    <div id="vert-dep-box" style="display:none;margin-top:8px"><input class="field" id="vert-dep" placeholder="Département de la tête de groupe (optionnel, ex : 972)" style="max-width:340px" title="Départage les groupes homonymes : les candidats de ce département passent en tête"></div>
           </div>
           <div id="vert-perimetre-box" style="margin-top:12px"><label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">Périmètre du balayage</label>
             <select class="field" id="vert-perimetre" style="width:100%" onchange="var b=document.getElementById('vert-estim');if(b)b.style.display='none'"><option value="france">🇫🇷 France entière (101 départements — plusieurs minutes)</option><option value="dom">🌴 DOM uniquement (971, 972, 973, 974, 976)</option><option value="metropole">Métropole uniquement</option></select>
@@ -728,6 +729,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
         <div class="naf-results" id="naf-results"></div>
         <div class="tags" id="naf-tags"></div>
         <p class="hint">Recherche par mot-clé → codes NAF officiels (via API Pappers). Plusieurs secteurs possibles.</p>
+        <p class="hint" style="margin-top:6px">🏢 Tu cherches <b>une entreprise, un groupe ou une holding précise</b> (ex : Groupe Citadelle, GBH) ? Passe par <a href="#" onclick="event.preventDefault();resetWizard();choisirMode('verticale');document.querySelector('input[name=\'vert-moteur\'][value=\'groupe\']').checked=true;majModeVerticale()" style="font-weight:700">la Verticale « groupe / holding »</a> — elle reconstruit l'arbre des sociétés rattachées.</p>
       </div>
 
       <div class="qcard" data-q="1" style="display:none">
@@ -1927,7 +1929,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v261';
+const VERSION='v262';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2615,6 +2617,8 @@ function majModeVerticale(){
  var m=vertMoteur();
  var per=document.getElementById('vert-perimetre-box');
  if(per)per.style.display=(m==='enseigne')?'block':'none';
+ var dp=document.getElementById('vert-dep-box');
+ if(dp)dp.style.display=(m==='groupe')?'block':'none';
  VERT_HOLDING=null;
  var box=document.getElementById('vert-estim');if(box)box.style.display='none';
 }
@@ -2629,7 +2633,12 @@ async function estimerVerticale(){
  try{
   if(m==='groupe'){
    var body={moteur:'groupe',mode:'estimer'};
-   if(VERT_HOLDING&&VERT_HOLDING.siren)body.siren=VERT_HOLDING.siren;else body.nom=nom;
+   var sirenSaisi=nom.replace(/\s/g,'');
+   if(VERT_HOLDING&&VERT_HOLDING.siren)body.siren=VERT_HOLDING.siren;
+   else if(/^\d{9}$/.test(sirenSaisi))body.siren=sirenSaisi; // SIREN direct = zéro ambiguïté (holdings homonymes)
+   else body.nom=nom;
+   var depV=(document.getElementById('vert-dep')||{value:''}).value.trim();
+   if(depV)body.dep=depV;
    const r=await api('/api/verticale',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
    const d=await r.json();
    if(d.erreur){

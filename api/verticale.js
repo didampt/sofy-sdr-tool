@@ -304,7 +304,7 @@ async function chercherEntreprises(q, apiKey) {
 // La recherche Pappers exige TOUS les mots -> « Groupe Barbotteau » ne matche aucune société.
 // On essaie donc : nom complet, puis nom SANS les mots génériques (« Barbotteau »), puis acronyme
 // (« Groupe Bernard Hayot » -> « GBH »), et on fusionne les candidats avant de trier.
-async function resoudreHolding(nom, siren, apiKey) {
+async function resoudreHolding(nom, siren, apiKey, dep) {
   if (siren) {
     const r = await fetch(`https://api.pappers.fr/v2/entreprise?api_token=${apiKey}&siren=${encodeURIComponent(siren)}`);
     const e = r.ok ? await r.json().catch(() => null) : null;
@@ -429,7 +429,37 @@ async function resoudreHolding(nom, siren, apiKey) {
     c.mandats = Math.max(c.mandats || 0, filialesDepuisResultats(rs, c).filter(f => !f.cessee).length);
   }
 
-  // Tri final : mandats détenus (signal registre) > score de nom > taille (CA)
+  // Tri provisoire pour choisir qui enrichir : mandats > score > CA
+  candidats.sort((a, b) => (b.mandats || 0) - (a.mandats || 0) || b._score - a._score || (b.ca || 0) - (a.ca || 0));
+
+  // Ville/CP systématiques sur le top des candidats (cas « Groupe Citadelle » : 20+ homonymes,
+  // chips sans ville = choix aveugle ; le vrai groupe était au Lamentin 972). 1 crédit /entreprise
+  // par candidat sans ville, plafonné à 8 — uniquement à la résolution, pas à chaque estimation.
+  const aEnrichir = candidats.slice(0, 8).filter(c => !c.ville);
+  for (const c of aEnrichir) {
+    try {
+      probes++;
+      const r = await fetch(`https://api.pappers.fr/v2/entreprise?api_token=${apiKey}&siren=${encodeURIComponent(c.siren)}`);
+      const e = r.ok ? await r.json().catch(() => null) : null;
+      if (e && e.siege) {
+        c.ville = e.siege.ville || '';
+        c.code_postal = e.siege.code_postal || '';
+        if (!c.naf) { c.naf = e.code_naf || null; c.activite = e.libelle_code_naf || null; }
+        if (!c.ca && e.finances && e.finances[0]) c.ca = e.finances[0].chiffre_affaires || 0;
+      }
+    } catch (_) {}
+  }
+
+  // Indice département (optionnel, décisif pour les groupes DOM) : gros bonus aux candidats du bon dép.
+  if (dep) {
+    const d3 = String(dep).replace(/\D/g, '');
+    for (const c of candidats) {
+      const cp = String(c.code_postal || '');
+      if (d3 && cp && cp.startsWith(d3)) c._score += 4;
+    }
+  }
+
+  // Tri final : mandats détenus (signal registre) > score de nom (+ bonus département) > taille (CA)
   candidats.sort((a, b) => (b.mandats || 0) - (a.mandats || 0) || b._score - a._score || (b.ca || 0) - (a.ca || 0));
   return { holding: candidats[0] || null, candidats, acronyme, probes };
 }
@@ -496,7 +526,7 @@ export default async function handler(req, res) {
     const q = String(req.query.q || '');
     // ?debug=1&endpoint=resolution&q=groupe loret -> toute la résolution, candidats détaillés
     if (req.query.endpoint === 'resolution') {
-      const r = await resoudreHolding(q, '', apiKey);
+      const r = await resoudreHolding(q, '', apiKey, (req.query || {}).dep || '');
       return res.status(200).json({ holding: r.holding, acronyme: r.acronyme, probes: r.probes, candidats: r.candidats });
     }
     // ?debug=1&endpoint=entreprise&siren=… -> teste les champs_supplementaires Pappers
@@ -567,7 +597,7 @@ export default async function handler(req, res) {
       const siren = String(b.siren || '').replace(/\s/g, '');
       if (!nom && !siren) return res.status(400).json({ erreur: 'nom (ou siren) du groupe requis' });
 
-      const { holding, candidats, probes = 0 } = await resoudreHolding(nom, siren, apiKey);
+      const { holding, candidats, probes = 0 } = await resoudreHolding(nom, siren, apiKey, b.dep || '');
       if (!holding) return res.status(404).json({ erreur: `Groupe introuvable sur Pappers : « ${nom || siren} »`, candidats });
 
       const { filiales, requetes } = await arbreGroupe(holding, apiKey, nom);
