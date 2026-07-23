@@ -238,6 +238,10 @@ export default async function handler(req, res) {
           AND (${clientQ === ''} OR EXISTS (
                  SELECT 1 FROM jsonb_array_elements(entreprises) AS fe
                  WHERE fe->>'nom' ILIKE ${likeClient} OR fe->>'enseigne' ILIKE ${likeClient} OR fe->>'enseigne_ia' ILIKE ${likeClient}
+                    OR EXISTS (
+                      SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(fe->'contacts') = 'array' THEN fe->'contacts' ELSE '[]'::jsonb END) AS fc
+                      WHERE (COALESCE(fc->>'prenom','') || ' ' || COALESCE(fc->>'nom','')) ILIKE ${likeClient}
+                    )
                ))
           AND (${sdrF === ''} OR sdr = ${sdrF})
         ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 200`
