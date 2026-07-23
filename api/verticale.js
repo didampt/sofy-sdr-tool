@@ -764,6 +764,11 @@ export default async function handler(req, res) {
         strategie_A: {
           requete: motsRequete(nomA), statut: rD.status, resultats_page1: rsD.length, total: (rD.data && rD.data.total) || null,
           dirigeants_pm_meme_siren: pmMemeSiren.length,
+          filiales_extraites: filialesDepuisResultats(rsD, { siren: sirenA }).length,
+          record_brut: pmMemeSiren.map(r => ({
+            qualite: r.qualite || null, qualites: r.qualites || null, actuel: r.actuel,
+            entreprises_3_premieres: (r.entreprises || []).slice(0, 3)
+          })),
           mandats_apercu: pmMemeSiren.flatMap(r => (r.entreprises || []).slice(0, 8).map(x => ({ nom: x.nom_entreprise || x.denomination, actuel: x.dirigeant_actuel })))
         },
         arbre: { total: filiales.length, requetes, repartition, apercu: filiales.slice(0, 25).map(f => ({ nom: f.nom, siren: f.siren, ville: f.ville, lien: f.lien, via: f.via, cessee: !!f.cessee })) }
