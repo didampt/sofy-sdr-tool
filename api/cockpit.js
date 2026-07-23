@@ -15,6 +15,19 @@ const ALERTE = ['warmed', 'emailsOpened', 'emailsClicked', 'emailsReplied', 'ema
 
 const estMobileFr = t => /^(?:\+33|0033|0)\s*[67]/.test(String(t || '').replace(/[\s.\-()]/g, ''));
 
+// ── Journée en HEURE DE PARIS ── le serveur tourne en UTC : à 1 h du matin à Paris on est
+// encore « hier » en UTC, et le cockpit affichait les stats de la veille sous la date du jour.
+function offsetParisMs() {
+  const d = new Date();
+  return new Date(d.toLocaleString('en-US', { timeZone: 'Europe/Paris' })) - new Date(d.toLocaleString('en-US', { timeZone: 'UTC' }));
+}
+function jourParis() { // 'YYYY-MM-DD' du jour courant à Paris
+  return new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+function debutJourParis() { // minuit Paris, exprimé en instant UTC
+  return new Date(new Date(jourParis() + 'T00:00:00Z').getTime() - offsetParisMs());
+}
+
 function telDe(e, c) {
   const tels = [c && c.enrich && c.enrich.telephone, e.enrich && e.enrich.telephone, e.gmb && e.gmb.telephone].filter(Boolean);
   return tels.find(estMobileFr) || tels[0] || null;
@@ -43,7 +56,7 @@ export default async function handler(req, res) {
   const sdr = (admin && req.query.sdr) ? String(req.query.sdr) : user.nom;
 
   try {
-    const debutJour = new Date(); debutJour.setHours(0, 0, 0, 0);
+    const debutJour = debutJourParis();
 
     // ── Mode différé ?appels=1 : stats d'appels Ringover du jour pour ce SDR (chargées après le rendu) ──
     if (req.query.appels === '1') {
@@ -91,7 +104,7 @@ export default async function handler(req, res) {
     try {
       const [m] = await sql`SELECT ROUND(AVG(appels))::int AS appels, ROUND(AVG(decroches))::int AS decroches,
         ROUND(AVG(statuees))::int AS statuees
-        FROM journees_sdr WHERE sdr = ${sdr} AND jour < CURRENT_DATE AND jour >= CURRENT_DATE - 7`;
+        FROM journees_sdr WHERE sdr = ${sdr} AND jour < ${jourParis()} AND jour >= (${jourParis()}::date - 7)`;
       if (m && m.appels != null) moy7 = m;
     } catch (_) {}
 
@@ -245,7 +258,7 @@ export default async function handler(req, res) {
     }
 
     // ── 3. Rappels dus (en retard + aujourd'hui) ──
-    const finJour = new Date(); finJour.setHours(23, 59, 59, 999);
+    const finJour = new Date(debutJour.getTime() + 24 * 3600 * 1000 - 1);
     const tks = await sql`SELECT id, fiche_cle, entreprise_nom, contact_nom, description, date_rappel, liste_id
       FROM taches WHERE sdr = ${sdr} AND faite = FALSE AND date_rappel IS NOT NULL AND date_rappel <= ${finJour.toISOString()}
       ORDER BY date_rappel ASC LIMIT 60`;
@@ -269,7 +282,7 @@ export default async function handler(req, res) {
 
     // ── 4. Bilan du jour + RDV du mois (vs objectif) ──
     let rdvJour = 0, rdvMois = 0;
-    const debutMois = new Date(); debutMois.setDate(1); debutMois.setHours(0, 0, 0, 0);
+    const debutMois = new Date(new Date(jourParis().slice(0, 7) + '-01T00:00:00Z').getTime() - offsetParisMs());
     try {
       const [r1] = await sql`SELECT
         COUNT(*) FILTER (WHERE ts >= ${debutJour.toISOString()})::int AS jour,
