@@ -633,7 +633,9 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
           <div style="display:flex;flex-direction:column;gap:8px">
             <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:13.5px;line-height:1.45"><input type="radio" name="vert-moteur" value="enseigne" checked onchange="majModeVerticale()" style="margin-top:2px"><span><b>🏪 Réseau / franchise à vitrines</b> — balayage Google Maps de tous les points de vente (note, avis, téléphone inclus). Ex : BigMat, Gedimat, Point S.</span></label>
             <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:13.5px;line-height:1.45"><input type="radio" name="vert-moteur" value="groupe" onchange="majModeVerticale()" style="margin-top:2px"><span><b>🏢 Groupe / holding multi-enseignes</b> — l'arbre des filiales au registre (Pappers) : dirigeants, CA, effectif. Ex : Groupe Bernard Hayot. <i>Astuce : tape directement le SIREN (9 chiffres) de la holding si tu le connais.</i></span></label>
+            <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:13.5px;line-height:1.45"><input type="radio" name="vert-moteur" value="web" onchange="majModeVerticale()" style="margin-top:2px"><span><b>🌐 Annuaire publié sur le site du réseau</b> — colle l'URL de la page « nos adhérents / nos points de vente / nos agences » : lecture de la page, puis SIREN &amp; dirigeants retrouvés via Pappers. Ex : algorel.fr/nos-adherents.</span></label>
     <div id="vert-dep-box" style="display:none;margin-top:8px"><input class="field" id="vert-dep" placeholder="Département de la tête de groupe (optionnel, ex : 972)" style="max-width:340px" title="Départage les groupes homonymes : les candidats de ce département passent en tête"></div>
+    <div id="vert-url-box" style="display:none;margin-top:8px"><input class="field" id="vert-url" placeholder="URL de la page annuaire (ex : https://www.algorel.fr/nos-adherents)" style="width:100%" autocomplete="off" oninput="VERT_WEB=null"><p class="hint" style="margin-top:4px">La pagination (pages 2, 3…) est suivie automatiquement. Estime d'abord : tu verras les sociétés détectées avant de lancer les recherches Pappers.</p></div>
           </div>
           <div id="vert-perimetre-box" style="margin-top:12px"><label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">Périmètre du balayage</label>
             <select class="field" id="vert-perimetre" style="width:100%" onchange="var b=document.getElementById('vert-estim');if(b)b.style.display='none'"><option value="france">🇫🇷 France entière (101 départements — plusieurs minutes)</option><option value="dom">🌴 DOM uniquement (971, 972, 973, 974, 976)</option><option value="metropole">Métropole uniquement</option></select>
@@ -1929,7 +1931,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v262';
+const VERSION='v263';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2606,6 +2608,7 @@ async function creerListeGmb(){
 }
 /* ───────── LISTE VERTICALE (réseau / groupe) ───────── */
 let VERT_HOLDING=null;            // holding retenue après estimation (désambiguïsation)
+let VERT_WEB=null;                // {url, entites} — extraction web réutilisée entre Estimer et Créer
 let CREATION_VERT_EN_COURS=false;
 const VERT_DEPS=(function(){
  var metro=[];for(var i=1;i<=95;i++){if(i===20){metro.push('2A','2B');continue;}metro.push(String(i).padStart(2,'0'));}
@@ -2619,19 +2622,39 @@ function majModeVerticale(){
  if(per)per.style.display=(m==='enseigne')?'block':'none';
  var dp=document.getElementById('vert-dep-box');
  if(dp)dp.style.display=(m==='groupe')?'block':'none';
- VERT_HOLDING=null;
+ var ub=document.getElementById('vert-url-box');
+ if(ub)ub.style.display=(m==='web')?'block':'none';
+ VERT_HOLDING=null;VERT_WEB=null;
  var box=document.getElementById('vert-estim');if(box)box.style.display='none';
 }
 function choisirHoldingVert(siren,nom){VERT_HOLDING={siren:siren,nom:nom};estimerVerticale();}
 async function estimerVerticale(){
  var nom=document.getElementById('vert-nom').value.trim();
- if(nom.length<2){toast('⚠️ Indique le nom du réseau ou du groupe');document.getElementById('vert-nom').focus();return;}
  var m=vertMoteur();
+ if(m!=='web'&&nom.length<2){toast('⚠️ Indique le nom du réseau ou du groupe');document.getElementById('vert-nom').focus();return;}
+ if(m==='web'){
+  var urlV=(document.getElementById('vert-url')||{value:''}).value.trim();
+  if(!/^https?:\/\//i.test(urlV)){toast('⚠️ Colle l\'URL complète (https://…) de la page annuaire');var uf=document.getElementById('vert-url');if(uf)uf.focus();return;}
+ }
  var btn=document.getElementById('btn-estimer-vert');
  if(btn){btn.disabled=true;btn.textContent='⏳ Analyse…';}
  var box=document.getElementById('vert-estim');
  try{
-  if(m==='groupe'){
+  if(m==='web'){
+   var urlW=(document.getElementById('vert-url')||{value:''}).value.trim();
+   const rW=await api('/api/verticale',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({moteur:'web',mode:'estimer',url:urlW})});
+   const dW=await rW.json();
+   if(dW.erreur){toast('Erreur : '+(dW.detail||dW.erreur));}
+   else{
+    VERT_WEB={url:urlW,entites:dW.entites||[]};
+    var echW=(dW.echantillon||[]).map(function(e){return '<div style="padding:5px 0;border-top:1px solid var(--line)"><b>'+escapeHtml(e.nom)+'</b>'+(e.ville?' <span style="color:var(--ink-soft)">· '+escapeHtml(e.ville)+(e.cp?' ('+escapeHtml(e.cp)+')':'')+'</span>':'')+'</div>';}).join('');
+    box.innerHTML='<b>'+dW.total+'</b> société'+(dW.total>1?'s':'')+' détectée'+(dW.total>1?'s':'')+' sur '+dW.pages_lues+' page'+(dW.pages_lues>1?'s':'')+' lue'+(dW.pages_lues>1?'s':'')+'.'
+     +(echW?'<div style="margin-top:8px;font-weight:700">Échantillon :</div>'+echW:'')
+     +(dW.total?'<div style="color:var(--ink-soft);margin-top:8px;font-size:12.5px">À la création : SIREN + dirigeant recherchés sur Pappers pour chaque société (les introuvables gardent une fiche nom + ville).</div>':'');
+    box.style.display='block';
+    if(!dW.total)toast('0 société détectée — la page est peut-être générée en JavaScript (essaye une autre page du site)');
+   }
+  }else if(m==='groupe'){
    var body={moteur:'groupe',mode:'estimer'};
    var sirenSaisi=nom.replace(/\s/g,'');
    if(VERT_HOLDING&&VERT_HOLDING.siren)body.siren=VERT_HOLDING.siren;
@@ -2691,7 +2714,20 @@ async function creerListeVerticale(){
  if(btn){btn.disabled=true;btn.textContent='⏳ Création…';}
  try{
   var fiches=[],criteres,doublons=0;
-  if(m==='groupe'){
+  if(m==='web'){
+   var urlC=(document.getElementById('vert-url')||{value:''}).value.trim();
+   if(!/^https?:\/\//i.test(urlC)){toast('⚠️ Colle l\'URL complète (https://…) de la page annuaire');fin();return;}
+   var bodyW={moteur:'web',mode:'creer',url:urlC,reseau:nomCible,nb:300};
+   if(VERT_WEB&&VERT_WEB.url===urlC&&VERT_WEB.entites.length)bodyW.entites=VERT_WEB.entites; // extraction de l'estimation réutilisée
+   if(prog){prog.style.display='block';prog.textContent='⏳ '+(bodyW.entites?bodyW.entites.length+' sociétés : recherche des SIREN et dirigeants (Pappers + Basile)…':'Lecture de l\'annuaire, puis SIREN et dirigeants (Claude + Pappers + Basile)…');}
+   const rw=await api('/api/verticale',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(bodyW)});
+   const dw=await rw.json();
+   if(dw.erreur){toast('Erreur : '+(dw.detail||dw.erreur));fin();if(prog)prog.style.display='none';return;}
+   fiches=dw.entreprises||[];
+   doublons=dw.doublons_inter_listes||0;
+   if(dw.non_resolues)toast('ℹ️ '+dw.non_resolues+' société'+(dw.non_resolues>1?'s':'')+' sans SIREN Pappers — fiche'+(dw.non_resolues>1?'s':'')+' créée'+(dw.non_resolues>1?'s':'')+' quand même (nom + ville)');
+   criteres={verticale:true,moteur:'web',cible:nomCible,url:urlC,naf:[],pays:[]};
+  }else if(m==='groupe'){
    var body={moteur:'groupe',mode:'creer',nb:300};
    if(VERT_HOLDING&&VERT_HOLDING.siren)body.siren=VERT_HOLDING.siren;else body.nom=nomCible;
    if(prog){prog.style.display='block';prog.textContent='⏳ Arbre du groupe + détail des filiales (Pappers + Basile)…';}

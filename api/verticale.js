@@ -14,6 +14,13 @@
 //     estimer -> échantillon sur 8 départements représentatifs + extrapolation France
 //     creer   -> { entreprises:[fiches au format liste Google Maps] } (max 10 départements/appel)
 //
+// Moteur WEB (annuaire du site) — ex : Algorel, réseau qui publie ses adhérents en ligne :
+//   lit la page « nos adhérents / points de vente » (+ pagination), Claude extrait les
+//   sociétés, Pappers retrouve SIREN + dirigeants. Non résolues gardées (nom + ville).
+//   POST { moteur:'web', mode:'estimer'|'creer', url, reseau?, entites?, nb? }
+//     estimer -> { total, entites, echantillon } (1 appel Claude, aucune requête Pappers)
+//     creer   -> { entreprises:[fiches], resolues, non_resolues } (entites réutilisées si fournies)
+//
 // GET ?debug=1&q=NOM (superadmin) : réponse brute Pappers recherche-dirigeants (ajustement du mapping)
 
 import { verifierToken, loggerConso, limiteAtteinte, sql } from './db.js';
@@ -464,6 +471,48 @@ async function resoudreHolding(nom, siren, apiKey, dep) {
   return { holding: candidats[0] || null, candidats, acronyme, probes };
 }
 
+// Contacts Basile (mandataires par SIREN) : ajoute les profils LinkedIn (poste, URL, photo
+// si fournie) en plus du dirigeant Pappers — max 3 contacts par fiche, dédoublonnés par nom.
+async function ajouterContactsBasile(entreprises) {
+  let ajoutes = 0;
+  const bkey = process.env.BASILE_API_KEY;
+  const avecSiren = entreprises.filter(e => e.siren);
+  if (!bkey || !avecSiren.length) return 0;
+  try {
+    const parSiren = new Map(avecSiren.map(e => [String(e.siren), e]));
+    const sirens = [...parSiren.keys()];
+    for (let i = 0; i < sirens.length; i += 50) {
+      const part = sirens.slice(i, i + 50);
+      const r = await fetch('https://api.basile.cc/people/find', {
+        method: 'POST', headers: { 'Authorization': bkey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 100, filters: { siren: { include: part }, result_is_current: true } })
+      });
+      const d = await r.json().catch(() => null);
+      for (const lead of ((d && d.leads) || [])) {
+        const x = lead.data || lead || {};
+        const f = parSiren.get(String(x.siren || ''));
+        if (!f) continue;
+        const fonction = x.result_role || x.current_job_title || '';
+        if (/commissaire|liquidateur|administrateur judiciaire/i.test(fonction)) continue;
+        const prenom = x.people_first_name || x.result_first_name || '';
+        const nomC = x.people_last_name || x.result_last_name || '';
+        if (!prenom && !nomC) continue;
+        // Premier contact = le dirigeant Pappers (sinon contactsDe() le perdrait)
+        if (!f.contacts) f.contacts = f.dirigeant ? [{ prenom: f.dirigeant.prenom, nom: f.dirigeant.nom, fonction: f.dirigeant.fonction || 'Dirigeant', source: 'pappers', enrich: null }] : [];
+        if (f.contacts.length >= 3) continue;
+        if (f.contacts.some(c => normaliser(c.prenom + ' ' + c.nom) === normaliser(prenom + ' ' + nomC))) continue;
+        const contact = { prenom, nom: nomC, fonction, source: 'basile', enrich: {} };
+        if (x.profile_url) contact.enrich.linkedin = x.profile_url;
+        const photo = x.people_profile_picture || x.profile_picture || x.picture || x.photo_url || null;
+        if (photo) contact.photo = photo;
+        f.contacts.push(contact);
+        ajoutes++;
+      }
+    }
+  } catch (_) {}
+  return ajoutes;
+}
+
 // Déduplication INTER-LISTES : clés déjà extraites dans les listes existantes (une nouvelle
 // extraction « kiabi 50 » une semaine plus tard ramène les 50 SUIVANTES, sans re-payer les mêmes).
 async function clesDejaExtraites() {
@@ -510,6 +559,132 @@ function nomDep(code) { const d = DEPARTEMENTS.find(x => x[0] === code); return 
 // La fiche Google porte-t-elle bien l'enseigne cherchée ? (filtre anti-bruit du Text Search)
 function porteEnseigne(nomPlace, enseigne) {
   return normaliser(nomPlace).includes(normaliser(enseigne));
+}
+
+// ---------- Moteur WEB (annuaire publié sur le site du réseau) ----------
+// Beaucoup de réseaux listent leurs adhérents / points de vente / agences sur leur
+// site (ex : algorel.fr/nos-adherents). On lit la page (+ sa pagination), Claude en
+// extrait les sociétés, puis Pappers retrouve SIREN et dirigeants.
+
+function urlSure(u) {
+  try {
+    const x = new URL(u);
+    if (!/^https?:$/.test(x.protocol)) return false;
+    if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|\[)/.test(x.hostname)) return false;
+    return true;
+  } catch (_) { return false; }
+}
+
+function htmlVersTexte(html) {
+  let h = String(html || '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ');
+  // Les noms des membres sont souvent portés par les logos : on remonte les alt en texte
+  h = h.replace(/<img[^>]*\balt="([^"]{2,80})"[^>]*>/gi, '\n$1\n');
+  h = h.replace(/<[^>]+>/g, '\n')
+    .replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').replace(/&#0?39;|&apos;/g, "'").replace(/&quot;/g, '"')
+    .replace(/&eacute;/gi, 'é').replace(/&egrave;/gi, 'è').replace(/&agrave;/gi, 'à').replace(/&ccedil;/gi, 'ç')
+    .replace(/&#(\d+);/g, (m, c) => { try { return String.fromCodePoint(+c); } catch (_) { return ' '; } });
+  return h.split('\n').map(l => l.trim()).filter(Boolean).join('\n').slice(0, 25000);
+}
+
+async function lirePageWeb(url) {
+  const ctl = new AbortController();
+  const to = setTimeout(() => ctl.abort(), 10000);
+  try {
+    const r = await fetch(url, { signal: ctl.signal, redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SofyScrap/1.0)' } });
+    if (!r.ok || !/text\/html/.test(r.headers.get('content-type') || '')) return null;
+    return (await r.text()).slice(0, 600000);
+  } catch (_) { return null; } finally { clearTimeout(to); }
+}
+
+// Pages suivantes d'un annuaire paginé (liens ?page=N sur le même chemin), max 9 après la première
+function liensPagination(html, urlBase) {
+  const base = new URL(urlBase);
+  const vus = new Set(); const urls = [];
+  for (const m of String(html || '').matchAll(/href="([^"]*[?&]page=\d+[^"]*)"/gi)) {
+    try {
+      const u = new URL(m[1].replace(/&amp;/g, '&'), base);
+      if (u.hostname !== base.hostname || u.pathname !== base.pathname) continue;
+      if (u.href === base.href || vus.has(u.href)) continue;
+      vus.add(u.href); urls.push(u.href);
+    } catch (_) {}
+  }
+  return urls.slice(0, 9);
+}
+
+async function extraireEntitesWeb(url) {
+  const html = await lirePageWeb(url);
+  if (!html) throw new Error('Page illisible (site indisponible, bloqué, ou contenu 100 % JavaScript)');
+  const textes = [htmlVersTexte(html)];
+  for (const u of liensPagination(html, url)) {
+    const h2 = await lirePageWeb(u);
+    if (h2) textes.push(htmlVersTexte(h2));
+  }
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY manquante dans Vercel');
+  const prompt = `Voici le texte de ${textes.length} page(s) du site d'un réseau / groupement, listant ses membres (adhérents, points de vente, agences, magasins…).
+
+Extrais TOUTES les entreprises membres listées. Règles :
+- une entrée par SOCIÉTÉ : si plusieurs points de vente appartiennent visiblement à la même société (même nom, villes différentes), regroupe en UNE entité avec la ville du premier
+- ignore la navigation, le footer, les marques / fournisseurs / partenaires, et les enseignes du réseau lui-même
+- ville et cp (code postal) uniquement s'ils figurent dans le texte, sinon null
+- n'invente RIEN, déduplique
+
+Réponds UNIQUEMENT avec un objet JSON, sans texte autour, sans backticks :
+{"entites":[{"nom":"…","ville":null,"cp":null}]}
+
+${textes.map((t, i) => `--- PAGE ${i + 1} ---\n${t}`).join('\n\n')}`;
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 8000, messages: [{ role: 'user', content: prompt }] })
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error('API Claude : ' + ((data && data.error && data.error.message) || r.status));
+  const brut = ((data.content || []).map(c => c.text || '').join('')).replace(/```json|```/g, '');
+  let parsed = null;
+  try { parsed = JSON.parse(brut.slice(brut.indexOf('{'), brut.lastIndexOf('}') + 1)); } catch (_) {}
+  const vues = new Set();
+  const entites = ((parsed && parsed.entites) || [])
+    .map(e => ({ nom: String(e.nom || '').trim().slice(0, 120), ville: e.ville ? String(e.ville).trim().slice(0, 80) : null, cp: e.cp ? String(e.cp).replace(/\D/g, '').slice(0, 5) : null }))
+    .filter(e => { const k = normaliser(e.nom); if (e.nom.length < 2 || !k || vues.has(k)) return false; vues.add(k); return true; })
+    .slice(0, 300);
+  return { entites, pages_lues: textes.length };
+}
+
+// Retrouve le SIREN d'un membre : /recherche Pappers, d'abord dans son département (si CP connu)
+async function resoudreSirenWeb(ent, apiKey) {
+  const nomN = normaliser(ent.nom);
+  if (!nomN || nomN.length < 3) return { requetes: 0, siren: null };
+  const essais = [];
+  const dep = ent.cp ? depDeCp(ent.cp) : '';
+  if (dep) essais.push(dep);
+  essais.push('');
+  let requetes = 0;
+  for (const d of essais) {
+    const p = new URLSearchParams({ api_token: apiKey, q: ent.nom, par_page: '5', precision: 'standard' });
+    if (d) p.set('departement', d);
+    try {
+      const r = await fetch('https://api.pappers.fr/v2/recherche?' + p.toString());
+      requetes++;
+      if (!r.ok) continue;
+      const data = await r.json();
+      for (const e of (data.resultats || [])) {
+        const cand = normaliser(e.nom_entreprise || e.denomination || '');
+        if (!cand) continue;
+        if (cand === nomN || cand.includes(nomN) || nomN.includes(cand)) {
+          return {
+            requetes, siren: String(e.siren), nom: e.nom_entreprise || ent.nom,
+            naf: e.code_naf || null, activite: e.libelle_code_naf || null,
+            ville: (e.siege && e.siege.ville) || ent.ville || '', code_postal: (e.siege && e.siege.code_postal) || ent.cp || ''
+          };
+        }
+      }
+    } catch (_) { requetes++; }
+  }
+  return { requetes, siren: null };
 }
 
 export default async function handler(req, res) {
@@ -653,44 +828,8 @@ export default async function handler(req, res) {
       }).filter(e => { if (e._cessee || e._proc) { exclues++; return false; } return true; })
         .map(({ _cessee, _proc, ...e }) => e);
 
-      // Contacts Basile (mandataires par SIREN) : ajoute les profils LinkedIn (poste, URL, photo
-      // si fournie) en plus du dirigeant Pappers — max 3 contacts par fiche, dédoublonnés par nom.
       let contactsBasile = 0;
-      if (b.contacts_basile !== false && process.env.BASILE_API_KEY && entreprises.length) {
-        try {
-          const bkey = process.env.BASILE_API_KEY;
-          const parSiren = new Map(entreprises.map(e => [String(e.siren), e]));
-          const sirens = [...parSiren.keys()];
-          for (let i = 0; i < sirens.length; i += 50) {
-            const part = sirens.slice(i, i + 50);
-            const r = await fetch('https://api.basile.cc/people/find', {
-              method: 'POST', headers: { 'Authorization': bkey, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ limit: 100, filters: { siren: { include: part }, result_is_current: true } })
-            });
-            const d = await r.json().catch(() => null);
-            for (const lead of ((d && d.leads) || [])) {
-              const x = lead.data || lead || {};
-              const f = parSiren.get(String(x.siren || ''));
-              if (!f) continue;
-              const fonction = x.result_role || x.current_job_title || '';
-              if (/commissaire|liquidateur|administrateur judiciaire/i.test(fonction)) continue;
-              const prenom = x.people_first_name || x.result_first_name || '';
-              const nomC = x.people_last_name || x.result_last_name || '';
-              if (!prenom && !nomC) continue;
-              // Premier contact = le dirigeant Pappers (sinon contactsDe() le perdrait)
-              if (!f.contacts) f.contacts = f.dirigeant ? [{ prenom: f.dirigeant.prenom, nom: f.dirigeant.nom, fonction: f.dirigeant.fonction || 'Dirigeant', source: 'pappers', enrich: null }] : [];
-              if (f.contacts.length >= 3) continue;
-              if (f.contacts.some(c => normaliser(c.prenom + ' ' + c.nom) === normaliser(prenom + ' ' + nomC))) continue;
-              const contact = { prenom, nom: nomC, fonction, source: 'basile', enrich: {} };
-              if (x.profile_url) contact.enrich.linkedin = x.profile_url;
-              const photo = x.people_profile_picture || x.profile_picture || x.picture || x.photo_url || null;
-              if (photo) contact.photo = photo;
-              f.contacts.push(contact);
-              contactsBasile++;
-            }
-          }
-        } catch (_) {}
-      }
+      if (b.contacts_basile !== false) contactsBasile = await ajouterContactsBasile(entreprises);
 
       await loggerConso(user, 'pappers', requetes + probes + retenues.length, b.liste_id || null);
       return res.status(200).json({
@@ -796,7 +935,92 @@ export default async function handler(req, res) {
       });
     }
 
-    return res.status(400).json({ erreur: "moteur requis : 'groupe' (holding Pappers) ou 'enseigne' (Google Maps)" });
+    // ════════ Moteur WEB (annuaire publié sur le site du réseau) ════════
+    if (b.moteur === 'web') {
+      const url = String(b.url || '').trim();
+      if (!urlSure(url)) return res.status(400).json({ erreur: 'URL invalide — colle l’adresse complète (https://…) de la page annuaire' });
+      const reseau = String(b.reseau || '').trim() || new URL(url).hostname.replace(/^www\./, '');
+
+      if (mode === 'estimer') {
+        const { entites, pages_lues } = await extraireEntitesWeb(url);
+        await loggerConso(user, 'ia_claude', 1, b.liste_id || null);
+        return res.status(200).json({
+          moteur: 'web', url, reseau, pages_lues,
+          total: entites.length, entites,
+          echantillon: entites.slice(0, 10),
+          info: 'Renvoie ces entites au mode=creer pour éviter une seconde lecture de la page.'
+        });
+      }
+
+      // creer : SIREN + détail via Pappers ; les membres non résolus (nom commercial ≠ raison
+      // sociale) sont GARDÉS quand même — nom + ville suffisent à l'enrichissement GMB/scoring.
+      const apiKey = process.env.PAPPERS_API_KEY;
+      if (!apiKey) return res.status(500).json({ erreur: 'PAPPERS_API_KEY manquante dans Vercel' });
+      let entites = Array.isArray(b.entites) && b.entites.length
+        ? b.entites.map(e => ({ nom: String(e.nom || '').trim().slice(0, 120), ville: e.ville ? String(e.ville).trim().slice(0, 80) : null, cp: e.cp ? String(e.cp).replace(/\D/g, '').slice(0, 5) : null })).filter(e => e.nom.length >= 2)
+        : null;
+      let iaAppels = 0;
+      if (!entites) { const ex = await extraireEntitesWeb(url); entites = ex.entites; iaAppels = 1; }
+      const nb = Math.min(Math.max(parseInt(b.nb, 10) || 150, 1), 300);
+      entites = entites.slice(0, nb);
+
+      const cles = (b.dedup !== false) ? await clesDejaExtraites() : { sirens: new Set(), pids: new Set() };
+      const sirensLot = new Set(); // deux membres résolus sur le même SIREN = une seule fiche
+      let requetesPappers = 0, doublonsInterListes = 0, exclues = 0;
+      const fiches = [];
+      for (let i = 0; i < entites.length; i += 10) {
+        const lot = entites.slice(i, i + 10);
+        const rs = await Promise.all(lot.map(async (ent) => {
+          const r = await resoudreSirenWeb(ent, apiKey);
+          let d = null;
+          if (r.siren && !cles.sirens.has(r.siren) && !sirensLot.has(r.siren)) { d = await detailEntreprise(r.siren, apiKey); r.requetes++; }
+          return { ent, r, d };
+        }));
+        for (const { ent, r, d } of rs) {
+          requetesPappers += r.requetes;
+          if (r.siren) {
+            if (cles.sirens.has(r.siren)) { doublonsInterListes++; continue; }
+            if (sirensLot.has(r.siren)) continue;
+            sirensLot.add(r.siren);
+          }
+          if (d && (d.cessee === true || d.procedure_collective === true)) { exclues++; continue; }
+          const fiche = {
+            nom: r.siren ? r.nom : ent.nom,
+            siren: r.siren || null,
+            naf: r.naf || null, activite: r.activite || null,
+            ville: (r.siren ? r.ville : ent.ville) || '', code_postal: (r.siren ? r.code_postal : ent.cp) || '',
+            chiffre_affaires: d ? d.chiffre_affaires : null,
+            nb_etablissements: d ? d.nb_etablissements : null,
+            site_web: d ? d.site_web : null,
+            date_creation: d ? d.date_creation : null,
+            dirigeant: d ? d.dirigeant : null,
+            enseigne: (d && d.enseigne) || ((r.siren && normaliser(r.nom) !== normaliser(ent.nom)) ? ent.nom : null),
+            groupe: reseau, groupe_lien: 'annuaire_web',
+            detail_charge: !!d
+          };
+          if (!r.siren) fiche.siren_non_trouve = true;
+          fiches.push(fiche);
+        }
+      }
+
+      let contactsBasile = 0;
+      if (b.contacts_basile !== false) contactsBasile = await ajouterContactsBasile(fiches);
+
+      if (requetesPappers) await loggerConso(user, 'pappers', requetesPappers, b.liste_id || null);
+      if (iaAppels) await loggerConso(user, 'ia_claude', iaAppels, b.liste_id || null);
+      const resolues = fiches.filter(f => f.siren).length;
+      return res.status(200).json({
+        moteur: 'web', url, reseau,
+        total: fiches.length, resolues, non_resolues: fiches.length - resolues,
+        exclues_cessees_ou_liquidation: exclues,
+        doublons_inter_listes: doublonsInterListes,
+        contacts_basile: contactsBasile,
+        credits_estimes: requetesPappers,
+        entreprises: fiches
+      });
+    }
+
+    return res.status(400).json({ erreur: "moteur requis : 'groupe' (holding Pappers), 'enseigne' (Google Maps) ou 'web' (annuaire du réseau)" });
   } catch (err) {
     return res.status(500).json({ erreur: 'Erreur serveur', detail: err.message });
   }
