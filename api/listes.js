@@ -212,13 +212,37 @@ export default async function handler(req, res) {
       const digits = recherche.replace(/[^0-9]/g, '');
       const estNum = digits.length >= 4 && /^[0-9\s.()+\-]+$/.test(recherche);
       const likeDigits = '%' + digits + '%';
-      // Requête unifiée : chaque filtre est neutralisé par son booléen quand il est vide.
       // LIMIT 200 (avant : 50 tous statuts confondus → les vieilles archives devenaient introuvables).
-      const rows = await sql`SELECT id, nom, sdr, createur, archivee, statut, statut_depuis, stats, total, credits_estimes, criteres, created_at, veille, veille_fin, sequences_auto FROM listes
+      // ⚠️ La recherche matche les MÊMES champs que le filtre d'une liste ouverte (nom, enseigne,
+      // ville, contacts, emails, téléphones) — plus jamais entreprises::text : le JSON contient les
+      // synthèses/emails IA, « instant » matchait « en un instant » dans une liste sans rapport.
+      const avecRecherche = recherche !== '' || clientQ !== '';
+      const rows = avecRecherche
+        ? await sql`SELECT id, nom, sdr, createur, archivee, statut, statut_depuis, stats, total, credits_estimes, criteres, created_at, veille, veille_fin, sequences_auto FROM listes
         WHERE (${toutVoir} OR sdr = ${moi} OR criteres->>'auto' = 'hotleads')
-          AND (${recherche === ''} OR nom ILIKE ${like} OR sdr ILIKE ${like} OR entreprises::text ILIKE ${like}
-               OR (${estNum} AND regexp_replace(entreprises::text, '[^0-9]', '', 'g') ILIKE ${likeDigits}))
-          AND (${clientQ === ''} OR entreprises::text ILIKE ${likeClient})
+          AND (${recherche === ''} OR nom ILIKE ${like} OR sdr ILIKE ${like}
+               OR EXISTS (
+                 SELECT 1 FROM jsonb_array_elements(entreprises) AS fe
+                 WHERE fe->>'nom' ILIKE ${like} OR fe->>'enseigne' ILIKE ${like} OR fe->>'enseigne_ia' ILIKE ${like}
+                    OR fe->>'ville' ILIKE ${like} OR fe->>'site_web' ILIKE ${like}
+                    OR (${estNum} AND regexp_replace(COALESCE(fe->'gmb'->>'telephone','') || COALESCE(fe->'ia'->>'telephone',''), '[^0-9]', '', 'g') ILIKE ${likeDigits})
+                    OR EXISTS (
+                      SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(fe->'contacts') = 'array' THEN fe->'contacts' ELSE '[]'::jsonb END) AS fc
+                      WHERE (COALESCE(fc->>'prenom','') || ' ' || COALESCE(fc->>'nom','')) ILIKE ${like}
+                         OR fc->>'fonction' ILIKE ${like}
+                         OR fc->'enrich'->>'email' ILIKE ${like}
+                         OR fc->'enrich'->>'linkedin' ILIKE ${like}
+                         OR (${estNum} AND regexp_replace(COALESCE(fc->'enrich'->>'telephone',''), '[^0-9]', '', 'g') ILIKE ${likeDigits})
+                    )
+               ))
+          AND (${clientQ === ''} OR EXISTS (
+                 SELECT 1 FROM jsonb_array_elements(entreprises) AS fe
+                 WHERE fe->>'nom' ILIKE ${likeClient} OR fe->>'enseigne' ILIKE ${likeClient} OR fe->>'enseigne_ia' ILIKE ${likeClient}
+               ))
+          AND (${sdrF === ''} OR sdr = ${sdrF})
+        ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 200`
+        : await sql`SELECT id, nom, sdr, createur, archivee, statut, statut_depuis, stats, total, credits_estimes, criteres, created_at, veille, veille_fin, sequences_auto FROM listes
+        WHERE (${toutVoir} OR sdr = ${moi} OR criteres->>'auto' = 'hotleads')
           AND (${sdrF === ''} OR sdr = ${sdrF})
         ORDER BY COALESCE(criteres->>'auto' = 'hotleads', false) DESC, created_at DESC LIMIT 200`;
       // Récupérer les coûts par liste en une requête (table consommations)
