@@ -23,7 +23,7 @@ input,select,textarea{font-family:inherit;font-size:15px}
 a{color:var(--accent)}
 
 .app{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
-.app.sb-min{grid-template-columns:0 1fr}.app.sb-min .side{display:none}
+.app.sb-min{grid-template-columns:1fr}.app.sb-min .side{display:none}
 .side{background:var(--ink);color:#fff;padding:28px 20px;display:flex;flex-direction:column;gap:6px;position:sticky;top:0;height:100vh}
 .logo{font-family:'Space Grotesk';font-weight:700;font-size:22px;letter-spacing:-.5px;margin-bottom:4px}
 .logo span{color:#8FA0FF}
@@ -1926,7 +1926,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v257';
+const VERSION='v259';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -6446,13 +6446,17 @@ async function chargerArchives(){
  }catch(e){zone.innerHTML='<p style="color:var(--ink-soft)">Erreur : '+e.message+'</p>';}
 }
 /* ───────── COCKPIT « Ma journée » : file de travail priorisée (v246) ───────── */
-let CK=null,CK_ROW=0;
+let CK=null,CK_ROW=0,CK_TUILE='auto';
 async function chargerCockpit(){
  const zone=document.getElementById('ck-zone');
  const selSdr=document.getElementById('ck-sdr');
  const sdrVoulu=selSdr?selSdr.value:'';
  try{
-  const r=await api('/api/cockpit'+(sdrVoulu?'?sdr='+encodeURIComponent(sdrVoulu):''));
+  const pq=[];
+  if(sdrVoulu)pq.push('sdr='+encodeURIComponent(sdrVoulu));
+  const listeSel=ckListeSel();
+  if(listeSel)pq.push('liste='+encodeURIComponent(listeSel));
+  const r=await api('/api/cockpit'+(pq.length?'?'+pq.join('&'):''));
   let d;
   try{d=await r.json();}
   catch(_){zone.innerHTML='<p style="color:var(--ink-soft)">Cockpit indisponible (HTTP '+r.status+') — un déploiement est peut-être en cours, réessaie dans une minute.</p>';return;}
@@ -6462,9 +6466,28 @@ async function chargerCockpit(){
   const bd=document.getElementById('taches-badge');
   if(bd){const nR=(d.rappels&&d.rappels.retard||[]).length;bd.textContent=nR;bd.style.display=nR?'inline-block':'none';}
   rendreCockpit(sdrVoulu||d.sdr);
-  // Tuiles Ringover : rafraîchissement auto toutes les 5 min tant que l'onglet est affiché
+  // Rafraîchissement silencieux toutes les 2 min : nouveaux signaux/hot leads détectés sans replier
+  // les panneaux (re-render seulement si la file a changé) + tuiles Ringover re-lues
   if(CK_TIMER)clearInterval(CK_TIMER);
-  CK_TIMER=setInterval(()=>{if(!document.getElementById('view-cockpit').classList.contains('on'))return;CK_APPELS_CACHE=null;ckChargerAppels((document.getElementById('ck-sdr')||{}).value||(CK&&CK.sdr));},300000);
+  CK_TIMER=setInterval(async()=>{
+   if(!document.getElementById('view-cockpit').classList.contains('on'))return;
+   try{
+    const sv=(document.getElementById('ck-sdr')||{}).value||(CK&&CK.sdr)||'';
+    const pq2=[];if(sv&&state.user&&['admin','superadmin'].includes(state.user.role))pq2.push('sdr='+encodeURIComponent(sv));
+    const ls2=ckListeSel();if(ls2)pq2.push('liste='+encodeURIComponent(ls2));
+    const r2=await api('/api/cockpit'+(pq2.length?'?'+pq2.join('&'):''));
+    const d2=await r2.json();
+    if(!d2.ok)return;
+    const sig=x=>JSON.stringify([(x.hot||[]).map(y=>y.cle+(y.pris_par||'')),(x.chauds||[]).map(y=>y.cle+y.signal_ts),((x.rappels&&x.rappels.retard)||[]).length,((x.rappels&&x.rappels.aujourdhui)||[]).length]);
+    const avant=CK?sig(CK):'';
+    const nHotAvant=CK?[...(CK.hot||[]),...(CK.chauds||[])].length:0;
+    if(sig(d2)!==avant){
+     const nHotApres=[...(d2.hot||[]),...(d2.chauds||[])].length;
+     CK=d2;rendreCockpit(sv||d2.sdr);
+     if(nHotApres>nHotAvant)toast('🔥 Nouveau signal dans ta file !');
+    }else{CK_APPELS_CACHE=null;ckChargerAppels(sv||(CK&&CK.sdr));}
+   }catch(_){}
+  },120000);
  }catch(e){zone.innerHTML='<p style="color:var(--ink-soft)">Erreur : '+e.message+'</p>';}
 }
 let CK_ITEMS={};
@@ -6484,7 +6507,7 @@ function ckToggle(rid){
  const pnl=document.getElementById(rid+'-d'),b=document.getElementById(rid+'-b');
  if(!pnl)return;
  if(pnl.style.display!=='none'){pnl.style.display='none';if(b)b.innerHTML='D\u00e9plier \u25be';return;}
- if(!pnl.innerHTML)pnl.innerHTML=ckDetailHtml(CK_ITEMS[rid]||{},rid);
+ if(!pnl.innerHTML){pnl.innerHTML=ckDetailHtml(CK_ITEMS[rid]||{},rid);ckChargerHisto(rid);}
  pnl.style.display='block';if(b)b.innerHTML='Replier \u25b4';
 }
 function ckContactLigne(c,it){
@@ -6516,6 +6539,13 @@ function ckDetailHtml(it,rid){
  else if(!it.cle)h+='<p style="font-size:12px;color:var(--ink-soft);margin:4px 0">Fiche non retrouv\u00e9e dans tes listes actives (liste en nurturing ou archiv\u00e9e) \u2014 marque le rappel \u00ab Fait \u00bb apr\u00e8s l\u2019appel, ou retrouve la fiche via la recherche de l\u2019Historique.</p>';
  else h+='<p style="font-size:12px;color:var(--ink-soft);margin:4px 0">Aucun contact nominatif sur cette fiche \u2014 ouvre la fiche compl\u00e8te pour enrichir.</p>';
  if(it.tel_standard)h+=`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px dashed var(--line)"><div style="flex:1;font-size:12.5px"><span style="font-weight:600">Standard</span> \u00b7 ${htmlSafe(it.tel_standard)}</div><a class="act act-call" style="padding:4px 10px;font-size:12px;text-decoration:none" href="tel:${htmlSafe(telNorm(it.tel_standard))}">\ud83d\udcde</a></div>`;
+ if(it.email_cle)h+=`<div style="border-top:1px dashed var(--line);margin-top:8px;padding-top:8px">
+  <div style="font-size:11px;font-weight:800;letter-spacing:.05em;color:var(--ink-soft);margin-bottom:4px">HISTORIQUE DE LA FICHE</div>
+  <div id="${rid}-hist" style="font-size:12px;color:var(--ink-soft);max-height:150px;overflow-y:auto">Chargement\u2026</div>
+  <div style="display:flex;gap:6px;margin-top:8px">
+   <input class="field" id="${rid}-note" placeholder="Note rapide : objection, bon interlocuteur, ressenti\u2026" style="flex:1;font-size:12px;padding:6px 10px" onkeydown="if(event.key==='Enter')ckAjouterNote('${rid}')">
+   <button class="act act-copy" onclick="ckAjouterNote('${rid}')">Ajouter</button>
+  </div></div>`;
  const aEmail=(it.contacts_detail||[]).some(c=>c&&c.email);
  h+=`<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">${aEmail&&!it.statut?`<button class="act act-call" onclick="ouvrirCkSequence('${rid}')" title="Pousser un contact de la fiche en s\u00e9quence Lemlist (m\u00eames variables que depuis la fiche)">\u2708\ufe0f S\u00e9quence Lemlist\u2026</button>`:''}${it.liste_id?`<button class="act act-copy" onclick="ouvrirListe(${it.liste_id}${it.cle?`,decodeURIComponent('${jsArg(it.cle)}')`:',null'})" title="Bloc-notes, SMS SoReach, email Lemlist, enrichissement\u2026">Ouvrir la fiche compl\u00e8te \u2192</button>`:''}</div>`;
  return h+'</div>';
@@ -6552,6 +6582,46 @@ async function envoyerCkSequence(){
   toast('✈️ '+(c.nom||c.email)+' envoyé en séquence '+produit+' ✓ (rappel J+5 créé)');
   // Marque la fiche (cohérence flux fiche + sequences-cron) — sans toucher au statut
   try{await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:it.liste_id,fiche_cle:it.cle,marquer_lemlist:true})});}catch(_){}
+ }catch(e){toast('Erreur réseau : '+e.message);}
+}
+// Historique du bloc-notes dans le panneau déplié (chargé au dépli, 1 requête légère)
+async function ckChargerHisto(rid){
+ const it=CK_ITEMS[rid];const z=document.getElementById(rid+'-hist');
+ if(!it||!it.email_cle||!z)return;
+ try{
+  const r=await api('/api/activite?emails='+encodeURIComponent(it.email_cle));
+  const d=await r.json();
+  const acts=(d.activites||[]).slice(0,6);
+  z.innerHTML=acts.length?acts.map(a=>`<div style="margin:2px 0"><span style="color:var(--ink-soft)">${new Date(a.ts).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})} ${new Date(a.ts).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span> · ${htmlSafe(a.titre||'')}${a.detail?` <span style="color:var(--ink-soft)">— ${htmlSafe(String(a.detail).slice(0,90))}</span>`:''}${a.auteur?` <span style="color:var(--ink-soft)">(${htmlSafe(a.auteur)})</span>`:''}</div>`).join(''):'Aucune activité pour l\u2019instant.';
+ }catch(_){z.textContent='Historique indisponible.';}
+}
+async function ckAjouterNote(rid){
+ const it=CK_ITEMS[rid];const inp=document.getElementById(rid+'-note');
+ if(!it||!inp||!inp.value.trim())return;
+ if(!it.email_cle){toast('Pas d\u2019email sur cette fiche — ouvre la fiche complète pour noter');return;}
+ const txt=inp.value.trim();inp.value='';
+ try{
+  await api('/api/activite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:it.email_cle,source:'note',type:'note',titre:'📝 Note',detail:txt})});
+  toast('📝 Note ajoutée');ckChargerHisto(rid);
+ }catch(e){toast('Erreur réseau : '+e.message);}
+}
+// « Ma prospection » : liste choisie mémorisée par SDR
+function ckListeSel(){try{return localStorage.getItem('ck_liste_'+((state.user&&state.user.nom)||''))||'';}catch(_){return'';}}
+function ckChoisirListe(v){try{localStorage.setItem('ck_liste_'+((state.user&&state.user.nom)||''),v||'');}catch(_){}chargerCockpit();}
+function ckReprendre(id){try{localStorage.setItem('ck_reprise_ignore',new Date().toDateString());}catch(_){}ckChoisirListe(String(id));}
+function ckReprisePlusTard(){try{localStorage.setItem('ck_reprise_ignore',new Date().toDateString());}catch(_){}rendreCockpit(CK&&CK.sdr);}
+// « Je prends » : claim d'un hot lead partagé (verrou serveur premier arrivé)
+async function ckPrendre(listeId,cleEnc){
+ try{
+  const r=await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:listeId,fiche_cle:decodeURIComponent(cleEnc),prendre:true})});
+  const d=await r.json();
+  if(d.ok){
+   toast('🔥 À toi ! Il a disparu chez les autres SDR — appelle sous 2 h');
+   const cle=decodeURIComponent(cleEnc);
+   const it=((CK&&CK.hot)||[]).find(x=>x&&x.liste_id===listeId&&x.cle===cle);
+   if(it){it.pris_par=(CK&&CK.sdr)||'moi';if(it.email_cle)ckJournal(encodeURIComponent(it.email_cle),'note','🔥 Pris en charge',encodeURIComponent('Hot lead pris par '+((CK&&CK.sdr)||'')));}
+   rendreCockpit(CK&&CK.sdr);
+  }else{toast('⚠️ '+(d.erreur||'Impossible de prendre ce lead'));chargerCockpit();}
  }catch(e){toast('Erreur réseau : '+e.message);}
 }
 async function ckJournal(emailEnc,source,titre,detailEnc){
@@ -6593,18 +6663,29 @@ function rendreCockpit(sdrAffiche){
   <div id="ck-bar" style="display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--paper);border:1px solid var(--line);margin:12px 0 4px"></div>
   <p id="ck-bar-lbl" style="font-size:11.5px;color:var(--ink-soft);margin:0 0 6px">Objectif du jour : ${obj.appels_jour} appels \u2014 chargement des appels Ringover\u2026</p>`;
  const hFr=x=>new Date(x).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+ const depuis=x=>{if(!x)return'';const m=Math.round((Date.now()-new Date(x).getTime())/60000);return m<1?'\u00e0 l\u2019instant':(m<60?('il y a '+m+' min'):(m<1440?('il y a '+Math.round(m/60)+' h'):('il y a '+Math.round(m/1440)+' j')));};
  let h='';
+ // ── Bannière : listes jamais enrichies (invisibles de la file) ──
  if(d.listes_a_enrichir&&d.listes_a_enrichir.length){
   h+=`<div style="margin:4px 0 10px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
    <div style="flex:1;min-width:220px;font-size:13px;color:#92400E"><b>\u26a0\ufe0f Liste${d.listes_a_enrichir.length>1?'s':''} jamais enrichie${d.listes_a_enrichir.length>1?'s':''} :</b> ${d.listes_a_enrichir.map(x=>`\u00ab ${htmlSafe(x.nom)} \u00bb (${x.pct} %)`).join(' \u00b7 ')} \u2014 ces fiches sont invisibles de ta file tant que \ud83d\ude80 n'est pas lanc\u00e9.</div>
    <div style="display:flex;gap:6px;flex-wrap:wrap">${d.listes_a_enrichir.map(x=>`<button class="act act-call" onclick="ouvrirListe(${x.id},null)">Ouvrir \u00ab ${htmlSafe((x.nom||'').slice(0,18))}${(x.nom||'').length>18?'\u2026':''} \u00bb</button>`).join('')}</div>
   </div>`;
  }
- if(d.restants<50){
+ // ── Bannière : reprise de la liste d'hier (arbitrage : proposée en 1 clic, pas d'office) ──
+ const selListe=ckListeSel();
+ if(d.reprise&&String(selListe)!==String(d.reprise.id)&&localStorage.getItem('ck_reprise_ignore')!==new Date().toDateString()){
+  h+=`<div style="margin:4px 0 10px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+   <div style="flex:1;min-width:220px;font-size:13px;color:#1E40AF"><b>Tu n'as pas terminé \u00ab ${htmlSafe(d.reprise.nom)} \u00bb hier</b> (${d.reprise.restantes} fiche${d.reprise.restantes>1?'s':''} restante${d.reprise.restantes>1?'s':''}). On la reprend en tête de ta prospection ?</div>
+   <div style="display:flex;gap:6px"><button class="act act-call" onclick="ckReprendre(${d.reprise.id})">Reprendre</button><button class="act act-export" onclick="ckReprisePlusTard()">Plus tard</button></div>
+  </div>`;
+ }
+ // ── Bannière : fin de gisement (vue « toutes mes listes » uniquement) ──
+ if(!d.liste_choisie&&d.restants<50){
   const vide=d.restants===0;
   const rythme=d.rythme_7j||0;
   const jours=(!vide&&rythme>0)?Math.ceil(d.restants/rythme):null;
-  h+=`<div style="margin:4px 0 14px;background:${vide?'#FEF2F2':'#FFFBEB'};border:1px solid ${vide?'#FECACA':'#FDE68A'};border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+  h+=`<div style="margin:4px 0 10px;background:${vide?'#FEF2F2':'#FFFBEB'};border:1px solid ${vide?'#FECACA':'#FDE68A'};border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
    <div style="flex:1;min-width:220px;font-size:13px;color:${vide?'#B91C1C':'#92400E'}">
     <b>${vide?'Plus aucune fiche \u00e0 prospecter.':'Plus que '+d.restants+' fiche'+(d.restants>1?'s':'')+' \u00e0 prospecter.'}</b>
     ${jours?` \u00c0 ton rythme (~${String(rythme).replace('.',',')} fiche${rythme>1?'s':''} statu\u00e9e${rythme>1?'s':''}/jour), le gisement est vide dans ~${jours} jour${jours>1?'s':''}.`:''} Pr\u00e9pare ta prochaine liste d\u00e8s maintenant.
@@ -6615,26 +6696,71 @@ function rendreCockpit(sdrAffiche){
    </div>
   </div>`;
  }
- h+=`<div style="font-size:13px;font-weight:800;margin:14px 0 8px;color:#B45309">\ud83d\udd25 \u00c0 appeler maintenant \u2014 signaux des derni\u00e8res 24 h (${d.chauds.length})</div>`;
- if(!d.chauds.length)h+='<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 6px">Aucun signal chaud pour l\u2019instant \u2014 les ouvertures, clics et r\u00e9ponses des derni\u00e8res 24 h apparaissent ici.</p>';
- for(const c of d.chauds){
-  h+=ckRow(c,`<div style="flex:1;min-width:220px">
-   <div style="font-size:14px;font-weight:700">${htmlSafe(c.nom)}${c.contact?` <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">\u00b7 ${htmlSafe(c.contact)}${c.fonction?', '+htmlSafe(c.fonction):''}</span>`:''}</div>
-   <div style="font-size:12px;color:#B45309;margin-top:2px">${htmlSafe(c.signal)} \u00b7 ${hFr(c.signal_ts)} \u00b7 ${htmlSafe(c.liste_nom||'')}</div>
-  </div>${c.tel?`<span style="font-size:13px;font-weight:700;white-space:nowrap">${htmlSafe(c.tel)}</span>`:''}`,
-  'border-left:3px solid #F59E0B;border-radius:0 10px 10px 0;',true,false);
+ // ── LES 3 TUILES D'URGENCE (cliquables = filtres de la file du haut) ──
+ const urgents=[...(d.hot||[]).map(x=>({...x,_k:'hot',_ts:x.date})),...(d.chauds||[]).map(x=>({...x,_k:'chaud',_ts:x.signal_ts}))].sort((a,b)=>new Date(b._ts||0)-new Date(a._ts||0));
+ const promis=[...(d.rappels.retard||[]).map(x=>({...x,_retard:true})),...(d.rappels.aujourdhui||[])];
+ const retenter=(d.rappels&&d.rappels.retenter)||[];
+ let tuileSel=(CK_TUILE==='auto')?(urgents.length?'hot':(promis.length?'promis':'retenter')):CK_TUILE;
+ const tb=(id,emo,label,n,coul,bg,desc)=>`<div onclick="CK_TUILE='${id}';rendreCockpit(CK&&CK.sdr)" style="cursor:pointer;flex:1;min-width:180px;background:${tuileSel===id?bg:'var(--card)'};border:2px solid ${tuileSel===id?coul:'var(--line)'};border-radius:12px;padding:10px 14px">
+  <div style="font-size:11px;font-weight:800;letter-spacing:.04em;color:${coul}">${emo} ${label}</div>
+  <div style="font-size:24px;font-weight:800;color:${coul};line-height:1.2">${n}</div>
+  <div style="font-size:10.5px;color:var(--ink-soft)">${desc}</div></div>`;
+ h+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 10px">
+  ${tb('hot','\ud83d\udd25','HOT \u2014 SIGNAUX & SIGNUPS',urgents.length,'#B91C1C','#FEF2F2','\u00e0 prendre sous 2 h \u00b7 partag\u00e9s \u00e9quipe')}
+  ${tb('promis','\u23f0','RAPPELS PROMIS',promis.length,'#B45309','#FFFBEB','tes engagements client')}
+  ${tb('retenter','\ud83d\udd01','\u00c0 RETENTER',retenter.length,'#475569','#F1F5F9','injoignables \u00b7 3\u1d49 \u00e9chec \u2192 s\u00e9quence auto')}
+ </div>`;
+ if(tuileSel==='hot'){
+  if(!urgents.length)h+='<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 6px">Aucun signal chaud pour l\u2019instant \u2014 ouvertures, r\u00e9ponses, visites sofy.fr et signups apparaissent ici.</p>';
+  for(const c of urgents){
+   const label=c._k==='chaud'?(c.signal||''):(c.type==='signup'?'\ud83c\udd95 Signup':'\ud83d\udccd Visite sofy.fr'+((c.pages&&c.pages.length)?' \u00b7 '+c.pages.slice(0,2).join(', '):''));
+   const inner=`<div style="flex:1;min-width:220px">
+    <div style="font-size:14px;font-weight:700">${htmlSafe(c.nom)}${c.contact?` <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">\u00b7 ${htmlSafe(c.contact)}${c.fonction?', '+htmlSafe(c.fonction):''}</span>`:''}${c.pris_par?' <span style="font-size:11px;font-weight:800;color:#B91C1C">\u00b7 \u00e0 toi</span>':''}</div>
+    <div style="font-size:12px;color:#B91C1C;margin-top:2px">${htmlSafe(label)} \u00b7 ${depuis(c._ts)}${c.liste_nom?' \u00b7 '+htmlSafe(c.liste_nom):''}</div>
+   </div>${c.tel?`<span style="font-size:13px;font-weight:700;white-space:nowrap">${htmlSafe(c.tel)}</span>`:''}`;
+   if(c._k==='hot'&&!c.pris_par){
+    h+=`<div style="border:1px solid #FECACA;border-left:3px solid #E24B4A;border-radius:0 10px 10px 0;padding:10px 14px;margin-bottom:8px;background:var(--card)"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">${inner}<div style="display:flex;gap:6px"><button class="act act-call" style="background:#B91C1C;border-color:#B91C1C;color:#fff" onclick="ckPrendre(${c.liste_id},'${jsArg(c.cle)}')" title="Le lead disparait chez les autres SDR et passe dans ta file \u2014 SLA 2 h">\ud83d\udd25 Je prends</button></div></div></div>`;
+   }else{
+    h+=ckRow(c,inner,'border-left:3px solid #E24B4A;border-radius:0 10px 10px 0;',true,false);
+   }
+  }
  }
- h+=`<div style="font-size:13px;font-weight:800;margin:18px 0 8px;color:#185FA5">\u23f0 Rappels dus (${nR} en retard \u00b7 ${nA} aujourd'hui)</div>`;
- if(!(nR+nA))h+='<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 6px">Aucun rappel d\u00fb aujourd\u2019hui.</p>';
- for(const t of [...d.rappels.retard.map(x=>({...x,_retard:true})),...d.rappels.aujourdhui]){
-  h+=ckRow(t,`<div style="flex:1;min-width:220px">
-   <div style="font-size:14px;font-weight:700">${htmlSafe(t.entreprise)}${t.contact?` <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">\u00b7 ${htmlSafe(t.contact)}</span>`:''} <span style="font-weight:400;font-size:12px;color:${t._retard?'#B91C1C':'var(--ink-soft)'}">\u00b7 ${t._retard?'promis pour ':''}${hFr(t.date_rappel)}</span></div>
-   ${t.description?`<div style="font-size:12px;color:var(--ink-soft);margin-top:2px">${htmlSafe(t.description)}</div>`:''}
-  </div>${t.tel?`<span style="font-size:13px;font-weight:700;white-space:nowrap">${htmlSafe(t.tel)}</span>`:''}`,
-  `border-left:3px solid ${t._retard?'#E24B4A':'#378ADD'};border-radius:0 10px 10px 0;`,!!(t.liste_id&&t.cle),true);
+ if(tuileSel==='promis'){
+  if(!promis.length)h+='<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 6px">Aucun rappel promis d\u00fb aujourd\u2019hui.</p>';
+  for(const t of promis){
+   h+=ckRow(t,`<div style="flex:1;min-width:220px">
+    <div style="font-size:14px;font-weight:700">${htmlSafe(t.entreprise)}${t.contact?` <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">\u00b7 ${htmlSafe(t.contact)}</span>`:''} <span style="font-weight:400;font-size:12px;color:${t._retard?'#B91C1C':'var(--ink-soft)'}">\u00b7 ${t._retard?'promis pour ':''}${hFr(t.date_rappel)}</span></div>
+    ${t.description?`<div style="font-size:12px;color:var(--ink-soft);margin-top:2px">${htmlSafe(t.description)}</div>`:''}
+   </div>${t.tel?`<span style="font-size:13px;font-weight:700;white-space:nowrap">${htmlSafe(t.tel)}</span>`:''}`,
+   `border-left:3px solid ${t._retard?'#E24B4A':'#F59E0B'};border-radius:0 10px 10px 0;`,!!(t.liste_id&&t.cle),true);
+  }
  }
- h+=`<div style="font-size:13px;font-weight:800;margin:18px 0 8px">\ud83d\udccb \u00c0 prospecter ensuite <span style="font-weight:400;color:var(--ink-soft)">(${d.restants} fiche${d.restants>1?'s':''} sans issue d'appel, les mieux scor\u00e9es d'abord${d.restants>25?' \u2014 top 25 affich\u00e9':''})</span></div>`;
- if(!d.prospecter.length)h+='<p style="font-size:12.5px;color:var(--ink-soft)">Rien \u00e0 prospecter : toutes les fiches enrichies de tes listes actives ont une issue d\u2019appel \ud83d\udcaa</p>';
+ if(tuileSel==='retenter'){
+  if(!retenter.length)h+='<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 6px">Rien \u00e0 retenter \u2014 les re-tentatives auto (J+2 apr\u00e8s \u00ab Pas de r\u00e9ponse / Absent / Message vocal \u00bb) arrivent ici.</p>';
+  for(const t of retenter){
+   h+=ckRow(t,`<div style="flex:1;min-width:220px">
+    <div style="font-size:14px;font-weight:700">${htmlSafe(t.entreprise)}${t.contact?` <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">\u00b7 ${htmlSafe(t.contact)}</span>`:''} <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">\u00b7 ${hFr(t.date_rappel)}</span></div>
+    ${t.description?`<div style="font-size:12px;color:var(--ink-soft);margin-top:2px">${htmlSafe(t.description)} \u00b7 au 3\u1d49 \u00e9chec la s\u00e9quence email prend le relais \u2708\ufe0f</div>`:''}
+   </div>${t.tel?`<span style="font-size:13px;font-weight:700;white-space:nowrap">${htmlSafe(t.tel)}</span>`:''}`,
+   'border-left:3px solid #94A3B8;border-radius:0 10px 10px 0;',!!(t.liste_id&&t.cle),true);
+  }
+ }
+ // ── MA PROSPECTION (par liste — arbitrage SDR : une liste = un créneau, ex. DOM l'après-midi) ──
+ const pl=d.par_liste||[];
+ h+=`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:18px 0 8px">
+  <span style="font-size:13px;font-weight:800">\ud83d\udccb Ma prospection</span>
+  <select class="field" id="ck-liste" style="padding:6px 8px;font-size:12px;max-width:340px" onchange="ckChoisirListe(this.value)">
+   <option value="">Toutes mes listes (tri par score)</option>
+   ${pl.map(x=>`<option value="${x.id}"${String(d.liste_choisie||selListe)===String(x.id)?' selected':''}>${htmlSafe(x.nom)} \u2014 ${x.restantes} restante${x.restantes>1?'s':''} / ${x.total}</option>`).join('')}
+  </select>`;
+ const plSel=pl.find(x=>String(x.id)===String(d.liste_choisie||''));
+ if(plSel){
+  const pctL=plSel.total?Math.round((plSel.total-plSel.restantes)/plSel.total*100):0;
+  h+=`<span style="font-size:11.5px;color:var(--ink-soft)">progression <b>${plSel.total-plSel.restantes}/${plSel.total}</b></span>
+   <div style="height:6px;width:110px;background:var(--paper);border:1px solid var(--line);border-radius:3px;overflow:hidden"><div style="width:${pctL}%;height:100%;background:#1D9E75"></div></div>`;
+ }
+ h+=`<span style="font-size:11.5px;color:var(--ink-soft)">${d.restants} fiche${d.restants>1?'s':''} sans issue d'appel${d.restants>25?' \u2014 25 affich\u00e9es':''}</span></div>`;
+ if(!d.prospecter.length)h+='<p style="font-size:12.5px;color:var(--ink-soft)">Rien \u00e0 prospecter ici \ud83d\udcaa \u2014 choisis une autre liste ou cr\u00e9e la prochaine.</p>';
  for(const p of d.prospecter){
   const sc=p.score||0,scCol=sc>=60?'#15803D':(sc>=40?'#B45309':'#64748B'),scBg=sc>=60?'#F0FDF4':(sc>=40?'#FFFBEB':'#F1F5F9');
   h+=ckRow(p,`<span style="font-size:12px;font-weight:700;color:${scCol};background:${scBg};border:1px solid var(--line);border-radius:6px;padding:2px 8px">${sc}</span>
@@ -6697,6 +6823,7 @@ async function ckPoserStatut(listeId,cle,statut,extra){
    const match=x=>x&&x.liste_id===listeId&&x.cle===cle;
    const dansProspecter=(CK.prospecter||[]).some(match);
    CK.chauds=(CK.chauds||[]).filter(x=>!match(x));
+   CK.hot=(CK.hot||[]).filter(x=>!match(x));
    CK.prospecter=(CK.prospecter||[]).filter(x=>!match(x));
    if(dansProspecter&&typeof CK.restants==='number'&&CK.restants>0)CK.restants--;
    CK.bilan.statuees_jour=(CK.bilan.statuees_jour||0)+1;

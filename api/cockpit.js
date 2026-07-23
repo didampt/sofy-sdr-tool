@@ -96,8 +96,10 @@ export default async function handler(req, res) {
     } catch (_) {}
 
     // ── 1. Fiches des listes ACTIVES du SDR : index par email + candidates « à prospecter » ──
+    const listeChoisie = parseInt(req.query.liste) || null; // « Ma prospection » filtrée sur UNE liste
     const listes = await sql`SELECT id, nom, stats, total, entreprises FROM listes
       WHERE archivee = FALSE AND (statut IS NULL OR statut = 'active') AND sdr = ${sdr}
+        AND (criteres->>'auto' IS DISTINCT FROM 'hotleads')
       ORDER BY id DESC LIMIT 40`;
     // Listes créées mais jamais enrichies : invisibles de la file (ni score ni GMB) → on les signale
     const listesAEnrichir = listes
@@ -106,10 +108,14 @@ export default async function handler(req, res) {
       .slice(0, 3);
     const parEmail = new Map();
     const prospecter = [];
+    const parListe = []; // sélecteur « Ma prospection » : {id, nom, total, restantes}
     let statueesJour = 0, traitees7j = 0;
     const il7j = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+    const debutHier = new Date(debutJour.getTime() - 24 * 3600 * 1000);
+    let reprise = null; // liste la plus travaillée HIER et non finie → bannière « Reprendre ? »
     let lookalikeRef = null; // dernière fiche « RDV pris » : sert au bouton Lookalike de la bannière
     for (const l of listes) {
+      let restantesL = 0, statueesHierL = 0;
       for (const e of (Array.isArray(l.entreprises) ? l.entreprises : [])) {
         const cle = ((e.signal && e.signal.date) ? e.signal.date : '') + (e.nom || ''); // = cleSignal() côté front
         const cs = e.contacts || [];
@@ -165,17 +171,62 @@ export default async function handler(req, res) {
         };
         for (const c of cs) if (c && c.enrich && c.enrich.email) parEmail.set(String(c.enrich.email).toLowerCase(), info);
         if (e.enrich && e.enrich.email) parEmail.set(String(e.enrich.email).toLowerCase(), info);
+        if (statut && e.traite_le) { const t = new Date(e.traite_le); if (t >= debutHier && t < debutJour) statueesHierL++; }
         if (!statut && (e.score || (e.gmb && e.gmb.trouve))) {
-          prospecter.push({
+          restantesL++;
+          if (!listeChoisie || l.id === listeChoisie) prospecter.push({
             ...info,
             score: (e.score && e.score.scores && e.score.scores.global) || 0,
             angle: angleDe(e), contacts: contactsDetail.length
           });
         }
       }
+      if ((l.total || 0) > 0) parListe.push({ id: l.id, nom: l.nom, total: l.total || 0, restantes: restantesL });
+      if (restantesL > 0 && statueesHierL > 0 && (!reprise || statueesHierL > reprise._n)) {
+        reprise = { id: l.id, nom: l.nom, restantes: restantesL, _n: statueesHierL };
+      }
     }
+    if (reprise) delete reprise._n;
     prospecter.sort((a, b) => b.score - a.score);
-    const restants = prospecter.length;
+    const restants = listeChoisie ? prospecter.length : prospecter.length; // restants = périmètre affiché
+
+    // ── Tuile HOT partagée : signaux de visite + signups (liste Hot Leads auto), claim « Je prends » ──
+    let hot = [];
+    try {
+      const [hl] = await sql`SELECT id, entreprises FROM listes WHERE criteres->>'auto' = 'hotleads' LIMIT 1`;
+      if (hl) {
+        for (const e of (Array.isArray(hl.entreprises) ? hl.entreprises : [])) {
+          const statutH = e.statut_appel || (e.tags_sdr || [])[0] || null;
+          if (statutH) continue; // traité → sort de la tuile pour tout le monde
+          const estSignup = !!(e.signup || (e.signal && e.signal.signup));
+          if (!estSignup && !(e.signal_hot || e.signal || e.a_enrichir)) continue;
+          if (e.pris_par && e.pris_par !== sdr) continue; // pris par un autre SDR
+          const cleH = ((e.signal && e.signal.date) ? e.signal.date : '') + (e.nom || '');
+          const csH = e.contacts || [];
+          const c0H = csH.find(c => c && c.enrich && (c.enrich.telephone || c.enrich.email)) || csH[0] || null;
+          const emH = csH.find(c => c && c.enrich && c.enrich.email);
+          hot.push({
+            liste_id: hl.id, liste_nom: 'Hot Leads', cle: cleH,
+            nom: e.enseigne_ia || e.enseigne || e.nom, ville: e.ville || '',
+            contact: c0H ? ((c0H.prenom || '') + ' ' + (c0H.nom || '')).trim() : '',
+            tel: telDe(e, c0H),
+            email_cle: emH ? String(emH.enrich.email).toLowerCase() : null,
+            type: estSignup ? 'signup' : 'visite',
+            date: (e.signal && e.signal.date) || e.date_hotlead || null,
+            pages: e.pages_visitees || (e.signal && e.signal.pages) || [],
+            pris_par: e.pris_par || null,
+            contacts_detail: csH.filter(c => c && c.nom).slice(0, 5).map(c => ({
+              nom: ((c.prenom || '') + ' ' + (c.nom || '')).trim(), prenom: c.prenom || '', nom_seul: c.nom || '',
+              fonction: c.fonction || (c.enrich && c.enrich.fonction) || '',
+              email: (c.enrich && c.enrich.email) || null, tel: (c.enrich && c.enrich.telephone) || null,
+              linkedin: (c.enrich && c.enrich.linkedin) || null
+            }))
+          });
+        }
+        hot.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+        hot = hot.slice(0, 12);
+      }
+    } catch (_) {}
 
     // ── 2. Signaux chauds des dernières 24 h (dernier événement par lead, fiches non re-traitées depuis) ──
     let chauds = [];
@@ -198,7 +249,7 @@ export default async function handler(req, res) {
     const tks = await sql`SELECT id, fiche_cle, entreprise_nom, contact_nom, description, date_rappel, liste_id
       FROM taches WHERE sdr = ${sdr} AND faite = FALSE AND date_rappel IS NOT NULL AND date_rappel <= ${finJour.toISOString()}
       ORDER BY date_rappel ASC LIMIT 60`;
-    const rappels = { retard: [], aujourdhui: [] };
+    const rappels = { retard: [], aujourdhui: [], retenter: [] };
     const mtn = new Date();
     for (const t of tks) {
       const f = (t.fiche_cle && t.fiche_cle.includes('@')) ? parEmail.get(String(t.fiche_cle).toLowerCase()) : null;
@@ -206,11 +257,14 @@ export default async function handler(req, res) {
         id: t.id, entreprise: t.entreprise_nom || (f && f.nom) || 'Fiche', contact: t.contact_nom || (f && f.contact) || '',
         description: t.description || '', date_rappel: t.date_rappel,
         liste_id: t.liste_id || (f && f.liste_id) || null, cle: f ? f.cle : null, tel: f ? f.tel : null,
-        email_cle: f ? f.email_cle : null, tel_standard: f ? f.tel_standard : null,
+        email_cle: f ? f.email_cle : (t.fiche_cle && t.fiche_cle.includes('@') ? String(t.fiche_cle).toLowerCase() : null),
+        tel_standard: f ? f.tel_standard : null,
         accroche: f ? f.accroche : null, synthese: f ? f.synthese : null,
-        contacts_detail: f ? f.contacts_detail : []
+        contacts_detail: f ? f.contacts_detail : [],
+        vars: f ? f.vars : null, produit_dominant: f ? f.produit_dominant : null
       };
-      (new Date(t.date_rappel) < mtn ? rappels.retard : rappels.aujourdhui).push(r);
+      if ((t.description || '').includes('re-tentative auto')) { r._retard = new Date(t.date_rappel) < mtn; rappels.retenter.push(r); }
+      else (new Date(t.date_rappel) < mtn ? rappels.retard : rappels.aujourdhui).push(r);
     }
 
     // ── 4. Bilan du jour + RDV du mois (vs objectif) ──
@@ -235,7 +289,11 @@ export default async function handler(req, res) {
       moy7,
       rythme_7j: Math.round(traitees7j / 7 * 10) / 10,
       lookalike_ref: lookalikeRef,
-      listes_a_enrichir: listesAEnrichir
+      listes_a_enrichir: listesAEnrichir,
+      hot,
+      par_liste: parListe,
+      liste_choisie: listeChoisie,
+      reprise
     });
   } catch (e) {
     return res.status(500).json({ erreur: 'Cockpit indisponible', detail: String(e.message || e).slice(0, 200) });

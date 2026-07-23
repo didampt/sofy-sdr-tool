@@ -353,7 +353,7 @@ export default async function handler(req, res) {
       // Transfert d'une liste à un autre SDR (réservé admin/superadmin)
       // ── Statuer UNE fiche depuis le cockpit (mise à jour chirurgicale du JSONB, sans recharger la liste) ──
       // PUT { id, fiche_cle, statut_appel } — fiche_cle = clé cleSignal() (signal.date + nom).
-      if (req.body.fiche_cle !== undefined && (req.body.statut_appel !== undefined || req.body.marquer_lemlist === true)) {
+      if (req.body.fiche_cle !== undefined && (req.body.statut_appel !== undefined || req.body.marquer_lemlist === true || req.body.prendre === true)) {
         const rowsF = await sql`SELECT sdr, entreprises FROM listes WHERE id = ${parseInt(id)}`;
         if (!rowsF.length) return res.status(404).json({ erreur: 'Liste introuvable' });
         const adminF = ['admin', 'superadmin'].includes(user.role);
@@ -364,6 +364,24 @@ export default async function handler(req, res) {
         if (!fiche) return res.status(404).json({ erreur: 'Fiche introuvable (liste modifiée entre-temps ?)' });
         const statutF = (req.body.statut_appel !== undefined) ? String(req.body.statut_appel || '').slice(0, 60) : null;
         const statutFourni = req.body.statut_appel !== undefined;
+        // « Je prends » (tuile Hot Leads partagée) : verrou premier arrivé — 409 si déjà pris par un autre
+        if (req.body.prendre === true) {
+          if (fiche.pris_par && fiche.pris_par !== user.nom) {
+            return res.status(409).json({ erreur: 'Déjà pris par ' + fiche.pris_par });
+          }
+          fiche.pris_par = user.nom;
+          fiche.pris_le = new Date().toISOString();
+          // Annonce au canal SDR : toute l'équipe voit que le hot lead est pris
+          try {
+            const hook = process.env.SLACK_WEBHOOK_URL;
+            if (hook) {
+              const estSignup = !!(fiche.signup || (fiche.signal && fiche.signal.signup));
+              const type = estSignup ? 'signup' : ((fiche.pages_visitees && fiche.pages_visitees.length) ? 'visite ' + fiche.pages_visitees[0] : 'signal');
+              await fetch(hook, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: `🔥 *${user.nom}* prend en charge « ${fiche.enseigne_ia || fiche.enseigne || fiche.nom} » (${type})` }) });
+            }
+          } catch (_) {}
+        }
         // Refus – concurrence : mémorise QUI a pris le deal (stats pertes par concurrent + rappel dans 6 mois)
         if (req.body.concurrent) fiche.concurrent_perdu = { nom: String(req.body.concurrent).slice(0, 60), date: new Date().toISOString() };
         // Envoi Lemlist depuis le cockpit : marque la fiche (cohérence avec le flux fiche + sequences-cron)
