@@ -1931,7 +1931,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v266';
+const VERSION='v267';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -6646,11 +6646,12 @@ async function envoyerCkSequence(){
 async function ckChargerHisto(rid){
  const it=CK_ITEMS[rid];const z=document.getElementById(rid+'-hist');
  if(!it||!z)return;
- // Tous les emails de la fiche : l'activité est journalisée sous l'email du CONTACT concerné,
- // pas toujours sous l'email principal (note prise après l'appel d'un autre contact, Lemlist…)
- var ems=[];
+ // Mêmes clés que la fiche complète (clesFiche) : emails + siren:/nom: fournis par le serveur
+ // (cles_histo) — sans quoi les notes des fiches SANS email (ajouts manuels) n'apparaissent pas.
+ var ems=(it.cles_histo||[]).slice();
  (it.contacts_detail||[]).forEach(function(c){if(c.email){var e=String(c.email).toLowerCase();if(ems.indexOf(e)<0)ems.push(e);}});
  if(it.email_cle){var e0=String(it.email_cle).toLowerCase();if(ems.indexOf(e0)<0)ems.push(e0);}
+ if(it.entreprise){var eN='nom:'+String(it.entreprise).toLowerCase().replace(/\s+/g,' ').trim();if(ems.indexOf(eN)<0)ems.push(eN);}
  if(!ems.length)return;
  try{
   const r=await api('/api/activite?emails='+encodeURIComponent(ems.join(',')));

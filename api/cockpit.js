@@ -81,7 +81,20 @@ function infoFiche(e, listeId, listeNom) {
     email_perso: scV.email ? scV.email.corps : ''
   };
   const emailCle = (cs.find(c => c && c.enrich && c.enrich.email) || {}).enrich;
+  // Clés d'historique = miroir de clesFiche() côté fiche : emails + siren: + nom: — sans elles,
+  // les notes des fiches SANS email (ajouts manuels, GMB) n'apparaissent pas dans le dépli.
+  const clesHisto = [];
+  const addK = k => { if (k && !clesHisto.includes(k)) clesHisto.push(k); };
+  for (const c of cs) if (c && c.enrich && c.enrich.email) addK(String(c.enrich.email).toLowerCase());
+  if (e.enrich && e.enrich.email) addK(String(e.enrich.email).toLowerCase());
+  if (e.siren) addK('siren:' + String(e.siren).replace(/\s/g, ''));
+  const nmK = String(e.nom || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (nmK) addK('nom:' + nmK);
+  const enK = String(e.enseigne || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (enK) addK('nom:' + enK);
+  addK('fiche:' + listeId + ':' + String(e.siren || e.nom || e.enseigne || 'fiche').toLowerCase().replace(/\s+/g, ' ').trim());
   const info = {
+    cles_histo: clesHisto,
     liste_id: listeId, liste_nom: listeNom, cle,
     nom: e.enseigne_ia || e.enseigne || e.nom, ville: e.ville || '',
     contact: c0 ? ((c0.prenom || '') + ' ' + (c0.nom || '')).trim() : '',
