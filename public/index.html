@@ -1931,7 +1931,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v268';
+const VERSION='v269';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -6568,8 +6568,11 @@ function ckToggle(rid){
  if(!pnl.innerHTML){pnl.innerHTML=ckDetailHtml(CK_ITEMS[rid]||{},rid);ckChargerHisto(rid);}
  pnl.style.display='block';if(b)b.innerHTML='Replier \u25b4';
 }
-function ckContactLigne(c,it){
+function ckContactLigne(c,it,rid,ci){
  const acts=[];
+ // Contact incomplet : ↻ Compléter = Lemlist (≈0,20 $) sans quitter le cockpit (arbitrage Didier
+ // 24/07 : Lemlist seul en V1, cascade complète FullEnrich→Kaspr→Lemlist en V2 si besoin)
+ if(rid!=null&&it&&it.liste_id&&it.cle&&(!c.email||!c.tel))acts.push(`<button class="act act-copy" id="${rid}-comp${ci}" style="padding:4px 10px;font-size:12px" onclick="ckCompleter('${rid}',${ci})" title="Compléter email/téléphone via Lemlist (≈0,20 $) — sauvegardé sur la fiche">↻ Compléter</button>`);
  if(c.tel){
   acts.push(`<a class="act act-call" style="padding:4px 10px;font-size:12px;text-decoration:none" href="tel:${htmlSafe(telNorm(c.tel))}" title="Appeler (Ringover click-to-call)">\ud83d\udcde</a>`);
   if(estMobile(c.tel)){
@@ -6593,11 +6596,11 @@ function ckDetailHtml(it,rid){
  if(it.accroche)h+=`<div style="font-size:12.5px;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-bottom:8px">\ud83c\udfaf <b>Accroche :</b> ${htmlSafe(it.accroche)}</div>`;
  if(it.synthese)h+=`<div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;line-height:1.5">${htmlSafe(it.synthese)}</div>`;
  const cs=it.contacts_detail||[];
- if(cs.length)h+=cs.map(c=>ckContactLigne(c,it)).join('');
+ if(cs.length)h+=cs.map((c,ci)=>ckContactLigne(c,it,rid,ci)).join('');
  else if(!it.cle)h+='<p style="font-size:12px;color:var(--ink-soft);margin:4px 0">Fiche non retrouv\u00e9e dans tes listes actives (liste en nurturing ou archiv\u00e9e) \u2014 marque le rappel \u00ab Fait \u00bb apr\u00e8s l\u2019appel, ou retrouve la fiche via la recherche de l\u2019Historique.</p>';
- else h+='<p style="font-size:12px;color:var(--ink-soft);margin:4px 0">Aucun contact nominatif sur cette fiche \u2014 ouvre la fiche compl\u00e8te pour enrichir.</p>';
+ else h+='<p style="font-size:12px;color:var(--ink-soft);margin:4px 0">Aucun contact nominatif sur cette fiche.</p>'+(it.liste_id&&it.cle?`<button class="act act-call" onclick="ckPersonas('${rid}')" title="Waterfall Basile \u2192 IA : cherche les d\u00e9cideurs LinkedIn et les ajoute \u00e0 la fiche">\ud83d\udc65 Chercher les d\u00e9cideurs (Personas)</button>`:'');
  if(it.tel_standard)h+=`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px dashed var(--line)"><div style="flex:1;font-size:12.5px"><span style="font-weight:600">Standard</span> \u00b7 ${htmlSafe(it.tel_standard)}</div><a class="act act-call" style="padding:4px 10px;font-size:12px;text-decoration:none" href="tel:${htmlSafe(telNorm(it.tel_standard))}">\ud83d\udcde</a></div>`;
- if(it.email_cle)h+=`<div style="border-top:1px dashed var(--line);margin-top:8px;padding-top:8px">
+ if(it.email_cle||((it.cles_histo||[]).length))h+=`<div style="border-top:1px dashed var(--line);margin-top:8px;padding-top:8px">
   <div style="font-size:11px;font-weight:800;letter-spacing:.05em;color:var(--ink-soft);margin-bottom:4px">HISTORIQUE DE LA FICHE</div>
   <div id="${rid}-hist" style="font-size:12px;color:var(--ink-soft);max-height:150px;overflow-y:auto">Chargement\u2026</div>
   <div style="display:flex;gap:6px;margin-top:8px">
@@ -6605,7 +6608,7 @@ function ckDetailHtml(it,rid){
    <button class="act act-copy" onclick="ckAjouterNote('${rid}')">Ajouter</button>
   </div></div>`;
  const aEmail=(it.contacts_detail||[]).some(c=>c&&c.email);
- h+=`<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">${aEmail&&!it.statut?`<button class="act act-call" onclick="ouvrirCkSequence('${rid}')" title="Pousser un contact de la fiche en s\u00e9quence Lemlist (m\u00eames variables que depuis la fiche)">\u2708\ufe0f S\u00e9quence Lemlist\u2026</button>`:''}${it.liste_id?`<button class="act act-copy" onclick="ouvrirListe(${it.liste_id}${it.cle?`,decodeURIComponent('${jsArg(it.cle)}')`:',null'})" title="Bloc-notes, SMS SoReach, email Lemlist, enrichissement\u2026">Ouvrir la fiche compl\u00e8te \u2192</button>`:''}</div>`;
+ h+=`<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">${aEmail&&!it.statut?`<button class="act act-call" onclick="ouvrirCkSequence('${rid}')" title="Pousser un contact de la fiche en s\u00e9quence Lemlist (m\u00eames variables que depuis la fiche)">\u2708\ufe0f S\u00e9quence Lemlist\u2026</button>`:''}${cs.length&&it.liste_id&&it.cle?`<button class="act act-copy" onclick="ckPersonas('${rid}')" title="Chercher d'autres d\u00e9cideurs LinkedIn (Basile \u2192 IA) et les ajouter \u00e0 la fiche">\ud83d\udc65 Personas</button>`:''}${it.liste_id?`<button class="act act-copy" onclick="ouvrirListe(${it.liste_id}${it.cle?`,decodeURIComponent('${jsArg(it.cle)}')`:',null'})" title="Bloc-notes, SMS SoReach, email Lemlist, enrichissement\u2026">Ouvrir la fiche compl\u00e8te \u2192</button>`:''}</div>`;
  return h+'</div>';
 }
 let CKSEQ_CTX=null;
@@ -6669,6 +6672,79 @@ async function ckAjouterNote(rid){
   await api('/api/activite',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:it.email_cle,source:'note',type:'note',titre:'📝 Note',detail:txt})});
   toast('📝 Note ajoutée');ckChargerHisto(rid);
  }catch(e){toast('Erreur réseau : '+e.message);}
+}
+// Re-rendu du panneau déplié après un enrichissement (contacts ajoutés / complétés)
+function ckRafraichirDepli(rid){
+ const pnl=document.getElementById(rid+'-d');
+ if(pnl&&pnl.style.display!=='none'){pnl.innerHTML=ckDetailHtml(CK_ITEMS[rid]||{},rid);ckChargerHisto(rid);}
+}
+/* 👥 Personas depuis « Ma journée » : même waterfall que la fiche (Basile → agent IA),
+   contacts sauvegardés sur la fiche via le PUT chirurgical (ajouter_contacts). */
+function ckPersonas(rid){
+ const it=CK_ITEMS[rid];if(!it||!it.liste_id||!it.cle)return;
+ const deja=new Set(['Directeur Commercial','Directeur Marketing','Responsable Communication']);
+ document.getElementById('personas-choix').innerHTML=`
+  <div style="font-size:18px;font-weight:700;margin-bottom:6px">👥 Quelles fonctions chercher ?</div>
+  <div style="font-size:13px;color:var(--ink-soft);line-height:1.5;margin-bottom:14px">Recherche LinkedIn (Basile, puis IA en repli) pour <b>${htmlSafe(it.nom||'')}</b> — les contacts trouvés s'ajoutent directement à la fiche.</div>
+  ${JOBS_PERSONAS.map(j=>`<label style="display:flex;align-items:center;gap:8px;padding:7px 4px;font-size:13.5px;cursor:pointer;border-top:1px solid var(--line)"><input type="checkbox" value="${j}" ${deja.has(j)?'checked':''}>${j}</label>`).join('')}
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px">
+   <button class="btn" onclick="document.getElementById('personas-modal').style.display='none'" style="background:var(--paper)">Annuler</button>
+   <button class="btn btn-primary" onclick="ckValiderPersonas('${rid}')">👥 Chercher</button>
+  </div>`;
+ document.getElementById('personas-modal').style.display='flex';
+}
+async function ckValiderPersonas(rid){
+ const it=CK_ITEMS[rid];if(!it)return;
+ const choix=[...document.querySelectorAll('#personas-choix input[type=checkbox]:checked')].map(c=>c.value);
+ if(!choix.length){toast('Coche au moins une fonction');return;}
+ document.getElementById('personas-modal').style.display='none';
+ toast('👥 Recherche des personas…');
+ try{
+  const r=await api('/api/personas',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({liste_id:it.liste_id,entreprise:{nom:it.nom_officiel||it.nom,enseigne:it.nom,site:it.site||'',ville:it.ville||'',linkedin:it.linkedin_entreprise||''},jobs:choix})});
+  let d;try{d=await r.json();}catch(_){toast('Personas : réponse invalide ('+r.status+')');return;}
+  if(d.erreur){toast('Personas : '+d.erreur+(d.detail?' — '+d.detail:''));return;}
+  const ps=((d.resultat||{}).personas)||[];
+  if(!ps.length){toast('👥 '+((d.resultat||{}).explication||'Aucun persona trouvé (normal sur les petites structures : le dirigeant est le décideur)'));return;}
+  const rp=await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({id:it.liste_id,fiche_cle:it.cle,ajouter_contacts:ps.map(p=>({prenom:p.prenom||'',nom:p.nom,fonction:p.fonction||'',linkedin:p.linkedin||null}))})});
+  const dp=await rp.json();
+  if(dp.erreur){toast('Sauvegarde : '+dp.erreur);return;}
+  it.contacts_detail=(dp.contacts||[]).filter(c=>c&&c.nom).slice(0,5).map(c=>({nom:((c.prenom||'')+' '+(c.nom||'')).trim(),prenom:c.prenom||'',nom_seul:c.nom||'',fonction:c.fonction||(c.enrich&&c.enrich.fonction)||'',email:(c.enrich&&c.enrich.email)||null,tel:(c.enrich&&c.enrich.telephone)||null,linkedin:(c.enrich&&c.enrich.linkedin)||null}));
+  ckRafraichirDepli(rid);
+  toast('👥 '+(dp.contacts_ajoutes!=null?dp.contacts_ajoutes:ps.length)+' contact(s) ajouté(s) à la fiche');
+ }catch(e){toast('Erreur réseau : '+e.message);}
+}
+/* ↻ Compléter : Lemlist (~0,20 $) sur UN contact — résultat sauvegardé sur la fiche (contact_enrich) */
+async function ckCompleter(rid,ci){
+ const it=CK_ITEMS[rid];const c=((it&&it.contacts_detail)||[])[ci];
+ if(!it||!c)return;
+ const btn=document.getElementById(rid+'-comp'+ci);
+ if(btn){btn.disabled=true;btn.textContent='⏳ Lemlist…';}
+ try{
+  const r=await api('/api/lemlist-enrich',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({findEmail:!c.email,findPhone:!c.tel,contact:{prenom:c.prenom,nom:c.nom_seul,linkedin:c.linkedin||'',email:c.email||'',fonction:c.fonction||''},entreprise:{nom:it.nom,site:it.site||''}})});
+  let d;try{d=await r.json();}catch(_){toast('Lemlist : réponse invalide ('+r.status+')');ckRafraichirDepli(rid);return;}
+  let essais=0;
+  while(d.pending&&d.enrichment_id&&essais<7){
+   await new Promise(x=>setTimeout(x,8000));
+   const r2=await api('/api/lemlist-enrich?enrichment_id='+encodeURIComponent(d.enrichment_id));
+   try{d=await r2.json();}catch(_){break;}
+   essais++;
+  }
+  if(d.erreur){toast('Lemlist : '+d.erreur);ckRafraichirDepli(rid);return;}
+  if(d.pending){toast('Lemlist met du temps — reclique ↻ Compléter dans 1 à 2 min (reprise sans recoût)');ckRafraichirDepli(rid);return;}
+  const re=d.resultat||{};
+  if(!re.email&&!re.telephone&&!re.linkedin){toast('Lemlist : rien de neuf trouvé pour ce contact');ckRafraichirDepli(rid);return;}
+  try{await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({id:it.liste_id,fiche_cle:it.cle,contact_enrich:{prenom:c.prenom,nom:c.nom_seul,email:re.email||null,telephone:re.telephone||null,linkedin:re.linkedin||null}})});}catch(_){}
+  if(re.email&&!c.email)c.email=re.email;
+  if(re.telephone&&!c.tel)c.tel=re.telephone;
+  if(re.linkedin&&!c.linkedin)c.linkedin=re.linkedin;
+  if(!it.tel&&c.tel)it.tel=c.tel;
+  ckRafraichirDepli(rid);
+  toast('🔵 Lemlist : donnée(s) ajoutée(s) et sauvegardée(s) ✓');
+ }catch(e){toast('Erreur réseau : '+e.message);if(btn){btn.disabled=false;btn.textContent='↻ Compléter';}}
 }
 // « Ma prospection » : liste choisie mémorisée par SDR
 function ckListeSel(){try{return localStorage.getItem('ck_liste_'+((state.user&&state.user.nom)||''))||'';}catch(_){return'';}}

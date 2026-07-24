@@ -99,6 +99,10 @@ function infoFiche(e, listeId, listeNom) {
     cles_histo: clesHisto,
     liste_id: listeId, liste_nom: listeNom, cle,
     nom: e.enseigne_ia || e.enseigne || e.nom, ville: e.ville || '',
+    // Matière des enrichissements lancés depuis le cockpit (👥 Personas, ↻ Compléter Lemlist)
+    nom_officiel: e.nom || '',
+    site: e.site_web || (e.gmb && e.gmb.site) || (e.ia && e.ia.site) || null,
+    linkedin_entreprise: e.linkedin_entreprise || null,
     contact: c0 ? ((c0.prenom || '') + ' ' + (c0.nom || '')).trim() : '',
     fonction: (c0 && (c0.fonction || (c0.enrich && c0.enrich.fonction))) || '',
     tel: telDe(e, c0), statut, traite_le: e.traite_le || null,

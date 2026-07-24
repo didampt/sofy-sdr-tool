@@ -381,7 +381,8 @@ export default async function handler(req, res) {
       // Transfert d'une liste à un autre SDR (réservé admin/superadmin)
       // ── Statuer UNE fiche depuis le cockpit (mise à jour chirurgicale du JSONB, sans recharger la liste) ──
       // PUT { id, fiche_cle, statut_appel } — fiche_cle = clé cleSignal() (signal.date + nom).
-      if (req.body.fiche_cle !== undefined && (req.body.statut_appel !== undefined || req.body.marquer_lemlist === true || req.body.prendre === true)) {
+      if (req.body.fiche_cle !== undefined && (req.body.statut_appel !== undefined || req.body.marquer_lemlist === true || req.body.prendre === true
+          || Array.isArray(req.body.ajouter_contacts) || (req.body.contact_enrich && typeof req.body.contact_enrich === 'object'))) {
         const rowsF = await sql`SELECT sdr, entreprises FROM listes WHERE id = ${parseInt(id)}`;
         if (!rowsF.length) return res.status(404).json({ erreur: 'Liste introuvable' });
         const adminF = ['admin', 'superadmin'].includes(user.role);
@@ -414,6 +415,37 @@ export default async function handler(req, res) {
         if (req.body.concurrent) fiche.concurrent_perdu = { nom: String(req.body.concurrent).slice(0, 60), date: new Date().toISOString() };
         // Envoi Lemlist depuis le cockpit : marque la fiche (cohérence avec le flux fiche + sequences-cron)
         if (req.body.marquer_lemlist === true) fiche.lemlist_envoye = true;
+        // 👥 Personas depuis le cockpit : ajout des contacts trouvés (dédup par prénom+nom, plafond 8)
+        const normP = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+        let contactsAjoutes = 0;
+        if (Array.isArray(req.body.ajouter_contacts)) {
+          if (!Array.isArray(fiche.contacts)) fiche.contacts = [];
+          for (const np of req.body.ajouter_contacts.slice(0, 6)) {
+            if (!np || !np.nom) continue;
+            if (fiche.contacts.length >= 8) break;
+            const deja = fiche.contacts.some(c => c && normP(c.prenom) === normP(np.prenom) && normP(c.nom) === normP(np.nom));
+            if (deja) continue;
+            fiche.contacts.push({
+              prenom: String(np.prenom || '').slice(0, 60), nom: String(np.nom).slice(0, 60),
+              fonction: String(np.fonction || '').slice(0, 120), source: 'linkedin',
+              enrich: np.linkedin ? { linkedin: String(np.linkedin).slice(0, 300), email: null, telephone: null, fonction: String(np.fonction || '').slice(0, 120), source: 'ia-personas', avec_domaine: false } : null
+            });
+            contactsAjoutes++;
+          }
+          fiche.personas_fait = true;
+        }
+        // ↻ Compléter (Lemlist) depuis le cockpit : complète email/téléphone d'un contact existant
+        if (req.body.contact_enrich && typeof req.body.contact_enrich === 'object') {
+          const ce = req.body.contact_enrich;
+          const c = (fiche.contacts || []).find(x => x && normP(x.prenom) === normP(ce.prenom) && normP(x.nom) === normP(ce.nom));
+          if (c) {
+            if (!c.enrich) c.enrich = {};
+            if (ce.email && !c.enrich.email) { c.enrich.email = String(ce.email).slice(0, 200); c.enrich.email_source = 'lemlist'; c.enrich.email_qualification = 'Lemlist'; }
+            if (ce.telephone && !c.enrich.telephone) { c.enrich.telephone = String(ce.telephone).slice(0, 40); c.enrich.telephone_source = 'lemlist'; }
+            if (ce.linkedin && !c.enrich.linkedin) c.enrich.linkedin = String(ce.linkedin).slice(0, 300);
+            c.enrich.lemlist_fait = true;
+          }
+        }
         if (statutF) {
           fiche.statut_appel = statutF;
           fiche.tags_sdr = [statutF === 'RDV pris' ? '🤝 RDV pris' : statutF];
@@ -425,7 +457,7 @@ export default async function handler(req, res) {
         }
         const stF = calculerStatsListe(entsF);
         await sql`UPDATE listes SET entreprises = ${JSON.stringify(entsF)}, stats = ${JSON.stringify(stF)} WHERE id = ${parseInt(id)}`;
-        return res.status(200).json({ ok: true, statut_appel: fiche.statut_appel, stats: stF });
+        return res.status(200).json({ ok: true, statut_appel: fiche.statut_appel, stats: stF, contacts: fiche.contacts || [], contacts_ajoutes: contactsAjoutes });
       }
 
       if (assigner_a !== undefined && typeof assigner_a === 'string' && assigner_a.trim()) {
