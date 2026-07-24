@@ -29,7 +29,9 @@ function debutJourParis() { // minuit Paris, exprimé en instant UTC
 }
 
 function telDe(e, c) {
-  const tels = [c && c.enrich && c.enrich.telephone, e.enrich && e.enrich.telephone, e.gmb && e.gmb.telephone].filter(Boolean);
+  // ia.telephone = numéro « trouvé sur le web (IA) » — canal oublié à l'origine (cas Sadéco :
+  // standard web affiché sur la fiche mais absent de la file d'appel du cockpit)
+  const tels = [c && c.enrich && c.enrich.telephone, e.enrich && e.enrich.telephone, e.gmb && e.gmb.telephone, e.ia && e.ia.telephone].filter(Boolean);
   return tels.find(estMobileFr) || tels[0] || null;
 }
 
@@ -101,7 +103,7 @@ function infoFiche(e, listeId, listeNom) {
     fonction: (c0 && (c0.fonction || (c0.enrich && c0.enrich.fonction))) || '',
     tel: telDe(e, c0), statut, traite_le: e.traite_le || null,
     email_cle: (emailCle && emailCle.email) ? String(emailCle.email).toLowerCase() : ((e.enrich && e.enrich.email) ? String(e.enrich.email).toLowerCase() : null),
-    tel_standard: (e.gmb && e.gmb.telephone) || null,
+    tel_standard: (e.gmb && e.gmb.telephone) || (e.ia && e.ia.telephone) || null,
     accroche: (e.score && e.score.accroche) || null,
     synthese: (e.score && e.score.synthese) || null,
     contacts_detail: contactsDetail,
@@ -211,7 +213,9 @@ export default async function handler(req, res) {
         if (kNom && !parNom.has(kNom)) parNom.set(kNom, info);
         if (kEns && !parNom.has(kEns)) parNom.set(kEns, info);
         if (statut && e.traite_le) { const t = new Date(e.traite_le); if (t >= debutHier && t < debutJour) statueesHierL++; }
-        if (!statut && (e.score || (e.gmb && e.gmb.trouve))) {
+        // File d'appel = fiches enrichies ET appelables : sans aucun numéro (contact, enrich,
+        // GMB, web/IA), la fiche reste dans sa liste mais n'entre pas dans « à prospecter ».
+        if (!statut && (e.score || (e.gmb && e.gmb.trouve)) && (info.tel || info.tel_standard)) {
           restantesL++;
           if (!listeChoisie || l.id === listeChoisie) prospecter.push({
             ...info,
