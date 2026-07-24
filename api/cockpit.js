@@ -48,6 +48,56 @@ function angleDe(e) {
   return bouts.join(' · ') || null;
 }
 
+// Clé de rapprochement par nom (rappels sans email, ou fiches renommées) : minuscules sans accents ni ponctuation
+const normCk = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+
+// Fiche -> objet « info » du cockpit (panneau déplié, vars Lemlist, statut) — partagé entre la
+// file principale et la résolution des rappels (y compris fiches de listes nurturing/archivées).
+function infoFiche(e, listeId, listeNom) {
+  const cle = ((e.signal && e.signal.date) ? e.signal.date : '') + (e.nom || ''); // = cleSignal() côté front
+  const cs = e.contacts || [];
+  const c0 = cs.find(c => c && c.enrich && (c.enrich.telephone || c.enrich.email)) || cs[0] || null;
+  const statut = e.statut_appel || (e.tags_sdr || [])[0] || null;
+  const contactsDetail = cs.filter(c => c && c.nom).slice(0, 5).map(c => ({
+    nom: ((c.prenom || '') + ' ' + (c.nom || '')).trim(),
+    prenom: c.prenom || '', nom_seul: c.nom || '',
+    fonction: c.fonction || (c.enrich && c.enrich.fonction) || '',
+    email: (c.enrich && c.enrich.email) || null,
+    tel: (c.enrich && c.enrich.telephone) || null,
+    linkedin: (c.enrich && c.enrich.linkedin) || null
+  }));
+  // Variables Lemlist prêtes à l'envoi (miroir de varsLemlist côté fiche) pour « ✈️ Séquence » du panneau
+  const gV = e.gmb || {}, scV = e.score || {};
+  const prodV = scV.scores ? ([['soview', scV.scores.soview], ['soconnect', scV.scores.soconnect], ['soreach', scV.scores.soreach]].sort((a, b) => (b[1] || 0) - (a[1] || 0))[0]) : null;
+  const varsLem = {
+    companyName: e.enseigne_ia || e.enseigne || e.nom,
+    gmb_note: gV.trouve ? String(gV.note_moyenne) : '',
+    gmb_pire_fiche: gV.trouve && gV.pire_fiche ? `${gV.pire_fiche.nom} (${gV.pire_fiche.note}★)` : '',
+    avis_negatif: gV.avis_negatif ? String(gV.avis_negatif.texte || '').slice(0, 180) : '',
+    gmb_concurrents: gV.concurrents ? String(gV.concurrents.note_moyenne) : '',
+    produit_score: (prodV && prodV[1]) ? `${prodV[0]} ${prodV[1]}` : '',
+    accroche: scV.accroche || '',
+    objet_perso: scV.email ? scV.email.objet : '',
+    email_perso: scV.email ? scV.email.corps : ''
+  };
+  const emailCle = (cs.find(c => c && c.enrich && c.enrich.email) || {}).enrich;
+  const info = {
+    liste_id: listeId, liste_nom: listeNom, cle,
+    nom: e.enseigne_ia || e.enseigne || e.nom, ville: e.ville || '',
+    contact: c0 ? ((c0.prenom || '') + ' ' + (c0.nom || '')).trim() : '',
+    fonction: (c0 && (c0.fonction || (c0.enrich && c0.enrich.fonction))) || '',
+    tel: telDe(e, c0), statut, traite_le: e.traite_le || null,
+    email_cle: (emailCle && emailCle.email) ? String(emailCle.email).toLowerCase() : ((e.enrich && e.enrich.email) ? String(e.enrich.email).toLowerCase() : null),
+    tel_standard: (e.gmb && e.gmb.telephone) || null,
+    accroche: (e.score && e.score.accroche) || null,
+    synthese: (e.score && e.score.synthese) || null,
+    contacts_detail: contactsDetail,
+    vars: varsLem,
+    produit_dominant: (prodV && prodV[1]) ? prodV[0] : null
+  };
+  return { info, statut };
+}
+
 export default async function handler(req, res) {
   const user = verifierToken(req);
   if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
@@ -120,6 +170,7 @@ export default async function handler(req, res) {
       .map(l => ({ id: l.id, nom: l.nom, pct: (l.stats.pct_complete || 0) }))
       .slice(0, 3);
     const parEmail = new Map();
+    const parNom = new Map(); // repli de rapprochement des rappels : nom/enseigne normalisés -> info
     const prospecter = [];
     const parListe = []; // sélecteur « Ma prospection » : {id, nom, total, restantes}
     let statueesJour = 0, traitees7j = 0;
@@ -130,10 +181,7 @@ export default async function handler(req, res) {
     for (const l of listes) {
       let restantesL = 0, statueesHierL = 0;
       for (const e of (Array.isArray(l.entreprises) ? l.entreprises : [])) {
-        const cle = ((e.signal && e.signal.date) ? e.signal.date : '') + (e.nom || ''); // = cleSignal() côté front
-        const cs = e.contacts || [];
-        const c0 = cs.find(c => c && c.enrich && (c.enrich.telephone || c.enrich.email)) || cs[0] || null;
-        const statut = e.statut_appel || (e.tags_sdr || [])[0] || null;
+        const { info, statut } = infoFiche(e, l.id, l.nom);
         if (statut && e.traite_le && new Date(e.traite_le) >= debutJour) statueesJour++;
         if (statut && e.traite_le && new Date(e.traite_le) >= il7j) traitees7j++;
         if ((statut === 'RDV pris' || statut === '🤝 RDV pris' || (e.tags_sdr || []).includes('🤝 RDV pris'))
@@ -144,53 +192,18 @@ export default async function handler(req, res) {
             effectif: e.effectif || null, code_postal: e.code_postal || '', traite_le: e.traite_le || null
           };
         }
-        // Détail pour le panneau déplié du cockpit : tous les contacts + synthèse d'appel
-        const contactsDetail = cs.filter(c => c && c.nom).slice(0, 5).map(c => ({
-          nom: ((c.prenom || '') + ' ' + (c.nom || '')).trim(),
-          prenom: c.prenom || '', nom_seul: c.nom || '',
-          fonction: c.fonction || (c.enrich && c.enrich.fonction) || '',
-          email: (c.enrich && c.enrich.email) || null,
-          tel: (c.enrich && c.enrich.telephone) || null,
-          linkedin: (c.enrich && c.enrich.linkedin) || null
-        }));
-        // Variables Lemlist prêtes à l'envoi (miroir de varsLemlist côté fiche) pour « ✈️ Séquence » du panneau
-        const gV = e.gmb || {}, scV = e.score || {};
-        const prodV = scV.scores ? ([['soview', scV.scores.soview], ['soconnect', scV.scores.soconnect], ['soreach', scV.scores.soreach]].sort((a, b) => (b[1] || 0) - (a[1] || 0))[0]) : null;
-        const varsLem = {
-          companyName: e.enseigne_ia || e.enseigne || e.nom,
-          gmb_note: gV.trouve ? String(gV.note_moyenne) : '',
-          gmb_pire_fiche: gV.trouve && gV.pire_fiche ? `${gV.pire_fiche.nom} (${gV.pire_fiche.note}★)` : '',
-          avis_negatif: gV.avis_negatif ? String(gV.avis_negatif.texte || '').slice(0, 180) : '',
-          gmb_concurrents: gV.concurrents ? String(gV.concurrents.note_moyenne) : '',
-          produit_score: (prodV && prodV[1]) ? `${prodV[0]} ${prodV[1]}` : '',
-          accroche: scV.accroche || '',
-          objet_perso: scV.email ? scV.email.objet : '',
-          email_perso: scV.email ? scV.email.corps : ''
-        };
-        const emailCle = (cs.find(c => c && c.enrich && c.enrich.email) || {}).enrich;
-        const info = {
-          liste_id: l.id, liste_nom: l.nom, cle,
-          nom: e.enseigne_ia || e.enseigne || e.nom, ville: e.ville || '',
-          contact: c0 ? ((c0.prenom || '') + ' ' + (c0.nom || '')).trim() : '',
-          fonction: (c0 && (c0.fonction || (c0.enrich && c0.enrich.fonction))) || '',
-          tel: telDe(e, c0), statut, traite_le: e.traite_le || null,
-          email_cle: (emailCle && emailCle.email) ? String(emailCle.email).toLowerCase() : ((e.enrich && e.enrich.email) ? String(e.enrich.email).toLowerCase() : null),
-          tel_standard: (e.gmb && e.gmb.telephone) || null,
-          accroche: (e.score && e.score.accroche) || null,
-          synthese: (e.score && e.score.synthese) || null,
-          contacts_detail: contactsDetail,
-          vars: varsLem,
-          produit_dominant: (prodV && prodV[1]) ? prodV[0] : null
-        };
-        for (const c of cs) if (c && c.enrich && c.enrich.email) parEmail.set(String(c.enrich.email).toLowerCase(), info);
+        for (const c of (e.contacts || [])) if (c && c.enrich && c.enrich.email) parEmail.set(String(c.enrich.email).toLowerCase(), info);
         if (e.enrich && e.enrich.email) parEmail.set(String(e.enrich.email).toLowerCase(), info);
+        const kNom = normCk(e.nom), kEns = normCk(e.enseigne_ia || e.enseigne || '');
+        if (kNom && !parNom.has(kNom)) parNom.set(kNom, info);
+        if (kEns && !parNom.has(kEns)) parNom.set(kEns, info);
         if (statut && e.traite_le) { const t = new Date(e.traite_le); if (t >= debutHier && t < debutJour) statueesHierL++; }
         if (!statut && (e.score || (e.gmb && e.gmb.trouve))) {
           restantesL++;
           if (!listeChoisie || l.id === listeChoisie) prospecter.push({
             ...info,
             score: (e.score && e.score.scores && e.score.scores.global) || 0,
-            angle: angleDe(e), contacts: contactsDetail.length
+            angle: angleDe(e), contacts: info.contacts_detail.length
           });
         }
       }
@@ -264,8 +277,36 @@ export default async function handler(req, res) {
       ORDER BY date_rappel ASC LIMIT 60`;
     const rappels = { retard: [], aujourdhui: [], retenter: [] };
     const mtn = new Date();
+    // Rapprochement rappel -> fiche : email (clé de création), sinon NOM (listes actives),
+    // sinon la LISTE du rappel elle-même (même en nurturing/archivée : le dépli et « Ouvrir la
+    // fiche complète » doivent marcher — cas École des Mines, liste sortie de la prospection).
+    const aResoudre = [];
     for (const t of tks) {
-      const f = (t.fiche_cle && t.fiche_cle.includes('@')) ? parEmail.get(String(t.fiche_cle).toLowerCase()) : null;
+      let f = (t.fiche_cle && t.fiche_cle.includes('@')) ? parEmail.get(String(t.fiche_cle).toLowerCase()) : null;
+      if (!f && t.entreprise_nom) f = parNom.get(normCk(t.entreprise_nom)) || null;
+      t._f = f;
+      if (!f && t.liste_id) aResoudre.push(t.liste_id);
+    }
+    if (aResoudre.length) {
+      try {
+        const ls = await sql`SELECT id, nom, entreprises FROM listes WHERE id = ANY(${[...new Set(aResoudre)]})`;
+        const parId = new Map(ls.map(l => [l.id, l]));
+        for (const t of tks) {
+          if (t._f || !t.liste_id) continue;
+          const l = parId.get(t.liste_id);
+          if (!l) continue;
+          const em = (t.fiche_cle && t.fiche_cle.includes('@')) ? String(t.fiche_cle).toLowerCase() : null;
+          const nomT = normCk(t.entreprise_nom || '');
+          const e = (Array.isArray(l.entreprises) ? l.entreprises : []).find(x =>
+            (em && ((x.contacts || []).some(c => c && c.enrich && String(c.enrich.email || '').toLowerCase() === em)
+                    || (x.enrich && String(x.enrich.email || '').toLowerCase() === em)))
+            || (nomT && (normCk(x.nom) === nomT || normCk(x.enseigne_ia || x.enseigne || '') === nomT)));
+          if (e) t._f = infoFiche(e, l.id, l.nom).info;
+        }
+      } catch (_) {}
+    }
+    for (const t of tks) {
+      const f = t._f || null;
       const r = {
         id: t.id, entreprise: t.entreprise_nom || (f && f.nom) || 'Fiche', contact: t.contact_nom || (f && f.contact) || '',
         description: t.description || '', date_rappel: t.date_rappel,
