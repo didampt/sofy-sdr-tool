@@ -1931,7 +1931,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v265';
+const VERSION='v266';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -6645,9 +6645,15 @@ async function envoyerCkSequence(){
 // Historique du bloc-notes dans le panneau déplié (chargé au dépli, 1 requête légère)
 async function ckChargerHisto(rid){
  const it=CK_ITEMS[rid];const z=document.getElementById(rid+'-hist');
- if(!it||!it.email_cle||!z)return;
+ if(!it||!z)return;
+ // Tous les emails de la fiche : l'activité est journalisée sous l'email du CONTACT concerné,
+ // pas toujours sous l'email principal (note prise après l'appel d'un autre contact, Lemlist…)
+ var ems=[];
+ (it.contacts_detail||[]).forEach(function(c){if(c.email){var e=String(c.email).toLowerCase();if(ems.indexOf(e)<0)ems.push(e);}});
+ if(it.email_cle){var e0=String(it.email_cle).toLowerCase();if(ems.indexOf(e0)<0)ems.push(e0);}
+ if(!ems.length)return;
  try{
-  const r=await api('/api/activite?emails='+encodeURIComponent(it.email_cle));
+  const r=await api('/api/activite?emails='+encodeURIComponent(ems.join(',')));
   const d=await r.json();
   const acts=(d.activites||[]).slice(0,6);
   z.innerHTML=acts.length?acts.map(a=>`<div style="margin:2px 0"><span style="color:var(--ink-soft)">${new Date(a.ts).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})} ${new Date(a.ts).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span> · ${htmlSafe(a.titre||'')}${a.detail?` <span style="color:var(--ink-soft)">— ${htmlSafe(String(a.detail).slice(0,90))}</span>`:''}${a.auteur?` <span style="color:var(--ink-soft)">(${htmlSafe(a.auteur)})</span>`:''}</div>`).join(''):'Aucune activité pour l\u2019instant.';
