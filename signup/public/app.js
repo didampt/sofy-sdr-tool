@@ -424,6 +424,7 @@ function formPayload() {
     fonction: String(data.get('fonction') || '').trim(),
     country: country ? country.name : '',
     country_code: country ? country.code : '',
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
     password: password.value,
     cgv_accepted: document.querySelector('#cgv').checked,
     company: {

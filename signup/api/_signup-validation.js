@@ -48,6 +48,7 @@ export function validateSignupPayload(body) {
   const email = normalizeEmail(body.email);
   const phone = String(body.phone || '').trim();
   const countryCode = String(body.country_code || '').trim().toUpperCase();
+  const timezone = String(body.timezone || '').trim();
   const company = body.company || {};
 
   if (!String(body.first_name || '').trim()) errors.push('Le prénom est requis.');
@@ -81,6 +82,7 @@ export function validateSignupPayload(body) {
       fonction: cleanText(body.fonction, 200),
       country: String(body.country || '').trim(),
       country_code: countryCode,
+      timezone,
       password: String(body.password || ''),
       cgv_accepted: Boolean(body.cgv_accepted),
       source: 'signup.sofy.fr',
