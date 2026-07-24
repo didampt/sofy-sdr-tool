@@ -1931,7 +1931,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v267';
+const VERSION='v268';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -7147,7 +7147,9 @@ async function changerStatutListe(id,nom,statut){
  }catch(e){toast('Erreur réseau : '+e.message);}
 }
 function htmlSafe(v){return String(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-function jsArg(v){return encodeURIComponent(String(v||''));}
+// encodeURIComponent n'encode PAS l'apostrophe : « d'Albi » cassait les onclick="…'…'…"
+// (SyntaxError silencieuse au clic — bouton mort). %27 est décodé normalement.
+function jsArg(v){return encodeURIComponent(String(v||'')).replace(/'/g,'%27');}
 function signupStatut(s){
  if(s.banned)return `<span class="badge" style="background:#FEECEC;color:var(--danger)">Banni par ${htmlSafe(s.banned_by||'utilisateur inconnu')}</span>`;
  if(!s.pending)return '<span class="badge b-new">✅ Activé</span>';
