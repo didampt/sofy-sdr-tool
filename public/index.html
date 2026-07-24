@@ -1934,7 +1934,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v270';
+const VERSION='v271';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -6606,7 +6606,7 @@ function ckDetailHtml(it,rid){
  if(it.tel_standard)h+=`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px dashed var(--line)"><div style="flex:1;font-size:12.5px"><span style="font-weight:600">Standard</span> \u00b7 ${htmlSafe(it.tel_standard)}</div><a class="act act-call" style="padding:4px 10px;font-size:12px;text-decoration:none" href="tel:${htmlSafe(telNorm(it.tel_standard))}">\ud83d\udcde</a></div>`;
  if(it.email_cle||((it.cles_histo||[]).length))h+=`<div style="border-top:1px dashed var(--line);margin-top:8px;padding-top:8px">
   <div style="font-size:11px;font-weight:800;letter-spacing:.05em;color:var(--ink-soft);margin-bottom:4px">HISTORIQUE DE LA FICHE</div>
-  <div id="${rid}-hist" style="font-size:12px;color:var(--ink-soft);max-height:150px;overflow-y:auto">Chargement\u2026</div>
+  <div id="${rid}-hist" style="font-size:12px;color:var(--ink-soft);max-height:220px;overflow-y:auto">Chargement\u2026</div>
   <div style="display:flex;gap:6px;margin-top:8px">
    <input class="field" id="${rid}-note" placeholder="Note rapide : objection, bon interlocuteur, ressenti\u2026" style="flex:1;font-size:12px;padding:6px 10px" onkeydown="if(event.key==='Enter')ckAjouterNote('${rid}')">
    <button class="act act-copy" onclick="ckAjouterNote('${rid}')">Ajouter</button>
@@ -6664,7 +6664,7 @@ async function ckChargerHisto(rid){
   const r=await api('/api/activite?emails='+encodeURIComponent(ems.join(',')));
   const d=await r.json();
   const acts=(d.activites||[]).slice(0,6);
-  z.innerHTML=acts.length?acts.map(a=>`<div style="margin:2px 0"><span style="color:var(--ink-soft)">${new Date(a.ts).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})} ${new Date(a.ts).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span> · ${htmlSafe(a.titre||'')}${a.detail?` <span style="color:var(--ink-soft)">— ${htmlSafe(String(a.detail).slice(0,90))}</span>`:''}${a.auteur?` <span style="color:var(--ink-soft)">(${htmlSafe(a.auteur)})</span>`:''}</div>`).join(''):'Aucune activité pour l\u2019instant.';
+  z.innerHTML=acts.length?acts.map(a=>`<div style="margin:2px 0"><span style="color:var(--ink-soft)">${new Date(a.ts).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})} ${new Date(a.ts).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span> · ${htmlSafe(a.titre||'')}${a.detail?` <span style="color:var(--ink-soft)">— ${htmlSafe(String(a.detail))}</span>`:''}${a.auteur?` <span style="color:var(--ink-soft)">(${htmlSafe(a.auteur)})</span>`:''}</div>`).join(''):'Aucune activité pour l\u2019instant.';
  }catch(_){z.textContent='Historique indisponible.';}
 }
 async function ckAjouterNote(rid){
