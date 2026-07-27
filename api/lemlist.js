@@ -29,7 +29,7 @@ export default async function handler(req, res) {
 
     // Plafond quotidien (délivrabilité) : max N NOUVEAUX leads Lemlist par SDR par 24 h glissantes.
     // Seuls les ajouts comptent (sequenceAdded) — les mises à jour d'un lead déjà en séquence passent.
-    const PLAFOND_JOUR = parseInt(process.env.LEMLIST_PLAFOND_JOUR || '50', 10);
+    const PLAFOND_JOUR = parseInt(process.env.LEMLIST_PLAFOND_JOUR || '75', 10); // 50 → 75 le 24/07 (Alicia bloquée ; boîtes sous lemwarm)
     const sdrEnvoi = proprietaire || user.nom;
     if (sql && sdrEnvoi) {
       const cnt = await sql`SELECT COUNT(*)::int AS n FROM activites

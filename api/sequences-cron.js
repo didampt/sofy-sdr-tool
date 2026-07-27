@@ -15,7 +15,7 @@ import { sql, ensureSchema } from './db.js';
 
 export const config = { maxDuration: 300 };
 
-const PLAFOND_JOUR = parseInt(process.env.LEMLIST_PLAFOND_JOUR || '50', 10);
+const PLAFOND_JOUR = parseInt(process.env.LEMLIST_PLAFOND_JOUR || '75', 10); // 50 → 75 le 24/07 (Alicia bloquée ; boîtes sous lemwarm)
 const PLAFOND_RUN = 100;
 const STATUTS_FROID = ['Pas de réponse', 'Message vocal laissé', 'Absent'];
 const TYPES_STOP = ['warmed', 'emailsReplied', 'linkedinReplied', 'whatsappReplied', 'smsReplied',
