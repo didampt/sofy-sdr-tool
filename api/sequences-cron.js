@@ -244,7 +244,26 @@ export default async function handler(req, res) {
       bilans++;
     }
 
-    return res.status(200).json({ ok: true, listes_scannees: listes.length, bascules: total, par_sdr: parSdr, bilans_slack: bilans });
+    // Récap consolidé aux ADMINS (Didier, Romain) : bascules par SDR + quota MANUEL restant.
+    // Le plafond étant partagé cron/manuel, c'est ici qu'on voit si le robot étouffe les
+    // envois manuels de la journée (cas Alicia 24/07 : « Plafond Lemlist atteint 50/50 »).
+    let recapAdmins = 0;
+    try {
+      const admins = await sql`SELECT nom, slack_id FROM sdrs WHERE actif = TRUE AND role IN ('admin','superadmin') AND slack_id IS NOT NULL`;
+      if (admins.length) {
+        const sdrsProspect = await sql`SELECT nom FROM sdrs WHERE actif = TRUE AND role = 'sdr' ORDER BY nom`;
+        const lignes = sdrsProspect.map(u => {
+          const s = parSdr[u.nom];
+          const n = s ? (s.froid + s.tiede) : 0;
+          const reste = (quota[u.nom] !== undefined) ? quota[u.nom] : PLAFOND_JOUR;
+          return `• ${u.nom} : ${n} basculé${n > 1 ? 's' : ''}${s ? ` (❄️ ${s.froid} · 🌡️ ${s.tiede})` : ''} — reste *${reste}/${PLAFOND_JOUR}* envois manuels aujourd'hui`;
+        }).join('\n');
+        const txt = `🌙 *Séquences auto — récap admin* : ${total} lead${total > 1 ? 's' : ''} basculé${total > 1 ? 's' : ''} cette nuit (${listes.length} listes scannées)\n${lignes || 'Aucun SDR actif.'}`;
+        for (const a of admins) { await envoyerDM(a.slack_id, txt); recapAdmins++; }
+      }
+    } catch (_) {}
+
+    return res.status(200).json({ ok: true, listes_scannees: listes.length, bascules: total, par_sdr: parSdr, bilans_slack: bilans, recap_admins: recapAdmins });
   } catch (e) {
     return res.status(500).json({ erreur: 'Séquences auto en échec', detail: String(e.message || e).slice(0, 200) });
   }
