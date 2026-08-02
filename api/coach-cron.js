@@ -168,7 +168,7 @@ export default async function handler(req, res) {
         const dial = dialogueDe(transcriptions.get(cid));
         if (!dial.texte || dial.texte.length < 200) continue; // transcription vide/inutilisable
         const analyse = await analyserAppel(apiKey, a, dial);
-        await sql`INSERT INTO analyses_appels (call_id, sdr, jour, duree_sec, prospect, tags, note, analyse)
+        await sql`INSERT INTO analyses_appels (call_id, sdr, jour, duree_sec, prospect, tags, note, "analyse")
           VALUES (${cid}, ${a.sdr}, ${jour}, ${a.duree_sec}, ${a.prospect}, ${a.tags}, ${Number(analyse.note) || null}, ${JSON.stringify(analyse)})
           ON CONFLICT (call_id) DO NOTHING`;
         faits++;

@@ -265,7 +265,7 @@ export async function ensureCoach() {
     duree_sec INTEGER DEFAULT 0,
     prospect TEXT, tags TEXT,
     note NUMERIC(3,1),
-    analyse JSONB,
+    "analyse" JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`;
   coachPret = true;

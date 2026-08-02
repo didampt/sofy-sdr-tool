@@ -30,10 +30,10 @@ export default async function handler(req, res) {
     const lim = Math.min(Math.max(parseInt((req.query || {}).limit, 10) || 100, 1), 300);
 
     const rows = sdrF
-      ? await sql`SELECT call_id, sdr, jour, duree_sec, prospect, tags, note, analyse, created_at
+      ? await sql`SELECT call_id, sdr, jour, duree_sec, prospect, tags, note, "analyse", created_at
           FROM analyses_appels WHERE jour >= ${du} AND jour <= ${au} AND sdr = ${sdrF}
           ORDER BY jour DESC, note ASC LIMIT ${lim}`
-      : await sql`SELECT call_id, sdr, jour, duree_sec, prospect, tags, note, analyse, created_at
+      : await sql`SELECT call_id, sdr, jour, duree_sec, prospect, tags, note, "analyse", created_at
           FROM analyses_appels WHERE jour >= ${du} AND jour <= ${au}
           ORDER BY jour DESC, note ASC LIMIT ${lim}`;
 
