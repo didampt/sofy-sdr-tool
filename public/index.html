@@ -1963,7 +1963,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v274';
+const VERSION='v275';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -3832,10 +3832,11 @@ function afficherAppelsModal(titre,calls,numeroBrut){
    :(c.voicemail?`<audio controls preload="metadata" src="/api/ringover-record?url=${encodeURIComponent(c.voicemail)}" style="width:100%;margin-top:8px"></audio><div style="font-size:12px;color:var(--ink-soft);margin-top:2px">📭 Message vocal</div>`
    :`<div style="font-size:12.5px;color:var(--ink-soft);margin-top:6px">Pas d'enregistrement pour cet appel${c.is_answered?'':' (non décroché)'}.</div>`);
   const resume=c.note?`<div style="background:var(--paper);border-radius:8px;padding:10px 12px;margin-top:8px;font-size:13px;line-height:1.5"><b>📝 Résumé IA Ringover</b><br>${c.note.replace(/</g,'&lt;').replace(/\r?\n/g,'<br>')}</div>`:'';
+  const coach=(c.call_id&&COACH_MAP[c.call_id])?coachGrilleHtml(COACH_MAP[c.call_id]):'';
   return `<div style="border-top:1px solid var(--line);padding:14px 0">
     <div style="font-size:13px;color:var(--ink-soft)">${date}${sens?' · '+sens:''}${dur?' · '+dur:''}${c.sdr?' · SDR '+c.sdr:''}</div>
     ${tags?'<div style="margin-top:6px">'+tags+'</div>':''}
-    ${audio}${resume}
+    ${audio}${resume}${coach}
   </div>`;
  }).join('');
  document.getElementById('ringover-num').textContent=titre||'';
@@ -3924,7 +3925,43 @@ async function chargerAppels(){
   JOURNAL_APPELS=_reg.length?_reg:_all;
   remplirFiltresAppels();
   appliquerFiltreAppels();
+  chargerCoachMap(); // 🎧 analyses du Coach (30 derniers jours) — re-rend avec les badges de note
  }catch(e){if(cont)cont.innerHTML='<div style="color:var(--danger);padding:14px">Erreur : '+e.message+'</div>';}
+}
+/* ── 🎧 Coach d'appels : notes + grille dans le journal ── */
+let COACH_MAP={};
+async function chargerCoachMap(){
+ try{
+  const d0=new Date();d0.setDate(d0.getDate()-30);
+  const du=d0.getFullYear()+'-'+String(d0.getMonth()+1).padStart(2,'0')+'-'+String(d0.getDate()).padStart(2,'0');
+  const r=await api('/api/coach?du='+du+'&limit=300');
+  const d=await r.json();
+  if(d.erreur)return;
+  COACH_MAP={};
+  (d.analyses||[]).forEach(a=>{if(a.call_id)COACH_MAP[a.call_id]=a;});
+  if(Object.keys(COACH_MAP).length)renderAppels(APPELS_FILTRES);
+ }catch(_){}
+}
+function coachBadge(n){
+ if(n==null)return '';
+ const c=n>=7?'#0FA968':(n>=4?'#E8A013':'#E5484D');
+ return `<span title="Note du Coach d'appels (grille cold-call IA) — déplie l'appel pour le détail" style="background:${c};color:#fff;border-radius:6px;padding:2px 7px;font-size:11.5px;font-weight:700;white-space:nowrap">🎧 ${Number(n).toLocaleString('fr-FR')}</span>`;
+}
+function coachGrilleHtml(row){
+ const an=row.analyse||{};
+ const ic=v=>v?'✅':'🔴';
+ const objs=(an.objections||[]).map(o=>`<div style="margin:3px 0;padding-left:10px;border-left:2px solid var(--line)">« ${htmlSafe(o.objection||'')} » → ${htmlSafe(o.reponse_sdr||'')} <span class="badge ${o.qualite==='bonne'?'b-gmb':(o.qualite==='moyenne'?'b-dup':'b-signal')}">${htmlSafe(o.qualite||'')}</span></div>`).join('');
+ return `<div style="background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:8px;font-size:12.5px;line-height:1.55">
+  <div style="font-weight:800;margin-bottom:6px">🎧 Coach d'appels ${coachBadge(row.note)} <span style="color:var(--ink-soft);font-weight:400">· parole SDR ${an.ratio_parole_sdr!=null?an.ratio_parole_sdr+' %':'—'}</span></div>
+  ${an.resume?`<div style="margin-bottom:6px">${htmlSafe(an.resume)}</div>`:''}
+  <div>${ic(an.accroche&&an.accroche.ok)} <b>Accroche :</b> ${htmlSafe((an.accroche||{}).commentaire||'—')}</div>
+  <div>${ic((an.decouverte||{}).questions_posees>0)} <b>Découverte :</b> ${htmlSafe((an.decouverte||{}).commentaire||'—')}</div>
+  ${an.ecoute?`<div>👂 <b>Écoute :</b> ${htmlSafe(an.ecoute)}</div>`:''}
+  ${objs?`<div style="margin-top:4px"><b>Objections :</b>${objs}</div>`:''}
+  <div>${ic(an.proposition_rdv&&an.proposition_rdv.faite)} <b>Proposition de RDV :</b> ${htmlSafe((an.proposition_rdv||{}).commentaire||'—')}</div>
+  ${an.verbatim_gagnant?`<div style="margin-top:4px">💬 <b>Verbatim gagnant :</b> <i>« ${htmlSafe(an.verbatim_gagnant)} »</i></div>`:''}
+  ${(an.actions||[]).length?`<div style="margin-top:6px;padding:8px 10px;background:#FFF7E6;border-radius:6px"><b>🎯 À travailler :</b><br>${an.actions.map(a=>'• '+htmlSafe(a)).join('<br>')}</div>`:''}
+ </div>`;
 }
 function remplirFiltresAppels(){
  const jmap={};
@@ -3962,6 +3999,7 @@ function renderAppels(arr){
     <span style="min-width:92px;color:var(--ink-soft)">${sens}</span>
     <span style="min-width:70px;color:var(--ink-soft)">${dur}</span>
     <span style="flex:1;min-width:120px">${a.numero||''}${a.numero?` <a onclick="event.stopPropagation();ouvrirFicheDepuisJournal('${String(a.numero||'').replace(/[^\d+]/g,'')}')" title="Ouvrir la fiche du contact" style="cursor:pointer;color:var(--accent);font-weight:700;margin-left:8px">📇 fiche</a>`:''}</span>
+    ${a.call_id&&COACH_MAP[a.call_id]?coachBadge(COACH_MAP[a.call_id].note):''}
     ${tag}
   </div>`;
  }).join('')+(arr.length>APPELS_PAGE?'<div style="text-align:center;padding:14px"><button class="btn" onclick="voirPlusAppels()" style="background:var(--paper)">Voir plus ('+(arr.length-APPELS_PAGE)+' restants)</button></div>':'');

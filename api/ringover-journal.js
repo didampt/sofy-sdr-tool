@@ -107,6 +107,7 @@ export default async function handler(req, res) {
         const m = resoudre(c);
         const nomRingover = c.user ? (c.user.concat_name || `${c.user.firstname || ''} ${c.user.lastname || ''}`.trim()) : null;
         appels.push({
+          call_id: String(c.call_id || ''), // rapprochement avec analyses_appels (Coach)
           start_time: c.start_time || null,
           direction: c.direction || null,
           is_answered: !!c.is_answered,
