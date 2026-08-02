@@ -22,6 +22,29 @@ export default async function handler(req, res) {
   // endpoints susceptibles de porter la transcription. Détermine le coût de toute la feature.
   if (req.query && req.query.debug_appel) {
     if (user.role !== 'superadmin') return res.status(403).json({ erreur: 'Réservé au superadmin' });
+    // Sonde 2 (?debug_appel=2) : structure COMPLÈTE d'une transcription /v2/transcriptions
+    // (où est le texte ? comment matcher l'appel ?) + taux de couverture sur les derniers appels.
+    if (req.query.debug_appel === '2') {
+      try {
+        const rt = await fetch(`${BASE}/transcriptions?limit_count=50`, { headers: { Authorization: key } });
+        const brut = await rt.text();
+        let arr = null; try { arr = JSON.parse(brut); } catch (_) {}
+        if (!Array.isArray(arr) || !arr.length) return res.status(200).json({ status: rt.status, extrait_brut: brut.slice(0, 800) });
+        const t0 = arr[0];
+        const rc = await fetch(`${BASE}/calls?limit_count=200`, { headers: { Authorization: key } });
+        const dc = await rc.json().catch(() => ({}));
+        const appels = ((dc && dc.call_list) || []).filter(c => c.direction === 'out' && c.is_answered && (c.incall_duration || 0) >= 60);
+        const idsTr = new Set(arr.map(x => String(x.call_id || '')));
+        const couverts = appels.filter(c => idsTr.has(String(c.call_id))).length;
+        return res.status(200).json({
+          nb_transcriptions: arr.length,
+          cles_objet: Object.keys(t0),
+          objet_complet_tronque: JSON.parse(JSON.stringify(t0, (k, v) => (typeof v === 'string' && v.length > 500) ? v.slice(0, 500) + '…' : v)),
+          couverture: `${couverts} des ${appels.length} derniers appels sortants décrochés ≥ 60 s ont une transcription dans les 50 dernières`,
+          call_ids_transcrits_apercu: arr.slice(0, 5).map(x => ({ call_id: x.call_id, cdr_id: x.cdr_id }))
+        });
+      } catch (e) { return res.status(500).json({ erreur: e.message }); }
+    }
     try {
       const r = await fetch(`${BASE}/calls?limit_count=200`, { headers: { Authorization: key } });
       const d = await r.json().catch(() => ({}));
