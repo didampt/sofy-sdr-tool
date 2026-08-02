@@ -8,11 +8,11 @@ import { verifierToken, sql, ensureSchema, ensureCoach } from './db.js';
 export default async function handler(req, res) {
   const user = verifierToken(req);
   if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
-  await ensureSchema();
-  await ensureCoach();
   const admin = ['admin', 'superadmin'].includes(user.role);
 
   try {
+    await ensureSchema();
+    await ensureCoach();
     const callId = String((req.query || {}).call_id || '').trim();
     if (callId) {
       const rows = await sql`SELECT * FROM analyses_appels WHERE call_id = ${callId} LIMIT 1`;

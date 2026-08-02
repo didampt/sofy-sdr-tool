@@ -87,17 +87,17 @@ export default async function handler(req, res) {
   const key = process.env.RINGOVER_API_KEY;
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!key || !apiKey) return res.status(500).json({ erreur: 'RINGOVER_API_KEY ou ANTHROPIC_API_KEY manquante' });
-  await ensureSchema();
-  await ensureCoach();
-
-  // Jour analysé = la veille (heure de Paris) ; rejouable via ?jour=
-  let jour = String((req.query || {}).jour || '').slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(jour)) {
-    const h = new Date(); h.setDate(h.getDate() - 1);
-    jour = jourParis(h);
-  }
 
   try {
+    await ensureSchema();
+    await ensureCoach();
+
+    // Jour analysé = la veille (heure de Paris) ; rejouable via ?jour=
+    let jour = String((req.query || {}).jour || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(jour)) {
+      const h = new Date(); h.setDate(h.getDate() - 1);
+      jour = jourParis(h);
+    }
     // ── 1. Appels éligibles du jour : sortants, décrochés, ≥ 60 s (+ SDR via table sdrs) ──
     const cle9 = s => String(s || '').replace(/\D/g, '').slice(-9);
     const byEmail = {}, byNum = {};
@@ -179,6 +179,6 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ ok: true, jour, appels_eligibles: appels.size, analyses: faits, erreurs, par_sdr: parSdr });
   } catch (e) {
-    return res.status(500).json({ erreur: 'Erreur serveur', detail: e.message });
+    return res.status(500).json({ erreur: 'Erreur serveur', detail: String((e && e.message) || e), ou: (e && e.stack) ? String(e.stack).split('\n')[1] : null });
   }
 }
