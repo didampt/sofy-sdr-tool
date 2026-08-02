@@ -46,7 +46,8 @@ export default async function handler(req, res) {
     }
     for (const s of Object.values(parSdr)) { s.note_moy = s.n ? Math.round(10 * s.somme / s.n) / 10 : null; delete s.somme; }
 
-    return res.status(200).json({ ok: true, periode: { du, au }, admin, analyses: rows.map(r => ({ ...r, jour: String(r.jour).slice(0, 10) })), par_sdr: parSdr });
+    // Neon renvoie les DATE en objet Date : ISO explicite (String(Date) donnait « Fri Jul 31 »)
+    return res.status(200).json({ ok: true, periode: { du, au }, admin, analyses: rows.map(r => ({ ...r, jour: new Date(r.jour).toISOString().slice(0, 10) })), par_sdr: parSdr });
   } catch (e) {
     return res.status(500).json({ erreur: 'Erreur serveur', detail: e.message });
   }

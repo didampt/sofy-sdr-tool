@@ -43,7 +43,7 @@ export default async function handler(req, res) {
     for (const j of journees) {
       totaux.appels += j.appels || 0; totaux.decroches += j.decroches || 0;
       totaux.duree_sec += j.duree_sec || 0; totaux.statuees += j.statuees || 0; totaux.rdv += j.rdv || 0;
-      const cle = String(j.jour).slice(0, 10);
+      const cle = new Date(j.jour).toISOString().slice(0, 10); // Neon renvoie les DATE en objet Date
       totaux.jours.add(cle);
       parJour[cle] = (parJour[cle] || 0) + (j.appels || 0);
     }
@@ -79,7 +79,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       ok: true, periode: { du, au }, sdr: sdrF || null, admin,
-      journees: journees.map(j => ({ ...j, jour: String(j.jour).slice(0, 10) })),
+      journees: journees.map(j => ({ ...j, jour: new Date(j.jour).toISOString().slice(0, 10) })),
       totaux: {
         appels: totaux.appels, decroches: totaux.decroches,
         taux_decroche: totaux.appels ? Math.round(100 * totaux.decroches / totaux.appels) : 0,
