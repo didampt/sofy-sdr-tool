@@ -11,7 +11,7 @@ let ready = false;
 // À INCRÉMENTER à chaque ajout de table/colonne dans ensureSchema — sinon la migration ne
 // s'exécutera pas en prod. En régime de croisière : 1 seul SELECT par démarrage à froid
 // (au lieu de ~50 allers-retours Neon ≈ 1,5-2,5 s sur chaque fonction).
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3; // 3 = table analyses_appels (Coach d'appels)
 export async function ensureSchema() {
   if (ready || !sql) return;
   try {
@@ -161,6 +161,18 @@ export async function ensureSchema() {
     UNIQUE (sdr, jour)
   )`;
   await sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS stats JSONB`;
+  // Coach d'appels : une analyse IA par appel sortant décroché ≥ 60 s (grille cold-call B2B)
+  await sql`CREATE TABLE IF NOT EXISTS analyses_appels (
+    id SERIAL PRIMARY KEY,
+    call_id TEXT UNIQUE NOT NULL,
+    sdr TEXT NOT NULL,
+    jour DATE NOT NULL,
+    duree_sec INTEGER DEFAULT 0,
+    prospect TEXT, tags TEXT,
+    note NUMERIC(3,1),
+    analyse JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`;
   // Anti-brute-force : suivi des tentatives de connexion par email
   await sql`CREATE TABLE IF NOT EXISTS enrich_actif (
     liste_id INTEGER PRIMARY KEY,
