@@ -184,8 +184,11 @@ export default async function handler(req, res) {
         if ((quota[l.sdr] || 0) <= 0) break;
         if (stops.has(cand.email)) continue;
         const rp = rappels[cand.email] || { faits: 0, pendants: 0 };
+        // Un rappel EN ATTENTE (manuel ou auto) = le SDR garde la main : on ne bascule JAMAIS,
+        // quelle que soit la température (avant : garde limitée aux tièdes-rappel — un lead
+        // « Pas de réponse » avec rappel manuel programmé partait quand même en séquence).
+        if (rp.pendants > 0) continue;
         if (cand.temperature === 'froid' && (1 + rp.faits) < 3) continue;      // 3 tentatives : 1 statut + 2 rappels effectués
-        if (cand.temperature === 'tiede_rappel' && rp.pendants > 0) continue;  // un rappel est encore programmé → le cockpit gère
         const temperature = cand.temperature === 'tiede_rappel' ? 'tiede' : cand.temperature;
 
         const produit = produitDominant(cand.e) || 'generique';

@@ -32,7 +32,14 @@ export default async function handler(req, res) {
       if (!date_rappel) return res.status(400).json({ erreur: 'date_rappel requis' });
       // Anti-doublon : s'il existe déjà un rappel en attente sur cette fiche pour ce SDR, on le met à jour
       if (fiche_cle) {
-        const ex = await sql`SELECT id FROM taches WHERE sdr = ${user.nom} AND fiche_cle = ${fiche_cle} AND faite = FALSE ORDER BY id ASC LIMIT 1`;
+        const ex = await sql`SELECT id, description FROM taches WHERE sdr = ${user.nom} AND fiche_cle = ${fiche_cle} AND faite = FALSE ORDER BY id ASC LIMIT 1`;
+        // ⚠️ Un rappel MANUEL ne doit JAMAIS être écrasé par une tâche automatique (cas Alicia
+        // 24/07 : la re-tentative auto transformait sa promesse client en tâche robot, puis la
+        // séquence Lemlist basculait le lead). L'auto s'efface devant le manuel.
+        if (ex.length && String(description || '').includes('re-tentative auto')
+            && !String(ex[0].description || '').includes('re-tentative auto')) {
+          return res.status(200).json({ ok: true, tache: ex[0], preserve: true, info: 'Rappel manuel existant conservé — tâche auto ignorée' });
+        }
         if (ex.length) {
           const up = await sql`UPDATE taches SET liste_id = ${liste_id || null}, entreprise_nom = ${entreprise_nom || null}, contact_nom = ${contact_nom || null}, description = ${description || null}, date_rappel = ${date_rappel}, alertee = FALSE WHERE id = ${ex[0].id} RETURNING *`;
           // purge des éventuels doublons déjà présents sur la même fiche

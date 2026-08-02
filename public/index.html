@@ -1934,7 +1934,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v271';
+const VERSION='v272';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -3442,13 +3442,11 @@ function setStatutAppel(i,statut){
  if(!statut)return;
  // Rappel demandé = promesse faite au client → modale OBLIGATOIRE (fermée sans date = rappel demain 9 h)
  if(statut.indexOf('Rappel demandé')===0){ouvrirRappel(i,true);return;}
- // Pas de réponse / Message vocal / Absent → re-tentative AUTO à J+2, sans friction
- // (remplacée/close si le SDR recontacte avant — l'anti-doublon par fiche de /api/taches gère)
- if(['Pas de réponse','Message vocal laissé','Absent'].some(p=>statut.indexOf(p)===0)){
-  const c0=contactsDe(e)[0];
-  programmerRetenter((ficheEmails(e)[0]||cleFiche(e)),enseigneDe(e)||e.nom,(c0&&c0.nom)?((c0.prenom||'')+' '+c0.nom).trim():'',statut,state.savedId);
-  return;
- }
+ // Pas de réponse / Message vocal / Absent : AUCUNE reprogrammation automatique (retirée le
+ // 24/07 sur plainte SDR — l'anti-doublon de /api/taches transformait le rappel MANUEL en
+ // « re-tentative auto », puis la séquence Lemlist basculait le lead : rappels perdus, cas
+ // Alicia). Le statut est posé, les rappels existants restent INTACTS.
+ if(['Pas de réponse','Message vocal laissé','Absent'].some(p=>statut.indexOf(p)===0)){return;}
  // Refus – concurrence → qui a pris le deal ?
  if(statut.indexOf('Refus – concurrence')===0){ouvrirConcurrent({mode:'fiche',i:i});return;}
  // Non décisionnaire → hors file d'appel : on cherche le bon contact (Personas)
@@ -3456,16 +3454,8 @@ function setStatutAppel(i,statut){
  // Statut terminal (RDV, refus, faux numéro…) → on clôt les rappels/re-tentatives en attente de la fiche
  cloreRappels(ficheEmails(e)[0]||cleFiche(e));
 }
-// Re-tentative automatique à J+2 9 h 30 (statuts « injoignable ») — arbitrage Didier 23/07
-async function programmerRetenter(cle,entreprise,contact,statut,listeId){
- if(!cle)return;
- try{
-  const d=new Date();d.setDate(d.getDate()+2);d.setHours(9,30,0,0);
-  await api('/api/taches',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({liste_id:listeId||null,fiche_cle:cle,entreprise_nom:entreprise,contact_nom:contact||'',description:statut+' — re-tentative auto',date_rappel:d.toISOString()})});
-  toast('🔁 Re-tentative programmée après-demain 9 h 30 (annulée si recontact avant)');
- }catch(_){}
-}
+// (programmerRetenter — re-tentative auto à J+2 — RETIRÉE le 24/07 : elle écrasait les rappels
+// manuels via l'anti-doublon de /api/taches. Ne pas la réintroduire sans clé dédiée par origine.)
 // Clôt les rappels/re-tentatives en attente d'une fiche (le SDR a recontacté : ils sont obsolètes)
 async function cloreRappels(cle){
  if(!cle)return;
@@ -7016,9 +7006,10 @@ async function ckStatuer(listeId,cleEnc,sel){
  sel.disabled=true;
  const ok=await ckPoserStatut(listeId,cle,statut,null);
  if(!ok){sel.disabled=false;return;}
- // Suites automatiques (mêmes règles que la fiche)
+ // Suites automatiques (mêmes règles que la fiche — re-tentative auto RETIRÉE le 24/07,
+ // les rappels existants restent intacts sur les statuts « injoignable »)
  if(['Pas de réponse','Message vocal laissé','Absent'].some(p=>statut.indexOf(p)===0)){
-  if(it.email_cle)programmerRetenter(it.email_cle,it.nom||'',it.contact||'',statut,listeId);
+  // rien : statut posé, aucun rappel touché
  }else if(statut.indexOf('Non décisionnaire')===0){
   if(it.email_cle)cloreRappels(it.email_cle);
   toast('👥 Non décisionnaire — ouvre la fiche complète pour chercher le bon contact (bouton Personas)');
