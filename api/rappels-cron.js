@@ -6,6 +6,27 @@ import { sql, ensureSchema } from './db.js';
 
 const APP_URL = (process.env.APP_URL || 'https://sofy-sdr-tool.vercel.app').replace(/\/$/, '');
 
+// Jours fériés nationaux de l'année (fixes + lundi de Pâques, Ascension, lundi de Pentecôte — Butcher)
+function feriesFR(an) {
+  const a = an % 19, b = Math.floor(an / 100), c = an % 100, d = Math.floor(b / 4), e = b % 4,
+    f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30,
+    i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451),
+    mois = Math.floor((h + l - 7 * m + 114) / 31), jour = ((h + l - 7 * m + 114) % 31) + 1;
+  const paques = new Date(Date.UTC(an, mois - 1, jour));
+  const plus = n => { const x = new Date(paques); x.setUTCDate(x.getUTCDate() + n); return x; };
+  const fmt = x => String(x.getUTCMonth() + 1).padStart(2, '0') + '-' + String(x.getUTCDate()).padStart(2, '0');
+  return new Set(['01-01', '05-01', '05-08', '07-14', '08-15', '11-01', '11-11', '12-25', fmt(plus(1)), fmt(plus(39)), fmt(plus(50))]);
+}
+// Les SDR ne travaillent pas le week-end ni les jours fériés : pas d'alertes ces jours-là —
+// les rappels restent en attente et sonnent le prochain jour ouvré (« en retard » au cockpit).
+function jourOuvreParis() {
+  const now = new Date();
+  const wd = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Paris', weekday: 'short' }).format(now);
+  if (wd === 'Sat' || wd === 'Sun') return false;
+  const p = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  return !feriesFR(parseInt(p.slice(0, 4), 10)).has(p.slice(5));
+}
+
 async function envoyerDM(slackId, texte) {
   const token = process.env.SLACK_BOT_TOKEN;
   if (!token || !slackId) return { ok: false, raison: 'token ou slack_id manquant' };
@@ -34,6 +55,8 @@ export default async function handler(req, res) {
   }
 
   await ensureSchema();
+
+  if (!jourOuvreParis()) return res.status(200).json({ ok: true, pause: 'week-end ou jour férié — alertes reportées au prochain jour ouvré' });
 
   // Tâches dues (échéance passée), non faites, pas encore alertées
   const dues = await sql`

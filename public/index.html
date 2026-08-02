@@ -1934,7 +1934,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v272';
+const VERSION='v273';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -3524,17 +3524,36 @@ function rappelRaccourci(heures){
  const d=new Date();d.setHours(d.getHours()+heures);
  document.getElementById('rappel-date').value=isoLocal(d);
 }
+// Jours fériés nationaux de l'année (fixes + lundi de Pâques, Ascension, lundi de Pentecôte — Butcher)
+function feriesFR(an){
+ const a=an%19,b=Math.floor(an/100),c=an%100,dd=Math.floor(b/4),ee=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-dd-g+15)%30,ii=Math.floor(c/4),k=c%4,l=(32+2*ee+2*ii-h-k)%7,m=Math.floor((a+11*h+22*l)/451),mois=Math.floor((h+l-7*m+114)/31),jour=((h+l-7*m+114)%31)+1;
+ const paques=new Date(an,mois-1,jour);
+ const plus=n=>{const x=new Date(paques);x.setDate(x.getDate()+n);return x;};
+ const fmt=x=>String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');
+ return new Set(['01-01','05-01','05-08','07-14','08-15','11-01','11-11','12-25',fmt(plus(1)),fmt(plus(39)),fmt(plus(50))]);
+}
+function estJourOuvre(d){
+ if(d.getDay()===0||d.getDay()===6)return false;
+ return !feriesFR(d.getFullYear()).has(String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'));
+}
+// Décale au prochain JOUR OUVRÉ (lun-ven hors fériés), même heure
+function prochainJourOuvre(d){
+ const x=new Date(d);
+ for(let i=0;i<10&&!estJourOuvre(x);i++)x.setDate(x.getDate()+1);
+ return x;
+}
 // Fermeture du modal : si le rappel est OBLIGATOIRE (« Rappel demandé » = promesse au client),
-// on crée quand même un rappel par défaut demain 9 h — la promesse ne se perd jamais.
+// on crée quand même un rappel par défaut au prochain jour ouvré 9 h — la promesse ne se perd jamais.
 async function annulerRappel(){
  const ctx=RAPPEL_CTX;
  document.getElementById('rappel-modal').style.display='none';
  if(!ctx||!ctx.obligatoire){RAPPEL_CTX=null;return;}
  try{
-  const d=new Date();d.setDate(d.getDate()+1);d.setHours(9,0,0,0);
+  let d=new Date();d.setDate(d.getDate()+1);d.setHours(9,0,0,0);
+  d=prochainJourOuvre(d); // vendredi → lundi 9 h (jamais un samedi, dimanche ou férié)
   await api('/api/taches',{method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({liste_id:ctx.liste_id||state.savedId||null,fiche_cle:ctx.fiche_cle,entreprise_nom:ctx.entreprise,contact_nom:ctx.contact||'',description:'Rappel demandé / occupé — rappel par défaut (non planifié)',date_rappel:d.toISOString()})});
-  toast('⏰ Rappel par défaut créé pour demain 9 h — la promesse au client est conservée');
+  toast('⏰ Rappel par défaut créé pour '+d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})+' 9 h — la promesse au client est conservée');
  }catch(_){}
  if(ctx.mode==='ck')await ckPoserStatut(ctx.listeId,ctx.cle,'Rappel demandé / occupé',null);
  RAPPEL_CTX=null;
@@ -3545,6 +3564,9 @@ async function creerRappel(){
  const val=document.getElementById('rappel-date').value;
  if(!val){toast('Choisis une date/heure');return;}
  const note=document.getElementById('rappel-note').value.trim();
+ // Week-end / férié : on prévient sans bloquer (le SDR a la main — l'alerte Slack ne partira
+ // de toute façon que le prochain jour ouvré, le cron est en pause ces jours-là)
+ if(!estJourOuvre(new Date(val)))toast('⚠️ Ce rappel tombe un '+new Date(val).toLocaleDateString('fr-FR',{weekday:'long'})+(feriesFR(new Date(val).getFullYear()).has(String(new Date(val).getMonth()+1).padStart(2,'0')+'-'+String(new Date(val).getDate()).padStart(2,'0'))?' férié':'')+' — l’alerte Slack partira le prochain jour ouvré');
  // La RAISON du rappel = le statut de la fiche (« Pas de réponse », « Absent »…), en tête de la description
  const raison=RAPPEL_CTX.statut||((RAPPEL_CTX.i!=null&&REAL[RAPPEL_CTX.i]&&REAL[RAPPEL_CTX.i].statut_appel)||'');
  const description=[raison,note].filter(Boolean).join(' — ');
