@@ -1046,7 +1046,25 @@ Spot-Hit</textarea>
     <section class="view" id="view-stats">
       <div class="eyebrow">Pilotage</div>
       <h1>Statistiques</h1>
-      <p class="sub">Consommations du mois par SDR, coût et taux de réussite par liste. Les tarifs unitaires se règlent dans ⚙️ Paramètres.</p>
+      <p class="sub">Journées SDR (journal automatique), coûts du mois, performance par liste. Les tarifs unitaires se règlent dans ⚙️ Paramètres.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+        <select class="field" id="stj-periode" onchange="stjPeriodeChange()" style="max-width:200px">
+          <option value="mois">Ce mois</option><option value="7j">7 derniers jours</option><option value="30j">30 derniers jours</option><option value="perso">Personnalisé…</option>
+        </select>
+        <span id="stj-perso" style="display:none;gap:6px;align-items:center">
+          <input class="field" type="date" id="stj-du" onchange="chargerStatsJournees()" style="max-width:160px">
+          <input class="field" type="date" id="stj-au" onchange="chargerStatsJournees()" style="max-width:160px">
+        </span>
+        <select class="field" id="stj-sdr" onchange="chargerStatsJournees()" style="max-width:200px;display:none"><option value="">Tous les SDR</option></select>
+      </div>
+      <div class="map-card">
+        <h2>☀️ Journées SDR</h2>
+        <div class="role">Journal automatique du soir (appels Ringover réels, fiches statuées, RDV du bloc-notes) — aucune saisie manuelle. 🟢 objectif d'appels atteint · 🟠 ≥ 50 % · 🔴 &lt; 50 %.</div>
+        <div id="stj-tuiles" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px"></div>
+        <div id="stj-graphe" style="display:flex;gap:3px;align-items:flex-end;height:64px;margin-top:14px"></div>
+        <div style="overflow-x:auto;margin-top:12px"><table class="map-table" id="stj-table"><tr><th>Jour</th><th>SDR</th><th>Début–Fin</th><th>Appels</th><th>Décrochés</th><th>Durée moy.</th><th>Statuées</th><th>RDV</th></tr></table></div>
+      </div>
+      <div id="stats-couts">
       <div class="map-card" style="background:#F5F8FF;border-color:#C7D7FE">
         <h2>💰 Coût total réel du mois</h2>
         <div class="role">Abonnements fixes mensuels + consommation à l'usage (APIs). À comparer à votre ancien prestataire.</div>
@@ -1070,7 +1088,8 @@ Spot-Hit</textarea>
         <div class="role">Coût calculé : quantité × tarif unitaire de chaque API. Limite mensuelle appliquée automatiquement (blocage à l'atteinte).</div>
         <table class="map-table" id="stats-sdr"><tr><th>SDR</th><th>Détail API</th><th>Coût du mois</th><th>Limite</th></tr></table>
       </div>
-      <div class="map-card">
+      </div><!-- /stats-couts (masqué pour les rôles non admin) -->
+      <div class="map-card" id="stats-listes-card">
         <h2>📋 Par liste (30 dernières)</h2>
         <div class="role">% emails / mobiles = contacts avec email / mobile trouvé. % enrichi = fiches avec au moins un moyen de contact. Coût par contact = coût liste ÷ contacts enrichis.</div>
         <div id="stats-filtres" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 4px">
@@ -1082,6 +1101,16 @@ Spot-Hit</textarea>
         </div>
         <div id="stats-notes" style="margin-top:18px"></div>
         <div style="overflow-x:auto"><table class="map-table" id="stats-listes"><tr><th>Liste</th><th>SDR</th><th>Fiches</th><th>Emails</th><th>% emails</th><th>📱 mobiles</th><th>☎️ tél GMB</th><th>% enrichi</th><th>🤝 RDV</th><th>Coût</th><th>€ / contact</th></tr></table></div>
+      </div>
+      <div class="map-card">
+        <h2>🥊 Pertes par concurrent</h2>
+        <div class="role">Renseigné à chaque « Refus – concurrence » (période et SDR des filtres du haut). Le discours concurrentiel se travaille ici.</div>
+        <div id="stj-concurrents" style="margin-top:12px;font-size:13px">Chargement…</div>
+      </div>
+      <div class="map-card">
+        <h2>📞 Entonnoir des issues d'appel</h2>
+        <div class="role">Répartition des statuts posés sur la période (fiches statuées) + taux de conversion vers le RDV.</div>
+        <div id="stj-entonnoir" style="margin-top:12px;font-size:13px">Chargement…</div>
       </div>
     </section>
 
@@ -1934,7 +1963,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v273';
+const VERSION='v274';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -7618,6 +7647,7 @@ function afficherCoutTotal(d){
  const bloc=document.getElementById('cout-total-bloc');
  if(!bloc)return;
  const conso=Number(d.cout_conso_mois||0), abos=Number(d.cout_abonnements||0), total=conso+abos;
+ COUT_MOIS_TOTAL=total; // réutilisé par la tuile « Coût / RDV » des Journées SDR
  const budget=Number(d.budget_ref||0); // budget de référence fixé par la RevOps (Manon)
  const admin=state.user&&['admin','superadmin'].includes(state.user.role);
  let compa='';
@@ -7678,7 +7708,83 @@ async function sauverAbos(abos){
   else toast('Erreur : '+(d.erreur||'sauvegarde impossible'));
  }catch(e){toast('Erreur réseau : '+e.message);}
 }
+/* ── ☀️ Journées SDR + entonnoir + concurrents (v274) ── */
+let STJ=null,COUT_MOIS_TOTAL=null;
+function stjFmtD(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function stjPeriodeChange(){
+ const p=document.getElementById('stj-periode').value;
+ document.getElementById('stj-perso').style.display=(p==='perso')?'inline-flex':'none';
+ if(p!=='perso')chargerStatsJournees();
+}
+function stjBornes(){
+ const p=(document.getElementById('stj-periode')||{}).value||'mois';
+ const auj=new Date();
+ if(p==='perso')return {du:(document.getElementById('stj-du')||{}).value||'',au:(document.getElementById('stj-au')||{}).value||''};
+ if(p==='7j'){const d=new Date();d.setDate(d.getDate()-6);return {du:stjFmtD(d),au:stjFmtD(auj)};}
+ if(p==='30j'){const d=new Date();d.setDate(d.getDate()-29);return {du:stjFmtD(d),au:stjFmtD(auj)};}
+ return {du:stjFmtD(auj).slice(0,7)+'-01',au:stjFmtD(auj)};
+}
+async function chargerStatsJournees(){
+ const b=stjBornes();
+ if((document.getElementById('stj-periode')||{}).value==='perso'&&(!b.du||!b.au))return;
+ const sdrSel=(document.getElementById('stj-sdr')||{}).value||'';
+ try{
+  const r=await api('/api/stats-journees?du='+b.du+'&au='+b.au+(sdrSel?'&sdr='+encodeURIComponent(sdrSel):''));
+  const d=await r.json();
+  if(d.erreur){toast('Stats journées : '+d.erreur);return;}
+  STJ=d;
+  const sel=document.getElementById('stj-sdr');
+  if(sel&&d.admin){
+   sel.style.display='inline-block';
+   if(sel.options.length<=1)Object.keys(d.objectifs||{}).sort().forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=n;sel.appendChild(o);});
+  }
+  rendreStatsJournees(d);
+ }catch(e){toast('Erreur réseau stats : '+e.message);}
+}
+function stjDuree(s){if(!s)return '—';return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');}
+function rendreStatsJournees(d){
+ const t=d.totaux||{};
+ // Coût / RDV : admins, période « Ce mois » uniquement (les coûts de chargerStats sont mensuels)
+ let coutRdv='';
+ if(d.admin&&typeof COUT_MOIS_TOTAL==='number'&&t.rdv&&(document.getElementById('stj-periode')||{}).value==='mois')
+  coutRdv=(COUT_MOIS_TOTAL/t.rdv).toLocaleString('fr-FR',{maximumFractionDigits:1})+' €';
+ const tuile=(lbl,val,sub)=>`<div style="flex:1;min-width:110px;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:10px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--ink-soft)">${lbl}</div><div style="font-size:22px;font-weight:800">${val}</div>${sub?`<div style="font-size:11.5px;color:var(--ink-soft)">${sub}</div>`:''}</div>`;
+ document.getElementById('stj-tuiles').innerHTML=
+  tuile('APPELS',t.appels||0,(t.jours||0)+' jour'+(t.jours>1?'s':'')+' actif'+(t.jours>1?'s':''))+
+  tuile('DÉCROCHÉS',t.decroches||0,(t.taux_decroche||0)+' % de joignabilité')+
+  tuile('DURÉE MOY.',stjDuree(t.duree_moy_sec),'par appel décroché')+
+  tuile('STATUÉES',t.statuees||0,'issues d’appel posées')+
+  tuile('🏆 RDV',t.rdv||0,t.statuees?Math.round(1000*(t.rdv||0)/t.statuees)/10+' % des statuées':'')+
+  (coutRdv?tuile('COÛT / RDV',coutRdv,'conso + abonnements du mois'):'');
+ const g=d.graphe||[];const maxG=Math.max(1,...g.map(x=>x.appels));
+ document.getElementById('stj-graphe').innerHTML=g.length?g.map(x=>`<div title="${new Date(x.jour+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'short',day:'2-digit',month:'2-digit'})} — ${x.appels} appel${x.appels>1?'s':''}" style="flex:1;max-width:26px;background:var(--accent);opacity:${(0.35+0.65*x.appels/maxG).toFixed(2)};height:${Math.max(4,Math.round(60*x.appels/maxG))}px;border-radius:3px 3px 0 0"></div>`).join(''):'<span style="font-size:12px;color:var(--ink-soft)">Aucune journée consignée sur la période.</span>';
+ const objs=d.objectifs||{};
+ const rows=(d.journees||[]).map(j=>{
+  const obj=(objs[j.sdr]||{}).appels||50;
+  const dot=(j.appels||0)>=obj?'🟢':((j.appels||0)>=obj/2?'🟠':'🔴');
+  const hm=x=>x?new Date(x).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'—';
+  const dm=j.decroches?Math.round(j.duree_sec/j.decroches):0;
+  return `<tr><td>${new Date(j.jour+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'short',day:'2-digit',month:'2-digit'})}</td><td><b>${htmlSafe(j.sdr)}</b></td><td>${hm(j.debut)}–${hm(j.fin)}</td><td>${dot} ${j.appels||0}</td><td>${j.decroches||0}${j.appels?' ('+Math.round(100*(j.decroches||0)/j.appels)+' %)':''}</td><td>${stjDuree(dm)}</td><td>${j.statuees||0}</td><td>${j.rdv||0}</td></tr>`;
+ }).join('');
+ document.getElementById('stj-table').innerHTML='<tr><th>Jour</th><th>SDR</th><th>Début–Fin</th><th>Appels</th><th>Décrochés</th><th>Durée moy.</th><th>Statuées</th><th>RDV</th></tr>'+(rows||'<tr><td colspan="8" style="color:var(--ink-soft)">Aucune journée consignée sur la période (le journal se remplit automatiquement chaque soir vers 19 h).</td></tr>');
+ const cs=Object.entries(d.concurrents||{}).sort((a,b)=>b[1]-a[1]);
+ const maxC=Math.max(1,...cs.map(x=>x[1]));
+ document.getElementById('stj-concurrents').innerHTML=cs.length?cs.map(([n,v])=>`<div style="display:flex;align-items:center;gap:10px;margin:4px 0"><div style="width:140px;font-weight:600">${htmlSafe(n)}</div><div style="background:#E24B4A;height:14px;border-radius:4px;width:${Math.round(60*v/maxC)}%;min-width:8px"></div><div>${v}</div></div>`).join(''):'<span style="color:var(--ink-soft)">Aucune perte concurrentielle renseignée sur la période 👍</span>';
+ const es=Object.entries(d.entonnoir||{}).sort((a,b)=>b[1]-a[1]);
+ const totE=es.reduce((s,x)=>s+x[1],0);
+ const rdvE=es.filter(([n])=>n.indexOf('RDV')>=0).reduce((s,x)=>s+x[1],0);
+ const maxE=Math.max(1,...es.map(x=>x[1]));
+ document.getElementById('stj-entonnoir').innerHTML=es.length?(es.map(([n,v])=>`<div style="display:flex;align-items:center;gap:10px;margin:4px 0"><div style="width:220px">${htmlSafe(n)}</div><div style="background:var(--accent);opacity:.75;height:14px;border-radius:4px;width:${Math.round(55*v/maxE)}%;min-width:8px"></div><div>${v} <span style="color:var(--ink-soft)">(${Math.round(100*v/totE)} %)</span></div></div>`).join('')+`<div style="margin-top:10px;font-weight:700">Conversion statuées → RDV : ${totE?Math.round(1000*rdvE/totE)/10:0} %</div>`):'<span style="color:var(--ink-soft)">Aucune fiche statuée sur la période.</span>';
+}
 async function chargerStats(){
+ // Journées SDR (visibles par tous — le serveur limite un SDR à SES journées) ; coûts = admins
+ chargerStatsJournees();
+ const adminS=state.user&&['admin','superadmin'].includes(state.user.role);
+ const wc=document.getElementById('stats-couts');
+ if(wc)wc.style.display=adminS?'block':'none';
+ const wl=document.getElementById('stats-listes-card');
+ if(wl)wl.style.display=adminS?'block':'none';
+ if(!adminS)return; // /api/stats (coûts, conso, listes détaillées) était déjà réservé aux admins (403)
  try{
   const r=await api('/api/stats');
   const d=await r.json();
