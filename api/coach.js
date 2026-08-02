@@ -3,12 +3,13 @@
 // GET ?call_id=…            → une analyse complète (pour le Journal des appels)
 // GET ?du=&au=&sdr=&limit=  → liste (note, actions, résumé) pour la vue coaching
 
-import { verifierToken, sql, ensureSchema } from './db.js';
+import { verifierToken, sql, ensureSchema, ensureCoach } from './db.js';
 
 export default async function handler(req, res) {
   const user = verifierToken(req);
   if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
   await ensureSchema();
+  await ensureCoach();
   const admin = ['admin', 'superadmin'].includes(user.role);
 
   try {

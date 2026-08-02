@@ -11,7 +11,10 @@ let ready = false;
 // À INCRÉMENTER à chaque ajout de table/colonne dans ensureSchema — sinon la migration ne
 // s'exécutera pas en prod. En régime de croisière : 1 seul SELECT par démarrage à froid
 // (au lieu de ~50 allers-retours Neon ≈ 1,5-2,5 s sur chaque fonction).
-const SCHEMA_VERSION = 3; // 3 = table analyses_appels (Coach d'appels)
+// ⚠️ 03/08 : le passage 2→3 a fait re-tourner TOUTE la migration au login → 500 « A server
+// error » en prod (cause exacte à identifier — voir HANDOFF). Hotfix : retour à 2 (la garde
+// court-circuite), la table analyses_appels est créée PARESSEUSEMENT par api/coach*.js.
+const SCHEMA_VERSION = 2;
 export async function ensureSchema() {
   if (ready || !sql) return;
   try {
@@ -161,18 +164,6 @@ export async function ensureSchema() {
     UNIQUE (sdr, jour)
   )`;
   await sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS stats JSONB`;
-  // Coach d'appels : une analyse IA par appel sortant décroché ≥ 60 s (grille cold-call B2B)
-  await sql`CREATE TABLE IF NOT EXISTS analyses_appels (
-    id SERIAL PRIMARY KEY,
-    call_id TEXT UNIQUE NOT NULL,
-    sdr TEXT NOT NULL,
-    jour DATE NOT NULL,
-    duree_sec INTEGER DEFAULT 0,
-    prospect TEXT, tags TEXT,
-    note NUMERIC(3,1),
-    analyse JSONB,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-  )`;
   // Anti-brute-force : suivi des tentatives de connexion par email
   await sql`CREATE TABLE IF NOT EXISTS enrich_actif (
     liste_id INTEGER PRIMARY KEY,
@@ -261,6 +252,23 @@ export async function loggerConso(user, api, quantite, listeId) {
     await sql`INSERT INTO consommations (sdr, api, quantite, liste_id)
       VALUES (${user?.nom || '?'}, ${api}, ${quantite}, ${listeId ? parseInt(listeId) : null})`;
   } catch (_) {}
+}
+// Coach d'appels : table créée PARESSEUSEMENT (hors migration — voir note SCHEMA_VERSION)
+let coachPret = false;
+export async function ensureCoach() {
+  if (coachPret || !sql) return;
+  await sql`CREATE TABLE IF NOT EXISTS analyses_appels (
+    id SERIAL PRIMARY KEY,
+    call_id TEXT UNIQUE NOT NULL,
+    sdr TEXT NOT NULL,
+    jour DATE NOT NULL,
+    duree_sec INTEGER DEFAULT 0,
+    prospect TEXT, tags TEXT,
+    note NUMERIC(3,1),
+    analyse JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`;
+  coachPret = true;
 }
 export async function majSoldeApi(api, solde) {
   if (!sql || solde === null || solde === undefined) return;

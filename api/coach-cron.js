@@ -8,7 +8,7 @@
 // Arbitrages Didier 03/08 : tous les appels ≥ 60 s · transparent (le SDR voit ses analyses,
 // les admins voient tout) · analyse quotidienne + coaching hebdo (Lot 2).
 
-import { sql, ensureSchema, loggerConso } from './db.js';
+import { sql, ensureSchema, ensureCoach, loggerConso } from './db.js';
 
 export const config = { maxDuration: 300 };
 
@@ -88,6 +88,7 @@ export default async function handler(req, res) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!key || !apiKey) return res.status(500).json({ erreur: 'RINGOVER_API_KEY ou ANTHROPIC_API_KEY manquante' });
   await ensureSchema();
+  await ensureCoach();
 
   // Jour analysé = la veille (heure de Paris) ; rejouable via ?jour=
   let jour = String((req.query || {}).jour || '').slice(0, 10);
