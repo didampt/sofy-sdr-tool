@@ -1070,6 +1070,7 @@ Spot-Hit</textarea>
       <div id="stj-pan-vue">
         <div id="stj-tuiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:12px"></div>
         <div id="stj-rdv-liste" class="map-card" style="display:none;margin-top:12px"></div>
+        <div id="stj-coach-detail" class="map-card" style="display:none;margin-top:12px"></div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:14px">
           <div class="map-card" style="margin:0"><h2 style="font-size:14px;margin:0 0 4px">Activité — appels par jour · 🏆 RDV</h2><div id="stj-graphe" style="display:flex;gap:3px;align-items:flex-end;height:96px;margin-top:10px"></div></div>
           <div class="map-card" style="margin:0"><h2 style="font-size:14px;margin:0 0 4px">Entonnoir de la période</h2><div id="stj-entonnoir" style="font-size:12.5px;margin-top:10px">—</div></div>
@@ -1976,7 +1977,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v279';
+const VERSION='v280';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -7824,6 +7825,34 @@ function stjPill(val,prev,bienQuandMonte){
 function stjTuile(lbl,val,pill,spark,sub,clic){
  return `<div ${clic?`onclick="${clic}" title="Cliquer pour le détail"`:''} style="background:var(--card,#fff);border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:0 1px 4px rgba(20,30,70,.05)${clic?';cursor:pointer':''}"><div style="font-size:11px;font-weight:800;letter-spacing:.06em;color:var(--ink-soft)">${lbl}${clic?' <span style="font-weight:400">▾</span>':''}</div><div style="display:flex;align-items:baseline;gap:8px;margin-top:2px;flex-wrap:wrap"><span style="font-size:26px;font-weight:800">${val}</span>${pill||''}</div>${sub?`<div style="font-size:11px;color:var(--ink-soft)">${sub}</div>`:''}${spark||''}</div>`;
 }
+// Tuile Qualité d'appel cliquable : POURQUOI cette note (barème, répartition, points à travailler)
+async function stjToggleCoach(){
+ const z=document.getElementById('stj-coach-detail');if(!z)return;
+ if(z.style.display!=='none'){z.style.display='none';return;}
+ z.style.display='block';z.innerHTML='Chargement des analyses…';
+ const b=stjBornes();const sdrSel=(document.getElementById('stj-sdr')||{}).value||'';
+ try{
+  const r=await api('/api/coach?du='+b.du+'&au='+b.au+(sdrSel?'&sdr='+encodeURIComponent(sdrSel):'')+'&limit=300');
+  const d=await r.json();
+  const as=d.analyses||[];
+  if(!as.length){z.innerHTML='<span style="color:var(--ink-soft)">Aucune analyse sur la période.</span>';return;}
+  const tr=[0,0,0,0,0];
+  as.forEach(a=>{const n=Number(a.note)||0;tr[n<=2?0:(n<=4?1:(n<=6?2:(n<=8?3:4)))]++;});
+  const labels=['0-2 · pas de vraie conversation (standard, barrage)','2-4 · faible','4-6 · appel moyen','6-8 · bon appel','8-10 · exemplaire'];
+  const cols=['#E5484D','#F97316','#E8A013','#8BC34A','#0FA968'];
+  const maxT=Math.max(1,...tr);
+  const repart=labels.map((l,i)=>`<div style="display:flex;align-items:center;gap:8px;margin:3px 0;font-size:12px"><div style="width:250px">${l}</div><div style="background:${cols[i]};height:12px;border-radius:4px;width:${Math.round(40*tr[i]/maxT)}%;min-width:${tr[i]?6:0}px"></div><div>${tr[i]||''}</div></div>`).join('');
+  const faibles=as.filter(a=>Number(a.note)<=5&&a.analyse&&(a.analyse.actions||[]).length).slice(0,5);
+  const actions=faibles.map(a=>`<div style="margin:3px 0;font-size:12.5px">• ${htmlSafe((a.analyse.actions||[])[0]||'')} <span style="color:var(--ink-soft)">(${htmlSafe(a.sdr)}, appel noté ${a.note})</span></div>`).join('');
+  const best=as.slice().sort((x,y)=>Number(y.note)-Number(x.note))[0];
+  z.innerHTML='<div style="font-weight:800;margin-bottom:6px">🎧 Comment lire la note de qualité d’appel</div>'
+   +'<div style="font-size:12px;color:var(--ink-soft);line-height:1.55;margin-bottom:10px">Chaque appel sortant décroché ≥ 60 s est noté /10 par l’IA sur la grille cold-call : accroche des 15 premières secondes, questions de découverte, écoute (ratio de parole), traitement des objections, proposition explicite de RDV. Le barème est volontairement <b>sévère</b> : 5 = appel moyen, 8+ = exemplaire. Les appels tombés sur un standard ou un barrage comptent (0-2) et tirent la moyenne vers le bas — c’est la réalité du terrain, pas une anomalie. Compare surtout la note <b>d’une période à l’autre</b> (la pilule de la tuile) et <b>entre SDR</b> (onglet Équipe).</div>'
+   +'<div style="font-weight:700;font-size:12.5px;margin-bottom:4px">Répartition des '+as.length+' appels analysés</div>'+repart
+   +(actions?'<div style="font-weight:700;font-size:12.5px;margin:10px 0 4px">🎯 Points à travailler (tirés des appels les plus faibles)</div>'+actions:'')
+   +(best&&best.analyse&&best.analyse.verbatim_gagnant?`<div style="margin-top:10px;font-size:12.5px">💬 <b>Meilleur appel</b> (${htmlSafe(best.sdr)}, ${best.note}/10) : <i>« ${htmlSafe(best.analyse.verbatim_gagnant)} »</i></div>`:'')
+   +'<div style="font-size:11.5px;color:var(--ink-soft);margin-top:8px">Le détail appel par appel (audio + grille complète) est dans 🎧 Journal des appels.</div>';
+ }catch(e){z.innerHTML='Erreur : '+e.message;}
+}
 // Tuile RDV cliquable : la liste des clients se déplie sous la grille
 function stjToggleRdv(){
  const z=document.getElementById('stj-rdv-liste');if(!z)return;
@@ -7848,7 +7877,7 @@ function rendreStatsJournees(d){
   (d.speed?stjTuile('⚡ SPEED-TO-LEAD',d.speed.mediane_min<90?d.speed.mediane_min+' min':(Math.round(d.speed.mediane_min/6)/10)+' h','','','signal → 1er contact · médiane sur '+d.speed.n+' hot lead'+(d.speed.n>1?'s':'')):'')+
   (coutRdv!=null?stjTuile('💶 COÛT / RDV',coutRdv.toLocaleString('fr-FR')+' €','',stjSpark(spc.map(x=>x.cout),'#7A5AF8'),'conso + abos prorata'):'')+
   stjTuile('🎯 CONVERSION',conv+' %',stjPill(conv,convP,true),stjSpark(sp.map(x=>x.s?Math.round(100*x.r/x.s):0),'#E8A013'),'statuées → RDV')+
-  (cg?stjTuile('🎧 QUALITÉ D’APPEL',cg.note_moy+'/10',stjPill(cg.note_moy,p.coach_note,true),'',cg.n+' appel'+(cg.n>1?'s':'')+' analysé'+(cg.n>1?'s':'')+' par l’IA'):'')+
+  (cg?stjTuile('🎧 QUALITÉ D’APPEL',cg.note_moy+'/10',stjPill(cg.note_moy,p.coach_note,true),'',cg.n+' analysé'+(cg.n>1?'s':'')+' · barème sévère (5 = moyen)','stjToggleCoach()'):'')+
   (cg?stjTuile('🙋 TAUX DE PROPOSITION',cg.prop_pct+' %','','','RDV proposé explicitement (ask rate)'):'')+
   stjTuile('📞 APPELS',t.appels||0,stjPill(t.appels||0,p.appels,true),stjSpark(sp.map(x=>x.a)),(t.jours||0)+' jour'+(t.jours>1?'s':'')+' actif'+(t.jours>1?'s':''))+
   stjTuile('📈 JOIGNABILITÉ',(t.taux_decroche||0)+' %',stjPill(t.taux_decroche||0,tauxP,true),stjSpark(sp.map(x=>x.a?Math.round(100*x.d/x.a):0),'#12B5CB'),(t.decroches||0)+' décrochés')+
