@@ -1977,7 +1977,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v282';
+const VERSION='v283';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -6860,6 +6860,22 @@ async function ckCompleter(rid,ci){
  }catch(e){toast('Erreur réseau : '+e.message);if(btn){btn.disabled=false;btn.textContent='↻ Compléter';}}
  finally{it._busy=false;ckProgres(rid,false);}
 }
+// ⬇️ Export CSV de la journée (leads appelés + analyse IA + next step) — token via fetch, blob
+async function ckExportJournee(){
+ const sdrV=(document.getElementById('ck-sdr')||{}).value||(CK&&CK.sdr)||'';
+ toast('⬇️ Préparation de l’export…');
+ try{
+  const r=await api('/api/export-journee'+(sdrV?'?sdr='+encodeURIComponent(sdrV):''));
+  if(!r.ok){let d=null;try{d=await r.json();}catch(_){}toast('Export : '+((d&&d.erreur)||('HTTP '+r.status)));return;}
+  const blob=await r.blob();
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='journee_'+(sdrV||'moi')+'_'+new Date().toISOString().slice(0,10)+'.csv';
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  toast('⬇️ Export téléchargé (ouvre-le dans Excel)');
+ }catch(e){toast('Export : '+e.message);}
+}
 // « Ma prospection » : liste choisie mémorisée par SDR
 function ckListeSel(){try{return localStorage.getItem('ck_liste_'+((state.user&&state.user.nom)||''))||'';}catch(_){return'';}}
 function ckChoisirListe(v){try{localStorage.setItem('ck_liste_'+((state.user&&state.user.nom)||''),v||'');}catch(_){}chargerCockpit();}
@@ -6906,6 +6922,7 @@ function rendreCockpit(sdrAffiche){
     <h1 style="margin:0">\u2600\ufe0f Ma journ\u00e9e \u2014 ${dateFr}</h1>
     <p class="sub" style="margin:2px 0 0">${htmlSafe(sdrAffiche||d.sdr)} \u00b7 ${d.chauds.length} signal${d.chauds.length>1?'aux':''} chaud${d.chauds.length>1?'s':''} \u00b7 ${nR+nA} rappel${(nR+nA)>1?'s':''} du${(nR+nA)>1?'s':''} \u00b7 ${d.restants} fiche${d.restants>1?'s':''} \u00e0 prospecter</p>
    </div>
+   <button class="act act-copy" onclick="ckExportJournee()" title="Export CSV (Excel) : leads appelés du jour — issue, décroché, durée, note et résumé IA, action recommandée, next step">⬇️ Export</button>
    ${admin?`<label style="font-size:11px;color:var(--ink-soft)">Vue SDR<br><select id="ck-sdr" class="field" style="padding:6px 8px;font-size:12px" onchange="chargerCockpit()"></select></label>`:''}
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:12px">
