@@ -41,12 +41,14 @@ export default async function handler(req, res) {
         const d = await r.json().catch(() => ({}));
         return { total: d.total || 0, deals: avecDetails ? (d.results || []).map(x => ({ nom: x.properties.dealname, date: x.properties[prop] })) : [] };
       };
-      let planifies = 0, noshows = 0; const details = [];
+      let planifies = 0, noshows = 0, realises = 0; const details = [];
       for (const p of (dp0.results || [])) {
         if (!/^sales/i.test(p.label || '')) continue;
         const stP = (p.stages || []).find(s => /d[ée]mo planifi/i.test(s.label));
         const stN = (p.stages || []).find(s => /no[ -]?show/i.test(s.label));
+        const stR = (p.stages || []).find(s => /d[ée]mo r[ée]alis/i.test(s.label));
         if (stP) planifies += (await compte(`hs_v2_date_entered_${stP.id}`, false)).total;
+        if (stR) realises += (await compte(`hs_v2_date_entered_${stR.id}`, false)).total;
         if (stN) {
           const rN = await compte(`hs_v2_date_entered_${stN.id}`, true);
           noshows += rN.total;
@@ -55,7 +57,7 @@ export default async function handler(req, res) {
       }
       details.sort((a, b) => new Date(b.date) - new Date(a.date));
       return res.status(200).json({
-        ok: true, periode: { du, au }, planifies, noshows,
+        ok: true, periode: { du, au }, planifies, noshows, realises,
         taux_pct: planifies ? Math.round(100 * noshows / planifies) : null,
         details: details.slice(0, 50)
       });

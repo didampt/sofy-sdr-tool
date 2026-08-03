@@ -1977,7 +1977,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v281';
+const VERSION='v282';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -7874,7 +7874,19 @@ function stjToggleRdv(){
  if(z.style.display!=='none'&&z.dataset.mode==='rdv'){z.style.display='none';return;}
  z.dataset.mode='rdv';
  const ds=(STJ&&STJ.rdv_details)||[];
- z.innerHTML=ds.length?'<div style="font-weight:800;margin-bottom:6px">🏆 RDV pris sur la période</div>'+ds.map(r=>`<div style="display:flex;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px"><span style="min-width:110px;color:var(--ink-soft)">${new Date(r.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})} ${new Date(r.date).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span><b style="flex:1">${htmlSafe(r.nom)}</b><span style="color:var(--ink-soft)">${htmlSafe(r.ville||'')}</span><span>${htmlSafe(r.sdr||'')}</span></div>`).join(''):'<span style="color:var(--ink-soft)">Aucun RDV sur la période.</span>';
+ // Bandeau honorés / no-show (pipeline HubSpot) + camembert des territoires (CP des fiches)
+ const ns=(STJ&&STJ.noshow)||null;
+ const bandeau=ns?`<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;background:var(--paper);border-radius:8px;padding:8px 12px;margin-bottom:10px"><span>📅 <b>${ns.planifies}</b> démos planifiées</span><span>✅ <b>${ns.realises||0}</b> honorées</span><span>👻 <b>${ns.noshows}</b> no-show${ns.taux_pct!=null?' ('+ns.taux_pct+' %)':''}</span><span style="color:var(--ink-soft)">source : pipeline HubSpot</span></div>`:'';
+ const terrDe=cp=>({'971':'Guadeloupe','972':'Martinique','973':'Guyane','974':'Réunion','976':'Mayotte'})[String(cp||'').slice(0,3)]||(cp?'Métropole':'Non renseigné');
+ const terr={};ds.forEach(r=>{const t=terrDe(r.cp);terr[t]=(terr[t]||0)+1;});
+ const tE=Object.entries(terr).sort((a,b)=>b[1]-a[1]);
+ const palT=['#2B4BF2','#0FA968','#E8A013','#E5484D','#7A5AF8','#12B5CB','#8A90A2'];
+ let camembert='';
+ if(tE.length&&ds.length){
+  let acc=0;const parts=tE.map(([n,v],i)=>{const a0=acc/ds.length*360;acc+=v;const a1=acc/ds.length*360;return `${palT[i%palT.length]} ${a0.toFixed(1)}deg ${a1.toFixed(1)}deg`;});
+  camembert=`<div style="display:flex;gap:14px;align-items:center;margin-bottom:10px"><div title="Territoires des RDV pris" style="width:96px;height:96px;border-radius:50%;background:conic-gradient(${parts.join(',')})"></div><div style="font-size:12px">${tE.map(([n,v],i)=>`<div style="display:flex;align-items:center;gap:6px;margin:2px 0"><span style="width:10px;height:10px;border-radius:3px;background:${palT[i%palT.length]};display:inline-block"></span>${htmlSafe(n)} — <b>${v}</b> (${Math.round(100*v/ds.length)} %)</div>`).join('')}</div></div>`;
+ }
+ z.innerHTML=ds.length?'<div style="font-weight:800;margin-bottom:6px">🏆 RDV pris sur la période</div>'+bandeau+camembert+ds.map(r=>`<div style="display:flex;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px"><span style="min-width:110px;color:var(--ink-soft)">${new Date(r.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})} ${new Date(r.date).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span><b style="flex:1">${htmlSafe(r.nom)}</b><span style="color:var(--ink-soft)">${htmlSafe(r.ville||'')}</span><span>${htmlSafe(r.sdr||'')}</span></div>`).join(''):'<span style="color:var(--ink-soft)">Aucun RDV sur la période.</span>';
  z.style.display='block';
 }
 function stjBarre(pct,couleur){

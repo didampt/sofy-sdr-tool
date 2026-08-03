@@ -35,6 +35,10 @@
     {
       "path": "/api/coach-hebdo",
       "schedule": "0 15 * * 5"
+    },
+    {
+      "path": "/api/noshow-cron",
+      "schedule": "0 7 * * 1-5"
     }
   ],
   "headers": [

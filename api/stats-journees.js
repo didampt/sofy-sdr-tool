@@ -167,7 +167,7 @@ export default async function handler(req, res) {
           const t = new Date(e.traite_le).getTime();
           if (t >= duT && t <= auT && (!sdrF || e.traite_par === sdrF)) {
             entonnoir[statut] = (entonnoir[statut] || 0) + 1;
-            if (statut.indexOf('RDV') >= 0) rdvDetails.push({ nom: e.enseigne_ia || e.enseigne || e.nom || '?', ville: e.ville || '', sdr: e.traite_par || '', date: e.traite_le });
+            if (statut.indexOf('RDV') >= 0) rdvDetails.push({ nom: e.enseigne_ia || e.enseigne || e.nom || '?', ville: e.ville || '', cp: e.code_postal || '', sdr: e.traite_par || '', date: e.traite_le });
           }
         }
         const cp = e.concurrent_perdu;
