@@ -639,6 +639,10 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
             <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:13.5px;line-height:1.45"><input type="radio" name="vert-moteur" value="web" onchange="majModeVerticale()" style="margin-top:2px"><span><b>🌐 Annuaire publié sur le site du réseau</b> — colle l'URL de la page « nos adhérents / nos points de vente / nos agences » : lecture de la page, puis SIREN &amp; dirigeants retrouvés via Pappers. Ex : algorel.fr/nos-adherents.</span></label>
     <div id="vert-dep-box" style="display:none;margin-top:8px"><input class="field" id="vert-dep" placeholder="Département de la tête de groupe (optionnel, ex : 972)" style="max-width:340px" title="Départage les groupes homonymes : les candidats de ce département passent en tête"></div>
     <div id="vert-url-box" style="display:none;margin-top:8px"><input class="field" id="vert-url" placeholder="URL de la page annuaire (ex : https://www.algorel.fr/nos-adherents)" style="width:100%" autocomplete="off" oninput="VERT_WEB=null"><p class="hint" style="margin-top:4px">La pagination (pages 2, 3…) est suivie automatiquement. Estime d'abord : tu verras les sociétés détectées avant de lancer les recherches Pappers.</p></div>
+    <div id="vert-minetab-box" style="display:none;margin-top:8px">
+      <input class="field" type="number" id="vert-minetab" min="1" placeholder="Min. d'établissements par société (ex : 3 — vide = toutes)" style="max-width:380px" title="Ne garder que les adhérents multi-sites : ils ont un budget et un vrai besoin de coordination">
+      <p class="hint" style="margin-top:4px">🛡️ Les réseaux intégrés (Adeo, Saint-Gobain, Rexel, Sonepar, Chausson…) sont automatiquement écartés : la décision y est centrale, pas locale. Fiches triées par CA décroissant.</p>
+    </div>
           </div>
           <div id="vert-perimetre-box" style="margin-top:12px"><label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">Périmètre du balayage</label>
             <select class="field" id="vert-perimetre" style="width:100%" onchange="var b=document.getElementById('vert-estim');if(b)b.style.display='none'"><option value="france">🇫🇷 France entière (101 départements — plusieurs minutes)</option><option value="dom">🌴 DOM uniquement (971, 972, 973, 974, 976)</option><option value="metropole">Métropole uniquement</option></select>
@@ -1977,7 +1981,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v283';
+const VERSION='v284';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2670,6 +2674,8 @@ function majModeVerticale(){
  if(dp)dp.style.display=(m==='groupe')?'block':'none';
  var ub=document.getElementById('vert-url-box');
  if(ub)ub.style.display=(m==='web')?'block':'none';
+ var mb=document.getElementById('vert-minetab-box');
+ if(mb)mb.style.display=(m==='enseigne')?'none':'block'; // filtres décideurs : moteurs société (groupe + web)
  VERT_HOLDING=null;VERT_WEB=null;
  var box=document.getElementById('vert-estim');if(box)box.style.display='none';
 }
@@ -2764,6 +2770,8 @@ async function creerListeVerticale(){
    var urlC=(document.getElementById('vert-url')||{value:''}).value.trim();
    if(!/^https?:\/\//i.test(urlC)){toast('⚠️ Colle l\'URL complète (https://…) de la page annuaire');fin();return;}
    var bodyW={moteur:'web',mode:'creer',url:urlC,reseau:nomCible,nb:300};
+   var meW=parseInt((document.getElementById('vert-minetab')||{}).value,10)||0;
+   if(meW>1)bodyW.min_etab=meW; // filtre décideurs : adhérents multi-sites uniquement
    if(VERT_WEB&&VERT_WEB.url===urlC&&VERT_WEB.entites.length)bodyW.entites=VERT_WEB.entites; // extraction de l'estimation réutilisée
    if(prog){prog.style.display='block';prog.textContent='⏳ '+(bodyW.entites?bodyW.entites.length+' sociétés : recherche des SIREN et dirigeants (Pappers + Basile)…':'Lecture de l\'annuaire, puis SIREN et dirigeants (Claude + Pappers + Basile)…');}
    const rw=await api('/api/verticale',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(bodyW)});
@@ -2772,9 +2780,12 @@ async function creerListeVerticale(){
    fiches=dw.entreprises||[];
    doublons=dw.doublons_inter_listes||0;
    if(dw.non_resolues)toast('ℹ️ '+dw.non_resolues+' société'+(dw.non_resolues>1?'s':'')+' sans SIREN Pappers — fiche'+(dw.non_resolues>1?'s':'')+' créée'+(dw.non_resolues>1?'s':'')+' quand même (nom + ville)');
+   if(dw.exclus_reseaux_integres||dw.exclus_etablissements)toast('🛡️ Écartés : '+(dw.exclus_reseaux_integres||0)+' réseau(x) intégré(s) · '+(dw.exclus_etablissements||0)+' sous le seuil d’établissements');
    criteres={verticale:true,moteur:'web',cible:nomCible,url:urlC,naf:[],pays:[]};
   }else if(m==='groupe'){
    var body={moteur:'groupe',mode:'creer',nb:300};
+   var meG=parseInt((document.getElementById('vert-minetab')||{}).value,10)||0;
+   if(meG>1)body.min_etab=meG; // filtre décideurs : sociétés multi-sites uniquement
    if(VERT_HOLDING&&VERT_HOLDING.siren)body.siren=VERT_HOLDING.siren;else body.nom=nomCible;
    if(prog){prog.style.display='block';prog.textContent='⏳ Arbre du groupe + détail des filiales (Pappers + Basile)…';}
    const r=await api('/api/verticale',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -2782,7 +2793,8 @@ async function creerListeVerticale(){
    if(d.erreur){toast('Erreur : '+d.erreur);fin();if(prog)prog.style.display='none';return;}
    fiches=d.entreprises||[];
    doublons=d.doublons_inter_listes||0;
-   criteres={verticale:true,moteur:'groupe',cible:(d.holding&&d.holding.nom)||nomCible,siren_holding:(d.holding&&d.holding.siren)||null,naf:[],pays:[]};
+   if(d.exclus_reseaux_integres||d.exclus_etablissements)toast('🛡️ Écartés : '+(d.exclus_reseaux_integres||0)+' réseau(x) intégré(s) · '+(d.exclus_etablissements||0)+' sous le seuil d’établissements');
+   criteres={verticale:true,moteur:'groupe',cible:(d.holding&&d.holding.nom)||nomCible,siren_holding:(d.holding&&d.holding.siren)||null,min_etab:meG||null,naf:[],pays:[]};
   }else{
    var per=(document.getElementById('vert-perimetre')||{}).value||'france';
    var deps=VERT_DEPS[per]||VERT_DEPS.france;
@@ -5859,6 +5871,9 @@ function sourceFiche(e){
  if(e.signal_hot||e.source_hotlead){
   return {label:(estVisiteSite(e)?'📍 source sofy.fr':'💼 source LinkedIn'),cls:'b-source'};
  }
+ // Lot 1 coopératives : distinguer la SOCIÉTÉ adhérente (décideur) du point de vente (vitrine)
+ if(e.type_fiche==='adherent')return {label:'🏛️ Adhérent / société',cls:'b-source'};
+ if(e.type_fiche==='point_de_vente')return {label:'📍 Point de vente',cls:'b-source'};
  var cr=state.criteres||{};
  var cs=((contactsDe(e)[0]||{}).source)||e.source||'';
  if(cr.gmb||e.source==='gmb')return {label:'📍 Google Maps',cls:'b-source'};

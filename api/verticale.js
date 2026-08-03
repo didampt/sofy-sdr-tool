@@ -556,6 +556,36 @@ async function ajouterContactsBasile(entreprises) {
   return ajoutes;
 }
 
+// ── Lot 1 « coopératives » (retour Franck 03/08) ──
+// Réseaux INTÉGRÉS (décision centrale, aucun libre arbitre local) : exclus des listes de
+// prospection réseau. Liste par défaut, surchargée par config 'reseaux_integres' (array).
+const RESEAUX_INTEGRES_DEFAUT = ['adeo', 'leroy merlin', 'saint gobain', 'saint-gobain', 'point p', 'cedeo', 'dispano', 'lapeyre',
+  'rexel', 'sonepar', 'chausson', 'bricoman', 'castorama', 'brico depot', 'weldom', 'samse', 'doras', 'mbm'];
+async function reseauxIntegres() {
+  try {
+    const r = await sql`SELECT valeur FROM config WHERE cle = 'reseaux_integres'`;
+    if (r.length && Array.isArray(r[0].valeur) && r[0].valeur.length) return r[0].valeur.map(x => normaliser(String(x)));
+  } catch (_) {}
+  return RESEAUX_INTEGRES_DEFAUT.map(normaliser);
+}
+function estIntegre(fiche, listeN) {
+  const n = normaliser(fiche.nom || '') + ' ' + normaliser(fiche.enseigne || '');
+  return listeN.some(x => x && n.includes(x));
+}
+// Filtres décideurs appliqués aux fiches d'un réseau : réseaux intégrés écartés + « ≥ N
+// établissements » (les nb_etablissements inconnus sont GARDÉS quand un minimum est demandé
+// avec detail non chargé... non : inconnu = 1). Tri final par CA décroissant (les gros d'abord).
+function filtrerDecideurs(fiches, minEtab, integres) {
+  let exclusIntegres = 0, exclusEtab = 0;
+  const out = fiches.filter(f => {
+    if (estIntegre(f, integres)) { exclusIntegres++; return false; }
+    if (minEtab > 1 && (Number(f.nb_etablissements) || 1) < minEtab) { exclusEtab++; return false; }
+    return true;
+  });
+  out.sort((a, b) => (Number(b.chiffre_affaires) || 0) - (Number(a.chiffre_affaires) || 0));
+  return { fiches: out, exclus_integres: exclusIntegres, exclus_etablissements: exclusEtab };
+}
+
 // Déduplication INTER-LISTES : clés déjà extraites dans les listes existantes (une nouvelle
 // extraction « kiabi 50 » une semaine plus tard ramène les 50 SUIVANTES, sans re-payer les mêmes).
 async function clesDejaExtraites() {
@@ -909,13 +939,19 @@ export default async function handler(req, res) {
       let contactsBasile = 0;
       if (b.contacts_basile !== false) contactsBasile = await ajouterContactsBasile(entreprises);
 
+      // Lot 1 « coopératives » : fiche = ADHÉRENT/société ; filtres décideurs + tri par CA
+      entreprises.forEach(e => { e.type_fiche = 'adherent'; });
+      const minEtabG = Math.max(1, parseInt(b.min_etab, 10) || 1);
+      const fd = filtrerDecideurs(entreprises, minEtabG, await reseauxIntegres());
+
       await loggerConso(user, 'pappers', requetes + probes + retenues.length, b.liste_id || null);
       return res.status(200).json({
         moteur: 'groupe', holding, total: actives.length,
         fiches_detaillees: retenues.length, exclues_cessees_ou_liquidation: exclues,
         doublons_inter_listes: doublonsInterListes,
         contacts_basile: contactsBasile,
-        credits_estimes: requetes + probes + retenues.length, entreprises
+        exclus_reseaux_integres: fd.exclus_integres, exclus_etablissements: fd.exclus_etablissements,
+        credits_estimes: requetes + probes + retenues.length, entreprises: fd.fiches
       });
     }
 
@@ -999,6 +1035,7 @@ export default async function handler(req, res) {
           const f = versFiche(p.r, det, nomDep(p.dep), enseigne);
           f.source = 'gmb';
           f.groupe = enseigne;
+          f.type_fiche = 'point_de_vente'; // vitrine locale (≠ fiche adhérent/société des moteurs groupe et web)
           fiches.push(f);
         });
       }
@@ -1084,17 +1121,23 @@ export default async function handler(req, res) {
       let contactsBasile = 0;
       if (b.contacts_basile !== false) contactsBasile = await ajouterContactsBasile(fiches);
 
+      // Lot 1 « coopératives » : fiche = ADHÉRENT/société ; filtres décideurs + tri par CA
+      fiches.forEach(f => { f.type_fiche = 'adherent'; });
+      const minEtabW = Math.max(1, parseInt(b.min_etab, 10) || 1);
+      const fdW = filtrerDecideurs(fiches, minEtabW, await reseauxIntegres());
+
       if (requetesPappers) await loggerConso(user, 'pappers', requetesPappers, b.liste_id || null);
       if (iaAppels) await loggerConso(user, 'ia_claude', iaAppels, b.liste_id || null);
-      const resolues = fiches.filter(f => f.siren).length;
+      const resolues = fdW.fiches.filter(f => f.siren).length;
       return res.status(200).json({
         moteur: 'web', url, reseau,
-        total: fiches.length, resolues, non_resolues: fiches.length - resolues,
+        total: fdW.fiches.length, resolues, non_resolues: fdW.fiches.length - resolues,
         exclues_cessees_ou_liquidation: exclues,
         doublons_inter_listes: doublonsInterListes,
         contacts_basile: contactsBasile,
+        exclus_reseaux_integres: fdW.exclus_integres, exclus_etablissements: fdW.exclus_etablissements,
         credits_estimes: requetesPappers,
-        entreprises: fiches
+        entreprises: fdW.fiches
       });
     }
 
