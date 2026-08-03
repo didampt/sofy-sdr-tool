@@ -155,23 +155,48 @@ export default async function handler(req, res) {
       for (const o of os) objectifs[o.nom] = { appels: o.objectif_appels_jour || 50, rdv: o.objectif_rdv_mois || 20 };
     } catch (_) {}
 
-    // ── Entonnoir des issues + pertes par concurrent (scan des fiches, filtré période/SDR) ──
-    const entonnoir = {}; const concurrents = {};
+    // ── Entonnoir + concurrents + LISTE des RDV pris (tuile cliquable) — scan des fiches ──
+    const entonnoir = {}; const concurrents = {}; const rdvDetails = [];
+    const duT = new Date(du + 'T00:00:00Z').getTime() - 2 * 3600 * 1000;   // marge fuseau
+    const auT = new Date(au + 'T23:59:59Z').getTime() + 2 * 3600 * 1000;
     try {
-      const duT = new Date(du + 'T00:00:00Z').getTime() - 2 * 3600 * 1000;   // marge fuseau
-      const auT = new Date(au + 'T23:59:59Z').getTime() + 2 * 3600 * 1000;
       const ls = await sql`SELECT entreprises FROM listes WHERE criteres->>'auto' IS DISTINCT FROM 'hotleads'`;
       for (const l of ls) for (const e of (Array.isArray(l.entreprises) ? l.entreprises : [])) {
         const statut = (e.tags_sdr || [])[0] || e.statut_appel || null;
         if (statut && e.traite_le) {
           const t = new Date(e.traite_le).getTime();
-          if (t >= duT && t <= auT && (!sdrF || e.traite_par === sdrF)) entonnoir[statut] = (entonnoir[statut] || 0) + 1;
+          if (t >= duT && t <= auT && (!sdrF || e.traite_par === sdrF)) {
+            entonnoir[statut] = (entonnoir[statut] || 0) + 1;
+            if (statut.indexOf('RDV') >= 0) rdvDetails.push({ nom: e.enseigne_ia || e.enseigne || e.nom || '?', ville: e.ville || '', sdr: e.traite_par || '', date: e.traite_le });
+          }
         }
         const cp = e.concurrent_perdu;
         if (cp && cp.nom && cp.date) {
           const t = new Date(cp.date).getTime();
           if (t >= duT && t <= auT && (!sdrF || e.traite_par === sdrF)) concurrents[cp.nom] = (concurrents[cp.nom] || 0) + 1;
         }
+      }
+      rdvDetails.sort((a, b) => new Date(b.date) - new Date(a.date));
+    } catch (_) {}
+
+    // ── ⚡ Speed-to-lead : médiane signal → 1er contact (liste Hot Leads : pris_le / traite_le) ──
+    let speed = null;
+    try {
+      const hls = await sql`SELECT entreprises FROM listes WHERE criteres->>'auto' = 'hotleads'`;
+      const delais = [];
+      for (const l of hls) for (const e of (Array.isArray(l.entreprises) ? l.entreprises : [])) {
+        const sig = e.signal && e.signal.date;
+        const act = e.pris_le || e.traite_le;
+        if (!sig || !act) continue;
+        const tA = new Date(act).getTime();
+        if (tA < duT || tA > auT) continue;
+        if (sdrF && e.pris_par !== sdrF && e.traite_par !== sdrF) continue;
+        const dl = tA - new Date(sig).getTime();
+        if (dl > 0 && dl < 14 * 24 * 3600 * 1000) delais.push(dl);
+      }
+      if (delais.length) {
+        delais.sort((a, b) => a - b);
+        speed = { n: delais.length, mediane_min: Math.round(delais[Math.floor(delais.length / 2)] / 60000) };
       }
     } catch (_) {}
 
@@ -185,7 +210,8 @@ export default async function handler(req, res) {
         statuees: totaux.statuees, rdv: totaux.rdv, jours: totaux.jours.size
       },
       graphe, entonnoir, concurrents, objectifs,
-      precedent, coach, coach_global: coachGlobal, quota, couts, spark, spark_cout: sparkCout
+      precedent, coach, coach_global: coachGlobal, quota, couts, spark, spark_cout: sparkCout,
+      rdv_details: rdvDetails.slice(0, 100), speed
     });
   } catch (e) {
     return res.status(500).json({ erreur: 'Erreur serveur', detail: e.message });

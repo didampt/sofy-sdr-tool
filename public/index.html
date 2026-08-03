@@ -1069,6 +1069,7 @@ Spot-Hit</textarea>
       </div>
       <div id="stj-pan-vue">
         <div id="stj-tuiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:12px"></div>
+        <div id="stj-rdv-liste" class="map-card" style="display:none;margin-top:12px"></div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:14px">
           <div class="map-card" style="margin:0"><h2 style="font-size:14px;margin:0 0 4px">Activité — appels par jour · 🏆 RDV</h2><div id="stj-graphe" style="display:flex;gap:3px;align-items:flex-end;height:96px;margin-top:10px"></div></div>
           <div class="map-card" style="margin:0"><h2 style="font-size:14px;margin:0 0 4px">Entonnoir de la période</h2><div id="stj-entonnoir" style="font-size:12.5px;margin-top:10px">—</div></div>
@@ -1975,7 +1976,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v278';
+const VERSION='v279';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -7820,8 +7821,16 @@ function stjPill(val,prev,bienQuandMonte){
  const txt=(pct!=null&&isFinite(pct)&&Math.abs(pct)<400)?((pct>0?'+':'')+pct+' %'):((d>0?'+':'')+Math.round(d*10)/10);
  return `<span title="vs période précédente de même durée" style="display:inline-block;background:${bg};color:${fg};border-radius:999px;padding:2px 9px;font-size:11.5px;font-weight:700">${fl} ${txt}</span>`;
 }
-function stjTuile(lbl,val,pill,spark,sub){
- return `<div style="background:var(--card,#fff);border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:0 1px 4px rgba(20,30,70,.05)"><div style="font-size:11px;font-weight:800;letter-spacing:.06em;color:var(--ink-soft)">${lbl}</div><div style="display:flex;align-items:baseline;gap:8px;margin-top:2px;flex-wrap:wrap"><span style="font-size:26px;font-weight:800">${val}</span>${pill||''}</div>${sub?`<div style="font-size:11px;color:var(--ink-soft)">${sub}</div>`:''}${spark||''}</div>`;
+function stjTuile(lbl,val,pill,spark,sub,clic){
+ return `<div ${clic?`onclick="${clic}" title="Cliquer pour le détail"`:''} style="background:var(--card,#fff);border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:0 1px 4px rgba(20,30,70,.05)${clic?';cursor:pointer':''}"><div style="font-size:11px;font-weight:800;letter-spacing:.06em;color:var(--ink-soft)">${lbl}${clic?' <span style="font-weight:400">▾</span>':''}</div><div style="display:flex;align-items:baseline;gap:8px;margin-top:2px;flex-wrap:wrap"><span style="font-size:26px;font-weight:800">${val}</span>${pill||''}</div>${sub?`<div style="font-size:11px;color:var(--ink-soft)">${sub}</div>`:''}${spark||''}</div>`;
+}
+// Tuile RDV cliquable : la liste des clients se déplie sous la grille
+function stjToggleRdv(){
+ const z=document.getElementById('stj-rdv-liste');if(!z)return;
+ if(z.style.display!=='none'){z.style.display='none';return;}
+ const ds=(STJ&&STJ.rdv_details)||[];
+ z.innerHTML=ds.length?'<div style="font-weight:800;margin-bottom:6px">🏆 RDV pris sur la période</div>'+ds.map(r=>`<div style="display:flex;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px"><span style="min-width:110px;color:var(--ink-soft)">${new Date(r.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})} ${new Date(r.date).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span><b style="flex:1">${htmlSafe(r.nom)}</b><span style="color:var(--ink-soft)">${htmlSafe(r.ville||'')}</span><span>${htmlSafe(r.sdr||'')}</span></div>`).join(''):'<span style="color:var(--ink-soft)">Aucun RDV sur la période.</span>';
+ z.style.display='block';
 }
 function stjBarre(pct,couleur){
  return `<div style="background:var(--line);border-radius:4px;height:7px;width:100%;max-width:120px"><div style="background:${couleur};height:100%;border-radius:4px;width:${Math.min(100,Math.max(2,pct))}%"></div></div>`;
@@ -7835,7 +7844,8 @@ function rendreStatsJournees(d){
  // ① tuiles Vue d'ensemble (grille inspirée des SaaS B2B : volume → qualité → conversion → coût)
  const cg=d.coach_global;
  document.getElementById('stj-tuiles').innerHTML=
-  stjTuile('🏆 RDV PRIS',t.rdv||0,stjPill(t.rdv||0,p.rdv,true),stjSpark(sp.map(x=>x.r),'#0FA968'))+
+  stjTuile('🏆 RDV PRIS',t.rdv||0,stjPill(t.rdv||0,p.rdv,true),stjSpark(sp.map(x=>x.r),'#0FA968'),'','stjToggleRdv()')+
+  (d.speed?stjTuile('⚡ SPEED-TO-LEAD',d.speed.mediane_min<90?d.speed.mediane_min+' min':(Math.round(d.speed.mediane_min/6)/10)+' h','','','signal → 1er contact · médiane sur '+d.speed.n+' hot lead'+(d.speed.n>1?'s':'')):'')+
   (coutRdv!=null?stjTuile('💶 COÛT / RDV',coutRdv.toLocaleString('fr-FR')+' €','',stjSpark(spc.map(x=>x.cout),'#7A5AF8'),'conso + abos prorata'):'')+
   stjTuile('🎯 CONVERSION',conv+' %',stjPill(conv,convP,true),stjSpark(sp.map(x=>x.s?Math.round(100*x.r/x.s):0),'#E8A013'),'statuées → RDV')+
   (cg?stjTuile('🎧 QUALITÉ D’APPEL',cg.note_moy+'/10',stjPill(cg.note_moy,p.coach_note,true),'',cg.n+' appel'+(cg.n>1?'s':'')+' analysé'+(cg.n>1?'s':'')+' par l’IA'):'')+
