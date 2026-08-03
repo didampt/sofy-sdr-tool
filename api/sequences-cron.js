@@ -247,19 +247,36 @@ export default async function handler(req, res) {
       bilans++;
     }
 
-    // Récap consolidé aux ADMINS (Didier, Romain) : bascules par SDR + quota MANUEL restant.
-    // Le plafond étant partagé cron/manuel, c'est ici qu'on voit si le robot étouffe les
-    // envois manuels de la journée (cas Alicia 24/07 : « Plafond Lemlist atteint 50/50 »).
+    // Récap consolidé aux ADMINS (Didier, Romain) : bascules + quota manuel restant + la journée
+    // d'HIER (appels/RDV du journal journees_sdr) + synthèse Coach d'appels (analyses d'hier).
     let recapAdmins = 0;
     try {
       const admins = await sql`SELECT nom, slack_id FROM sdrs WHERE actif = TRUE AND role IN ('admin','superadmin') AND slack_id IS NOT NULL`;
       if (admins.length) {
+        const hier = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(Date.now() - 24 * 3600 * 1000));
+        const jHier = {};
+        try { for (const j of await sql`SELECT sdr, appels, decroches, rdv FROM journees_sdr WHERE jour = ${hier}`) jHier[j.sdr] = j; } catch (_) {}
+        const coachHier = {};
+        try {
+          for (const c of await sql`SELECT sdr, note, "analyse" FROM analyses_appels WHERE jour = ${hier}`) {
+            const s = coachHier[c.sdr] = coachHier[c.sdr] || { n: 0, somme: 0, rdv: 0, pire: null };
+            s.n++; s.somme += Number(c.note) || 0;
+            const an = c.analyse || {};
+            if (an.proposition_rdv && an.proposition_rdv.faite) s.rdv++;
+            if (!s.pire || (Number(c.note) || 0) < s.pire.note) s.pire = { note: Number(c.note) || 0, action: (an.actions || [])[0] || null };
+          }
+        } catch (_) {}
         const sdrsProspect = await sql`SELECT nom FROM sdrs WHERE actif = TRUE AND role = 'sdr' ORDER BY nom`;
         const lignes = sdrsProspect.map(u => {
           const s = parSdr[u.nom];
           const n = s ? (s.froid + s.tiede) : 0;
           const reste = (quota[u.nom] !== undefined) ? quota[u.nom] : PLAFOND_JOUR;
-          return `• ${u.nom} : ${n} basculé${n > 1 ? 's' : ''}${s ? ` (❄️ ${s.froid} · 🌡️ ${s.tiede})` : ''} — reste *${reste}/${PLAFOND_JOUR}* envois manuels aujourd'hui`;
+          const j = jHier[u.nom];
+          const c = coachHier[u.nom];
+          let l = `• *${u.nom}* : ${n} basculé${n > 1 ? 's' : ''}${s ? ` (❄️ ${s.froid} · 🌡️ ${s.tiede})` : ''} — reste *${reste}/${PLAFOND_JOUR}* envois manuels`;
+          if (j) l += `\n   📞 hier : ${j.appels || 0} appels (${j.decroches || 0} décrochés) · 🏆 ${j.rdv || 0} RDV`;
+          if (c) l += `\n   🎧 ${c.n} appel${c.n > 1 ? 's' : ''} analysé${c.n > 1 ? 's' : ''} · note moy ${Math.round(10 * c.somme / c.n) / 10}/10 · RDV proposé ${c.rdv}/${c.n}${c.pire && c.pire.action ? `\n   🎯 à travailler : ${String(c.pire.action).slice(0, 140)}` : ''}`;
+          return l;
         }).join('\n');
         const txt = `🌙 *Séquences auto — récap admin* : ${total} lead${total > 1 ? 's' : ''} basculé${total > 1 ? 's' : ''} cette nuit (${listes.length} listes scannées)\n${lignes || 'Aucun SDR actif.'}`;
         for (const a of admins) { await envoyerDM(a.slack_id, txt); recapAdmins++; }
