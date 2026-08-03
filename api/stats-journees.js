@@ -69,9 +69,9 @@ export default async function handler(req, res) {
     try {
       const s30 = new Date(Date.now() - 29 * msJ).toISOString().slice(0, 10);
       const sj = sdrF
-        ? await sql`SELECT jour, SUM(appels)::int a, SUM(decroches)::int d, SUM(statuees)::int s, SUM(rdv)::int r FROM journees_sdr WHERE jour >= ${s30} AND sdr = ${sdrF} GROUP BY jour ORDER BY jour`
-        : await sql`SELECT jour, SUM(appels)::int a, SUM(decroches)::int d, SUM(statuees)::int s, SUM(rdv)::int r FROM journees_sdr WHERE jour >= ${s30} GROUP BY jour ORDER BY jour`;
-      spark = sj.map(x => ({ jour: new Date(x.jour).toISOString().slice(0, 10), a: x.a, d: x.d, s: x.s, r: x.r }));
+        ? await sql`SELECT jour, SUM(appels)::int a, SUM(decroches)::int d, SUM(statuees)::int s, SUM(rdv)::int r, SUM(duree_sec)::int du FROM journees_sdr WHERE jour >= ${s30} AND sdr = ${sdrF} GROUP BY jour ORDER BY jour`
+        : await sql`SELECT jour, SUM(appels)::int a, SUM(decroches)::int d, SUM(statuees)::int s, SUM(rdv)::int r, SUM(duree_sec)::int du FROM journees_sdr WHERE jour >= ${s30} GROUP BY jour ORDER BY jour`;
+      spark = sj.map(x => ({ jour: new Date(x.jour).toISOString().slice(0, 10), a: x.a, d: x.d, s: x.s, r: x.r, du: x.du }));
     } catch (_) {}
     let sparkCout = [];
     if (admin) {
@@ -84,13 +84,27 @@ export default async function handler(req, res) {
       } catch (_) {}
     }
 
-    // ── 🎧 Coach (période) : note moyenne + RDV proposés par SDR ──
+    // ── 🎧 Coach (période) : note moyenne, RDV proposés (« ask rate ») par SDR + global + delta ──
     const coach = {};
+    let coachGlobal = null;
     try {
       const cs = sdrF
-        ? await sql`SELECT sdr, COUNT(*)::int n, ROUND(AVG(note),1)::float note_moy FROM analyses_appels WHERE jour >= ${du} AND jour <= ${au} AND sdr = ${sdrF} GROUP BY sdr`
-        : await sql`SELECT sdr, COUNT(*)::int n, ROUND(AVG(note),1)::float note_moy FROM analyses_appels WHERE jour >= ${du} AND jour <= ${au} GROUP BY sdr`;
-      for (const c of cs) coach[c.sdr] = { n: c.n, note_moy: c.note_moy };
+        ? await sql`SELECT sdr, COUNT(*)::int n, ROUND(AVG(note),1)::float note_moy,
+            COUNT(*) FILTER (WHERE ("analyse"->'proposition_rdv'->>'faite')::boolean)::int prop
+            FROM analyses_appels WHERE jour >= ${du} AND jour <= ${au} AND sdr = ${sdrF} GROUP BY sdr`
+        : await sql`SELECT sdr, COUNT(*)::int n, ROUND(AVG(note),1)::float note_moy,
+            COUNT(*) FILTER (WHERE ("analyse"->'proposition_rdv'->>'faite')::boolean)::int prop
+            FROM analyses_appels WHERE jour >= ${du} AND jour <= ${au} GROUP BY sdr`;
+      let gN = 0, gS = 0, gP = 0;
+      for (const c of cs) {
+        coach[c.sdr] = { n: c.n, note_moy: c.note_moy, prop: c.prop };
+        gN += c.n; gS += c.n * c.note_moy; gP += c.prop;
+      }
+      if (gN) coachGlobal = { n: gN, note_moy: Math.round(10 * gS / gN) / 10, prop_pct: Math.round(100 * gP / gN) };
+      const cp = sdrF
+        ? await sql`SELECT COUNT(*)::int n, ROUND(AVG(note),1)::float note_moy FROM analyses_appels WHERE jour >= ${pDu} AND jour <= ${pAu} AND sdr = ${sdrF}`
+        : await sql`SELECT COUNT(*)::int n, ROUND(AVG(note),1)::float note_moy FROM analyses_appels WHERE jour >= ${pDu} AND jour <= ${pAu}`;
+      if (cp[0] && cp[0].n) precedent.coach_note = cp[0].note_moy;
     } catch (_) {}
 
     // ── Quota Lemlist LIVE (24 h glissantes — colonne opérationnelle du tableau équipe) ──
@@ -171,7 +185,7 @@ export default async function handler(req, res) {
         statuees: totaux.statuees, rdv: totaux.rdv, jours: totaux.jours.size
       },
       graphe, entonnoir, concurrents, objectifs,
-      precedent, coach, quota, couts, spark, spark_cout: sparkCout
+      precedent, coach, coach_global: coachGlobal, quota, couts, spark, spark_cout: sparkCout
     });
   } catch (e) {
     return res.status(500).json({ erreur: 'Erreur serveur', detail: e.message });

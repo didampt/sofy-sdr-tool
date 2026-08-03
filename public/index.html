@@ -1975,7 +1975,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v277';
+const VERSION='v278';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -7832,13 +7832,17 @@ function rendreStatsJournees(d){
  const convP=p.statuees?Math.round(1000*(p.rdv||0)/p.statuees)/10:null;
  const tauxP=p.appels?Math.round(100*p.decroches/p.appels):null;
  const coutRdv=(c&&t.rdv)?Math.round(10*c.total/t.rdv)/10:null;
- // ① tuiles Vue d'ensemble
+ // ① tuiles Vue d'ensemble (grille inspirée des SaaS B2B : volume → qualité → conversion → coût)
+ const cg=d.coach_global;
  document.getElementById('stj-tuiles').innerHTML=
   stjTuile('🏆 RDV PRIS',t.rdv||0,stjPill(t.rdv||0,p.rdv,true),stjSpark(sp.map(x=>x.r),'#0FA968'))+
   (coutRdv!=null?stjTuile('💶 COÛT / RDV',coutRdv.toLocaleString('fr-FR')+' €','',stjSpark(spc.map(x=>x.cout),'#7A5AF8'),'conso + abos prorata'):'')+
   stjTuile('🎯 CONVERSION',conv+' %',stjPill(conv,convP,true),stjSpark(sp.map(x=>x.s?Math.round(100*x.r/x.s):0),'#E8A013'),'statuées → RDV')+
+  (cg?stjTuile('🎧 QUALITÉ D’APPEL',cg.note_moy+'/10',stjPill(cg.note_moy,p.coach_note,true),'',cg.n+' appel'+(cg.n>1?'s':'')+' analysé'+(cg.n>1?'s':'')+' par l’IA'):'')+
+  (cg?stjTuile('🙋 TAUX DE PROPOSITION',cg.prop_pct+' %','','','RDV proposé explicitement (ask rate)'):'')+
   stjTuile('📞 APPELS',t.appels||0,stjPill(t.appels||0,p.appels,true),stjSpark(sp.map(x=>x.a)),(t.jours||0)+' jour'+(t.jours>1?'s':'')+' actif'+(t.jours>1?'s':''))+
   stjTuile('📈 JOIGNABILITÉ',(t.taux_decroche||0)+' %',stjPill(t.taux_decroche||0,tauxP,true),stjSpark(sp.map(x=>x.a?Math.round(100*x.d/x.a):0),'#12B5CB'),(t.decroches||0)+' décrochés')+
+  stjTuile('⏱️ DURÉE MOY.',stjDuree(t.duree_moy_sec),'',stjSpark(sp.map(x=>x.d?Math.round(x.du/x.d):0),'#8A90A2'),'par appel décroché')+
   (c?stjTuile('💰 COÛT PÉRIODE',c.total.toLocaleString('fr-FR')+' €',stjPill(c.conso,p.cout_conso,false),stjSpark(spc.map(x=>x.cout),'#E5484D'),c.conso.toLocaleString('fr-FR')+' € conso + '+c.abos_prorata.toLocaleString('fr-FR')+' € abos'):'');
  // ② activité
  const g=d.graphe||[];const maxG=Math.max(1,...g.map(x=>x.appels));
