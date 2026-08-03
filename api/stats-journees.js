@@ -45,10 +45,74 @@ export default async function handler(req, res) {
       totaux.duree_sec += j.duree_sec || 0; totaux.statuees += j.statuees || 0; totaux.rdv += j.rdv || 0;
       const cle = new Date(j.jour).toISOString().slice(0, 10); // Neon renvoie les DATE en objet Date
       totaux.jours.add(cle);
-      parJour[cle] = (parJour[cle] || 0) + (j.appels || 0);
+      const pj = parJour[cle] = parJour[cle] || { appels: 0, rdv: 0 };
+      pj.appels += j.appels || 0; pj.rdv += j.rdv || 0;
     }
     const graphe = Object.entries(parJour).sort((a, b) => a[0] < b[0] ? -1 : 1)
-      .map(([jour, appels]) => ({ jour, appels }));
+      .map(([jour, x]) => ({ jour, appels: x.appels, rdv: x.rdv }));
+
+    // ── Période PRÉCÉDENTE de même durée (deltas des tuiles KPI) ──
+    const msJ = 24 * 3600 * 1000;
+    const nbJours = Math.max(1, Math.round((new Date(au + 'T12:00:00Z') - new Date(du + 'T12:00:00Z')) / msJ) + 1);
+    const pAu = new Date(new Date(du + 'T12:00:00Z').getTime() - msJ).toISOString().slice(0, 10);
+    const pDu = new Date(new Date(du + 'T12:00:00Z').getTime() - nbJours * msJ).toISOString().slice(0, 10);
+    const precedent = { appels: 0, decroches: 0, statuees: 0, rdv: 0, cout_conso: null };
+    try {
+      const pj = sdrF
+        ? await sql`SELECT COALESCE(SUM(appels),0)::int a, COALESCE(SUM(decroches),0)::int d, COALESCE(SUM(statuees),0)::int s, COALESCE(SUM(rdv),0)::int r FROM journees_sdr WHERE jour >= ${pDu} AND jour <= ${pAu} AND sdr = ${sdrF}`
+        : await sql`SELECT COALESCE(SUM(appels),0)::int a, COALESCE(SUM(decroches),0)::int d, COALESCE(SUM(statuees),0)::int s, COALESCE(SUM(rdv),0)::int r FROM journees_sdr WHERE jour >= ${pDu} AND jour <= ${pAu}`;
+      if (pj[0]) { precedent.appels = pj[0].a; precedent.decroches = pj[0].d; precedent.statuees = pj[0].s; precedent.rdv = pj[0].r; }
+    } catch (_) {}
+
+    // ── 🎧 Coach (période) : note moyenne + RDV proposés par SDR ──
+    const coach = {};
+    try {
+      const cs = sdrF
+        ? await sql`SELECT sdr, COUNT(*)::int n, ROUND(AVG(note),1)::float note_moy FROM analyses_appels WHERE jour >= ${du} AND jour <= ${au} AND sdr = ${sdrF} GROUP BY sdr`
+        : await sql`SELECT sdr, COUNT(*)::int n, ROUND(AVG(note),1)::float note_moy FROM analyses_appels WHERE jour >= ${du} AND jour <= ${au} GROUP BY sdr`;
+      for (const c of cs) coach[c.sdr] = { n: c.n, note_moy: c.note_moy };
+    } catch (_) {}
+
+    // ── Quota Lemlist LIVE (24 h glissantes — colonne opérationnelle du tableau équipe) ──
+    const quota = {};
+    const PLAF = parseInt(process.env.LEMLIST_PLAFOND_JOUR || '75', 10);
+    try {
+      const q = await sql`SELECT auteur, COUNT(*)::int n FROM activites WHERE type = 'sequenceAdded' AND ts > NOW() - INTERVAL '24 hours' GROUP BY auteur`;
+      for (const r of q) if (r.auteur) quota[r.auteur] = { utilise: r.n, plafond: PLAF };
+    } catch (_) {}
+
+    // ── 💰 Coûts PÉRIODISÉS (admins) : conso réelle de la période + abonnements au prorata ──
+    let couts = null;
+    if (admin) {
+      try {
+        const duT = du + 'T00:00:00+02:00', auT = au + 'T23:59:59+02:00';
+        const cr = await sql`SELECT c.sdr, c.api, SUM(c.quantite * COALESCE(t.prix,0))::float cout
+          FROM consommations c LEFT JOIN tarifs t ON t.api = c.api
+          WHERE c.created_at >= ${duT} AND c.created_at <= ${auT} GROUP BY c.sdr, c.api`;
+        const parSdrC = {}, parApi = {};
+        let totalC = 0;
+        for (const r of cr) {
+          totalC += r.cout;
+          parSdrC[r.sdr] = (parSdrC[r.sdr] || 0) + r.cout;
+          parApi[r.api] = (parApi[r.api] || 0) + r.cout;
+        }
+        const aboRows = await sql`SELECT valeur FROM config WHERE cle = 'abonnements'`;
+        const abos = (aboRows.length && Array.isArray(aboRows[0].valeur)) ? aboRows[0].valeur : [];
+        const abosMensuel = abos.reduce((s, a) => s + (Number(a.montant) || 0), 0);
+        const abosProrata = Math.round(abosMensuel * nbJours / 30.44 * 100) / 100;
+        couts = {
+          conso: Math.round(totalC * 100) / 100,
+          par_sdr: Object.fromEntries(Object.entries(parSdrC).map(([k, v]) => [k, Math.round(v * 100) / 100])),
+          par_api: Object.fromEntries(Object.entries(parApi).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, Math.round(v * 100) / 100])),
+          abos_prorata: abosProrata, abos_mensuel: Math.round(abosMensuel * 100) / 100,
+          total: Math.round((totalC + abosProrata) * 100) / 100, jours: nbJours
+        };
+        // Conso de la période précédente (delta du coût)
+        const pDuT = pDu + 'T00:00:00+02:00', pAuT = pAu + 'T23:59:59+02:00';
+        const pc = await sql`SELECT SUM(c.quantite * COALESCE(t.prix,0))::float cout FROM consommations c LEFT JOIN tarifs t ON t.api = c.api WHERE c.created_at >= ${pDuT} AND c.created_at <= ${pAuT}`;
+        precedent.cout_conso = Math.round(((pc[0] && pc[0].cout) || 0) * 100) / 100;
+      } catch (_) {}
+    }
 
     // ── Objectifs (couleurs du tableau) ──
     const objectifs = {};
@@ -86,7 +150,8 @@ export default async function handler(req, res) {
         duree_moy_sec: totaux.decroches ? Math.round(totaux.duree_sec / totaux.decroches) : 0,
         statuees: totaux.statuees, rdv: totaux.rdv, jours: totaux.jours.size
       },
-      graphe, entonnoir, concurrents, objectifs
+      graphe, entonnoir, concurrents, objectifs,
+      precedent, coach, quota, couts
     });
   } catch (e) {
     return res.status(500).json({ erreur: 'Erreur serveur', detail: e.message });

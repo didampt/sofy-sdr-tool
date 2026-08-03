@@ -1058,13 +1058,21 @@ Spot-Hit</textarea>
         <select class="field" id="stj-sdr" onchange="chargerStatsJournees()" style="max-width:200px;display:none"><option value="">Tous les SDR</option></select>
       </div>
       <div class="map-card">
-        <h2>☀️ Journées SDR</h2>
-        <div class="role">Journal automatique du soir (appels Ringover réels, fiches statuées, RDV du bloc-notes) — aucune saisie manuelle. 🟢 objectif d'appels atteint · 🟠 ≥ 50 % · 🔴 &lt; 50 %.</div>
-        <div id="stj-tuiles" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px"></div>
-        <div id="stj-graphe" style="display:flex;gap:3px;align-items:flex-end;height:64px;margin-top:14px"></div>
-        <div style="overflow-x:auto;margin-top:12px"><table class="map-table" id="stj-table"><tr><th>Jour</th><th>SDR</th><th>Début–Fin</th><th>Appels</th><th>Décrochés</th><th>Durée moy.</th><th>Statuées</th><th>RDV</th></tr></table></div>
+        <div id="stj-tuiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px"></div>
+        <div id="stj-graphe" style="display:flex;gap:3px;align-items:flex-end;height:72px;margin-top:16px"></div>
+        <div style="overflow-x:auto;margin-top:14px"><table class="map-table" id="stj-equipe"></table></div>
+        <div id="stj-modules" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-top:14px">
+          <div><div style="font-size:12px;font-weight:800;letter-spacing:.04em;color:var(--ink-soft);margin-bottom:6px">🥊 PERTES CONCURRENTS</div><div id="stj-concurrents" style="font-size:12.5px">—</div></div>
+          <div><div style="font-size:12px;font-weight:800;letter-spacing:.04em;color:var(--ink-soft);margin-bottom:6px">📞 TOP DES ISSUES</div><div id="stj-entonnoir" style="font-size:12.5px">—</div></div>
+          <div id="stj-couts-mod"><div style="font-size:12px;font-weight:800;letter-spacing:.04em;color:var(--ink-soft);margin-bottom:6px">💰 COÛTS PAR POSTE</div><div id="stj-couts" style="font-size:12.5px">—</div></div>
+        </div>
       </div>
-      <div id="stats-couts">
+      <details class="map-card">
+        <summary style="cursor:pointer;font-weight:700">☀️ Journées jour par jour <span style="color:var(--ink-soft);font-weight:400">— journal automatique du soir · 🟢 objectif atteint · 🟠 ≥ 50 % · 🔴 &lt; 50 %</span></summary>
+        <div style="overflow-x:auto;margin-top:12px"><table class="map-table" id="stj-table"><tr><th>Jour</th><th>SDR</th><th>Début–Fin</th><th>Appels</th><th>Décrochés</th><th>Durée moy.</th><th>Statuées</th><th>RDV</th></tr></table></div>
+      </details>
+      <details id="stats-couts">
+      <summary class="map-card" style="cursor:pointer;font-weight:700;display:block">💰 Détail des coûts <span style="color:var(--ink-soft);font-weight:400">— coût total du mois, abonnements, consommation par SDR</span></summary>
       <div class="map-card" style="background:#F5F8FF;border-color:#C7D7FE">
         <h2>💰 Coût total réel du mois</h2>
         <div class="role">Abonnements fixes mensuels + consommation à l'usage (APIs). À comparer à votre ancien prestataire.</div>
@@ -1088,9 +1096,9 @@ Spot-Hit</textarea>
         <div class="role">Coût calculé : quantité × tarif unitaire de chaque API. Limite mensuelle appliquée automatiquement (blocage à l'atteinte).</div>
         <table class="map-table" id="stats-sdr"><tr><th>SDR</th><th>Détail API</th><th>Coût du mois</th><th>Limite</th></tr></table>
       </div>
-      </div><!-- /stats-couts (masqué pour les rôles non admin) -->
-      <div class="map-card" id="stats-listes-card">
-        <h2>📋 Par liste (30 dernières)</h2>
+      </details><!-- /stats-couts (masqué pour les rôles non admin) -->
+      <details class="map-card" id="stats-listes-card">
+        <summary style="cursor:pointer;font-weight:700">📋 Par liste <span style="color:var(--ink-soft);font-weight:400">— performance et coût de chaque liste (filtres SDR / campagne / date)</span></summary>
         <div class="role">% emails / mobiles = contacts avec email / mobile trouvé. % enrichi = fiches avec au moins un moyen de contact. Coût par contact = coût liste ÷ contacts enrichis.</div>
         <div id="stats-filtres" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 4px">
           <select class="field" id="filtre-stats-sdr" onchange="appliquerFiltreStats()" style="max-width:200px"><option value="">Tous les SDR</option></select>
@@ -1101,17 +1109,7 @@ Spot-Hit</textarea>
         </div>
         <div id="stats-notes" style="margin-top:18px"></div>
         <div style="overflow-x:auto"><table class="map-table" id="stats-listes"><tr><th>Liste</th><th>SDR</th><th>Fiches</th><th>Emails</th><th>% emails</th><th>📱 mobiles</th><th>☎️ tél GMB</th><th>% enrichi</th><th>🤝 RDV</th><th>Coût</th><th>€ / contact</th></tr></table></div>
-      </div>
-      <div class="map-card">
-        <h2>🥊 Pertes par concurrent</h2>
-        <div class="role">Renseigné à chaque « Refus – concurrence » (période et SDR des filtres du haut). Le discours concurrentiel se travaille ici.</div>
-        <div id="stj-concurrents" style="margin-top:12px;font-size:13px">Chargement…</div>
-      </div>
-      <div class="map-card">
-        <h2>📞 Entonnoir des issues d'appel</h2>
-        <div class="role">Répartition des statuts posés sur la période (fiches statuées) + taux de conversion vers le RDV.</div>
-        <div id="stj-entonnoir" style="margin-top:12px;font-size:13px">Chargement…</div>
-      </div>
+      </details>
     </section>
 
     <section class="view" id="view-appels">
@@ -1963,7 +1961,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v275';
+const VERSION='v276';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -7780,39 +7778,65 @@ async function chargerStatsJournees(){
  }catch(e){toast('Erreur réseau stats : '+e.message);}
 }
 function stjDuree(s){if(!s)return '—';return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');}
+function stjDelta(val,prev,bienQuandMonte){
+ if(prev==null)return '';
+ const d=val-prev;
+ if(!prev&&!val)return '';
+ const bon=(d>=0)===!!bienQuandMonte||d===0;
+ const c=d===0?'var(--ink-soft)':(bon?'#0FA968':'#E5484D');
+ const fl=d===0?'\u25ac':(d>0?'\u25b2':'\u25bc');
+ return `<div style="font-size:11.5px;font-weight:700;color:${c}">${fl} ${d>0?'+':''}${Math.round(d*10)/10} <span style="font-weight:400;color:var(--ink-soft)">vs p\u00e9riode pr\u00e9c.</span></div>`;
+}
 function rendreStatsJournees(d){
- const t=d.totaux||{};
- // Coût / RDV : admins, période « Ce mois » uniquement (les coûts de chargerStats sont mensuels)
- let coutRdv='';
- if(d.admin&&typeof COUT_MOIS_TOTAL==='number'&&t.rdv&&(document.getElementById('stj-periode')||{}).value==='mois')
-  coutRdv=(COUT_MOIS_TOTAL/t.rdv).toLocaleString('fr-FR',{maximumFractionDigits:1})+' €';
- const tuile=(lbl,val,sub)=>`<div style="flex:1;min-width:110px;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:10px 12px"><div style="font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--ink-soft)">${lbl}</div><div style="font-size:22px;font-weight:800">${val}</div>${sub?`<div style="font-size:11.5px;color:var(--ink-soft)">${sub}</div>`:''}</div>`;
+ const t=d.totaux||{},p=d.precedent||{},c=d.couts;
+ const conv=t.statuees?Math.round(1000*(t.rdv||0)/t.statuees)/10:0;
+ const convP=p.statuees?Math.round(1000*(p.rdv||0)/p.statuees)/10:null;
+ const tauxP=p.appels?Math.round(100*p.decroches/p.appels):null;
+ const coutRdv=(c&&t.rdv)?Math.round(10*c.total/t.rdv)/10:null;
+ const tuile=(lbl,val,delta,sub)=>`<div style="background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:12px 14px"><div style="font-size:11px;font-weight:800;letter-spacing:.05em;color:var(--ink-soft)">${lbl}</div><div style="font-size:24px;font-weight:800;margin:2px 0">${val}</div>${delta||''}${sub?`<div style="font-size:11px;color:var(--ink-soft)">${sub}</div>`:''}</div>`;
  document.getElementById('stj-tuiles').innerHTML=
-  tuile('APPELS',t.appels||0,(t.jours||0)+' jour'+(t.jours>1?'s':'')+' actif'+(t.jours>1?'s':''))+
-  tuile('DÉCROCHÉS',t.decroches||0,(t.taux_decroche||0)+' % de joignabilité')+
-  tuile('DURÉE MOY.',stjDuree(t.duree_moy_sec),'par appel décroché')+
-  tuile('STATUÉES',t.statuees||0,'issues d’appel posées')+
-  tuile('🏆 RDV',t.rdv||0,t.statuees?Math.round(1000*(t.rdv||0)/t.statuees)/10+' % des statuées':'')+
-  (coutRdv?tuile('COÛT / RDV',coutRdv,'conso + abonnements du mois'):'');
+  tuile('\ud83c\udfc6 RDV PRIS',t.rdv||0,stjDelta(t.rdv||0,p.rdv,true))+
+  (coutRdv!=null?tuile('\ud83d\udcb6 CO\u00dbT / RDV',coutRdv.toLocaleString('fr-FR')+' \u20ac','','conso + abos prorata'):'')+
+  tuile('\ud83c\udfaf CONVERSION',conv+' %',stjDelta(conv,convP,true),'statu\u00e9es \u2192 RDV')+
+  tuile('\ud83d\udcde APPELS',t.appels||0,stjDelta(t.appels||0,p.appels,true),(t.jours||0)+' jour'+(t.jours>1?'s':'')+' actif'+(t.jours>1?'s':''))+
+  tuile('\ud83d\udcc8 JOIGNABILIT\u00c9',(t.taux_decroche||0)+' %',stjDelta(t.taux_decroche||0,tauxP,true),(t.decroches||0)+' d\u00e9croch\u00e9s')+
+  (c?tuile('\ud83d\udcb0 CO\u00dbT P\u00c9RIODE',c.total.toLocaleString('fr-FR')+' \u20ac',stjDelta(c.conso,p.cout_conso,false),c.conso.toLocaleString('fr-FR')+' \u20ac conso + '+c.abos_prorata.toLocaleString('fr-FR')+' \u20ac abos*'):'');
  const g=d.graphe||[];const maxG=Math.max(1,...g.map(x=>x.appels));
- document.getElementById('stj-graphe').innerHTML=g.length?g.map(x=>`<div title="${new Date(x.jour+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'short',day:'2-digit',month:'2-digit'})} — ${x.appels} appel${x.appels>1?'s':''}" style="flex:1;max-width:26px;background:var(--accent);opacity:${(0.35+0.65*x.appels/maxG).toFixed(2)};height:${Math.max(4,Math.round(60*x.appels/maxG))}px;border-radius:3px 3px 0 0"></div>`).join(''):'<span style="font-size:12px;color:var(--ink-soft)">Aucune journée consignée sur la période.</span>';
- const objs=d.objectifs||{};
+ document.getElementById('stj-graphe').innerHTML=g.length?g.map(x=>`<div title="${new Date(x.jour+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'short',day:'2-digit',month:'2-digit'})} \u2014 ${x.appels} appel${x.appels>1?'s':''}${x.rdv?' \u00b7 \ud83c\udfc6 '+x.rdv+' RDV':''}" style="flex:1;max-width:28px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%"><div style="font-size:10px;line-height:1">${x.rdv?'\ud83c\udfc6':''}</div><div style="width:100%;background:var(--accent);opacity:${(0.35+0.65*x.appels/maxG).toFixed(2)};height:${Math.max(4,Math.round(56*x.appels/maxG))}px;border-radius:3px 3px 0 0"></div></div>`).join(''):'<span style="font-size:12px;color:var(--ink-soft)">Aucune journ\u00e9e consign\u00e9e sur la p\u00e9riode.</span>';
+ // \u00c9quipe : 1 ligne par SDR (agr\u00e9gats de la p\u00e9riode), clic = filtre
+ const objs=d.objectifs||{};const agg={};
+ (d.journees||[]).forEach(j=>{const s=agg[j.sdr]=agg[j.sdr]||{a:0,de:0,st:0,r:0,n:0};s.a+=j.appels||0;s.de+=j.decroches||0;s.st+=j.statuees||0;s.r+=j.rdv||0;s.n++;});
+ const eqRows=Object.entries(agg).sort((x,y)=>y[1].r-x[1].r||y[1].a-x[1].a).map(([nom,s])=>{
+  const obj=(objs[nom]||{}).appels||50;const aj=s.n?Math.round(s.a/s.n):0;
+  const dot=aj>=obj?'\ud83d\udfe2':(aj>=obj/2?'\ud83d\udfe0':'\ud83d\udd34');
+  const co=(d.coach||{})[nom];const q=(d.quota||{})[nom];
+  const cvv=s.st?Math.round(1000*s.r/s.st)/10+' %':'\u2014';
+  return `<tr onclick="var se=document.getElementById('stj-sdr');if(se&&se.style.display!=='none'){se.value='${nom.replace(/'/g,"\\'")}';chargerStatsJournees();}" style="cursor:pointer" title="Cliquer pour filtrer le tableau de bord sur ${nom}"><td><b>${htmlSafe(nom)}</b></td><td>${dot} ${aj}/j</td><td>${s.a?Math.round(100*s.de/s.a)+' %':'\u2014'}</td><td><b>${s.r}</b></td><td>${cvv}</td><td>${co?co.note_moy+'/10 <span style="color:var(--ink-soft)">('+co.n+')</span>':'\u2014'}</td><td>${q?(q.plafond-q.utilise)+'/'+q.plafond:'\u2014'}</td><td>${c&&c.par_sdr[nom]!=null?c.par_sdr[nom].toLocaleString('fr-FR')+' \u20ac':'\u2014'}</td></tr>`;
+ }).join('');
+ document.getElementById('stj-equipe').innerHTML='<tr><th>SDR</th><th>Appels/j</th><th>Joignab.</th><th>\ud83c\udfc6 RDV</th><th>Conv.</th><th>\ud83c\udfa7 Coach</th><th>Quota Lemlist</th><th>Co\u00fbt</th></tr>'+(eqRows||'<tr><td colspan="8" style="color:var(--ink-soft)">Aucune journ\u00e9e sur la p\u00e9riode.</td></tr>');
+ // D\u00e9tail jour par jour (accord\u00e9on)
  const rows=(d.journees||[]).map(j=>{
   const obj=(objs[j.sdr]||{}).appels||50;
-  const dot=(j.appels||0)>=obj?'🟢':((j.appels||0)>=obj/2?'🟠':'🔴');
-  const hm=x=>x?new Date(x).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'—';
+  const dot=(j.appels||0)>=obj?'\ud83d\udfe2':((j.appels||0)>=obj/2?'\ud83d\udfe0':'\ud83d\udd34');
+  const hm=x=>x?new Date(x).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'\u2014';
   const dm=j.decroches?Math.round(j.duree_sec/j.decroches):0;
-  return `<tr><td>${new Date(j.jour+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'short',day:'2-digit',month:'2-digit'})}</td><td><b>${htmlSafe(j.sdr)}</b></td><td>${hm(j.debut)}–${hm(j.fin)}</td><td>${dot} ${j.appels||0}</td><td>${j.decroches||0}${j.appels?' ('+Math.round(100*(j.decroches||0)/j.appels)+' %)':''}</td><td>${stjDuree(dm)}</td><td>${j.statuees||0}</td><td>${j.rdv||0}</td></tr>`;
+  return `<tr><td>${new Date(j.jour+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'short',day:'2-digit',month:'2-digit'})}</td><td><b>${htmlSafe(j.sdr)}</b></td><td>${hm(j.debut)}\u2013${hm(j.fin)}</td><td>${dot} ${j.appels||0}</td><td>${j.decroches||0}${j.appels?' ('+Math.round(100*(j.decroches||0)/j.appels)+' %)':''}</td><td>${stjDuree(dm)}</td><td>${j.statuees||0}</td><td>${j.rdv||0}</td></tr>`;
  }).join('');
- document.getElementById('stj-table').innerHTML='<tr><th>Jour</th><th>SDR</th><th>Début–Fin</th><th>Appels</th><th>Décrochés</th><th>Durée moy.</th><th>Statuées</th><th>RDV</th></tr>'+(rows||'<tr><td colspan="8" style="color:var(--ink-soft)">Aucune journée consignée sur la période (le journal se remplit automatiquement chaque soir vers 19 h).</td></tr>');
- const cs=Object.entries(d.concurrents||{}).sort((a,b)=>b[1]-a[1]);
+ document.getElementById('stj-table').innerHTML='<tr><th>Jour</th><th>SDR</th><th>D\u00e9but\u2013Fin</th><th>Appels</th><th>D\u00e9croch\u00e9s</th><th>Dur\u00e9e moy.</th><th>Statu\u00e9es</th><th>RDV</th></tr>'+(rows||'<tr><td colspan="8" style="color:var(--ink-soft)">Aucune journ\u00e9e consign\u00e9e (le journal se remplit chaque soir vers 19 h).</td></tr>');
+ // Mini-modules
+ const cs=Object.entries(d.concurrents||{}).sort((a,b)=>b[1]-a[1]).slice(0,6);
  const maxC=Math.max(1,...cs.map(x=>x[1]));
- document.getElementById('stj-concurrents').innerHTML=cs.length?cs.map(([n,v])=>`<div style="display:flex;align-items:center;gap:10px;margin:4px 0"><div style="width:140px;font-weight:600">${htmlSafe(n)}</div><div style="background:#E24B4A;height:14px;border-radius:4px;width:${Math.round(60*v/maxC)}%;min-width:8px"></div><div>${v}</div></div>`).join(''):'<span style="color:var(--ink-soft)">Aucune perte concurrentielle renseignée sur la période 👍</span>';
+ document.getElementById('stj-concurrents').innerHTML=cs.length?cs.map(([n,v])=>`<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><div style="width:100px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${htmlSafe(n)}</div><div style="background:#E5484D;height:12px;border-radius:4px;width:${Math.round(55*v/maxC)}%;min-width:6px"></div><div>${v}</div></div>`).join(''):'<span style="color:var(--ink-soft)">Aucune perte renseign\u00e9e \ud83d\udc4d</span>';
  const es=Object.entries(d.entonnoir||{}).sort((a,b)=>b[1]-a[1]);
- const totE=es.reduce((s,x)=>s+x[1],0);
- const rdvE=es.filter(([n])=>n.indexOf('RDV')>=0).reduce((s,x)=>s+x[1],0);
- const maxE=Math.max(1,...es.map(x=>x[1]));
- document.getElementById('stj-entonnoir').innerHTML=es.length?(es.map(([n,v])=>`<div style="display:flex;align-items:center;gap:10px;margin:4px 0"><div style="width:220px">${htmlSafe(n)}</div><div style="background:var(--accent);opacity:.75;height:14px;border-radius:4px;width:${Math.round(55*v/maxE)}%;min-width:8px"></div><div>${v} <span style="color:var(--ink-soft)">(${Math.round(100*v/totE)} %)</span></div></div>`).join('')+`<div style="margin-top:10px;font-weight:700">Conversion statuées → RDV : ${totE?Math.round(1000*rdvE/totE)/10:0} %</div>`):'<span style="color:var(--ink-soft)">Aucune fiche statuée sur la période.</span>';
+ const totE=es.reduce((s,x)=>s+x[1],0);const maxE=Math.max(1,...es.map(x=>x[1]));
+ document.getElementById('stj-entonnoir').innerHTML=es.length?es.slice(0,6).map(([n,v])=>`<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><div style="width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${htmlSafe(n)}</div><div style="background:var(--accent);opacity:.7;height:12px;border-radius:4px;width:${Math.round(45*v/maxE)}%;min-width:6px"></div><div>${v} <span style="color:var(--ink-soft)">(${Math.round(100*v/totE)} %)</span></div></div>`).join(''):'<span style="color:var(--ink-soft)">Aucune fiche statu\u00e9e.</span>';
+ const cm=document.getElementById('stj-couts-mod');
+ if(cm)cm.style.display=c?'block':'none';
+ if(c){
+  const pa=Object.entries(c.par_api).slice(0,5);
+  const maxA=Math.max(0.01,...pa.map(x=>x[1]));
+  document.getElementById('stj-couts').innerHTML=pa.map(([n,v])=>`<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><div style="width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${htmlSafe(n)}</div><div style="background:#7A5AF8;opacity:.75;height:12px;border-radius:4px;width:${Math.round(55*v/maxA)}%;min-width:6px"></div><div>${v.toLocaleString('fr-FR')} \u20ac</div></div>`).join('')+`<div style="margin-top:6px;color:var(--ink-soft)">Abonnements : ${c.abos_prorata.toLocaleString('fr-FR')} \u20ac <span title="prorata de ${c.jours} jour(s) \u2014 ${c.abos_mensuel.toLocaleString('fr-FR')} \u20ac/mois">*</span> \u00b7 <b>Total p\u00e9riode : ${c.total.toLocaleString('fr-FR')} \u20ac</b></div>`;
+ }
 }
 async function chargerStats(){
  // Journées SDR (visibles par tous — le serveur limite un SDR à SES journées) ; coûts = admins
