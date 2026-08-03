@@ -1977,7 +1977,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v280';
+const VERSION='v281';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -7800,6 +7800,12 @@ async function chargerStatsJournees(){
    if(sel.options.length<=1)Object.keys(d.objectifs||{}).sort().forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=n;sel.appendChild(o);});
   }
   rendreStatsJournees(d);
+  // 👻 No-show (pipeline HubSpot) : chargé après coup (appel HubSpot plus lent), admins only
+  if(d.admin){
+   api('/api/noshow?du='+b.du+'&au='+b.au).then(r2=>r2.json()).then(n=>{
+    if(n&&n.ok&&STJ===d){STJ.noshow=n;rendreStatsJournees(STJ);}
+   }).catch(()=>{});
+  }
  }catch(e){toast('Erreur réseau Insights : '+e.message);}
 }
 function stjDuree(s){if(!s)return '—';return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');}
@@ -7853,10 +7859,20 @@ async function stjToggleCoach(){
    +'<div style="font-size:11.5px;color:var(--ink-soft);margin-top:8px">Le détail appel par appel (audio + grille complète) est dans 🎧 Journal des appels.</div>';
  }catch(e){z.innerHTML='Erreur : '+e.message;}
 }
+// Tuile No-show cliquable : les deals passés en No show sur la période (pipeline HubSpot)
+function stjToggleNoshow(){
+ const z=document.getElementById('stj-rdv-liste');if(!z)return;
+ const ds=(STJ&&STJ.noshow&&STJ.noshow.details)||[];
+ if(z.style.display!=='none'&&z.dataset.mode==='noshow'){z.style.display='none';return;}
+ z.dataset.mode='noshow';
+ z.innerHTML=ds.length?'<div style="font-weight:800;margin-bottom:6px">👻 Passés en No show sur la période</div>'+ds.map(r=>`<div style="display:flex;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px"><span style="min-width:90px;color:var(--ink-soft)">${new Date(r.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})}</span><b style="flex:1">${htmlSafe(r.nom||'')}</b><span style="color:var(--ink-soft)">${htmlSafe(r.pipeline||'')}</span></div>`).join('')+'<div style="font-size:11.5px;color:var(--ink-soft);margin-top:8px">💡 Pense à re-booker : recherche le client dans l’Historique pour retrouver sa fiche et poser un rappel.</div>':'<span style="color:var(--ink-soft)">Aucun no-show sur la période 🎉</span>';
+ z.style.display='block';
+}
 // Tuile RDV cliquable : la liste des clients se déplie sous la grille
 function stjToggleRdv(){
  const z=document.getElementById('stj-rdv-liste');if(!z)return;
- if(z.style.display!=='none'){z.style.display='none';return;}
+ if(z.style.display!=='none'&&z.dataset.mode==='rdv'){z.style.display='none';return;}
+ z.dataset.mode='rdv';
  const ds=(STJ&&STJ.rdv_details)||[];
  z.innerHTML=ds.length?'<div style="font-weight:800;margin-bottom:6px">🏆 RDV pris sur la période</div>'+ds.map(r=>`<div style="display:flex;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px"><span style="min-width:110px;color:var(--ink-soft)">${new Date(r.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})} ${new Date(r.date).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span><b style="flex:1">${htmlSafe(r.nom)}</b><span style="color:var(--ink-soft)">${htmlSafe(r.ville||'')}</span><span>${htmlSafe(r.sdr||'')}</span></div>`).join(''):'<span style="color:var(--ink-soft)">Aucun RDV sur la période.</span>';
  z.style.display='block';
@@ -7875,6 +7891,7 @@ function rendreStatsJournees(d){
  document.getElementById('stj-tuiles').innerHTML=
   stjTuile('🏆 RDV PRIS',t.rdv||0,stjPill(t.rdv||0,p.rdv,true),stjSpark(sp.map(x=>x.r),'#0FA968'),'','stjToggleRdv()')+
   (d.speed?stjTuile('⚡ SPEED-TO-LEAD',d.speed.mediane_min<90?d.speed.mediane_min+' min':(Math.round(d.speed.mediane_min/6)/10)+' h','','','signal → 1er contact · médiane sur '+d.speed.n+' hot lead'+(d.speed.n>1?'s':'')):'')+
+  (d.noshow&&d.noshow.taux_pct!=null?stjTuile('👻 NO-SHOW',d.noshow.taux_pct+' %','','',d.noshow.noshows+' sur '+d.noshow.planifies+' démos planifiées (HubSpot)','stjToggleNoshow()'):'')+
   (coutRdv!=null?stjTuile('💶 COÛT / RDV',coutRdv.toLocaleString('fr-FR')+' €','',stjSpark(spc.map(x=>x.cout),'#7A5AF8'),'conso + abos prorata'):'')+
   stjTuile('🎯 CONVERSION',conv+' %',stjPill(conv,convP,true),stjSpark(sp.map(x=>x.s?Math.round(100*x.r/x.s):0),'#E8A013'),'statuées → RDV')+
   (cg?stjTuile('🎧 QUALITÉ D’APPEL',cg.note_moy+'/10',stjPill(cg.note_moy,p.coach_note,true),'',cg.n+' analysé'+(cg.n>1?'s':'')+' · barème sévère (5 = moyen)','stjToggleCoach()'):'')+
