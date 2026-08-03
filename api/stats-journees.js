@@ -64,6 +64,26 @@ export default async function handler(req, res) {
       if (pj[0]) { precedent.appels = pj[0].a; precedent.decroches = pj[0].d; precedent.statuees = pj[0].s; precedent.rdv = pj[0].r; }
     } catch (_) {}
 
+    // ── Sparklines des tuiles : série QUOTIDIENNE 30 j (indépendante de la période, suit le SDR) ──
+    let spark = [];
+    try {
+      const s30 = new Date(Date.now() - 29 * msJ).toISOString().slice(0, 10);
+      const sj = sdrF
+        ? await sql`SELECT jour, SUM(appels)::int a, SUM(decroches)::int d, SUM(statuees)::int s, SUM(rdv)::int r FROM journees_sdr WHERE jour >= ${s30} AND sdr = ${sdrF} GROUP BY jour ORDER BY jour`
+        : await sql`SELECT jour, SUM(appels)::int a, SUM(decroches)::int d, SUM(statuees)::int s, SUM(rdv)::int r FROM journees_sdr WHERE jour >= ${s30} GROUP BY jour ORDER BY jour`;
+      spark = sj.map(x => ({ jour: new Date(x.jour).toISOString().slice(0, 10), a: x.a, d: x.d, s: x.s, r: x.r }));
+    } catch (_) {}
+    let sparkCout = [];
+    if (admin) {
+      try {
+        const s30 = new Date(Date.now() - 29 * msJ).toISOString().slice(0, 10);
+        const sc = await sql`SELECT (c.created_at AT TIME ZONE 'Europe/Paris')::date j, SUM(c.quantite * COALESCE(t.prix,0))::float cout
+          FROM consommations c LEFT JOIN tarifs t ON t.api = c.api
+          WHERE c.created_at >= ${s30 + 'T00:00:00+02:00'} GROUP BY j ORDER BY j`;
+        sparkCout = sc.map(x => ({ jour: new Date(x.j).toISOString().slice(0, 10), cout: Math.round(x.cout * 100) / 100 }));
+      } catch (_) {}
+    }
+
     // ── 🎧 Coach (période) : note moyenne + RDV proposés par SDR ──
     const coach = {};
     try {
@@ -151,7 +171,7 @@ export default async function handler(req, res) {
         statuees: totaux.statuees, rdv: totaux.rdv, jours: totaux.jours.size
       },
       graphe, entonnoir, concurrents, objectifs,
-      precedent, coach, quota, couts
+      precedent, coach, quota, couts, spark, spark_cout: sparkCout
     });
   } catch (e) {
     return res.status(500).json({ erreur: 'Erreur serveur', detail: e.message });

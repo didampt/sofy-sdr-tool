@@ -1045,35 +1045,46 @@ Spot-Hit</textarea>
     <!-- ════ VUE : PARAMÈTRES ════ -->
     <section class="view" id="view-stats">
       <div class="eyebrow">Pilotage</div>
-      <h1>Statistiques</h1>
-      <p class="sub">Journées SDR (journal automatique), coûts du mois, performance par liste. Les tarifs unitaires se règlent dans ⚙️ Paramètres.</p>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
-        <select class="field" id="stj-periode" onchange="stjPeriodeChange()" style="max-width:200px">
-          <option value="mois">Ce mois</option><option value="7j">7 derniers jours</option><option value="30j">30 derniers jours</option><option value="perso">Personnalisé…</option>
-        </select>
+      <h1>Insights</h1>
+      <div style="position:sticky;top:0;z-index:5;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:10px 14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+        <div id="stj-per-chips" style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="chip sel" data-p="mois" onclick="stjSetPer('mois',this)">Ce mois</button>
+          <button class="chip" data-p="mois_dernier" onclick="stjSetPer('mois_dernier',this)">Mois dernier</button>
+          <button class="chip" data-p="7j" onclick="stjSetPer('7j',this)">7 j</button>
+          <button class="chip" data-p="30j" onclick="stjSetPer('30j',this)">30 j</button>
+          <button class="chip" data-p="trim" onclick="stjSetPer('trim',this)">Trimestre</button>
+          <button class="chip" data-p="perso" onclick="stjSetPer('perso',this)">📅 Personnalisé</button>
+        </div>
         <span id="stj-perso" style="display:none;gap:6px;align-items:center">
-          <input class="field" type="date" id="stj-du" onchange="chargerStatsJournees()" style="max-width:160px">
-          <input class="field" type="date" id="stj-au" onchange="chargerStatsJournees()" style="max-width:160px">
+          <input class="field" type="date" id="stj-du" onchange="chargerStatsJournees()" style="max-width:150px">
+          <input class="field" type="date" id="stj-au" onchange="chargerStatsJournees()" style="max-width:150px">
         </span>
-        <select class="field" id="stj-sdr" onchange="chargerStatsJournees()" style="max-width:200px;display:none"><option value="">Tous les SDR</option></select>
+        <select class="field" id="stj-sdr" onchange="chargerStatsJournees()" style="max-width:190px;display:none;margin-left:auto"><option value="">👤 Tous les SDR</option></select>
       </div>
-      <div class="map-card">
-        <div id="stj-tuiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px"></div>
-        <div id="stj-graphe" style="display:flex;gap:3px;align-items:flex-end;height:72px;margin-top:16px"></div>
-        <div style="overflow-x:auto;margin-top:14px"><table class="map-table" id="stj-equipe"></table></div>
-        <div id="stj-modules" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-top:14px">
-          <div><div style="font-size:12px;font-weight:800;letter-spacing:.04em;color:var(--ink-soft);margin-bottom:6px">🥊 PERTES CONCURRENTS</div><div id="stj-concurrents" style="font-size:12.5px">—</div></div>
-          <div><div style="font-size:12px;font-weight:800;letter-spacing:.04em;color:var(--ink-soft);margin-bottom:6px">📞 TOP DES ISSUES</div><div id="stj-entonnoir" style="font-size:12.5px">—</div></div>
-          <div id="stj-couts-mod"><div style="font-size:12px;font-weight:800;letter-spacing:.04em;color:var(--ink-soft);margin-bottom:6px">💰 COÛTS PAR POSTE</div><div id="stj-couts" style="font-size:12.5px">—</div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+        <button class="chip sel" id="stj-tabbtn-vue" onclick="stjTab('vue',this)">Vue d'ensemble</button>
+        <button class="chip" id="stj-tabbtn-equipe" onclick="stjTab('equipe',this)">👥 Équipe</button>
+        <button class="chip" id="stj-tabbtn-couts" onclick="stjTab('couts',this)">💰 Coûts</button>
+        <button class="chip" id="stj-tabbtn-listes" onclick="stjTab('listes',this)">📋 Listes</button>
+      </div>
+      <div id="stj-pan-vue">
+        <div id="stj-tuiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:12px"></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:14px">
+          <div class="map-card" style="margin:0"><h2 style="font-size:14px;margin:0 0 4px">Activité — appels par jour · 🏆 RDV</h2><div id="stj-graphe" style="display:flex;gap:3px;align-items:flex-end;height:96px;margin-top:10px"></div></div>
+          <div class="map-card" style="margin:0"><h2 style="font-size:14px;margin:0 0 4px">Entonnoir de la période</h2><div id="stj-entonnoir" style="font-size:12.5px;margin-top:10px">—</div></div>
+          <div class="map-card" style="margin:0"><h2 style="font-size:14px;margin:0 0 4px">🥊 Pertes par concurrent</h2><div id="stj-concurrents" style="font-size:12.5px;margin-top:10px">—</div></div>
         </div>
       </div>
-      <details class="map-card">
-        <summary style="cursor:pointer;font-weight:700">☀️ Journées jour par jour <span style="color:var(--ink-soft);font-weight:400">— journal automatique du soir · 🟢 objectif atteint · 🟠 ≥ 50 % · 🔴 &lt; 50 %</span></summary>
-        <div style="overflow-x:auto;margin-top:12px"><table class="map-table" id="stj-table"><tr><th>Jour</th><th>SDR</th><th>Début–Fin</th><th>Appels</th><th>Décrochés</th><th>Durée moy.</th><th>Statuées</th><th>RDV</th></tr></table></div>
-      </details>
-      <details id="stats-couts">
-      <summary class="map-card" style="cursor:pointer;font-weight:700;display:block">💰 Détail des coûts <span style="color:var(--ink-soft);font-weight:400">— coût total du mois, abonnements, consommation par SDR</span></summary>
-      <div class="map-card" style="background:#F5F8FF;border-color:#C7D7FE">
+      <div id="stj-pan-equipe" style="display:none"></div>
+      <div id="stj-pan-couts" style="display:none">
+        <div id="stj-couts-tuiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px"></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:14px">
+          <div class="map-card" style="margin:0"><h2 style="font-size:14px;margin:0 0 4px">Par poste (période)</h2><div id="stj-couts" style="font-size:12.5px;margin-top:10px">—</div></div>
+          <div class="map-card" style="margin:0"><h2 style="font-size:14px;margin:0 0 4px">Par SDR (période)</h2><div id="stj-couts-sdr" style="font-size:12.5px;margin-top:10px">—</div></div>
+        </div>
+        <details id="stats-couts" style="margin-top:14px">
+          <summary class="map-card" style="cursor:pointer;font-weight:700;display:block">Référence mensuelle &amp; abonnements <span style="color:var(--ink-soft);font-weight:400">— coût réel du mois en cours, budget de référence, gestion des abonnements, limites par SDR</span></summary>
+          <div class="map-card" style="background:#F5F8FF;border-color:#C7D7FE">
         <h2>💰 Coût total réel du mois</h2>
         <div class="role">Abonnements fixes mensuels + consommation à l'usage (APIs). À comparer à votre ancien prestataire.</div>
         <div id="cout-total-bloc" style="margin-top:8px">Chargement…</div>
@@ -1096,10 +1107,12 @@ Spot-Hit</textarea>
         <div class="role">Coût calculé : quantité × tarif unitaire de chaque API. Limite mensuelle appliquée automatiquement (blocage à l'atteinte).</div>
         <table class="map-table" id="stats-sdr"><tr><th>SDR</th><th>Détail API</th><th>Coût du mois</th><th>Limite</th></tr></table>
       </div>
-      </details><!-- /stats-couts (masqué pour les rôles non admin) -->
-      <details class="map-card" id="stats-listes-card">
-        <summary style="cursor:pointer;font-weight:700">📋 Par liste <span style="color:var(--ink-soft);font-weight:400">— performance et coût de chaque liste (filtres SDR / campagne / date)</span></summary>
-        <div class="role">% emails / mobiles = contacts avec email / mobile trouvé. % enrichi = fiches avec au moins un moyen de contact. Coût par contact = coût liste ÷ contacts enrichis.</div>
+        </details>
+      </div>
+      <div id="stj-pan-listes" style="display:none">
+        <div class="map-card" id="stats-listes-card">
+          <h2 style="font-size:14px">📋 Performance par liste</h2>
+          <div class="role">% emails / mobiles = contacts avec email / mobile trouvé. % enrichi = fiches avec au moins un moyen de contact. Coût par contact = coût liste ÷ contacts enrichis.</div>
         <div id="stats-filtres" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 4px">
           <select class="field" id="filtre-stats-sdr" onchange="appliquerFiltreStats()" style="max-width:200px"><option value="">Tous les SDR</option></select>
           <select class="field" id="filtre-stats-campagne" onchange="appliquerFiltreStats()" style="max-width:280px"><option value="">Toutes les campagnes</option></select>
@@ -1109,7 +1122,8 @@ Spot-Hit</textarea>
         </div>
         <div id="stats-notes" style="margin-top:18px"></div>
         <div style="overflow-x:auto"><table class="map-table" id="stats-listes"><tr><th>Liste</th><th>SDR</th><th>Fiches</th><th>Emails</th><th>% emails</th><th>📱 mobiles</th><th>☎️ tél GMB</th><th>% enrichi</th><th>🤝 RDV</th><th>Coût</th><th>€ / contact</th></tr></table></div>
-      </details>
+        </div>
+      </div>
     </section>
 
     <section class="view" id="view-appels">
@@ -1961,7 +1975,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v276';
+const VERSION='v277';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -7744,30 +7758,39 @@ async function sauverAbos(abos){
   else toast('Erreur : '+(d.erreur||'sauvegarde impossible'));
  }catch(e){toast('Erreur réseau : '+e.message);}
 }
-/* ── ☀️ Journées SDR + entonnoir + concurrents (v274) ── */
-let STJ=null,COUT_MOIS_TOTAL=null;
+/* ── 📊 Insights (v277) — tableau de bord façon CRM : période sticky, onglets, sparklines ── */
+let STJ=null,COUT_MOIS_TOTAL=null,STJ_PER='mois',STJ_TAB='vue';
 function stjFmtD(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
-function stjPeriodeChange(){
- const p=document.getElementById('stj-periode').value;
+function stjSetPer(p,btn){
+ STJ_PER=p;
+ document.querySelectorAll('#stj-per-chips .chip').forEach(c=>c.classList.toggle('sel',c===btn));
  document.getElementById('stj-perso').style.display=(p==='perso')?'inline-flex':'none';
  if(p!=='perso')chargerStatsJournees();
 }
+function stjTab(t,btn){
+ STJ_TAB=t;
+ ['vue','equipe','couts','listes'].forEach(x=>{
+  const pan=document.getElementById('stj-pan-'+x);if(pan)pan.style.display=(x===t)?'block':'none';
+  const b=document.getElementById('stj-tabbtn-'+x);if(b)b.classList.toggle('sel',x===t);
+ });
+}
 function stjBornes(){
- const p=(document.getElementById('stj-periode')||{}).value||'mois';
  const auj=new Date();
- if(p==='perso')return {du:(document.getElementById('stj-du')||{}).value||'',au:(document.getElementById('stj-au')||{}).value||''};
- if(p==='7j'){const d=new Date();d.setDate(d.getDate()-6);return {du:stjFmtD(d),au:stjFmtD(auj)};}
- if(p==='30j'){const d=new Date();d.setDate(d.getDate()-29);return {du:stjFmtD(d),au:stjFmtD(auj)};}
+ if(STJ_PER==='perso')return {du:(document.getElementById('stj-du')||{}).value||'',au:(document.getElementById('stj-au')||{}).value||''};
+ if(STJ_PER==='7j'){const d=new Date();d.setDate(d.getDate()-6);return {du:stjFmtD(d),au:stjFmtD(auj)};}
+ if(STJ_PER==='30j'){const d=new Date();d.setDate(d.getDate()-29);return {du:stjFmtD(d),au:stjFmtD(auj)};}
+ if(STJ_PER==='mois_dernier'){const d=new Date(auj.getFullYear(),auj.getMonth()-1,1);const f=new Date(auj.getFullYear(),auj.getMonth(),0);return {du:stjFmtD(d),au:stjFmtD(f)};}
+ if(STJ_PER==='trim'){const d=new Date();d.setMonth(d.getMonth()-3);return {du:stjFmtD(d),au:stjFmtD(auj)};}
  return {du:stjFmtD(auj).slice(0,7)+'-01',au:stjFmtD(auj)};
 }
 async function chargerStatsJournees(){
  const b=stjBornes();
- if((document.getElementById('stj-periode')||{}).value==='perso'&&(!b.du||!b.au))return;
+ if(STJ_PER==='perso'&&(!b.du||!b.au))return;
  const sdrSel=(document.getElementById('stj-sdr')||{}).value||'';
  try{
   const r=await api('/api/stats-journees?du='+b.du+'&au='+b.au+(sdrSel?'&sdr='+encodeURIComponent(sdrSel):''));
   const d=await r.json();
-  if(d.erreur){toast('Stats journées : '+d.erreur);return;}
+  if(d.erreur){toast('Insights : '+d.erreur);return;}
   STJ=d;
   const sel=document.getElementById('stj-sdr');
   if(sel&&d.admin){
@@ -7775,78 +7798,117 @@ async function chargerStatsJournees(){
    if(sel.options.length<=1)Object.keys(d.objectifs||{}).sort().forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=n;sel.appendChild(o);});
   }
   rendreStatsJournees(d);
- }catch(e){toast('Erreur réseau stats : '+e.message);}
+ }catch(e){toast('Erreur réseau Insights : '+e.message);}
 }
 function stjDuree(s){if(!s)return '—';return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');}
-function stjDelta(val,prev,bienQuandMonte){
- if(prev==null)return '';
+// Sparkline SVG minimaliste (30 derniers jours)
+function stjSpark(vals,couleur){
+ if(!vals||vals.length<2)return '';
+ const w=100,h=24,max=Math.max(...vals,1),min=Math.min(...vals,0);
+ const pts=vals.map((v,i)=>((i*w/(vals.length-1)).toFixed(1))+','+((h-2-(h-4)*(v-min)/Math.max(1e-9,max-min)).toFixed(1))).join(' ');
+ return `<svg width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;margin-top:8px;opacity:.85"><polyline points="${pts}" fill="none" stroke="${couleur||'var(--accent)'}" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+}
+// Pilule de delta (vs période précédente de même durée) — vert = bonne direction
+function stjPill(val,prev,bienQuandMonte){
+ if(prev==null||(!prev&&!val))return '';
  const d=val-prev;
- if(!prev&&!val)return '';
- const bon=(d>=0)===!!bienQuandMonte||d===0;
- const c=d===0?'var(--ink-soft)':(bon?'#0FA968':'#E5484D');
- const fl=d===0?'\u25ac':(d>0?'\u25b2':'\u25bc');
- return `<div style="font-size:11.5px;font-weight:700;color:${c}">${fl} ${d>0?'+':''}${Math.round(d*10)/10} <span style="font-weight:400;color:var(--ink-soft)">vs p\u00e9riode pr\u00e9c.</span></div>`;
+ const bon=d===0||((d>0)===!!bienQuandMonte);
+ const bg=d===0?'var(--paper)':(bon?'#E6F7EF':'#FDECEC');
+ const fg=d===0?'var(--ink-soft)':(bon?'#0B7A4B':'#B42323');
+ const fl=d===0?'➖':(d>0?'⬆':'⬇');
+ const pct=prev?Math.round(100*d/prev):null;
+ const txt=(pct!=null&&isFinite(pct)&&Math.abs(pct)<400)?((pct>0?'+':'')+pct+' %'):((d>0?'+':'')+Math.round(d*10)/10);
+ return `<span title="vs période précédente de même durée" style="display:inline-block;background:${bg};color:${fg};border-radius:999px;padding:2px 9px;font-size:11.5px;font-weight:700">${fl} ${txt}</span>`;
+}
+function stjTuile(lbl,val,pill,spark,sub){
+ return `<div style="background:var(--card,#fff);border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:0 1px 4px rgba(20,30,70,.05)"><div style="font-size:11px;font-weight:800;letter-spacing:.06em;color:var(--ink-soft)">${lbl}</div><div style="display:flex;align-items:baseline;gap:8px;margin-top:2px;flex-wrap:wrap"><span style="font-size:26px;font-weight:800">${val}</span>${pill||''}</div>${sub?`<div style="font-size:11px;color:var(--ink-soft)">${sub}</div>`:''}${spark||''}</div>`;
+}
+function stjBarre(pct,couleur){
+ return `<div style="background:var(--line);border-radius:4px;height:7px;width:100%;max-width:120px"><div style="background:${couleur};height:100%;border-radius:4px;width:${Math.min(100,Math.max(2,pct))}%"></div></div>`;
 }
 function rendreStatsJournees(d){
- const t=d.totaux||{},p=d.precedent||{},c=d.couts;
+ const t=d.totaux||{},p=d.precedent||{},c=d.couts,sp=d.spark||[],spc=d.spark_cout||[];
  const conv=t.statuees?Math.round(1000*(t.rdv||0)/t.statuees)/10:0;
  const convP=p.statuees?Math.round(1000*(p.rdv||0)/p.statuees)/10:null;
  const tauxP=p.appels?Math.round(100*p.decroches/p.appels):null;
  const coutRdv=(c&&t.rdv)?Math.round(10*c.total/t.rdv)/10:null;
- const tuile=(lbl,val,delta,sub)=>`<div style="background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:12px 14px"><div style="font-size:11px;font-weight:800;letter-spacing:.05em;color:var(--ink-soft)">${lbl}</div><div style="font-size:24px;font-weight:800;margin:2px 0">${val}</div>${delta||''}${sub?`<div style="font-size:11px;color:var(--ink-soft)">${sub}</div>`:''}</div>`;
+ // ① tuiles Vue d'ensemble
  document.getElementById('stj-tuiles').innerHTML=
-  tuile('\ud83c\udfc6 RDV PRIS',t.rdv||0,stjDelta(t.rdv||0,p.rdv,true))+
-  (coutRdv!=null?tuile('\ud83d\udcb6 CO\u00dbT / RDV',coutRdv.toLocaleString('fr-FR')+' \u20ac','','conso + abos prorata'):'')+
-  tuile('\ud83c\udfaf CONVERSION',conv+' %',stjDelta(conv,convP,true),'statu\u00e9es \u2192 RDV')+
-  tuile('\ud83d\udcde APPELS',t.appels||0,stjDelta(t.appels||0,p.appels,true),(t.jours||0)+' jour'+(t.jours>1?'s':'')+' actif'+(t.jours>1?'s':''))+
-  tuile('\ud83d\udcc8 JOIGNABILIT\u00c9',(t.taux_decroche||0)+' %',stjDelta(t.taux_decroche||0,tauxP,true),(t.decroches||0)+' d\u00e9croch\u00e9s')+
-  (c?tuile('\ud83d\udcb0 CO\u00dbT P\u00c9RIODE',c.total.toLocaleString('fr-FR')+' \u20ac',stjDelta(c.conso,p.cout_conso,false),c.conso.toLocaleString('fr-FR')+' \u20ac conso + '+c.abos_prorata.toLocaleString('fr-FR')+' \u20ac abos*'):'');
+  stjTuile('🏆 RDV PRIS',t.rdv||0,stjPill(t.rdv||0,p.rdv,true),stjSpark(sp.map(x=>x.r),'#0FA968'))+
+  (coutRdv!=null?stjTuile('💶 COÛT / RDV',coutRdv.toLocaleString('fr-FR')+' €','',stjSpark(spc.map(x=>x.cout),'#7A5AF8'),'conso + abos prorata'):'')+
+  stjTuile('🎯 CONVERSION',conv+' %',stjPill(conv,convP,true),stjSpark(sp.map(x=>x.s?Math.round(100*x.r/x.s):0),'#E8A013'),'statuées → RDV')+
+  stjTuile('📞 APPELS',t.appels||0,stjPill(t.appels||0,p.appels,true),stjSpark(sp.map(x=>x.a)),(t.jours||0)+' jour'+(t.jours>1?'s':'')+' actif'+(t.jours>1?'s':''))+
+  stjTuile('📈 JOIGNABILITÉ',(t.taux_decroche||0)+' %',stjPill(t.taux_decroche||0,tauxP,true),stjSpark(sp.map(x=>x.a?Math.round(100*x.d/x.a):0),'#12B5CB'),(t.decroches||0)+' décrochés')+
+  (c?stjTuile('💰 COÛT PÉRIODE',c.total.toLocaleString('fr-FR')+' €',stjPill(c.conso,p.cout_conso,false),stjSpark(spc.map(x=>x.cout),'#E5484D'),c.conso.toLocaleString('fr-FR')+' € conso + '+c.abos_prorata.toLocaleString('fr-FR')+' € abos'):'');
+ // ② activité
  const g=d.graphe||[];const maxG=Math.max(1,...g.map(x=>x.appels));
- document.getElementById('stj-graphe').innerHTML=g.length?g.map(x=>`<div title="${new Date(x.jour+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'short',day:'2-digit',month:'2-digit'})} \u2014 ${x.appels} appel${x.appels>1?'s':''}${x.rdv?' \u00b7 \ud83c\udfc6 '+x.rdv+' RDV':''}" style="flex:1;max-width:28px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%"><div style="font-size:10px;line-height:1">${x.rdv?'\ud83c\udfc6':''}</div><div style="width:100%;background:var(--accent);opacity:${(0.35+0.65*x.appels/maxG).toFixed(2)};height:${Math.max(4,Math.round(56*x.appels/maxG))}px;border-radius:3px 3px 0 0"></div></div>`).join(''):'<span style="font-size:12px;color:var(--ink-soft)">Aucune journ\u00e9e consign\u00e9e sur la p\u00e9riode.</span>';
- // \u00c9quipe : 1 ligne par SDR (agr\u00e9gats de la p\u00e9riode), clic = filtre
- const objs=d.objectifs||{};const agg={};
- (d.journees||[]).forEach(j=>{const s=agg[j.sdr]=agg[j.sdr]||{a:0,de:0,st:0,r:0,n:0};s.a+=j.appels||0;s.de+=j.decroches||0;s.st+=j.statuees||0;s.r+=j.rdv||0;s.n++;});
- const eqRows=Object.entries(agg).sort((x,y)=>y[1].r-x[1].r||y[1].a-x[1].a).map(([nom,s])=>{
-  const obj=(objs[nom]||{}).appels||50;const aj=s.n?Math.round(s.a/s.n):0;
-  const dot=aj>=obj?'\ud83d\udfe2':(aj>=obj/2?'\ud83d\udfe0':'\ud83d\udd34');
-  const co=(d.coach||{})[nom];const q=(d.quota||{})[nom];
-  const cvv=s.st?Math.round(1000*s.r/s.st)/10+' %':'\u2014';
-  return `<tr onclick="var se=document.getElementById('stj-sdr');if(se&&se.style.display!=='none'){se.value='${nom.replace(/'/g,"\\'")}';chargerStatsJournees();}" style="cursor:pointer" title="Cliquer pour filtrer le tableau de bord sur ${nom}"><td><b>${htmlSafe(nom)}</b></td><td>${dot} ${aj}/j</td><td>${s.a?Math.round(100*s.de/s.a)+' %':'\u2014'}</td><td><b>${s.r}</b></td><td>${cvv}</td><td>${co?co.note_moy+'/10 <span style="color:var(--ink-soft)">('+co.n+')</span>':'\u2014'}</td><td>${q?(q.plafond-q.utilise)+'/'+q.plafond:'\u2014'}</td><td>${c&&c.par_sdr[nom]!=null?c.par_sdr[nom].toLocaleString('fr-FR')+' \u20ac':'\u2014'}</td></tr>`;
- }).join('');
- document.getElementById('stj-equipe').innerHTML='<tr><th>SDR</th><th>Appels/j</th><th>Joignab.</th><th>\ud83c\udfc6 RDV</th><th>Conv.</th><th>\ud83c\udfa7 Coach</th><th>Quota Lemlist</th><th>Co\u00fbt</th></tr>'+(eqRows||'<tr><td colspan="8" style="color:var(--ink-soft)">Aucune journ\u00e9e sur la p\u00e9riode.</td></tr>');
- // D\u00e9tail jour par jour (accord\u00e9on)
- const rows=(d.journees||[]).map(j=>{
-  const obj=(objs[j.sdr]||{}).appels||50;
-  const dot=(j.appels||0)>=obj?'\ud83d\udfe2':((j.appels||0)>=obj/2?'\ud83d\udfe0':'\ud83d\udd34');
-  const hm=x=>x?new Date(x).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'\u2014';
-  const dm=j.decroches?Math.round(j.duree_sec/j.decroches):0;
-  return `<tr><td>${new Date(j.jour+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'short',day:'2-digit',month:'2-digit'})}</td><td><b>${htmlSafe(j.sdr)}</b></td><td>${hm(j.debut)}\u2013${hm(j.fin)}</td><td>${dot} ${j.appels||0}</td><td>${j.decroches||0}${j.appels?' ('+Math.round(100*(j.decroches||0)/j.appels)+' %)':''}</td><td>${stjDuree(dm)}</td><td>${j.statuees||0}</td><td>${j.rdv||0}</td></tr>`;
- }).join('');
- document.getElementById('stj-table').innerHTML='<tr><th>Jour</th><th>SDR</th><th>D\u00e9but\u2013Fin</th><th>Appels</th><th>D\u00e9croch\u00e9s</th><th>Dur\u00e9e moy.</th><th>Statu\u00e9es</th><th>RDV</th></tr>'+(rows||'<tr><td colspan="8" style="color:var(--ink-soft)">Aucune journ\u00e9e consign\u00e9e (le journal se remplit chaque soir vers 19 h).</td></tr>');
- // Mini-modules
+ document.getElementById('stj-graphe').innerHTML=g.length?g.map(x=>`<div title="${new Date(x.jour+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'short',day:'2-digit',month:'2-digit'})} — ${x.appels} appel${x.appels>1?'s':''}${x.rdv?' · 🏆 '+x.rdv+' RDV':''}" style="flex:1;max-width:30px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%"><div style="font-size:10px;line-height:1.4">${x.rdv?'🏆':''}</div><div style="width:100%;background:var(--accent);opacity:${(0.4+0.6*x.appels/maxG).toFixed(2)};height:${Math.max(4,Math.round(74*x.appels/maxG))}px;border-radius:3px 3px 0 0"></div></div>`).join(''):'<span style="font-size:12px;color:var(--ink-soft)">Aucune journée consignée sur la période.</span>';
+ // ② entonnoir 4 étages
+ const en=d.entonnoir||{};
+ const totE=Object.values(en).reduce((a,b)=>a+b,0);
+ const froids=['Pas de réponse','Message vocal laissé','Absent','Faux numéro'].reduce((a,k)=>a+(en[k]||0),0);
+ const suites=Object.keys(en).filter(k=>/rappel|demande|doc/i.test(k)).reduce((a,k)=>a+en[k],0);
+ const rdvE=Object.keys(en).filter(k=>k.indexOf('RDV')>=0).reduce((a,k)=>a+en[k],0);
+ const echanges=Math.max(0,totE-froids);
+ const etage=(lbl,v,pct,coul)=>`<div style="margin:6px 0"><div style="display:flex;justify-content:space-between;font-size:12px"><span>${lbl}</span><b>${v}${pct!=null?' <span style="color:var(--ink-soft);font-weight:400">('+pct+' %)</span>':''}</b></div><div style="background:var(--line);border-radius:4px;height:12px"><div style="background:${coul};height:100%;border-radius:4px;width:${totE?Math.max(2,Math.round(100*v/totE)):0}%"></div></div></div>`;
+ document.getElementById('stj-entonnoir').innerHTML=totE?
+  etage('Fiches statuées',totE,null,'var(--accent)')+
+  etage('Échanges réels',echanges,Math.round(100*echanges/totE),'#12B5CB')+
+  etage('Suites (rappel / doc)',suites,Math.round(100*suites/totE),'#E8A013')+
+  etage('🏆 RDV pris',rdvE,Math.round(1000*rdvE/totE)/10,'#0FA968')
+  :'<span style="color:var(--ink-soft)">Aucune fiche statuée sur la période.</span>';
+ // ② concurrents
  const cs=Object.entries(d.concurrents||{}).sort((a,b)=>b[1]-a[1]).slice(0,6);
  const maxC=Math.max(1,...cs.map(x=>x[1]));
- document.getElementById('stj-concurrents').innerHTML=cs.length?cs.map(([n,v])=>`<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><div style="width:100px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${htmlSafe(n)}</div><div style="background:#E5484D;height:12px;border-radius:4px;width:${Math.round(55*v/maxC)}%;min-width:6px"></div><div>${v}</div></div>`).join(''):'<span style="color:var(--ink-soft)">Aucune perte renseign\u00e9e \ud83d\udc4d</span>';
- const es=Object.entries(d.entonnoir||{}).sort((a,b)=>b[1]-a[1]);
- const totE=es.reduce((s,x)=>s+x[1],0);const maxE=Math.max(1,...es.map(x=>x[1]));
- document.getElementById('stj-entonnoir').innerHTML=es.length?es.slice(0,6).map(([n,v])=>`<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><div style="width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${htmlSafe(n)}</div><div style="background:var(--accent);opacity:.7;height:12px;border-radius:4px;width:${Math.round(45*v/maxE)}%;min-width:6px"></div><div>${v} <span style="color:var(--ink-soft)">(${Math.round(100*v/totE)} %)</span></div></div>`).join(''):'<span style="color:var(--ink-soft)">Aucune fiche statu\u00e9e.</span>';
- const cm=document.getElementById('stj-couts-mod');
- if(cm)cm.style.display=c?'block':'none';
+ document.getElementById('stj-concurrents').innerHTML=cs.length?cs.map(([n,v])=>`<div style="display:flex;align-items:center;gap:8px;margin:4px 0"><div style="width:110px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${htmlSafe(n)}</div><div style="background:#E5484D;height:12px;border-radius:4px;width:${Math.round(55*v/maxC)}%;min-width:6px"></div><div>${v}</div></div>`).join(''):'<span style="color:var(--ink-soft)">Aucune perte renseignée sur la période 👍</span>';
+ // ③ Équipe (drill-down par SDR)
+ const objs=d.objectifs||{};const agg={};
+ (d.journees||[]).forEach(j=>{const x=agg[j.sdr]=agg[j.sdr]||{a:0,de:0,st:0,r:0,n:0,jours:[]};x.a+=j.appels||0;x.de+=j.decroches||0;x.st+=j.statuees||0;x.r+=j.rdv||0;x.n++;x.jours.push(j);});
+ const pal=['#2B4BF2','#0FA968','#E8A013','#E5484D','#7A5AF8','#12B5CB'];
+ const eq=Object.entries(agg).sort((x,y)=>y[1].r-x[1].r||y[1].a-x[1].a).map(([nom,x],i)=>{
+  const obj=(objs[nom]||{}).appels||50;const aj=x.n?Math.round(x.a/x.n):0;
+  const co=(d.coach||{})[nom];const q=(d.quota||{})[nom];
+  const cvv=x.st?Math.round(1000*x.r/x.st)/10+' %':'—';
+  const jl=x.jours.map(j=>{const hm=v=>v?new Date(v).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'—';const dm=j.decroches?Math.round(j.duree_sec/j.decroches):0;
+   return `<tr><td>${new Date(j.jour+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'short',day:'2-digit',month:'2-digit'})}</td><td>${hm(j.debut)}–${hm(j.fin)}</td><td>${j.appels||0}</td><td>${j.decroches||0}${j.appels?' ('+Math.round(100*(j.decroches||0)/j.appels)+' %)':''}</td><td>${stjDuree(dm)}</td><td>${j.statuees||0}</td><td>${j.rdv||0}</td></tr>`;}).join('');
+  return `<div class="map-card" style="margin:0 0 10px">
+   <div onclick="var z=document.getElementById('stj-drill-${i}');if(z)z.style.display=z.style.display==='none'?'block':'none';" style="cursor:pointer;display:flex;gap:14px;align-items:center;flex-wrap:wrap" title="Cliquer : le détail jour par jour se déplie">
+    <div style="width:36px;height:36px;border-radius:50%;background:${pal[i%pal.length]};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800">${htmlSafe(nom.slice(0,1).toUpperCase())}</div>
+    <div style="min-width:90px"><b>${htmlSafe(nom)}</b><div style="font-size:11px;color:var(--ink-soft)">${x.n} jour${x.n>1?'s':''}</div></div>
+    <div style="min-width:150px"><div style="font-size:11px;color:var(--ink-soft)">APPELS/JOUR — obj. ${obj}</div><div style="display:flex;align-items:center;gap:8px"><b>${aj}</b>${stjBarre(100*aj/obj,aj>=obj?'#0FA968':(aj>=obj/2?'#E8A013':'#E5484D'))}</div></div>
+    <div style="min-width:80px"><div style="font-size:11px;color:var(--ink-soft)">JOIGNAB.</div><b>${x.a?Math.round(100*x.de/x.a)+' %':'—'}</b></div>
+    <div style="min-width:60px"><div style="font-size:11px;color:var(--ink-soft)">🏆 RDV</div><b>${x.r}</b></div>
+    <div style="min-width:70px"><div style="font-size:11px;color:var(--ink-soft)">CONV.</div><b>${cvv}</b></div>
+    <div style="min-width:90px"><div style="font-size:11px;color:var(--ink-soft)">🎧 COACH</div><b>${co?co.note_moy+'/10':'—'}</b>${co?` <span style="font-size:11px;color:var(--ink-soft)">(${co.n})</span>`:''}</div>
+    <div style="min-width:130px"><div style="font-size:11px;color:var(--ink-soft)">QUOTA LEMLIST</div><div style="display:flex;align-items:center;gap:8px"><b>${q?(q.plafond-q.utilise):'—'}</b>${q?stjBarre(100*(q.plafond-q.utilise)/q.plafond,'#2B4BF2'):''}</div></div>
+    ${c&&c.par_sdr[nom]!=null?`<div style="min-width:70px"><div style="font-size:11px;color:var(--ink-soft)">COÛT</div><b>${c.par_sdr[nom].toLocaleString('fr-FR')} €</b></div>`:''}
+   </div>
+   <div id="stj-drill-${i}" style="display:none;overflow-x:auto;margin-top:10px"><table class="map-table"><tr><th>Jour</th><th>Début–Fin</th><th>Appels</th><th>Décrochés</th><th>Durée moy.</th><th>Statuées</th><th>RDV</th></tr>${jl}</table></div>
+  </div>`;
+ }).join('');
+ document.getElementById('stj-pan-equipe').innerHTML=eq||'<div class="map-card" style="color:var(--ink-soft)">Aucune journée consignée sur la période (le journal se remplit chaque soir vers 19 h).</div>';
+ // ④ Coûts
  if(c){
-  const pa=Object.entries(c.par_api).slice(0,5);
+  document.getElementById('stj-couts-tuiles').innerHTML=
+   stjTuile('💰 TOTAL PÉRIODE',c.total.toLocaleString('fr-FR')+' €',stjPill(c.conso,p.cout_conso,false),stjSpark(spc.map(x=>x.cout),'#E5484D'),c.jours+' jour'+(c.jours>1?'s':''))+
+   stjTuile('CONSO APIS',c.conso.toLocaleString('fr-FR')+' €','','','à l’usage sur la période')+
+   stjTuile('ABONNEMENTS',c.abos_prorata.toLocaleString('fr-FR')+' €','','','prorata — '+c.abos_mensuel.toLocaleString('fr-FR')+' €/mois')+
+   (coutRdv!=null?stjTuile('💶 COÛT / RDV',coutRdv.toLocaleString('fr-FR')+' €','','',(t.rdv||0)+' RDV sur la période'):'');
+  const pa=Object.entries(c.par_api).slice(0,8);
   const maxA=Math.max(0.01,...pa.map(x=>x[1]));
-  document.getElementById('stj-couts').innerHTML=pa.map(([n,v])=>`<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><div style="width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${htmlSafe(n)}</div><div style="background:#7A5AF8;opacity:.75;height:12px;border-radius:4px;width:${Math.round(55*v/maxA)}%;min-width:6px"></div><div>${v.toLocaleString('fr-FR')} \u20ac</div></div>`).join('')+`<div style="margin-top:6px;color:var(--ink-soft)">Abonnements : ${c.abos_prorata.toLocaleString('fr-FR')} \u20ac <span title="prorata de ${c.jours} jour(s) \u2014 ${c.abos_mensuel.toLocaleString('fr-FR')} \u20ac/mois">*</span> \u00b7 <b>Total p\u00e9riode : ${c.total.toLocaleString('fr-FR')} \u20ac</b></div>`;
+  document.getElementById('stj-couts').innerHTML=pa.length?pa.map(([n,v])=>`<div style="display:flex;align-items:center;gap:8px;margin:4px 0"><div style="width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${htmlSafe(n)}</div><div style="background:#7A5AF8;opacity:.75;height:12px;border-radius:4px;width:${Math.round(55*v/maxA)}%;min-width:6px"></div><div>${v.toLocaleString('fr-FR')} €</div></div>`).join(''):'<span style="color:var(--ink-soft)">Aucune consommation sur la période.</span>';
+  const ps=Object.entries(c.par_sdr).sort((a,b)=>b[1]-a[1]);
+  const maxS=Math.max(0.01,...ps.map(x=>x[1]));
+  document.getElementById('stj-couts-sdr').innerHTML=ps.length?ps.map(([n,v])=>`<div style="display:flex;align-items:center;gap:8px;margin:4px 0"><div style="width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b>${htmlSafe(n)}</b></div><div style="background:#12B5CB;opacity:.8;height:12px;border-radius:4px;width:${Math.round(55*v/maxS)}%;min-width:6px"></div><div>${v.toLocaleString('fr-FR')} €</div></div>`).join(''):'<span style="color:var(--ink-soft)">Aucune consommation sur la période.</span>';
  }
 }
 async function chargerStats(){
  // Journées SDR (visibles par tous — le serveur limite un SDR à SES journées) ; coûts = admins
  chargerStatsJournees();
  const adminS=state.user&&['admin','superadmin'].includes(state.user.role);
- const wc=document.getElementById('stats-couts');
- if(wc)wc.style.display=adminS?'block':'none';
- const wl=document.getElementById('stats-listes-card');
- if(wl)wl.style.display=adminS?'block':'none';
- if(!adminS)return; // /api/stats (coûts, conso, listes détaillées) était déjà réservé aux admins (403)
+ // Onglets Coûts et Listes réservés aux admins (le serveur les protège déjà : /api/stats = 403)
+ ['couts','listes'].forEach(x=>{const b=document.getElementById('stj-tabbtn-'+x);if(b)b.style.display=adminS?'inline-block':'none';});
+ if(!adminS){if(STJ_TAB==='couts'||STJ_TAB==='listes')stjTab('vue',document.getElementById('stj-tabbtn-vue'));return;}
  try{
   const r=await api('/api/stats');
   const d=await r.json();
