@@ -1141,7 +1141,119 @@ export default async function handler(req, res) {
       });
     }
 
-    return res.status(400).json({ erreur: "moteur requis : 'groupe' (holding Pappers), 'enseigne' (Google Maps) ou 'web' (annuaire du réseau)" });
+    // ════════ Moteur GOUVERNANCE (Lot 2 coopératives — retour Franck) ════════
+    // Les membres du directoire / Conseil de Surveillance d'une coopérative sont des ADHÉRENTS
+    // qui portent un mandat dans la coop (Pappers representants). Pour chacun : sa propre
+    // société (recherche-dirigeants, anti-homonyme par année de naissance) → ~20-30 fiches
+    // ultra-qualifiées avec le RÔLE dans la gouvernance. 1 fiche par personne, sociétés dédupliquées.
+    if (b.moteur === 'gouvernance') {
+      const apiKey = process.env.PAPPERS_API_KEY;
+      if (!apiKey) return res.status(500).json({ erreur: 'PAPPERS_API_KEY manquante dans Vercel' });
+      const nomG = String(b.nom || '').trim();
+      const sirenG = String(b.siren || '').replace(/\s/g, '');
+      if (!nomG && !sirenG) return res.status(400).json({ erreur: 'nom (ou siren) de la coopérative requis' });
+      const { holding, candidats, probes = 0 } = await resoudreHolding(nomG, sirenG, apiKey, b.dep || '');
+      if (!holding) return res.status(404).json({ erreur: `Coopérative introuvable sur Pappers : « ${nomG || sirenG} »`, candidats });
+      let requetes = probes;
+
+      // Personnes physiques mandataires de la coop (rôle = qualite)
+      const rE = await fetch(`https://api.pappers.fr/v2/entreprise?api_token=${apiKey}&siren=${encodeURIComponent(holding.siren)}`);
+      requetes++;
+      const eC = rE.ok ? await rE.json().catch(() => null) : null;
+      const vusP = new Set();
+      const personnes = ((eC && eC.representants) || [])
+        .filter(p => p && !p.personne_morale && (p.nom || p.nom_complet) && !/commissaire|liquidateur/i.test(p.qualite || ''))
+        .filter(p => { const k = normaliser((p.prenom || '') + ' ' + (p.nom || p.nom_complet || '')); if (vusP.has(k)) return false; vusP.add(k); return true; })
+        .slice(0, 30)
+        .map(p => ({
+          prenom: String(p.prenom || '').split(',')[0].trim(),
+          nom: p.nom || p.nom_complet || '',
+          qualite: p.qualite || 'Mandataire',
+          annee: anneeNaissance(p.date_de_naissance_formate || p.date_de_naissance || '')
+        }));
+
+      // La société de chaque membre (hors coop, active, la plus grosse d'abord)
+      const parSiren = new Map(); // société -> fiche (contacts cumulés si 2 membres même société)
+      const apercu = [];
+      for (const p of personnes) {
+        if (requetes >= 60) break;
+        requetes++;
+        const rd = await pageRechercheDirigeants((p.prenom + ' ' + p.nom).trim(), 1, apiKey);
+        if (!rd.ok) continue;
+        const socs = [];
+        for (const r of ((rd.data && rd.data.resultats) || [])) {
+          if (!r || r.personne_morale === true) continue;
+          const rp = normaliser(r.prenom || ''), rn = normaliser(r.nom || '');
+          if (rn !== normaliser(p.nom) || (rp && normaliser(p.prenom) && rp !== normaliser(p.prenom))) continue;
+          const aR = anneeNaissance(r.date_de_naissance_formate || r.date_de_naissance);
+          if (p.annee && aR && p.annee !== aR) continue; // homonyme certain
+          for (const ent of (Array.isArray(r.entreprises) ? r.entreprises : [])) {
+            const siren = String(ent.siren || '').replace(/\s/g, '');
+            if (!siren || siren === String(holding.siren)) continue;
+            const actuel = (ent.dirigeant_actuel !== undefined) ? !!ent.dirigeant_actuel : (r.actuel !== false);
+            if (!actuel || ent.entreprise_cessee || ent.statut_consolide === 'radié') continue;
+            if (/holding|invest|participation|financ|sci /i.test(ent.forme_juridique || '') || /^sci\b/i.test(ent.nom_entreprise || '')) continue;
+            socs.push(ent);
+          }
+        }
+        if (!socs.length) { apercu.push({ ...p, societe: null }); continue; }
+        socs.sort((a, b) => (Number(b.chiffre_affaires) || 0) - (Number(a.chiffre_affaires) || 0) || (b.effectif_min || 0) - (a.effectif_min || 0));
+        const s0 = socs[0];
+        const siren0 = String(s0.siren).replace(/\s/g, '');
+        apercu.push({ prenom: p.prenom, nom: p.nom, qualite: p.qualite, societe: s0.nom_entreprise || '', ville: (s0.siege && s0.siege.ville) || '' });
+        const contact = { prenom: p.prenom, nom: p.nom, fonction: p.qualite + ' — ' + (holding.nom || 'coopérative'), source: 'pappers', enrich: null };
+        if (parSiren.has(siren0)) { const f = parSiren.get(siren0); if (f.contacts.length < 4) f.contacts.push(contact); continue; }
+        parSiren.set(siren0, {
+          nom: s0.nom_entreprise || '', siren: siren0,
+          naf: s0.code_naf || null, activite: s0.libelle_code_naf || null,
+          ville: (s0.siege && s0.siege.ville) || '', code_postal: (s0.siege && s0.siege.code_postal) || '',
+          effectif: s0.effectif || null, chiffre_affaires: s0.chiffre_affaires || null,
+          groupe: holding.nom, groupe_lien: 'gouvernance', type_fiche: 'gouvernance',
+          role_gouvernance: p.qualite,
+          contacts: [contact]
+        });
+      }
+
+      if (mode === 'estimer') {
+        await loggerConso(user, 'pappers', requetes, b.liste_id || null);
+        return res.status(200).json({
+          moteur: 'gouvernance', holding, candidats,
+          membres: personnes.length, avec_societe: parSiren.size,
+          apercu: apercu.slice(0, 12), requetes_pappers: requetes
+        });
+      }
+
+      // creer : détail Pappers (dirigeant officiel, site, nb établissements) + dédup inter-listes
+      let fichesG = [...parSiren.values()];
+      let doublonsG = 0;
+      if (b.dedup !== false) {
+        const cles = await clesDejaExtraites();
+        fichesG = fichesG.filter(f => { if (cles.sirens.has(String(f.siren))) { doublonsG++; return false; } return true; });
+      }
+      for (let i = 0; i < fichesG.length; i += 10) {
+        const lot = fichesG.slice(i, i + 10);
+        const rs = await Promise.all(lot.map(f => detailEntreprise(f.siren, apiKey)));
+        requetes += lot.length;
+        rs.forEach((d, j) => {
+          if (!d) return;
+          const f = lot[j];
+          f.chiffre_affaires = d.chiffre_affaires || f.chiffre_affaires;
+          f.nb_etablissements = d.nb_etablissements || null;
+          f.site_web = d.site_web || null;
+          f.date_creation = d.date_creation || null;
+          f.enseigne = d.enseigne || null;
+        });
+      }
+      fichesG.sort((a, b) => (Number(b.chiffre_affaires) || 0) - (Number(a.chiffre_affaires) || 0));
+      await loggerConso(user, 'pappers', requetes, b.liste_id || null);
+      return res.status(200).json({
+        moteur: 'gouvernance', holding, total: fichesG.length,
+        membres: personnes.length, doublons_inter_listes: doublonsG,
+        credits_estimes: requetes, entreprises: fichesG
+      });
+    }
+
+    return res.status(400).json({ erreur: "moteur requis : 'groupe' (holding Pappers), 'enseigne' (Google Maps), 'web' (annuaire) ou 'gouvernance' (coopérative)" });
   } catch (err) {
     return res.status(500).json({ erreur: 'Erreur serveur', detail: err.message });
   }

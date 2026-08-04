@@ -41,12 +41,13 @@ export default async function handler(req, res) {
         const d = await r.json().catch(() => ({}));
         return { total: d.total || 0, deals: avecDetails ? (d.results || []).map(x => ({ nom: x.properties.dealname, date: x.properties[prop] })) : [] };
       };
-      let planifies = 0, noshows = 0, realises = 0; const details = [];
+      let planifies = 0, noshows = 0, realises = 0, gagnes = 0; const details = []; const cycles = [];
       for (const p of (dp0.results || [])) {
         if (!/^sales/i.test(p.label || '')) continue;
         const stP = (p.stages || []).find(s => /d[ée]mo planifi/i.test(s.label));
         const stN = (p.stages || []).find(s => /no[ -]?show/i.test(s.label));
         const stR = (p.stages || []).find(s => /d[ée]mo r[ée]alis/i.test(s.label));
+        const stW = (p.stages || []).find(s => /gagn/i.test(s.label)); // « Fermé gagné »
         if (stP) planifies += (await compte(`hs_v2_date_entered_${stP.id}`, false)).total;
         if (stR) realises += (await compte(`hs_v2_date_entered_${stR.id}`, false)).total;
         if (stN) {
@@ -54,11 +55,32 @@ export default async function handler(req, res) {
           noshows += rN.total;
           for (const x of rN.deals) details.push({ ...x, pipeline: p.label });
         }
+        // 💼 Ventes conclues sur la période + cycle de vente (entrée Démo planifiée → Fermé gagné)
+        if (stW && stP) {
+          const propW = `hs_v2_date_entered_${stW.id}`, propP = `hs_v2_date_entered_${stP.id}`;
+          const rW = await fetch(`${HS}/crm/v3/objects/deals/search`, {
+            method: 'POST', headers: H,
+            body: JSON.stringify({
+              filterGroups: [{ filters: [{ propertyName: propW, operator: 'BETWEEN', value: t0, highValue: t1 }] }],
+              properties: ['dealname', propW, propP], limit: 100
+            })
+          });
+          const dW = await rW.json().catch(() => ({}));
+          gagnes += dW.total || 0;
+          for (const x of (dW.results || [])) {
+            const a = x.properties[propP], b = x.properties[propW];
+            if (a && b) { const j = (new Date(b) - new Date(a)) / 86400000; if (j >= 0 && j < 400) cycles.push(j); }
+          }
+        }
       }
+      cycles.sort((a, b) => a - b);
       details.sort((a, b) => new Date(b.date) - new Date(a.date));
       return res.status(200).json({
-        ok: true, periode: { du, au }, planifies, noshows, realises,
+        ok: true, periode: { du, au }, planifies, noshows, realises, gagnes,
         taux_pct: planifies ? Math.round(100 * noshows / planifies) : null,
+        taux_vente_pct: planifies ? Math.round(100 * gagnes / planifies) : null,
+        cycle_median_j: cycles.length ? Math.round(cycles[Math.floor(cycles.length / 2)]) : null,
+        cycle_n: cycles.length,
         details: details.slice(0, 50)
       });
     } catch (e) { return res.status(500).json({ erreur: 'Erreur serveur', detail: String((e && e.message) || e) }); }

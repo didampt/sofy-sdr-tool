@@ -159,15 +159,26 @@ export default async function handler(req, res) {
     const entonnoir = {}; const concurrents = {}; const rdvDetails = [];
     const duT = new Date(du + 'T00:00:00Z').getTime() - 2 * 3600 * 1000;   // marge fuseau
     const auT = new Date(au + 'T23:59:59Z').getTime() + 2 * 3600 * 1000;
+    let statueesLive = 0, prevStatuees = 0, prevRdv = 0;
+    const pDuT = new Date(pDu + 'T00:00:00Z').getTime() - 2 * 3600 * 1000;
+    const pAuT = new Date(pAu + 'T23:59:59Z').getTime() + 2 * 3600 * 1000;
     try {
-      const ls = await sql`SELECT entreprises FROM listes WHERE criteres->>'auto' IS DISTINCT FROM 'hotleads'`;
+      const ls = await sql`SELECT id, entreprises FROM listes WHERE criteres->>'auto' IS DISTINCT FROM 'hotleads'`;
       for (const l of ls) for (const e of (Array.isArray(l.entreprises) ? l.entreprises : [])) {
         const statut = (e.tags_sdr || [])[0] || e.statut_appel || null;
         if (statut && e.traite_le) {
           const t = new Date(e.traite_le).getTime();
           if (t >= duT && t <= auT && (!sdrF || e.traite_par === sdrF)) {
             entonnoir[statut] = (entonnoir[statut] || 0) + 1;
-            if (statut.indexOf('RDV') >= 0) rdvDetails.push({ nom: e.enseigne_ia || e.enseigne || e.nom || '?', ville: e.ville || '', cp: e.code_postal || '', sdr: e.traite_par || '', date: e.traite_le });
+            statueesLive++;
+            if (statut.indexOf('RDV') >= 0) rdvDetails.push({
+              nom: e.enseigne_ia || e.enseigne || e.nom || '?', ville: e.ville || '', cp: e.code_postal || '',
+              sdr: e.traite_par || '', date: e.traite_le,
+              liste_id: l.id, cle: ((e.signal && e.signal.date) ? e.signal.date : '') + (e.nom || '') // lien direct vers la fiche
+            });
+          } else if (t >= pDuT && t <= pAuT && (!sdrF || e.traite_par === sdrF)) {
+            prevStatuees++;
+            if (statut.indexOf('RDV') >= 0) prevRdv++;
           }
         }
         const cp = e.concurrent_perdu;
@@ -178,6 +189,12 @@ export default async function handler(req, res) {
       }
       rdvDetails.sort((a, b) => new Date(b.date) - new Date(a.date));
     } catch (_) {}
+    // Tuiles RDV / statuées / conversion = LIVE (scan des fiches) — le journal journees_sdr n'est
+    // rempli qu'à 19 h : la tuile disait « 1 » quand le panneau (live) montrait les 2 RDV du matin.
+    totaux.rdv = rdvDetails.length;
+    totaux.statuees = statueesLive;
+    precedent.rdv = prevRdv;
+    precedent.statuees = prevStatuees;
 
     // ── ⚡ Speed-to-lead : médiane signal → 1er contact (liste Hot Leads : pris_le / traite_le) ──
     let speed = null;

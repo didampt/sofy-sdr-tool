@@ -637,6 +637,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
             <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:13.5px;line-height:1.45"><input type="radio" name="vert-moteur" value="enseigne" checked onchange="majModeVerticale()" style="margin-top:2px"><span><b>🏪 Réseau / franchise à vitrines</b> — balayage Google Maps de tous les points de vente (note, avis, téléphone inclus). Ex : BigMat, Gedimat, Point S.</span></label>
             <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:13.5px;line-height:1.45"><input type="radio" name="vert-moteur" value="groupe" onchange="majModeVerticale()" style="margin-top:2px"><span><b>🏢 Groupe / holding multi-enseignes</b> — l'arbre des filiales au registre (Pappers) : dirigeants, CA, effectif. Ex : Groupe Bernard Hayot. <i>Astuce : tape directement le SIREN (9 chiffres) de la holding si tu le connais.</i></span></label>
             <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:13.5px;line-height:1.45"><input type="radio" name="vert-moteur" value="web" onchange="majModeVerticale()" style="margin-top:2px"><span><b>🌐 Annuaire publié sur le site du réseau</b> — colle l'URL de la page « nos adhérents / nos points de vente / nos agences » : lecture de la page, puis SIREN &amp; dirigeants retrouvés via Pappers. Ex : algorel.fr/nos-adherents.</span></label>
+            <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:13.5px;line-height:1.45"><input type="radio" name="vert-moteur" value="gouvernance" onchange="majModeVerticale()" style="margin-top:2px"><span><b>🏛️ Gouvernance d'une coopérative</b> — les membres du directoire et du Conseil de Surveillance (registre Pappers) + la société de chacun : les ~20-30 vrais décideurs du réseau. Tape le nom ou le SIREN de la coopérative (ex : BIGMAT FRANCE).</span></label>
     <div id="vert-dep-box" style="display:none;margin-top:8px"><input class="field" id="vert-dep" placeholder="Département de la tête de groupe (optionnel, ex : 972)" style="max-width:340px" title="Départage les groupes homonymes : les candidats de ce département passent en tête"></div>
     <div id="vert-url-box" style="display:none;margin-top:8px"><input class="field" id="vert-url" placeholder="URL de la page annuaire (ex : https://www.algorel.fr/nos-adherents)" style="width:100%" autocomplete="off" oninput="VERT_WEB=null"><p class="hint" style="margin-top:4px">La pagination (pages 2, 3…) est suivie automatiquement. Estime d'abord : tu verras les sociétés détectées avant de lancer les recherches Pappers.</p></div>
     <div id="vert-minetab-box" style="display:none;margin-top:8px">
@@ -1981,7 +1982,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v284';
+const VERSION='v285';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2671,11 +2672,11 @@ function majModeVerticale(){
  var per=document.getElementById('vert-perimetre-box');
  if(per)per.style.display=(m==='enseigne')?'block':'none';
  var dp=document.getElementById('vert-dep-box');
- if(dp)dp.style.display=(m==='groupe')?'block':'none';
+ if(dp)dp.style.display=(m==='groupe'||m==='gouvernance')?'block':'none';
  var ub=document.getElementById('vert-url-box');
  if(ub)ub.style.display=(m==='web')?'block':'none';
  var mb=document.getElementById('vert-minetab-box');
- if(mb)mb.style.display=(m==='enseigne')?'none':'block'; // filtres décideurs : moteurs société (groupe + web)
+ if(mb)mb.style.display=(m==='enseigne'||m==='gouvernance')?'none':'block'; // filtres décideurs : moteurs société (groupe + web)
  VERT_HOLDING=null;VERT_WEB=null;
  var box=document.getElementById('vert-estim');if(box)box.style.display='none';
 }
@@ -2732,6 +2733,27 @@ async function estimerVerticale(){
      +(cands?'<div style="margin-top:10px"><span style="color:var(--ink-soft)">Pas le bon groupe ? Essaye :</span> '+cands+'</div>':'');
     box.style.display='block';
     if(!d.total)toast('0 filiale trouvée — essaye un autre candidat ci-dessous ou le SIREN exact');
+   }
+  }else if(m==='gouvernance'){
+   var bodyG={moteur:'gouvernance',mode:'estimer'};
+   var sirenG=nom.replace(/\s/g,'');
+   if(VERT_HOLDING&&VERT_HOLDING.siren)bodyG.siren=VERT_HOLDING.siren;
+   else if(/^\d{9}$/.test(sirenG))bodyG.siren=sirenG;
+   else bodyG.nom=nom;
+   var depG=(document.getElementById('vert-dep')||{value:''}).value.trim();
+   if(depG)bodyG.dep=depG;
+   const rG=await api('/api/verticale',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(bodyG)});
+   const dG=await rG.json();
+   if(dG.erreur){
+    var candsG=(dG.candidats||[]).slice(0,4).map(function(c){return '<button class="chip" onclick="choisirHoldingVert(\''+c.siren+'\',\''+escapeHtml(c.nom).replace(/'/g,'&#39;')+'\')">'+escapeHtml(c.nom)+' · '+escapeHtml(c.ville||'')+'</button>';}).join(' ');
+    if(box&&candsG){box.innerHTML='Introuvable telle quelle. Candidates proches : '+candsG;box.style.display='block';}
+    else toast('Erreur : '+dG.erreur);
+   }else{
+    VERT_HOLDING=dG.holding||VERT_HOLDING;
+    var echG=(dG.apercu||[]).map(function(x){return '<div style="padding:5px 0;border-top:1px solid var(--line)"><b>'+escapeHtml((x.prenom||'')+' '+(x.nom||''))+'</b> <span style="color:var(--ink-soft)">· '+escapeHtml(x.qualite||'')+'</span>'+(x.societe?'<br><span style="font-size:12px">→ '+escapeHtml(x.societe)+(x.ville?' · '+escapeHtml(x.ville):'')+'</span>':' <span style="font-size:12px;color:var(--ink-soft)">(société non identifiée)</span>')+'</div>';}).join('');
+    box.innerHTML='Coopérative : <b>'+escapeHtml((dG.holding&&dG.holding.nom)||nom)+'</b> (SIREN '+escapeHtml((dG.holding&&dG.holding.siren)||'?')+') — <b>'+dG.membres+'</b> membre'+(dG.membres>1?'s':'')+' de gouvernance, <b>'+dG.avec_societe+'</b> société'+(dG.avec_societe>1?'s':'')+' identifiée'+(dG.avec_societe>1?'s':'')+'.'+(echG?'<div style="margin-top:8px;font-weight:700">Gouvernance :</div>'+echG:'');
+    box.style.display='block';
+    if(!dG.membres)toast('Aucun mandataire personne physique trouvé — vérifie le SIREN de la coopérative');
    }
   }else{
    var perEst=(document.getElementById('vert-perimetre')||{}).value||'france';
@@ -2795,6 +2817,21 @@ async function creerListeVerticale(){
    doublons=d.doublons_inter_listes||0;
    if(d.exclus_reseaux_integres||d.exclus_etablissements)toast('🛡️ Écartés : '+(d.exclus_reseaux_integres||0)+' réseau(x) intégré(s) · '+(d.exclus_etablissements||0)+' sous le seuil d’établissements');
    criteres={verticale:true,moteur:'groupe',cible:(d.holding&&d.holding.nom)||nomCible,siren_holding:(d.holding&&d.holding.siren)||null,min_etab:meG||null,naf:[],pays:[]};
+  }else if(m==='gouvernance'){
+   var bodyGC={moteur:'gouvernance',mode:'creer'};
+   var sirenGC=nomCible.replace(/\s/g,'');
+   if(VERT_HOLDING&&VERT_HOLDING.siren)bodyGC.siren=VERT_HOLDING.siren;
+   else if(/^\d{9}$/.test(sirenGC))bodyGC.siren=sirenGC;
+   else bodyGC.nom=nomCible;
+   var depGC=(document.getElementById('vert-dep')||{value:''}).value.trim();
+   if(depGC)bodyGC.dep=depGC;
+   if(prog){prog.style.display='block';prog.textContent='⏳ Gouvernance de la coopérative + société de chaque membre (Pappers)…';}
+   const rg=await api('/api/verticale',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(bodyGC)});
+   const dg=await rg.json();
+   if(dg.erreur){toast('Erreur : '+dg.erreur);fin();if(prog)prog.style.display='none';return;}
+   fiches=dg.entreprises||[];
+   doublons=dg.doublons_inter_listes||0;
+   criteres={verticale:true,moteur:'gouvernance',cible:(dg.holding&&dg.holding.nom)||nomCible,siren_holding:(dg.holding&&dg.holding.siren)||null,naf:[],pays:[]};
   }else{
    var per=(document.getElementById('vert-perimetre')||{}).value||'france';
    var deps=VERT_DEPS[per]||VERT_DEPS.france;
@@ -7918,7 +7955,7 @@ function stjToggleRdv(){
   let acc=0;const parts=tE.map(([n,v],i)=>{const a0=acc/ds.length*360;acc+=v;const a1=acc/ds.length*360;return `${palT[i%palT.length]} ${a0.toFixed(1)}deg ${a1.toFixed(1)}deg`;});
   camembert=`<div style="display:flex;gap:14px;align-items:center;margin-bottom:10px"><div title="Territoires des RDV pris" style="width:96px;height:96px;border-radius:50%;background:conic-gradient(${parts.join(',')})"></div><div style="font-size:12px">${tE.map(([n,v],i)=>`<div style="display:flex;align-items:center;gap:6px;margin:2px 0"><span style="width:10px;height:10px;border-radius:3px;background:${palT[i%palT.length]};display:inline-block"></span>${htmlSafe(n)} — <b>${v}</b> (${Math.round(100*v/ds.length)} %)</div>`).join('')}</div></div>`;
  }
- z.innerHTML=ds.length?'<div style="font-weight:800;margin-bottom:6px">🏆 RDV pris sur la période</div>'+bandeau+camembert+ds.map(r=>`<div style="display:flex;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px"><span style="min-width:110px;color:var(--ink-soft)">${new Date(r.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})} ${new Date(r.date).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span><b style="flex:1">${htmlSafe(r.nom)}</b><span style="color:var(--ink-soft)">${htmlSafe(r.ville||'')}</span><span>${htmlSafe(r.sdr||'')}</span></div>`).join(''):'<span style="color:var(--ink-soft)">Aucun RDV sur la période.</span>';
+ z.innerHTML=ds.length?'<div style="font-weight:800;margin-bottom:6px">🏆 RDV pris sur la période</div>'+bandeau+camembert+ds.map(r=>`<div ${r.liste_id&&r.cle?`onclick="ouvrirListe(${r.liste_id},decodeURIComponent('${jsArg(r.cle)}'))" title="Ouvrir la fiche"`:''} style="display:flex;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px${r.liste_id?';cursor:pointer':''}"><span style="min-width:110px;color:var(--ink-soft)">${new Date(r.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})} ${new Date(r.date).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span><b style="flex:1${r.liste_id?';color:var(--accent)':''}">${htmlSafe(r.nom)}</b><span style="color:var(--ink-soft)">${htmlSafe(r.ville||'')}</span><span>${htmlSafe(r.sdr||'')}</span></div>`).join(''):'<span style="color:var(--ink-soft)">Aucun RDV sur la période.</span>';
  z.style.display='block';
 }
 function stjBarre(pct,couleur){
@@ -7936,6 +7973,8 @@ function rendreStatsJournees(d){
   stjTuile('🏆 RDV PRIS',t.rdv||0,stjPill(t.rdv||0,p.rdv,true),stjSpark(sp.map(x=>x.r),'#0FA968'),'','stjToggleRdv()')+
   (d.speed?stjTuile('⚡ SPEED-TO-LEAD',d.speed.mediane_min<90?d.speed.mediane_min+' min':(Math.round(d.speed.mediane_min/6)/10)+' h','','','signal → 1er contact · médiane sur '+d.speed.n+' hot lead'+(d.speed.n>1?'s':'')):'')+
   (d.noshow&&d.noshow.taux_pct!=null?stjTuile('👻 NO-SHOW',d.noshow.taux_pct+' %','','',d.noshow.noshows+' sur '+d.noshow.planifies+' démos planifiées (HubSpot)','stjToggleNoshow()'):'')+
+  (d.noshow&&d.noshow.gagnes!=null&&d.noshow.planifies?stjTuile('💼 VENTES CONCLUES',d.noshow.gagnes,'','',(d.noshow.taux_vente_pct!=null?d.noshow.taux_vente_pct+' % des démos planifiées':'')+' (HubSpot)'):'')+
+  (d.noshow&&d.noshow.cycle_median_j!=null?stjTuile('⏳ CYCLE DE VENTE',d.noshow.cycle_median_j+' j','','','démo planifiée → signature · médiane sur '+d.noshow.cycle_n+' vente'+(d.noshow.cycle_n>1?'s':'')):'')+
   (coutRdv!=null?stjTuile('💶 COÛT / RDV',coutRdv.toLocaleString('fr-FR')+' €','',stjSpark(spc.map(x=>x.cout),'#7A5AF8'),'conso + abos prorata'):'')+
   stjTuile('🎯 CONVERSION',conv+' %',stjPill(conv,convP,true),stjSpark(sp.map(x=>x.s?Math.round(100*x.r/x.s):0),'#E8A013'),'statuées → RDV')+
   (cg?stjTuile('🎧 QUALITÉ D’APPEL',cg.note_moy+'/10',stjPill(cg.note_moy,p.coach_note,true),'',cg.n+' analysé'+(cg.n>1?'s':'')+' · barème sévère (5 = moyen)','stjToggleCoach()'):'')+
