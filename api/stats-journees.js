@@ -167,13 +167,14 @@ export default async function handler(req, res) {
       for (const l of ls) for (const e of (Array.isArray(l.entreprises) ? l.entreprises : [])) {
         const statut = (e.tags_sdr || [])[0] || e.statut_appel || null;
         if (statut && e.traite_le) {
-          const t = new Date(e.traite_le).getTime();
+          // RDV : date de PRISE (rdv_le, figée) prioritaire sur traite_le (écrasé au re-statut)
+          const t = new Date((statut.indexOf('RDV') >= 0 && e.rdv_le) ? e.rdv_le : e.traite_le).getTime();
           if (t >= duT && t <= auT && (!sdrF || e.traite_par === sdrF)) {
             entonnoir[statut] = (entonnoir[statut] || 0) + 1;
             statueesLive++;
             if (statut.indexOf('RDV') >= 0) rdvDetails.push({
               nom: e.enseigne_ia || e.enseigne || e.nom || '?', ville: e.ville || '', cp: e.code_postal || '',
-              sdr: e.traite_par || '', date: e.traite_le,
+              sdr: e.traite_par || '', date: e.rdv_le || e.traite_le,
               liste_id: l.id, cle: ((e.signal && e.signal.date) ? e.signal.date : '') + (e.nom || '') // lien direct vers la fiche
             });
           } else if (t >= pDuT && t <= pAuT && (!sdrF || e.traite_par === sdrF)) {

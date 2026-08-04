@@ -448,6 +448,9 @@ export default async function handler(req, res) {
         }
         if (statutF) {
           fiche.statut_appel = statutF;
+          // Date de PRISE du RDV figée au 1er statut RDV (traite_le est écrasé à chaque re-statut :
+          // un RDV d'hier re-touché ce matin « migrait » vers aujourd'hui dans Insights)
+          if (statutF === 'RDV pris' && !fiche.rdv_le) fiche.rdv_le = new Date().toISOString();
           fiche.tags_sdr = [statutF === 'RDV pris' ? '🤝 RDV pris' : statutF];
           fiche.traite_par = user.nom;
           fiche.traite_le = new Date().toISOString();
