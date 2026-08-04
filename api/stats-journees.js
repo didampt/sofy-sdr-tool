@@ -59,9 +59,9 @@ export default async function handler(req, res) {
     const precedent = { appels: 0, decroches: 0, statuees: 0, rdv: 0, cout_conso: null };
     try {
       const pj = sdrF
-        ? await sql`SELECT COALESCE(SUM(appels),0)::int a, COALESCE(SUM(decroches),0)::int d, COALESCE(SUM(statuees),0)::int s, COALESCE(SUM(rdv),0)::int r FROM journees_sdr WHERE jour >= ${pDu} AND jour <= ${pAu} AND sdr = ${sdrF}`
-        : await sql`SELECT COALESCE(SUM(appels),0)::int a, COALESCE(SUM(decroches),0)::int d, COALESCE(SUM(statuees),0)::int s, COALESCE(SUM(rdv),0)::int r FROM journees_sdr WHERE jour >= ${pDu} AND jour <= ${pAu}`;
-      if (pj[0]) { precedent.appels = pj[0].a; precedent.decroches = pj[0].d; precedent.statuees = pj[0].s; precedent.rdv = pj[0].r; }
+        ? await sql`SELECT COALESCE(SUM(appels),0)::int a, COALESCE(SUM(decroches),0)::int d, COALESCE(SUM(statuees),0)::int s, COALESCE(SUM(rdv),0)::int r, COUNT(DISTINCT jour)::int j FROM journees_sdr WHERE jour >= ${pDu} AND jour <= ${pAu} AND sdr = ${sdrF}`
+        : await sql`SELECT COALESCE(SUM(appels),0)::int a, COALESCE(SUM(decroches),0)::int d, COALESCE(SUM(statuees),0)::int s, COALESCE(SUM(rdv),0)::int r, COUNT(DISTINCT jour)::int j FROM journees_sdr WHERE jour >= ${pDu} AND jour <= ${pAu}`;
+      if (pj[0]) { precedent.appels = pj[0].a; precedent.decroches = pj[0].d; precedent.statuees = pj[0].s; precedent.rdv = pj[0].r; precedent.jours = pj[0].j; }
     } catch (_) {}
 
     // ── Sparklines des tuiles : série QUOTIDIENNE 30 j (indépendante de la période, suit le SDR) ──

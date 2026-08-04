@@ -41,7 +41,14 @@ export default async function handler(req, res) {
         const d = await r.json().catch(() => ({}));
         return { total: d.total || 0, deals: avecDetails ? (d.results || []).map(x => ({ nom: x.properties.dealname, date: x.properties[prop] })) : [] };
       };
-      let planifies = 0, noshows = 0, realises = 0, gagnes = 0; const details = []; const cycles = [];
+      let planifies = 0, noshows = 0, realises = 0, gagnes = 0; const details = []; const cycles = []; const detailsGagnes = [];
+      // Portal id HubSpot (liens directs vers les deals depuis Insights)
+      let portalId = null;
+      try {
+        const ra = await fetch(`${HS}/account-info/v3/details`, { headers: H });
+        const da = await ra.json().catch(() => ({}));
+        portalId = da.portalId || null;
+      } catch (_) {}
       for (const p of (dp0.results || [])) {
         if (!/^sales/i.test(p.label || '')) continue;
         const stP = (p.stages || []).find(s => /d[ée]mo planifi/i.test(s.label));
@@ -70,6 +77,7 @@ export default async function handler(req, res) {
           for (const x of (dW.results || [])) {
             const a = x.properties[propP], b = x.properties[propW];
             if (a && b) { const j = (new Date(b) - new Date(a)) / 86400000; if (j >= 0 && j < 400) cycles.push(j); }
+            detailsGagnes.push({ id: x.id, nom: x.properties.dealname || '', date: x.properties[propW] || null, pipeline: p.label });
           }
         }
       }
@@ -81,7 +89,9 @@ export default async function handler(req, res) {
         taux_vente_pct: planifies ? Math.round(100 * gagnes / planifies) : null,
         cycle_median_j: cycles.length ? Math.round(cycles[Math.floor(cycles.length / 2)]) : null,
         cycle_n: cycles.length,
-        details: details.slice(0, 50)
+        details: details.slice(0, 50),
+        details_gagnes: detailsGagnes.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 50),
+        portal_id: portalId
       });
     } catch (e) { return res.status(500).json({ erreur: 'Erreur serveur', detail: String((e && e.message) || e) }); }
   }
