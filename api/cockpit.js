@@ -136,10 +136,12 @@ export default async function handler(req, res) {
       const emailSdr = (srow && srow.email) ? srow.email.toLowerCase().trim() : '';
       const numSdr = srow ? cle9(srow.ringover_numero) : '';
       let total = 0, decroches = 0, dureeSum = 0;
+      const dbg = (req.query.debug === '1' && user.role === 'superadmin') ? { pages: [], sdr, emailSdr, numSdr } : null;
       for (let p = 0; p < 2; p++) {
         const r = await fetch(`https://public-api.ringover.com/v2/calls?limit_count=1000&limit_offset=${p * 1000}`, { headers: { 'Authorization': cleRing } });
         let dd = null; try { dd = await r.json(); } catch (_) {}
         const liste = (dd && dd.call_list) || [];
+        if (dbg) dbg.pages.push({ status: r.status, nb: liste.length, premier: liste[0] ? liste[0].start_time : null, brut: liste.length ? undefined : String(JSON.stringify(dd)).slice(0, 200) });
         if (!liste.length) break;
         let resteAujourdhui = false;
         for (const c of liste) {
@@ -158,7 +160,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, appels: {
         total, decroches, taux: total ? Math.round(decroches / total * 100) : 0,
         duree_moy_sec: decroches ? Math.round(dureeSum / decroches) : 0
-      }});
+      }, debug: dbg || undefined });
     }
 
     // Objectifs du SDR (Paramètres) — défauts : 50 appels/jour, 20 RDV/mois
