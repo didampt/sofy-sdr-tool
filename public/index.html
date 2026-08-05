@@ -1193,11 +1193,36 @@ Spot-Hit</textarea>
             <input class="field" id="imp-lk-source" placeholder="Source (ex : Post Partoo du 05/08 — avis clients)" style="width:100%;margin-bottom:8px">
             <textarea class="field" id="imp-lk-texte" rows="9" placeholder="Colle ici la liste copiée depuis la fenêtre des réactions…&#10;(ou le JSON produit par le mini-extracteur ci-dessous)" style="width:100%;font-size:12.5px"></textarea>
             <details style="margin-top:8px;font-size:12px;color:var(--ink-soft)"><summary style="cursor:pointer">🧰 Mini-extracteur (grosses listes) : à coller dans la console Chrome, fenêtre des réactions ouverte</summary>
-            <pre style="background:var(--paper);border-radius:8px;padding:10px;overflow-x:auto;font-size:11px;user-select:all">copy(JSON.stringify(Object.values([...(document.querySelector('[role="dialog"]')||document.querySelector('.artdeco-modal')||{querySelectorAll:()=>[]}).querySelectorAll('a[href*="/in/"]')].reduce((m,a)=>{const url=a.href.split('?')[0];const row=a.closest('li')||a.parentElement;const lignes=((row&&row.innerText)||a.innerText||'').split('\n').map(s=>s.trim()).filter(Boolean);const nom=(lignes[0]||'').replace(/\s*·.*$/,'').trim();const occupation=lignes.slice(1).find(l=>l&&l!==nom&&l.length>3&&!/^(·|1er|2e|3e|voir|se connecter|suivre|message|réagir)/i.test(l))||'';if(nom.length>2&&nom.length<60&&!m[url])m[url]={nom,url,occupation};return m;},{}))));'✅ copié — colle dans Sofy Scrap'</pre>
+            <pre style="background:var(--paper);border-radius:8px;padding:10px;overflow-x:auto;font-size:11px;user-select:all">copy(JSON.stringify(Object.values([...(document.querySelector('[role="dialog"]')||document.querySelector('.artdeco-modal')||{querySelectorAll:()=>[]}).querySelectorAll('a[href*="/in/"]')].reduce((m,a)=>{const url=a.href.split('?')[0];const row=a.closest('li')||a.parentElement;const lignes=((row&&row.innerText)||a.innerText||'').split('\n').map(s=>s.trim()).filter(Boolean);const nom=(lignes[0]||'').replace(/\s*·.*$/,'').trim();const occupation=lignes.slice(1).find(l=>l&&l!==nom&&l.length>3&&!/^(·|1er|2e|3e|voir|se connecter|suivre|message|réagir|out of network|hors r[ée]seau|statut|en ligne|premium|linkedin)/i.test(l))||'';if(nom.length>2&&nom.length<60&&!m[url])m[url]={nom,url,occupation};return m;},{}))));'✅ copié — colle dans Sofy Scrap'</pre>
             <div>Fais défiler la liste des réactions jusqu'en bas AVANT de lancer l'extracteur, puis colle le résultat dans le champ ci-dessus.</div></details>
             <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
               <button class="btn" style="background:var(--paper)" onclick="document.getElementById('import-likers-modal').style.display='none'">Annuler</button>
               <button class="btn btn-primary" id="imp-lk-btn" onclick="importerLikers()">📥 Importer &amp; croiser</button>
+            </div>
+          </div>
+        </div>
+        <div id="hotlead-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:903;align-items:center;justify-content:center" onclick="if(event.target===this)this.style.display='none'">
+          <div style="background:var(--card,#fff);border-radius:14px;padding:22px 24px;max-width:520px;width:94%">
+            <div style="font-size:18px;font-weight:800;margin-bottom:6px">➕ Hot lead manuel</div>
+            <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:12px">Demande entrante (téléphone, email, salon…) → fiche dans les Hot Leads partagés, tuile 🔥 de « Ma journée », annonce Slack à l'équipe.</div>
+            <input class="field" id="hl-nom" placeholder="Prénom Nom du contact *" style="width:100%;margin-bottom:8px">
+            <input class="field" id="hl-entreprise" placeholder="Entreprise" style="width:100%;margin-bottom:8px">
+            <input class="field" id="hl-fonction" placeholder="Fonction (ex : Gérant)" style="width:100%;margin-bottom:8px">
+            <div style="display:flex;gap:8px;margin-bottom:8px">
+              <input class="field" id="hl-email" placeholder="Email" style="flex:1">
+              <input class="field" id="hl-tel" placeholder="Téléphone" style="flex:1">
+            </div>
+            <select class="field" id="hl-source" style="width:100%;margin-bottom:8px">
+              <option value="appel entrant">📞 Appel entrant</option>
+              <option value="email entrant">✉️ Email entrant</option>
+              <option value="salon / événement">🤝 Salon / événement</option>
+              <option value="recommandation">💬 Recommandation</option>
+              <option value="autre">Autre</option>
+            </select>
+            <textarea class="field" id="hl-detail" rows="2" placeholder="Contexte (ex : veut une démo SoView pour ses 3 boutiques)" style="width:100%"></textarea>
+            <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+              <button class="btn" style="background:var(--paper)" onclick="document.getElementById('hotlead-modal').style.display='none'">Annuler</button>
+              <button class="btn btn-primary" id="hl-btn" onclick="envoyerHotLeadManuel()">🔥 Créer le hot lead</button>
             </div>
           </div>
         </div>
@@ -1998,7 +2023,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v290';
+const VERSION='v291';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2088,6 +2113,27 @@ async function verifSession(){
 
 /* ───────── NAV / TOAST ───────── */
 // 📥 Import manuel des likers d'un post (remplaçant de PhantomBuster) → pipeline veille existant
+// ➕ Hot lead manuel (demande entrante) → liste Hot Leads partagée
+async function envoyerHotLeadManuel(){
+ const v=id=>((document.getElementById(id)||{}).value||'').trim();
+ if(!v('hl-nom')&&!v('hl-entreprise')){toast('Renseigne au moins le nom du contact ou l\'entreprise');return;}
+ const btn=document.getElementById('hl-btn');
+ if(btn){btn.disabled=true;btn.textContent='⏳…';}
+ try{
+  const r=await api('/api/hotlead',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({nom_complet:v('hl-nom'),entreprise:v('hl-entreprise'),fonction:v('hl-fonction'),email:v('hl-email'),telephone:v('hl-tel'),source:v('hl-source'),detail:v('hl-detail')})});
+  const d=await r.json();
+  if(d.erreur){toast('Hot lead : '+d.erreur);}
+  else if(!d.ajoute){toast('ℹ️ '+(d.info||'Déjà présent dans les Hot Leads'));}
+  else{
+   toast('🔥 Hot lead créé — visible dans la tuile 🔥 et annoncé sur Slack');
+   document.getElementById('hotlead-modal').style.display='none';
+   ['hl-nom','hl-entreprise','hl-fonction','hl-email','hl-tel','hl-detail'].forEach(x=>{const e=document.getElementById(x);if(e)e.value='';});
+   if(typeof chargerCockpit==='function')chargerCockpit();
+  }
+ }catch(e){toast('Erreur réseau : '+e.message);}
+ finally{if(btn){btn.disabled=false;btn.textContent='🔥 Créer le hot lead';}}
+}
 async function importerLikers(){
  const src=(document.getElementById('imp-lk-source')||{value:''}).value.trim();
  const txt=(document.getElementById('imp-lk-texte')||{value:''}).value.trim();
@@ -7011,6 +7057,7 @@ function rendreCockpit(sdrAffiche){
     <p class="sub" style="margin:2px 0 0">${htmlSafe(sdrAffiche||d.sdr)} \u00b7 ${d.chauds.length} signal${d.chauds.length>1?'aux':''} chaud${d.chauds.length>1?'s':''} \u00b7 ${nR+nA} rappel${(nR+nA)>1?'s':''} du${(nR+nA)>1?'s':''} \u00b7 ${d.restants} fiche${d.restants>1?'s':''} \u00e0 prospecter</p>
    </div>
    <button class="act act-copy" onclick="ckExportJournee()" title="Export CSV (Excel) : leads appelés du jour — issue, décroché, durée, note et résumé IA, action recommandée, next step">⬇️ Export</button>
+   <button class="act act-call" onclick="document.getElementById('hotlead-modal').style.display='flex'" title="Demande entrante (téléphone, email, salon) → fiche Hot Leads partagée, comme un signal automatique">➕ Hot lead</button>
    ${admin?`<label style="font-size:11px;color:var(--ink-soft)">Vue SDR<br><select id="ck-sdr" class="field" style="padding:6px 8px;font-size:12px" onchange="chargerCockpit()"></select></label>`:''}
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:12px">
