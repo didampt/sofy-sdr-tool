@@ -359,12 +359,12 @@ export async function ajouterHotLead(profil, cfg) {
     signup: profil.signup || null,
     a_enrichir: true,
     signal_hot: true,
-    signal: { type: profil.type, source: profil.source, detail: profil.detail, date: maintenant, pages: profil.pages_visitees || [], signup: profil.signup || null },
+    signal: { type: profil.type, source: profil.source, detail: profil.detail, date: maintenant, pages: profil.pages_visitees || [], signup: profil.signup || null, post: profil.post || null },
     contacts: profil.nom_complet ? [{
       prenom: morceaux[0] || '', nom: morceaux.slice(1).join(' ') || '',
       fonction: profil.fonction || '', source: profil.source,
       enrich: { email: profil.email || null, linkedin: profil.linkedin_brut || null, telephone: profil.telephone || null },
-      signal: { type: profil.type, source: profil.source, detail: profil.detail, date: maintenant }
+      signal: { type: profil.type, source: profil.source, detail: profil.detail, date: maintenant, post: profil.post || null }
     }] : []
   });
   const finales = ents.slice(0, 300);

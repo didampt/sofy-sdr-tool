@@ -159,6 +159,10 @@ export default async function handler(req, res) {
       if (!user || user.role !== 'superadmin') return res.status(401).json({ erreur: 'Import réservé au superadmin' });
       const body = req.body || {};
       const source = String(body.source || 'likers importés').slice(0, 80);
+      // URL du post (champ dédié, repli : URL trouvée dans la source) → lien 🔗 sur la fiche,
+      // dérivation de l'entreprise auteure, accroche IA si le texte du post est fourni
+      const postUrl = String(body.post_url || (String(body.source || '').match(/https?:\/\/\S+/) || [])[0] || '').slice(0, 300) || null;
+      const postTexte = String(body.post_texte || '').slice(0, 1200);
       let arr = Array.isArray(body.profils) ? body.profils : null;
       const txt = String(body.texte || '').trim();
       if (!arr && txt.startsWith('[')) { try { arr = JSON.parse(txt); } catch (_) {} }
@@ -201,7 +205,7 @@ export default async function handler(req, res) {
       // Employés de l'entreprise AUTEURE du post (dérivée de l'URL : /posts/malou_… → « Malou ») :
       // exclus même si elle n'est pas dans la liste des concurrents — ses salariés likent leur
       // propre post, ce ne sont jamais des leads (cas Hugues Cohen @ Malou, 05/08).
-      const societePost = extraireConcurrent(source).toLowerCase().trim();
+      const societePost = extraireConcurrent(postUrl || source).toLowerCase().trim();
       const exclusEmployeurs = societePost && societePost.length >= 3 ? [...CONCS_DEF, societePost] : CONCS_DEF;
       const resImp = { ok: true, importes: profilsImp.length, nouveaux: nouveauxI.length, matches: 0, hotleads: 0, exclus_ia: 0, exclus_employeur: 0, societe_du_post: societePost || null };
 
@@ -218,9 +222,9 @@ export default async function handler(req, res) {
             body: JSON.stringify({
               model: 'claude-sonnet-4-6', max_tokens: 800,
               messages: [{ role: 'user', content: `Tu qualifies des profils LinkedIn ayant réagi à un post sur le marketing local / les avis clients. Nos produits (pilotage de fiches Google & avis, centralisation des conversations clients, campagnes SMS) ciblent les DÉCIDEURS — dirigeant, DG, gérant, directeur ou responsable marketing / communication / digital / commercial / relation client / réseau-franchise-retail — d'entreprises B2C : commerces, retail, franchises, restauration/CHR, automobile, beauté/santé, services locaux, grandes marques.
-À EXCLURE : étudiants et alternants (même en marketing), chercheurs/scientifiques, freelances/consultants/agences (growth, SEO, com...), profils RH/tech/finance/juridique, employés d'éditeurs de logiciels (concurrents ou non)${source ? `, et TOUT profil travaillant chez « ${source.replace(/https?:\/\/\S+/g, '').trim() || 'l’entreprise auteure du post'} » ou chez l'entreprise qui a publié le post (${source.slice(0, 120)})` : ''}. Fonction vide ou ambiguë = GARDER (le doute profite au SDR).
+À EXCLURE : étudiants et alternants (même en marketing), chercheurs/scientifiques, freelances/consultants/agences (growth, SEO, com...), profils RH/tech/finance/juridique, employés d'éditeurs de logiciels (concurrents ou non), et TOUT profil travaillant chez l'entreprise qui a publié le post${societePost ? ` (« ${societePost} »)` : ''}. EXCLURE AUSSI les profils institutionnels et corporate SANS points de vente : fédérations/syndicats professionnels (Medef, Apec, Syntec...), présidents d'associations/fondations, cabinets de conseil/audit/expertise, banque/assurance corporate, collectivités — notre cible a des BOUTIQUES, AGENCES ou CLIENTS GRAND PUBLIC. Fonction vide = GARDER ; fonction prestigieuse mais hors commerce B2C = EXCLURE.
 Profils : ${JSON.stringify(nouveauxI.map((p, i) => ({ i, nom: p.nom, fonction: (p.occupation || '').slice(0, 120) })))}
-Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"garder":[indices des profils à garder]}` }]
+${postTexte ? `Texte du post : «${postTexte.slice(0, 800)}»\n` : ''}Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"garder":[indices des profils à garder]${postTexte ? ',"accroche":"1 phrase d’ouverture d’appel pour le SDR, du type : J’ai vu que vous avez réagi au post de X sur [sujet]…"' : ''}}` }]
             })
           });
           const dIA = await rIA.json().catch(() => null);
@@ -228,6 +232,7 @@ Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"garder":[indices d
             const brutIA = ((dIA.content || []).map(c => c.text || '').join('')).replace(/```json|```/g, '');
             const pIA = JSON.parse(brutIA.slice(brutIA.indexOf('{'), brutIA.lastIndexOf('}') + 1));
             if (Array.isArray(pIA.garder)) garderIA = new Set(pIA.garder.map(Number));
+            if (pIA.accroche) resImp.accroche = String(pIA.accroche).slice(0, 220);
           }
         } catch (_) {}
       }
@@ -243,8 +248,8 @@ Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"garder":[indices d
           const r2 = await ajouterHotLead({
             nom_complet: p.nom, email: null, entreprise: extraireSociete(p.occupation),
             linkedin_brut: p.brut || null, fonction: p.occupation || '',
-            source: nomAgentI, type: 'linkedin',
-            detail: `${sigT.emoji} ${p.nom} ${sigT.label} — ${source}`
+            source: nomAgentI, type: 'linkedin', post: postUrl,
+            detail: `${sigT.emoji} ${p.nom} ${sigT.label} — ${source}${resImp.accroche ? '\n🗣 ' + resImp.accroche : ''}`
           }, cfgHL);
           if (r2.ajoute) {
             resImp.hotleads++;
@@ -261,7 +266,7 @@ Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"garder":[indices d
         const ents = aSauver.get(m.liste.id) || m.liste.entreprises;
         const e = ents[m.ei];
         e.signal_hot = true;
-        const sig = { type: 'linkedin', interaction: sigT.label, emoji: sigT.emoji, source: nomAgentI, detail, post: source, linkedin: p.brut || '', date: new Date().toISOString() };
+        const sig = { type: 'linkedin', interaction: sigT.label, emoji: sigT.emoji, source: nomAgentI, detail: detail + (resImp.accroche ? '\n🗣 ' + resImp.accroche : ''), post: postUrl || source, linkedin: p.brut || '', date: new Date().toISOString() };
         if (m.ci >= 0 && e.contacts && e.contacts[m.ci]) e.contacts[m.ci].signal = sig;
         else e.signal = sig;
         aSauver.set(m.liste.id, ents);

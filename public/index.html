@@ -1190,7 +1190,9 @@ Spot-Hit</textarea>
           <div style="background:var(--card,#fff);border-radius:14px;padding:22px 24px;max-width:640px;width:94%;max-height:88vh;overflow-y:auto">
             <div style="font-size:18px;font-weight:800;margin-bottom:6px">📥 Importer les likers d'un post LinkedIn</div>
             <div style="font-size:12.5px;color:var(--ink-soft);line-height:1.55;margin-bottom:10px">Ouvre le post (le tien ou celui d'un concurrent) → clique sur les réactions → <b>sélectionne et copie la liste</b> (noms + fonctions) → colle ci-dessous. Même pipeline que PhantomBuster : dédup, croisement avec les listes en veille (fiche 🔥 + Slack), non-matchés → Hot Leads.</div>
-            <input class="field" id="imp-lk-source" placeholder="Source (ex : Post Partoo du 05/08 — avis clients)" style="width:100%;margin-bottom:8px">
+            <input class="field" id="imp-lk-source" placeholder="Source (ex : Post Digitaleo du 05/08 — bilan mi-année)" style="width:100%;margin-bottom:8px">
+            <input class="field" id="imp-lk-url" placeholder="🔗 URL du post (recommandé : lien sur la fiche + exclusion des employés de l’auteur)" style="width:100%;margin-bottom:8px">
+            <textarea class="field" id="imp-lk-post" rows="2" placeholder="Texte du post (optionnel, 2-3 premières lignes) → l’IA prépare l’accroche d’appel du SDR" style="width:100%;margin-bottom:8px"></textarea>
             <textarea class="field" id="imp-lk-texte" rows="9" placeholder="Colle ici la liste copiée depuis la fenêtre des réactions…&#10;(ou le JSON produit par le mini-extracteur ci-dessous)" style="width:100%;font-size:12.5px"></textarea>
             <details style="margin-top:8px;font-size:12px;color:var(--ink-soft)"><summary style="cursor:pointer">🧰 Mini-extracteur (grosses listes) : à coller dans la console Chrome, fenêtre des réactions ouverte</summary>
             <pre style="background:var(--paper);border-radius:8px;padding:10px;overflow-x:auto;font-size:11px;user-select:all">copy(JSON.stringify(Object.values([...(document.querySelector('[role="dialog"]')||document.querySelector('.artdeco-modal')||{querySelectorAll:()=>[]}).querySelectorAll('a[href*="/in/"]')].reduce((m,a)=>{const url=a.href.split('?')[0];const row=a.closest('li')||a.parentElement;const lignes=((row&&row.innerText)||a.innerText||'').split('\n').map(s=>s.trim()).filter(Boolean);const nom=(lignes[0]||'').replace(/\s*·.*$/,'').trim();const occupation=lignes.slice(1).find(l=>l&&l!==nom&&l.length>3&&!/^(·|1er|2e|3e|voir|se connecter|suivre|message|réagir|out of network|hors r[ée]seau|statut|en ligne|premium|linkedin)/i.test(l))||'';if(nom.length>2&&nom.length<60&&!m[url])m[url]={nom,url,occupation};return m;},{}))));'✅ copié — colle dans Sofy Scrap'</pre>
@@ -2023,7 +2025,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v291';
+const VERSION='v292';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2141,7 +2143,7 @@ async function importerLikers(){
  const btn=document.getElementById('imp-lk-btn');
  if(btn){btn.disabled=true;btn.textContent='⏳ Croisement…';}
  try{
-  const r=await api('/api/veille',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:src||'likers importés',texte:txt})});
+  const r=await api('/api/veille',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:src||'likers importés',texte:txt,post_url:((document.getElementById('imp-lk-url')||{}).value||'').trim(),post_texte:((document.getElementById('imp-lk-post')||{}).value||'').trim()})});
   const d=await r.json();
   if(d.erreur){toast('Import : '+d.erreur);}
   else{
