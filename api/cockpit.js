@@ -365,10 +365,13 @@ export default async function handler(req, res) {
     let rdvJour = 0, rdvMois = 0;
     const debutMois = new Date(new Date(jourParis().slice(0, 7) + '-01T00:00:00Z').getTime() - offsetParisMs());
     try {
+      // 1 fiche = 1 RDV : DISTINCT fiche_cle (double-clic, re-réservation) + on ignore
+      // « RDV confirmé » (récupération du créneau HubSpot = détail, pas une nouvelle prise).
       const [r1] = await sql`SELECT
-        COUNT(*) FILTER (WHERE ts >= ${debutJour.toISOString()})::int AS jour,
-        COUNT(*)::int AS mois
-        FROM activites WHERE source = 'rdv' AND auteur = ${sdr} AND ts >= ${debutMois.toISOString()}`;
+        COUNT(DISTINCT lower(fiche_cle)) FILTER (WHERE ts >= ${debutJour.toISOString()})::int AS jour,
+        COUNT(DISTINCT lower(fiche_cle))::int AS mois
+        FROM activites WHERE source = 'rdv' AND auteur = ${sdr} AND ts >= ${debutMois.toISOString()}
+          AND COALESCE(titre, '') <> 'RDV confirmé'`;
       rdvJour = (r1 && r1.jour) || 0; rdvMois = (r1 && r1.mois) || 0;
     } catch (_) {}
 

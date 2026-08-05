@@ -92,8 +92,10 @@ export default async function handler(req, res) {
 
     // ── 3. RDV du jour (bloc-notes) ──
     try {
-      const rdvs = await sql`SELECT auteur, COUNT(*)::int AS n FROM activites
-        WHERE source = 'rdv' AND ts >= ${debutJour.toISOString()} GROUP BY auteur`;
+      // 1 fiche = 1 RDV (même règle que la tuile cockpit) : DISTINCT fiche, sans « RDV confirmé »
+      const rdvs = await sql`SELECT auteur, COUNT(DISTINCT lower(fiche_cle))::int AS n FROM activites
+        WHERE source = 'rdv' AND ts >= ${debutJour.toISOString()}
+          AND COALESCE(titre, '') <> 'RDV confirmé' GROUP BY auteur`;
       for (const r2 of rdvs) if (r2.auteur && stats[r2.auteur]) stats[r2.auteur].rdv = r2.n;
     } catch (_) {}
 
