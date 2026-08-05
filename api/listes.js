@@ -37,7 +37,7 @@ const SCORE_STATUT = {
   'Refus – timing / pas prioritaire': -5, 'Refus – concurrence': -10, 'Négatif (refus ferme)': -10,
   'Faux numéro': -15, 'Numéro perso – ne plus appeler': -15, 'Opt-out téléphone': -15
 };
-function calculerStatsListe(entreprises) {
+export function calculerStatsListe(entreprises) { // exportée pour api/restaurer-liste.js
   const ents = Array.isArray(entreprises) ? entreprises : [];
   const total = ents.length;
   if (!total) return null;
