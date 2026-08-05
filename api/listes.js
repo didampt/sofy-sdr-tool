@@ -359,8 +359,47 @@ export default async function handler(req, res) {
           const statsAuto = calculerStatsListe(fusionFinale);
           await sql`UPDATE listes SET entreprises = ${JSON.stringify(fusionFinale)}, total = ${fusionFinale.length}, stats = ${JSON.stringify(statsAuto)} WHERE id = ${lid}`;
         } else {
-          const statsMaj = calculerStatsListe(entreprises);
-          await sql`UPDATE listes SET entreprises = ${JSON.stringify(entreprises)}, total = ${entreprises.length}, stats = ${JSON.stringify(statsMaj)} WHERE id = ${lid}`;
+          // ⚠️ FUSION GÉNÉRALISÉE (incident Alicia 04/08 : un onglet PÉRIMÉ réécrivait la liste
+          // entière → 38 enrichissements + statuts effacés). Un envoi complet ne peut plus :
+          // supprimer une fiche (sauf suppression explicite), dé-statuer (le traite_le le plus
+          // récent gagne), perdre des contacts/enrichissements (union + complétion des trous).
+          const base = cur.length ? (cur[0].entreprises || []) : [];
+          const cleF2 = e => ((e.signal && e.signal.date) ? e.signal.date : '') + (e.nom || '');
+          const normP2 = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+          const parCle = new Map(base.map(e => [cleF2(e), e]));
+          const clesSupp = new Set(Array.isArray(supprimees) ? supprimees : []);
+          const clesEnv = new Set();
+          const fusionN = entreprises.map(env => {
+            const k = cleF2(env); clesEnv.add(k);
+            const bse = parCle.get(k);
+            if (!bse) return env;
+            const tB = bse.traite_le ? new Date(bse.traite_le).getTime() : 0;
+            const tE = env.traite_le ? new Date(env.traite_le).getTime() : 0;
+            if (tB > tE) { env.tags_sdr = bse.tags_sdr; env.statut_appel = bse.statut_appel; env.traite_par = bse.traite_par; env.traite_le = bse.traite_le; }
+            if (bse.rdv_le && !env.rdv_le) env.rdv_le = bse.rdv_le;
+            if (bse.pris_par && !env.pris_par) { env.pris_par = bse.pris_par; env.pris_le = bse.pris_le; }
+            if (bse.lemlist_envoye && !env.lemlist_envoye) env.lemlist_envoye = true;
+            if (bse.sequence_auto && !env.sequence_auto) env.sequence_auto = bse.sequence_auto;
+            if (bse.concurrent_perdu && !env.concurrent_perdu) env.concurrent_perdu = bse.concurrent_perdu;
+            if (bse.score && !env.score) { env.score = bse.score; env.enrich = env.enrich || bse.enrich; env.gmb = env.gmb || bse.gmb; env.ia = env.ia || bse.ia; env.personas_fait = env.personas_fait || bse.personas_fait; }
+            if (Array.isArray(bse.contacts) && bse.contacts.length) {
+              if (!Array.isArray(env.contacts)) env.contacts = [];
+              const vusC = new Map(env.contacts.map(c => [normP2((c.prenom || '') + ' ' + (c.nom || '')), c]));
+              for (const cb of bse.contacts) {
+                const k2 = normP2((cb.prenom || '') + ' ' + (cb.nom || ''));
+                const ce = vusC.get(k2);
+                if (!ce) { env.contacts.push(cb); continue; }
+                if (cb.enrich) {
+                  if (!ce.enrich) ce.enrich = cb.enrich;
+                  else for (const f of ['email', 'telephone', 'linkedin']) if (cb.enrich[f] && !ce.enrich[f]) ce.enrich[f] = cb.enrich[f];
+                }
+              }
+            }
+            return env;
+          });
+          for (const eb of base) { const k = cleF2(eb); if (!clesEnv.has(k) && !clesSupp.has(k)) fusionN.push(eb); }
+          const statsMaj = calculerStatsListe(fusionN);
+          await sql`UPDATE listes SET entreprises = ${JSON.stringify(fusionN)}, total = ${fusionN.length}, stats = ${JSON.stringify(statsMaj)} WHERE id = ${lid}`;
         }
       }
       // Personas : mémoriser les postes ciblés dans les critères (bouton 👥 sur une liste sans postes)
