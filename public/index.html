@@ -2025,7 +2025,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v293';
+const VERSION='v294';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4430,6 +4430,7 @@ function contactHtml(c,i,j){
  const fonctionAff=(en&&en.fonction)||c.fonction||(prof&&prof.job_title)||'?';
  return `<div style="border-top:1px dashed var(--line);padding:10px 0 4px;margin-top:10px">
   ${c.signal?`<div class="contact-line" style="color:var(--danger);font-weight:700">🔥 ${c.signal.emoji||'💙'} ${c.signal.interaction||'a réagi'}${c.signal.concurrent?` sur un post <b>${c.signal.concurrent}</b>`:''}${c.signal.post?` <a href="${c.signal.post}" target="_blank" style="font-weight:600">→ voir le post</a>`:''}${c.signal.linkedin?` <a href="${c.signal.linkedin}" target="_blank" style="font-weight:600">→ voir le profil</a>`:''} · ${new Date(c.signal.date).toLocaleDateString('fr-FR')}</div>`:''}
+  ${(function(){var ent=(typeof REAL!=='undefined'&&REAL[i])||{};var a=c.signal?accrocheSig(c.signal):(ent.signal?accrocheSig(ent.signal):'');return a?`<div class="contact-line" style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:8px 10px;margin:6px 0;font-size:13px;line-height:1.45">🗣 <b>Accroche d'appel (tirée du post)&nbsp;:</b> ${escapeHtml(a)}</div>`:'';})()}
   <div class="contact-line" style="display:flex;align-items:center;gap:8px">${photo}<span><b>${(c.prenom+' '+c.nom).trim()}</b> — ${fonctionAff} <span class="badge b-gmb">${c.source}</span>${(prof&&prof.company_size)?` <span class="badge b-gmb" title="Taille d'entreprise (LinkedIn)">${prof.company_size}</span>`:''}</span></div>
   ${en?`
    ${en.email?`<div class="contact-line">✉️ <b>${en.email}</b> <a class="act act-call" style="padding:4px 10px;font-size:12px" href="mailto:${en.email}" title="Écrire un email">📧</a> <button class="act act-copy" style="padding:4px 10px;font-size:12px" onclick="navigator.clipboard.writeText('${en.email}');toast('Email copié ✓')" title="Copier l'adresse">📋</button>${en.email_qualification?` <span class="badge b-new">${en.email_qualification}</span>`:''}</div>`:'<div class="contact-line" style="color:var(--ink-soft)">✉️ Email non trouvé (Dropcontact) — repli FullEnrich à venir</div>'}
@@ -6038,6 +6039,12 @@ async function ajouterNoteFiche(i){
  }catch(_){ if(ta)ta.disabled=false; toast('Note non enregistrée'); }
 }
 var COUT_EMAIL_OPUS_EUR='0,01';
+function accrocheSig(s){ // accroche d'appel tirée du texte du post (champ dédié, ou 🗣 dans detail pour les fiches d'avant v294)
+ if(!s)return '';
+ if(s.accroche)return String(s.accroche);
+ var m=String(s.detail||'').match(/🗣\s*([\s\S]+)/);
+ return m?m[1].trim():'';
+}
 function sigLk(e){
  var s=(e.signal&&(e.signal.type==='linkedin'||e.signal.interaction||e.signal.concurrent||e.signal.post))?e.signal:null;
  if(!s){var cs=contactsDe(e)||[];for(var k=0;k<cs.length;k++){var g=cs[k]&&cs[k].signal;if(g&&(g.type==='linkedin'||g.interaction||g.concurrent||g.post)){s=g;break;}}}
@@ -6046,7 +6053,7 @@ function sigLk(e){
 function postSig(s){return (s&&s.post)?s.post:((s&&s.detail&&(String(s.detail).match(/https?:\/\/[^\s]+/)||[])[0])||'');}
 function concDuPost(u){if(!u)return '';var m=String(u).match(/\/posts\/([a-z0-9\-]+?)[_\/]/i)||String(u).match(/\/company\/([a-z0-9\-]+)/i);if(!m)return '';return m[1].replace(/-\d+$/,'').replace(/-/g,' ').trim().split(' ').map(function(w){return w.charAt(0).toUpperCase()+w.slice(1);}).join(' ');}
 function concSig(s){return (s&&s.concurrent)?s.concurrent:concDuPost(postSig(s));}
-function sigPourEmail(e){var s=sigLk(e);if(!s)return null;return {interaction:s.interaction||'',concurrent:concSig(s),post:postSig(s)};}
+function sigPourEmail(e){var s=sigLk(e);if(!s)return null;return {interaction:s.interaction||'',concurrent:concSig(s),post:postSig(s),accroche:accrocheSig(s)||''};}
 function produitConcurrent(nom){
  if(!nom)return null;
  var n=String(nom).toLowerCase().replace(/[^a-z]/g,'');

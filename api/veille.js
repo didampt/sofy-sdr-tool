@@ -214,6 +214,7 @@ export default async function handler(req, res) {
       // scientifiques, freelances/agences, profils tech/RH sont écartés (perte de temps SDR).
       // Les profils qui MATCHENT une liste en veille ne passent pas par le filtre (déjà nos cibles).
       let garderIA = null; // null = filtre indisponible → tout garder (comportement d'avant)
+      let socIA = {};      // indice → nom de société extrait de la tagline par l'IA (« Head of sales @ Axialys »)
       if (process.env.ANTHROPIC_API_KEY && nouveauxI.length) {
         try {
           const rIA = await fetch('https://api.anthropic.com/v1/messages', {
@@ -224,7 +225,7 @@ export default async function handler(req, res) {
               messages: [{ role: 'user', content: `Tu qualifies des profils LinkedIn ayant réagi à un post sur le marketing local / les avis clients. Nos produits (pilotage de fiches Google & avis, centralisation des conversations clients, campagnes SMS) ciblent les DÉCIDEURS — dirigeant, DG, gérant, directeur ou responsable marketing / communication / digital / commercial / relation client / réseau-franchise-retail — d'entreprises B2C : commerces, retail, franchises, restauration/CHR, automobile, beauté/santé, services locaux, grandes marques.
 À EXCLURE : étudiants et alternants (même en marketing), chercheurs/scientifiques, freelances/consultants/agences (growth, SEO, com...), profils RH/tech/finance/juridique, employés d'éditeurs de logiciels (concurrents ou non), et TOUT profil travaillant chez l'entreprise qui a publié le post${societePost ? ` (« ${societePost} »)` : ''}. EXCLURE AUSSI les profils institutionnels et corporate SANS points de vente : fédérations/syndicats professionnels (Medef, Apec, Syntec...), présidents d'associations/fondations, cabinets de conseil/audit/expertise, banque/assurance corporate, collectivités — notre cible a des BOUTIQUES, AGENCES ou CLIENTS GRAND PUBLIC. Fonction vide = GARDER ; fonction prestigieuse mais hors commerce B2C = EXCLURE.
 Profils : ${JSON.stringify(nouveauxI.map((p, i) => ({ i, nom: p.nom, fonction: (p.occupation || '').slice(0, 120) })))}
-${postTexte ? `Texte du post : «${postTexte.slice(0, 800)}»\n` : ''}Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"garder":[indices des profils à garder]${postTexte ? ',"accroche":"1 phrase d’ouverture d’appel pour le SDR, du type : J’ai vu que vous avez réagi au post de X sur [sujet]…"' : ''}}` }]
+${postTexte ? `Texte du post : «${postTexte.slice(0, 800)}»\n` : ''}Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"garder":[indices des profils à garder],"societes":{"<indice>":"nom de l'entreprise UNIQUEMENT si la fonction du profil la mentionne (ex : Head of sales @ Décathlon → Décathlon) — omets l'indice sinon, n'invente jamais"}${postTexte ? ',"accroche":"1 phrase d’ouverture d’appel pour le SDR, du type : J’ai vu que vous avez réagi au post de X sur [sujet]…"' : ''}}` }]
             })
           });
           const dIA = await rIA.json().catch(() => null);
@@ -233,6 +234,7 @@ ${postTexte ? `Texte du post : «${postTexte.slice(0, 800)}»\n` : ''}Réponds U
             const pIA = JSON.parse(brutIA.slice(brutIA.indexOf('{'), brutIA.lastIndexOf('}') + 1));
             if (Array.isArray(pIA.garder)) garderIA = new Set(pIA.garder.map(Number));
             if (pIA.accroche) resImp.accroche = String(pIA.accroche).slice(0, 220);
+            if (pIA.societes && typeof pIA.societes === 'object') socIA = pIA.societes;
           }
         } catch (_) {}
       }
@@ -246,9 +248,10 @@ ${postTexte ? `Texte du post : «${postTexte.slice(0, 800)}»\n` : ''}Réponds U
           if (garderIA && !garderIA.has(iP)) { resImp.exclus_ia++; continue; } // hors cible (filtre IA)
           const sigT = typerSignal(nomAgentI, p);
           const r2 = await ajouterHotLead({
-            nom_complet: p.nom, email: null, entreprise: extraireSociete(p.occupation),
+            nom_complet: p.nom, email: null,
+            entreprise: String(socIA[iP] || extraireSociete(p.occupation) || '').slice(0, 80) || null,
             linkedin_brut: p.brut || null, fonction: p.occupation || '',
-            source: nomAgentI, type: 'linkedin', post: postUrl,
+            source: nomAgentI, type: 'linkedin', post: postUrl, accroche: resImp.accroche || null,
             detail: `${sigT.emoji} ${p.nom} ${sigT.label} — ${source}${resImp.accroche ? '\n🗣 ' + resImp.accroche : ''}`
           }, cfgHL);
           if (r2.ajoute) {
@@ -266,7 +269,7 @@ ${postTexte ? `Texte du post : «${postTexte.slice(0, 800)}»\n` : ''}Réponds U
         const ents = aSauver.get(m.liste.id) || m.liste.entreprises;
         const e = ents[m.ei];
         e.signal_hot = true;
-        const sig = { type: 'linkedin', interaction: sigT.label, emoji: sigT.emoji, source: nomAgentI, detail: detail + (resImp.accroche ? '\n🗣 ' + resImp.accroche : ''), post: postUrl || source, linkedin: p.brut || '', date: new Date().toISOString() };
+        const sig = { type: 'linkedin', interaction: sigT.label, emoji: sigT.emoji, source: nomAgentI, detail: detail + (resImp.accroche ? '\n🗣 ' + resImp.accroche : ''), accroche: resImp.accroche || null, post: postUrl || source, linkedin: p.brut || '', date: new Date().toISOString() };
         if (m.ci >= 0 && e.contacts && e.contacts[m.ci]) e.contacts[m.ci].signal = sig;
         else e.signal = sig;
         aSauver.set(m.liste.id, ents);

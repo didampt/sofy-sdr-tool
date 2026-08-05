@@ -23,14 +23,17 @@ export default async function handler(req, res) {
 
   // Signal LinkedIn (like / commentaire sur un post concurrent ou Sofy) -> accroche n°1 de l'email
   let blocSignal = '';
-  if (signal && (signal.interaction || signal.concurrent)) {
+  if (signal && (signal.interaction || signal.concurrent || signal.accroche)) {
     const conc = signal.concurrent || '';
     const inter = signal.interaction || 'a interagi avec';
     const estSofy = /sofy/i.test(conc);
     const consigne = estSofy
       ? 'C\'est NOTRE publication (Sofy). Ouvre l\'email en rebondissant dessus avec finesse, ex : "J\'ai vu que vous aviez aime notre publication sur ...".'
       : '"' + conc + '" est un concurrent de Sofy. Ouvre l\'email en le mentionnant, ex : "J\'ai vu que vous avez like le post de ' + conc + ', qui parle de ...", puis enchaine sur le besoin que ' + conc + ' adresse. Deduis le domaine de ' + conc + ' (avis Google & visibilite locale / messagerie & relation client / SMS-RCS) et oriente vers le module Sofy correspondant.';
-    blocSignal = '\n\nSIGNAL LINKEDIN — C\'EST L\'ACCROCHE N°1 DE L\'EMAIL :\nLe lead ' + inter + ' un post de "' + (conc || 'un acteur du secteur') + '" sur LinkedIn.\n' + consigne + '\nTu n\'as PAS le texte du post : reste sur le theme de ' + (conc || 'ce post') + ', n\'invente pas de citation.';
+    blocSignal = '\n\nSIGNAL LINKEDIN — C\'EST L\'ACCROCHE N°1 DE L\'EMAIL :\nLe lead ' + inter + ' un post de "' + (conc || 'un acteur du secteur') + '" sur LinkedIn.\n' + consigne;
+    blocSignal += signal.accroche
+      ? '\nTheme du post (fiable, deduit de son texte reel) — accroche telephonique deja preparee : « ' + String(signal.accroche).slice(0, 220) + ' ». Reprends ce THEME dans l\'ouverture de l\'email (reformule, ne recopie pas la phrase telle quelle).'
+      : '\nTu n\'as PAS le texte du post : reste sur le theme de ' + (conc || 'ce post') + ', n\'invente pas de citation.';
   }
 
   const prompt = `Tu es le meilleur copywriter commercial de Sofy (sofy.fr). Tu ecris un email de prospection B2B ultra-percutant, accrocheur et personnalise.
