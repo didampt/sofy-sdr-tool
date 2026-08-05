@@ -196,7 +196,7 @@ export default async function handler(req, res) {
       const cfgRowsC = await sql`SELECT valeur FROM config WHERE cle = 'concurrents'`;
       const cfgC = cfgRowsC.length ? cfgRowsC[0].valeur : {};
       const CONCS = [...(cfgC.soview || []), ...(cfgC.soconnect || []), ...(cfgC.soreach || [])].map(c => String(c).toLowerCase().trim()).filter(Boolean);
-      const CONCS_DEF = CONCS.length ? CONCS : ['partoo', 'brevo', 'guest suite', 'guestsuite', 'simio'];
+      const CONCS_DEF = CONCS.length ? CONCS : ['partoo', 'brevo', 'guest suite', 'guestsuite', 'simio', 'malou'];
       const nomAgentI = 'Import — ' + source;
       const resImp = { ok: true, importes: profilsImp.length, nouveaux: nouveauxI.length, matches: 0, hotleads: 0 };
       for (const p of nouveauxI) {
@@ -302,7 +302,7 @@ export default async function handler(req, res) {
       const CONCURRENTS = [
         ...(cfgC.soview || []), ...(cfgC.soconnect || []), ...(cfgC.soreach || [])
       ].map(c => String(c).toLowerCase().trim()).filter(Boolean);
-      const CONCURRENTS_DEF = CONCURRENTS.length ? CONCURRENTS : ['partoo', 'brevo', 'guest suite', 'guestsuite', 'simio'];
+      const CONCURRENTS_DEF = CONCURRENTS.length ? CONCURRENTS : ['partoo', 'brevo', 'guest suite', 'guestsuite', 'simio', 'malou'];
 
       for (const p of nouveaux) {
         const m = (p.url && index.get(p.url)) || (p.nomNorm && indexNoms.get(p.nomNorm));

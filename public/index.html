@@ -1193,7 +1193,7 @@ Spot-Hit</textarea>
             <input class="field" id="imp-lk-source" placeholder="Source (ex : Post Partoo du 05/08 — avis clients)" style="width:100%;margin-bottom:8px">
             <textarea class="field" id="imp-lk-texte" rows="9" placeholder="Colle ici la liste copiée depuis la fenêtre des réactions…&#10;(ou le JSON produit par le mini-extracteur ci-dessous)" style="width:100%;font-size:12.5px"></textarea>
             <details style="margin-top:8px;font-size:12px;color:var(--ink-soft)"><summary style="cursor:pointer">🧰 Mini-extracteur (grosses listes) : à coller dans la console Chrome, fenêtre des réactions ouverte</summary>
-            <pre style="background:var(--paper);border-radius:8px;padding:10px;overflow-x:auto;font-size:11px;user-select:all">copy(JSON.stringify(Object.values([...document.querySelectorAll('a[href*="/in/"]')].reduce((m,a)=>{const url=a.href.split('?')[0];const nom=(a.innerText||'').split('\n').map(s=>s.trim()).filter(Boolean)[0]||'';if(nom.length>2&&nom.length<60&&!m[url])m[url]={nom,url};return m;},{}))));'✅ copié — colle dans Sofy Scrap'</pre>
+            <pre style="background:var(--paper);border-radius:8px;padding:10px;overflow-x:auto;font-size:11px;user-select:all">copy(JSON.stringify(Object.values([...(document.querySelector('[role="dialog"]')||document.querySelector('.artdeco-modal')||{querySelectorAll:()=>[]}).querySelectorAll('a[href*="/in/"]')].reduce((m,a)=>{const url=a.href.split('?')[0];const nom=(a.innerText||'').split('\n').map(s=>s.trim()).filter(Boolean)[0]||'';if(nom.length>2&&nom.length<60&&!m[url])m[url]={nom,url};return m;},{}))));'✅ copié — colle dans Sofy Scrap'</pre>
             <div>Fais défiler la liste des réactions jusqu'en bas AVANT de lancer l'extracteur, puis colle le résultat dans le champ ci-dessus.</div></details>
             <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
               <button class="btn" style="background:var(--paper)" onclick="document.getElementById('import-likers-modal').style.display='none'">Annuler</button>
@@ -1998,7 +1998,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v288';
+const VERSION='v289';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
