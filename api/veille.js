@@ -109,9 +109,11 @@ export default async function handler(req, res) {
   if (!sql) return res.status(500).json({ erreur: 'Base de données non configurée' });
   await ensureSchema();
 
-  // Accès : cron Vercel (Bearer CRON_SECRET) OU superadmin connecté (bouton "Tester la veille")
+  // Accès : cron Vercel (en-tête x-vercel-cron natif, comme tous les autres crons — l'ancien
+  // Bearer CRON_SECRET exigeait une variable absente : 401 silencieux toutes les 6 h, veille
+  // jamais exécutée automatiquement) OU superadmin connecté (bouton "Tester la veille")
   const auth = req.headers.authorization || '';
-  const estCron = process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`;
+  const estCron = !!req.headers['x-vercel-cron'] || (process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`);
   const user = verifierToken(req);
   if (!estCron && (!user || user.role !== 'superadmin')) {
     return res.status(401).json({ erreur: 'Réservé au cron ou au superadmin' });
