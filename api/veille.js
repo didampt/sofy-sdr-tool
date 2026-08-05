@@ -208,6 +208,21 @@ export default async function handler(req, res) {
       // propre post, ce ne sont jamais des leads (cas Hugues Cohen @ Malou, 05/08).
       const societePost = extraireConcurrent(postUrl || source).toLowerCase().trim();
       const exclusEmployeurs = societePost && societePost.length >= 3 ? [...CONCS_DEF, societePost] : CONCS_DEF;
+      // Module Sofy face à l'auteur du post (config concurrents, repli mots-clés) → oriente l'accroche :
+      // un post SMS Partner doit amener vers SoReach, pas vers les avis Google (cas relevé le 05/08).
+      const MODULES_CONC = { soview: 'Soview (fiches Google, avis clients, visibilité locale)', soconnect: 'SoConnect (messagerie & relation client omnicanale)', soreach: 'SoReach (campagnes SMS/RCS)' };
+      const normC = s => String(s || '').toLowerCase().replace(/[\s\-]/g, '');
+      const socN = normC(societePost);
+      let moduleDuPost = null;
+      if (socN) {
+        for (const k of ['soview', 'soconnect', 'soreach']) {
+          if ((cfgC[k] || []).some(c => { const n = normC(c); return n.length >= 3 && (socN.includes(n) || n.includes(socN)); })) { moduleDuPost = k; break; }
+        }
+        if (!moduleDuPost) {
+          if (/sms|rcs|message/.test(socN)) moduleDuPost = 'soreach';
+          else if (/avis|review|local|presence/.test(socN)) moduleDuPost = 'soview';
+        }
+      }
       const resImp = { ok: true, importes: profilsImp.length, nouveaux: nouveauxI.length, matches: 0, hotleads: 0, exclus_ia: 0, exclus_employeur: 0, societe_du_post: societePost || null,
         detail: { hotleads: [], matches: [], exclus: [], deja_vus: forcerI ? [] : profilsImp.filter(p => dejaVusI.has(p.cle)).map(p => p.nom) } };
 
@@ -227,7 +242,7 @@ export default async function handler(req, res) {
               messages: [{ role: 'user', content: `Tu qualifies des profils LinkedIn ayant réagi à un post sur le marketing local / les avis clients. Nos produits (pilotage de fiches Google & avis, centralisation des conversations clients, campagnes SMS) ciblent les DÉCIDEURS — dirigeant, DG, gérant, directeur ou responsable marketing / communication / digital / commercial / relation client / réseau-franchise-retail — d'entreprises B2C : commerces, retail, franchises, restauration/CHR, automobile, beauté/santé, services locaux, grandes marques.
 À EXCLURE : étudiants et alternants (même en marketing), chercheurs/scientifiques, freelances/consultants/agences (growth, SEO, com...), profils RH/tech/finance/juridique, employés d'éditeurs de logiciels (concurrents ou non), et TOUT profil travaillant chez l'entreprise qui a publié le post${societePost ? ` (« ${societePost} »)` : ''}. EXCLURE AUSSI les profils institutionnels et corporate SANS points de vente : fédérations/syndicats professionnels (Medef, Apec, Syntec...), présidents d'associations/fondations, cabinets de conseil/audit/expertise, banque/assurance corporate, collectivités — notre cible a des BOUTIQUES, AGENCES ou CLIENTS GRAND PUBLIC. Fonction vide = GARDER ; fonction prestigieuse mais hors commerce B2C = EXCLURE. Tagline en simple liste de mots-clés d'un secteur B2C (ex : « Food Tech Expert | E-Commerce | Marketing Digital ») SANS employeur identifiable et SANS marqueur explicite freelance/agence/consultant = AMBIGUË → GARDER, le SDR tranchera.
 Profils : ${JSON.stringify(nouveauxI.map((p, i) => ({ i, nom: p.nom, fonction: (p.occupation || '').slice(0, 120) })))}
-${postTexte ? `Texte du post : «${postTexte.slice(0, 800)}»\n` : ''}Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"garder":[indices des profils à garder],"societes":{"<indice>":"nom de l'entreprise UNIQUEMENT si la fonction du profil la mentionne (ex : Head of sales @ Décathlon → Décathlon) — omets l'indice sinon, n'invente jamais"}${postTexte ? ',"accroche":"1 phrase d’ouverture d’appel pour le SDR, du type : J’ai vu que vous avez réagi au post de X sur [sujet]…"' : ''}}` }]
+${postTexte ? `Texte du post (publié par « ${societePost || 'inconnu'} »${moduleDuPost ? `, concurrent de notre module ${MODULES_CONC[moduleDuPost]}` : ''}) : «${postTexte.slice(0, 800)}»\n` : ''}Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"garder":[indices des profils à garder],"societes":{"<indice>":"nom de l'entreprise UNIQUEMENT si la fonction du profil la mentionne (ex : Head of sales @ Décathlon → Décathlon) — omets l'indice sinon, n'invente jamais"}${postTexte ? `,"accroche":"1 phrase d’ouverture d’appel pour le SDR : « J’ai vu que vous avez réagi au post de ${societePost || 'X'} sur [le sujet RÉEL du texte ci-dessus — INTERDICTION d’évoquer un thème absent du post] », puis un pont naturel vers ${moduleDuPost ? 'notre terrain : ' + MODULES_CONC[moduleDuPost] : 'le module Sofy le plus proche du sujet du post (Soview=avis Google/visibilité locale, SoConnect=messagerie client, SoReach=SMS/RCS)'}"` : ''}}` }]
             })
           });
           const dIA = await rIA.json().catch(() => null);
