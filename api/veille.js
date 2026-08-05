@@ -198,7 +198,12 @@ export default async function handler(req, res) {
       const CONCS = [...(cfgC.soview || []), ...(cfgC.soconnect || []), ...(cfgC.soreach || [])].map(c => String(c).toLowerCase().trim()).filter(Boolean);
       const CONCS_DEF = CONCS.length ? CONCS : ['partoo', 'brevo', 'guest suite', 'guestsuite', 'simio', 'malou'];
       const nomAgentI = 'Import — ' + source;
-      const resImp = { ok: true, importes: profilsImp.length, nouveaux: nouveauxI.length, matches: 0, hotleads: 0, exclus_ia: 0 };
+      // Employés de l'entreprise AUTEURE du post (dérivée de l'URL : /posts/malou_… → « Malou ») :
+      // exclus même si elle n'est pas dans la liste des concurrents — ses salariés likent leur
+      // propre post, ce ne sont jamais des leads (cas Hugues Cohen @ Malou, 05/08).
+      const societePost = extraireConcurrent(source).toLowerCase().trim();
+      const exclusEmployeurs = societePost && societePost.length >= 3 ? [...CONCS_DEF, societePost] : CONCS_DEF;
+      const resImp = { ok: true, importes: profilsImp.length, nouveaux: nouveauxI.length, matches: 0, hotleads: 0, exclus_ia: 0, exclus_employeur: 0, societe_du_post: societePost || null };
 
       // ── Filtre IA en amont (demande Didier 05/08) : seuls les profils DANS LA CIBLE deviennent
       // des hot leads (décideurs marketing/commercial/direction d'entreprises B2C) — les étudiants,
@@ -213,7 +218,7 @@ export default async function handler(req, res) {
             body: JSON.stringify({
               model: 'claude-sonnet-4-6', max_tokens: 800,
               messages: [{ role: 'user', content: `Tu qualifies des profils LinkedIn ayant réagi à un post sur le marketing local / les avis clients. Nos produits (pilotage de fiches Google & avis, centralisation des conversations clients, campagnes SMS) ciblent les DÉCIDEURS — dirigeant, DG, gérant, directeur ou responsable marketing / communication / digital / commercial / relation client / réseau-franchise-retail — d'entreprises B2C : commerces, retail, franchises, restauration/CHR, automobile, beauté/santé, services locaux, grandes marques.
-À EXCLURE : étudiants et alternants (même en marketing), chercheurs/scientifiques, freelances/consultants/agences (growth, SEO, com...), profils RH/tech/finance/juridique, employés d'éditeurs de logiciels (concurrents ou non). Fonction vide ou ambiguë = GARDER (le doute profite au SDR).
+À EXCLURE : étudiants et alternants (même en marketing), chercheurs/scientifiques, freelances/consultants/agences (growth, SEO, com...), profils RH/tech/finance/juridique, employés d'éditeurs de logiciels (concurrents ou non)${source ? `, et TOUT profil travaillant chez « ${source.replace(/https?:\/\/\S+/g, '').trim() || 'l’entreprise auteure du post'} » ou chez l'entreprise qui a publié le post (${source.slice(0, 120)})` : ''}. Fonction vide ou ambiguë = GARDER (le doute profite au SDR).
 Profils : ${JSON.stringify(nouveauxI.map((p, i) => ({ i, nom: p.nom, fonction: (p.occupation || '').slice(0, 120) })))}
 Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"garder":[indices des profils à garder]}` }]
             })
@@ -232,7 +237,7 @@ Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"garder":[indices d
         const m = (p.url && index.get(p.url)) || (p.nomNorm && indexNoms.get(p.nomNorm));
         if (!m) {
           if (cfgHL.actif === false || !p.nom) continue;
-          if (CONCS_DEF.some(c => (p.occupation || '').toLowerCase().includes(c))) continue;
+          if (exclusEmployeurs.some(c => (p.occupation || '').toLowerCase().includes(c))) { resImp.exclus_employeur++; continue; }
           if (garderIA && !garderIA.has(iP)) { resImp.exclus_ia++; continue; } // hors cible (filtre IA)
           const sigT = typerSignal(nomAgentI, p);
           const r2 = await ajouterHotLead({
