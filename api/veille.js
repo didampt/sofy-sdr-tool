@@ -190,10 +190,11 @@ export default async function handler(req, res) {
 
       const etatI = await sql`SELECT deja_vus FROM veille_etat WHERE cle = 'import'`;
       const dejaVusI = new Set(etatI.length ? etatI[0].deja_vus : []);
-      const nouveauxI = profilsImp.filter(p => !dejaVusI.has(p.cle));
-      const tousI = [...new Set([...dejaVusI, ...profilsImp.map(p => p.cle)])].slice(-5000);
-      await sql`INSERT INTO veille_etat (cle, deja_vus, maj) VALUES ('import', ${JSON.stringify(tousI)}, NOW())
-                ON CONFLICT (cle) DO UPDATE SET deja_vus = ${JSON.stringify(tousI)}, maj = NOW()`;
+      const forcerI = req.body && req.body.forcer === true; // ♻️ repêchage : ré-analyse aussi les déjà vus
+      const nouveauxI = forcerI ? profilsImp : profilsImp.filter(p => !dejaVusI.has(p.cle));
+      // Seuls les profils GARDÉS (hot lead créé/déjà présent, ou match liste en veille) sont marqués
+      // « vus » — les exclus du filtre restent repêchables si le filtre s'améliore (cas Justine T., 05/08).
+      const clesVuesI = [];
 
       const cfgRowsHL = await sql`SELECT valeur FROM config WHERE cle = 'hotleads'`;
       const cfgHL = cfgRowsHL.length ? cfgRowsHL[0].valeur : {};
@@ -207,7 +208,8 @@ export default async function handler(req, res) {
       // propre post, ce ne sont jamais des leads (cas Hugues Cohen @ Malou, 05/08).
       const societePost = extraireConcurrent(postUrl || source).toLowerCase().trim();
       const exclusEmployeurs = societePost && societePost.length >= 3 ? [...CONCS_DEF, societePost] : CONCS_DEF;
-      const resImp = { ok: true, importes: profilsImp.length, nouveaux: nouveauxI.length, matches: 0, hotleads: 0, exclus_ia: 0, exclus_employeur: 0, societe_du_post: societePost || null };
+      const resImp = { ok: true, importes: profilsImp.length, nouveaux: nouveauxI.length, matches: 0, hotleads: 0, exclus_ia: 0, exclus_employeur: 0, societe_du_post: societePost || null,
+        detail: { hotleads: [], matches: [], exclus: [], deja_vus: forcerI ? [] : profilsImp.filter(p => dejaVusI.has(p.cle)).map(p => p.nom) } };
 
       // ── Filtre IA en amont (demande Didier 05/08) : seuls les profils DANS LA CIBLE deviennent
       // des hot leads (décideurs marketing/commercial/direction d'entreprises B2C) — les étudiants,
@@ -244,8 +246,9 @@ ${postTexte ? `Texte du post : «${postTexte.slice(0, 800)}»\n` : ''}Réponds U
         const m = (p.url && index.get(p.url)) || (p.nomNorm && indexNoms.get(p.nomNorm));
         if (!m) {
           if (cfgHL.actif === false || !p.nom) continue;
-          if (exclusEmployeurs.some(c => (p.occupation || '').toLowerCase().includes(c))) { resImp.exclus_employeur++; continue; }
-          if (garderIA && !garderIA.has(iP)) { resImp.exclus_ia++; continue; } // hors cible (filtre IA)
+          const empl = exclusEmployeurs.find(c => (p.occupation || '').toLowerCase().includes(c));
+          if (empl) { resImp.exclus_employeur++; resImp.detail.exclus.push({ nom: p.nom, raison: 'employé « ' + empl + ' »' }); continue; }
+          if (garderIA && !garderIA.has(iP)) { resImp.exclus_ia++; resImp.detail.exclus.push({ nom: p.nom, raison: 'hors cible (filtre IA)' + (p.occupation ? ' — ' + p.occupation.slice(0, 60) : '') }); continue; }
           const sigT = typerSignal(nomAgentI, p);
           const r2 = await ajouterHotLead({
             nom_complet: p.nom, email: null,
@@ -254,14 +257,20 @@ ${postTexte ? `Texte du post : «${postTexte.slice(0, 800)}»\n` : ''}Réponds U
             source: nomAgentI, type: 'linkedin', post: postUrl, accroche: resImp.accroche || null,
             detail: `${sigT.emoji} ${p.nom} ${sigT.label} — ${source}${resImp.accroche ? '\n🗣 ' + resImp.accroche : ''}`
           }, cfgHL);
+          clesVuesI.push(p.cle);
           if (r2.ajoute) {
             resImp.hotleads++;
+            resImp.detail.hotleads.push(p.nom);
             const lienFiche = `${(process.env.APP_URL || 'https://sofy-sdr-tool.vercel.app').replace(/\/$/, '')}/?liste=${r2.liste_id}&fiche=${encodeURIComponent(r2.cle_fiche || '')}`;
             await envoyerSlack(`🔥 *Nouveau Hot Lead* (LinkedIn) — ${p.nom}${p.occupation ? ' · ' + p.occupation.slice(0, 70) : ''}\n${sigT.emoji} ${sigT.label} — ${source}\n📂 <${lienFiche}|Ouvrir la fiche dans Sofy Scrap>`);
+          } else {
+            resImp.detail.deja_vus.push(p.nom + ' (' + (r2.raison || 'déjà en Hot Leads') + ')');
           }
           continue;
         }
         resImp.matches++;
+        resImp.detail.matches.push(p.nom || m.contact || '');
+        clesVuesI.push(p.cle);
         const sigT = typerSignal(nomAgentI, p);
         const detail = `${sigT.emoji} ${p.nom || m.contact} ${sigT.label} — ${source}${p.occupation ? ' · ' + p.occupation.slice(0, 80) : ''}`;
         await sql`INSERT INTO signaux (liste_id, entreprise_nom, contact_nom, linkedin, type, source, detail, sdr)
@@ -278,6 +287,9 @@ ${postTexte ? `Texte du post : «${postTexte.slice(0, 800)}»\n` : ''}Réponds U
       for (const [listeId, ents] of aSauver) {
         await sql`UPDATE listes SET entreprises = ${JSON.stringify(ents)} WHERE id = ${listeId}`;
       }
+      const tousI = [...new Set([...dejaVusI, ...clesVuesI])].slice(-5000);
+      await sql`INSERT INTO veille_etat (cle, deja_vus, maj) VALUES ('import', ${JSON.stringify(tousI)}, NOW())
+                ON CONFLICT (cle) DO UPDATE SET deja_vus = ${JSON.stringify(tousI)}, maj = NOW()`;
       return res.status(200).json(resImp);
     }
 
