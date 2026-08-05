@@ -121,8 +121,9 @@ export default async function handler(req, res) {
 
   const pbKey = process.env.PHANTOMBUSTER_API_KEY;
   const agentIds = (process.env.PHANTOMBUSTER_AGENT_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
-  if (!pbKey || !agentIds.length) {
-    return res.status(200).json({ ok: false, message: 'PHANTOMBUSTER_API_KEY ou PHANTOMBUSTER_AGENT_IDS manquante — veille inactive' });
+  // L'import manuel (POST) fonctionne SANS PhantomBuster — la garde ne bloque que le chemin cron
+  if (req.method !== 'POST' && (!pbKey || !agentIds.length)) {
+    return res.status(200).json({ ok: false, message: 'PHANTOMBUSTER_API_KEY ou PHANTOMBUSTER_AGENT_IDS manquante — veille PB inactive (l’import manuel reste disponible)' });
   }
 
   try {
@@ -148,6 +149,94 @@ export default async function handler(req, res) {
 
     const resume = { agents: 0, nouveaux: 0, matches: 0, listes_en_veille: listes.length };
     const aSauver = new Map(); // liste_id → entreprises modifiées
+
+    // ══ MODE IMPORT MANUEL (POST — remplaçant de PhantomBuster, 05/08) ══
+    // Le superadmin colle les likers d'un post (le sien OU un post concurrent) : texte brut
+    // copié depuis la fenêtre des réactions LinkedIn, ou JSON [{nom,url,occupation}] produit
+    // par le mini-extracteur console. Même pipeline : dédup (veille_etat 'import'), croisement
+    // par URL/nom, signal 🔥 + Slack, non-matchés → Hot Leads. Alerte dès le 1er import.
+    if (req.method === 'POST') {
+      if (!user || user.role !== 'superadmin') return res.status(401).json({ erreur: 'Import réservé au superadmin' });
+      const body = req.body || {};
+      const source = String(body.source || 'likers importés').slice(0, 80);
+      let arr = Array.isArray(body.profils) ? body.profils : null;
+      const txt = String(body.texte || '').trim();
+      if (!arr && txt.startsWith('[')) { try { arr = JSON.parse(txt); } catch (_) {} }
+      if (!arr) {
+        arr = [];
+        const lignes = txt.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+        const bruit = /^(voir le profil|se connecter|suivre|message|réagir|réactions?|j['’]aime|celebrate|love|insightful|funny|support|premium|membre de linkedin|statut|toutes?|tous|et \d+|plus|\d+([ .]\d+)*)$/i;
+        const ressembleFonction = /(chez|at |@| [-–|] |direct(eur|rice)|responsable|manager|g[ée]rant|ceo|founder|fondat|consultant|commercial|marketing|dirigeant|pr[ée]sident|charg[ée])/i;
+        for (let i = 0; i < lignes.length; i++) {
+          const l = lignes[i].replace(/\s*·.*$/, '').replace(/\s*(1er|2e|3e\+?)\s*$/i, '').trim();
+          if (!l || l.length < 4 || l.length > 60 || bruit.test(l) || ressembleFonction.test(l)) continue;
+          const mots = l.split(/\s+/);
+          if (mots.length < 2 || mots.length > 5) continue;
+          const next = lignes[i + 1] || '';
+          arr.push({ nom: l, occupation: ressembleFonction.test(next) ? next.slice(0, 120) : '' });
+        }
+      }
+      const profilsImp = (arr || []).map(p => {
+        const brut = p.url || p.linkedin || null;
+        const url = normaliserLinkedin(brut);
+        const nom = String(p.nom || '').replace(/\s*·.*$/, '').trim();
+        return { cle: url || normaliserNom(nom), url, nom, nomNorm: normaliserNom(nom), occupation: p.occupation || '', post: source, brut };
+      }).filter(p => p.cle && p.nom && p.nomNorm.includes(' '));
+      if (!profilsImp.length) return res.status(400).json({ erreur: 'Aucun profil reconnu dans le texte collé — copie la liste depuis la fenêtre des réactions LinkedIn (noms + fonctions)' });
+
+      const etatI = await sql`SELECT deja_vus FROM veille_etat WHERE cle = 'import'`;
+      const dejaVusI = new Set(etatI.length ? etatI[0].deja_vus : []);
+      const nouveauxI = profilsImp.filter(p => !dejaVusI.has(p.cle));
+      const tousI = [...new Set([...dejaVusI, ...profilsImp.map(p => p.cle)])].slice(-5000);
+      await sql`INSERT INTO veille_etat (cle, deja_vus, maj) VALUES ('import', ${JSON.stringify(tousI)}, NOW())
+                ON CONFLICT (cle) DO UPDATE SET deja_vus = ${JSON.stringify(tousI)}, maj = NOW()`;
+
+      const cfgRowsHL = await sql`SELECT valeur FROM config WHERE cle = 'hotleads'`;
+      const cfgHL = cfgRowsHL.length ? cfgRowsHL[0].valeur : {};
+      const cfgRowsC = await sql`SELECT valeur FROM config WHERE cle = 'concurrents'`;
+      const cfgC = cfgRowsC.length ? cfgRowsC[0].valeur : {};
+      const CONCS = [...(cfgC.soview || []), ...(cfgC.soconnect || []), ...(cfgC.soreach || [])].map(c => String(c).toLowerCase().trim()).filter(Boolean);
+      const CONCS_DEF = CONCS.length ? CONCS : ['partoo', 'brevo', 'guest suite', 'guestsuite', 'simio'];
+      const nomAgentI = 'Import — ' + source;
+      const resImp = { ok: true, importes: profilsImp.length, nouveaux: nouveauxI.length, matches: 0, hotleads: 0 };
+      for (const p of nouveauxI) {
+        const m = (p.url && index.get(p.url)) || (p.nomNorm && indexNoms.get(p.nomNorm));
+        if (!m) {
+          if (cfgHL.actif === false || !p.nom) continue;
+          if (CONCS_DEF.some(c => (p.occupation || '').toLowerCase().includes(c))) continue;
+          const sigT = typerSignal(nomAgentI, p);
+          const r2 = await ajouterHotLead({
+            nom_complet: p.nom, email: null, entreprise: extraireSociete(p.occupation),
+            linkedin_brut: p.brut || null, fonction: p.occupation || '',
+            source: nomAgentI, type: 'linkedin',
+            detail: `${sigT.emoji} ${p.nom} ${sigT.label} — ${source}`
+          }, cfgHL);
+          if (r2.ajoute) {
+            resImp.hotleads++;
+            const lienFiche = `${(process.env.APP_URL || 'https://sofy-sdr-tool.vercel.app').replace(/\/$/, '')}/?liste=${r2.liste_id}&fiche=${encodeURIComponent(r2.cle_fiche || '')}`;
+            await envoyerSlack(`🔥 *Nouveau Hot Lead* (LinkedIn) — ${p.nom}${p.occupation ? ' · ' + p.occupation.slice(0, 70) : ''}\n${sigT.emoji} ${sigT.label} — ${source}\n📂 <${lienFiche}|Ouvrir la fiche dans Sofy Scrap>`);
+          }
+          continue;
+        }
+        resImp.matches++;
+        const sigT = typerSignal(nomAgentI, p);
+        const detail = `${sigT.emoji} ${p.nom || m.contact} ${sigT.label} — ${source}${p.occupation ? ' · ' + p.occupation.slice(0, 80) : ''}`;
+        await sql`INSERT INTO signaux (liste_id, entreprise_nom, contact_nom, linkedin, type, source, detail, sdr)
+          VALUES (${m.liste.id}, ${m.entreprise}, ${m.contact || p.nom}, ${p.brut}, 'linkedin', ${nomAgentI}, ${detail}, ${m.liste.sdr})`;
+        const ents = aSauver.get(m.liste.id) || m.liste.entreprises;
+        const e = ents[m.ei];
+        e.signal_hot = true;
+        const sig = { type: 'linkedin', interaction: sigT.label, emoji: sigT.emoji, source: nomAgentI, detail, post: source, linkedin: p.brut || '', date: new Date().toISOString() };
+        if (m.ci >= 0 && e.contacts && e.contacts[m.ci]) e.contacts[m.ci].signal = sig;
+        else e.signal = sig;
+        aSauver.set(m.liste.id, ents);
+        await envoyerSlack(`${sigT.emoji} *Signal LinkedIn* — ${m.contact || p.nom} (${m.entreprise})\n${sigT.label} — ${source}\nListe « ${m.liste.nom} » · SDR *${m.liste.sdr}*`);
+      }
+      for (const [listeId, ents] of aSauver) {
+        await sql`UPDATE listes SET entreprises = ${JSON.stringify(ents)} WHERE id = ${listeId}`;
+      }
+      return res.status(200).json(resImp);
+    }
 
     // ── 2. Chaque Phantom : résultat → diff → match ──
     for (const agentId of agentIds) {
