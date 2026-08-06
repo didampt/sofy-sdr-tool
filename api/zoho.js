@@ -148,7 +148,9 @@ export default async function handler(req, res) {
       total_facture: Math.round(facture * 100) / 100,   // émis sur la période (payé ou non)
       total_encaisse: Math.round(encaisse * 100) / 100, // réellement payé (total − solde)
       nb_factures: factures.length,
-      factures: factures.slice(0, 200)
+      // ⚠️ plafond large : à 200, les factures de début de fenêtre sortaient de la liste dès que la
+      // fenêtre dépassait le mois (rapprochement ventes perdait Somarec & co, 06/08)
+      factures: factures.slice(0, 1000)
     });
   } catch (e) {
     return res.status(500).json({ erreur: 'Zoho', detail: String((e && e.message) || e).slice(0, 300) });

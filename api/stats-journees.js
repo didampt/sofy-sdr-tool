@@ -162,10 +162,18 @@ export default async function handler(req, res) {
     let statueesLive = 0, prevStatuees = 0, prevRdv = 0;
     const pDuT = new Date(pDu + 'T00:00:00Z').getTime() - 2 * 3600 * 1000;
     const pAuT = new Date(pAu + 'T23:59:59Z').getTime() + 2 * 3600 * 1000;
+    // 🎣 Attribution : entreprise (nom normalisé) → SDR qui a posé le statut RDV, TOUTES dates
+    // confondues — sert au front pour rattacher une vente HubSpot à son sourceur.
+    const rdvSourceurs = {};
+    const normSrc = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
     try {
       const ls = await sql`SELECT id, entreprises FROM listes WHERE criteres->>'auto' IS DISTINCT FROM 'hotleads'`;
       for (const l of ls) for (const e of (Array.isArray(l.entreprises) ? l.entreprises : [])) {
         const statut = (e.tags_sdr || [])[0] || e.statut_appel || null;
+        if (statut && statut.indexOf('RDV') >= 0 && e.traite_par) {
+          const nomS = normSrc(e.enseigne_ia || e.enseigne || e.nom);
+          if (nomS && nomS.length >= 3 && !rdvSourceurs[nomS]) rdvSourceurs[nomS] = e.traite_par;
+        }
         if (statut && e.traite_le) {
           // RDV : date de PRISE (rdv_le, figée) prioritaire sur traite_le (écrasé au re-statut)
           const t = new Date((statut.indexOf('RDV') >= 0 && e.rdv_le) ? e.rdv_le : e.traite_le).getTime();
@@ -229,7 +237,7 @@ export default async function handler(req, res) {
       },
       graphe, entonnoir, concurrents, objectifs,
       precedent, coach, coach_global: coachGlobal, quota, couts, spark, spark_cout: sparkCout,
-      rdv_details: rdvDetails.slice(0, 100), speed
+      rdv_details: rdvDetails.slice(0, 100), rdv_sourceurs: rdvSourceurs, speed
     });
   } catch (e) {
     return res.status(500).json({ erreur: 'Erreur serveur', detail: e.message });
