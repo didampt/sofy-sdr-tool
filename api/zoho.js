@@ -89,6 +89,21 @@ export default async function handler(req, res) {
     const { token, cfg } = await accessToken();
     const orgId = cfg.organization_id;
 
+    // ── Choix de l'organisation (comptes Zoho multi-orgs : le setup prend la 1re par défaut) ──
+    if (q.orgs) {
+      const d = await zGet('/organizations', token, null);
+      return res.status(200).json({ ok: true, active: cfg.organization_id,
+        organisations: (d.organizations || []).map(o => ({ organization_id: o.organization_id, nom: o.name })) });
+    }
+    if (q.org) {
+      if (user.role !== 'superadmin') return res.status(403).json({ erreur: 'Réservé superadmin' });
+      const d = await zGet('/organizations', token, null);
+      const o = (d.organizations || []).find(x => String(x.organization_id) === String(q.org));
+      if (!o) return res.status(400).json({ erreur: 'organization_id inconnu — liste-les avec ?orgs=1' });
+      await ecrireCfg({ ...cfg, organization_id: o.organization_id, organisation: o.name });
+      return res.status(200).json({ ok: true, organisation: o.name, organization_id: o.organization_id, info: 'Organisation active mise à jour ✓ — teste ?ca=1' });
+    }
+
     // ── Sonde brute ──
     if (q.debug) {
       if (user.role !== 'superadmin') return res.status(403).json({ erreur: 'Réservé superadmin' });
