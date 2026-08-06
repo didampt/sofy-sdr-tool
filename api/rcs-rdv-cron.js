@@ -136,7 +136,9 @@ export default async function handler(req, res) {
       let type = null;
       if (dans >= 23 * 3600 * 1000 && dans <= 25 * 3600 * 1000) type = 'j1';
       else if (dans >= 1.5 * 3600 * 1000 && dans <= 2.5 * 3600 * 1000) type = 'h2';
-      if (!type) continue;
+      // Mode validation (?dry=1&tout=1) : fenêtres ignorées, on simule le rappel adapté à l'échéance
+      if (!type && dry && req.query.tout === '1') type = dans > 4 * 3600 * 1000 ? 'j1' : 'h2';
+      if (!type) { resume.ignores.push({ meeting: m.id, dans_h: Math.round(dans / 360000) / 10, raison: 'hors fenêtre (normal — le cron horaire la prendra à J-1 et H-2)' }); continue; }
 
       const cid = contactDe.get(String(m.id));
       const c = cid ? parContact.get(cid) : null;
