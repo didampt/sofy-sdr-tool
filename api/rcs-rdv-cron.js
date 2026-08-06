@@ -47,9 +47,12 @@ async function envoyerSofy(tel, titre, texte) {
   // 1) RCS rich-card si un expéditeur RCS est configuré (repli SMS géré par Sofy via fallback)
   if (senderId) {
     try {
+      const corps = { to: tel, senderId, title: titre, description: texte, fallback: { enabled: true, text: titre + ' — ' + texte } };
+      // 🖼️ Visuel « Votre RDV Sofy » (URL publique, ex. hébergée sur www.sofy.fr) — optionnel
+      if (process.env.SOFY_RCS_IMAGE_URL) corps.imageUrl = process.env.SOFY_RCS_IMAGE_URL;
       const r = await fetch('https://api.sofy.fr/v2/rcs/rich-card', {
         method: 'POST', headers,
-        body: JSON.stringify({ to: tel, senderId, title: titre, description: texte, fallback: { enabled: true, text: titre + ' — ' + texte } })
+        body: JSON.stringify(corps)
       });
       const d = await r.json().catch(() => ({}));
       if (r.ok && d.id) return { ok: true, canal: d.isSmsFallback ? 'sms (repli)' : 'rcs', id: d.id };
@@ -114,7 +117,7 @@ export default async function handler(req, res) {
     if (cids.size) {
       const rC = await fetch(`${HS}/crm/v3/objects/contacts/batch/read`, {
         method: 'POST', headers: H,
-        body: JSON.stringify({ properties: ['firstname', 'lastname', 'mobilephone', 'phone', 'company'], inputs: [...cids].map(id => ({ id })) })
+        body: JSON.stringify({ properties: ['firstname', 'lastname', 'email', 'mobilephone', 'phone', 'company'], inputs: [...cids].map(id => ({ id })) })
       });
       const dC = await rC.json().catch(() => ({}));
       for (const c of (dC.results || [])) parContact.set(String(c.id), c.properties || {});
@@ -152,7 +155,16 @@ export default async function handler(req, res) {
       if (!ins.length) { resume.ignores.push({ meeting: m.id, type, raison: 'déjà envoyé' }); continue; }
 
       const env = await envoyerSofy(tel, titre, texte);
-      if (env.ok) resume.envoyes.push({ meeting: m.id, type, tel, contact: nomC, canal: env.canal });
+      if (env.ok) {
+        resume.envoyes.push({ meeting: m.id, type, tel, contact: nomC, canal: env.canal });
+        // 📝 Trace dans le bloc-notes de la fiche (timeline par email du contact)
+        try {
+          const emailC = (c && c.email) ? String(c.email).toLowerCase() : null;
+          if (emailC) await sql`INSERT INTO activites (fiche_cle, source, type, titre, detail, auteur, ts)
+            VALUES (${emailC}, 'sms', 'rcs_rdv', ${'🛡️ Rappel démo ' + (type === 'j1' ? 'J-1' : 'H-2') + ' envoyé (' + env.canal + ')'},
+              ${titre + ' — ' + texte + ' → ' + tel}, 'système', NOW())`;
+        } catch (_) {}
+      }
       else {
         // Échec d'envoi → on libère l'anti-doublon pour retenter au prochain passage
         await sql`DELETE FROM rcs_rdv_envoyes WHERE meeting_id = ${m.id} AND type = ${type}`;
