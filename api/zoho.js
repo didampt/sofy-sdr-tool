@@ -116,14 +116,21 @@ export default async function handler(req, res) {
     const du = String(q.du || jour.slice(0, 7) + '-01');
     const au = String(q.au || jour);
     const factures = [];
-    // Factures triées par date desc : on pagine jusqu'à sortir de la fenêtre (garde-fou 10 pages × 200)
-    for (let page = 1; page <= 10; page++) {
-      const d = await zGet(`/invoices?per_page=200&page=${page}&sort_column=date&sort_order=D`, token, orgId);
+    // Pagination robuste : tri invoice_date desc (repli 'date' si refusé), on ne s'arrête qu'après
+    // une page ENTIÈREMENT passée sous la fenêtre (le tri intra-page n'est pas garanti — cas 104/207
+    // factures du 06/08). Brouillons et annulées exclues. Garde-fou 25 pages × 200.
+    let sortCol = 'invoice_date';
+    for (let page = 1; page <= 25; page++) {
+      let d;
+      try { d = await zGet(`/invoices?per_page=200&page=${page}&sort_column=${sortCol}&sort_order=D`, token, orgId); }
+      catch (e) { if (sortCol === 'invoice_date') { sortCol = 'date'; page--; continue; } throw e; }
       const lot = d.invoices || [];
+      let minDt = '9999';
       for (const f of lot) {
         const dt = String(f.invoice_date || f.date || ''); // ⚠️ Zoho Billing : le champ est invoice_date
-        if (!dt || dt > au) continue;
-        if (dt < du) { page = 99; break; } // tri desc : tout le reste est plus ancien
+        if (dt && dt < minDt) minDt = dt;
+        if (!dt || dt > au || dt < du) continue;
+        if (['draft', 'void'].includes(String(f.status || ''))) continue; // tests / annulées
         factures.push({
           numero: f.number || f.invoice_number || '', client: f.customer_name || '',
           email: (f.email || '').toLowerCase(), date: dt, statut: f.status || '',
@@ -131,7 +138,8 @@ export default async function handler(req, res) {
           devise: f.currency_code || 'EUR'
         });
       }
-      if (!(d.page_context && d.page_context.has_more_page) || page >= 99) break;
+      if (!(d.page_context && d.page_context.has_more_page)) break;
+      if (minDt < du) break; // page déjà entièrement plus ancienne → les suivantes aussi
     }
     const encaisse = factures.reduce((s, f) => s + f.encaisse, 0);
     const facture = factures.reduce((s, f) => s + f.montant, 0);
