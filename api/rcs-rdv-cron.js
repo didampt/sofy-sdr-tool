@@ -44,14 +44,16 @@ function e164(brut) {
 // SOFY_API_KEY_ID/SECRET de l'API v1 utilisée par l'envoi SMS SoReach (db.js).
 const cleV2 = () => process.env.SOFY_API_KEY_V2 || process.env.SOFY_API_KEY || '';
 
-async function envoyerSofy(tel, titre, texte, bouton) {
+async function envoyerSofy(tel, titre, texte, bouton, replicourt) {
   const cle = cleV2();
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${cle}` };
   const senderId = process.env.SOFY_RCS_SENDER_ID;
+  // ⚠️ fallback.text est limité à 129 caractères par l'API (erreur 400 sinon, test du 06/08)
+  const fbk = String(replicourt || (titre + ' — ' + texte)).slice(0, 129);
   // 1) RCS rich-card si un expéditeur RCS est configuré (repli SMS géré par Sofy via fallback)
   if (senderId) {
     try {
-      const corps = { to: tel, senderId, title: titre, description: texte, fallback: { enabled: true, text: titre + ' — ' + texte } };
+      const corps = { to: tel, senderId, title: titre, description: texte, fallback: { enabled: true, text: fbk } };
       // 🖼️ Visuel « Votre rendez-vous approche » — hébergé sur sofyscrap.com (public/rcs-rdv.jpg),
       // surchargeable par SOFY_RCS_IMAGE_URL
       corps.imageUrl = process.env.SOFY_RCS_IMAGE_URL || 'https://www.sofyscrap.com/rcs-rdv.jpg';
@@ -67,9 +69,13 @@ async function envoyerSofy(tel, titre, texte, bouton) {
     } catch (e) { var rcsEchec = 'RCS exception: ' + e.message; }
   }
   // 2) SMS direct
+  // « from » alphanumérique : uniquement s'il est déclaré côté Sofy (SOFY_SMS_FROM) — sinon
+  // expéditeur par défaut du compte v2 (« Sofy » non déclaré = rejected by provider, test 06/08)
+  const corpsSms = { to: tel, body: titre + ' — ' + texte, isTransactional: true };
+  if (process.env.SOFY_SMS_FROM) corpsSms.from = process.env.SOFY_SMS_FROM;
   const r2 = await fetch('https://api.sofy.fr/v2/sms', {
     method: 'POST', headers,
-    body: JSON.stringify({ to: tel, from: process.env.SOFY_SMS_FROM || 'Sofy', body: titre + ' — ' + texte, isTransactional: true })
+    body: JSON.stringify(corpsSms)
   });
   const d2 = await r2.json().catch(() => ({}));
   if (r2.ok && d2.id) return { ok: true, canal: 'sms', id: d2.id, statut: d2.status || null, rcs_echec: typeof rcsEchec !== 'undefined' ? rcsEchec : null };
@@ -100,7 +106,8 @@ export default async function handler(req, res) {
       const demain = new Date(Date.now() + 24 * 3600 * 1000).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris', weekday: 'long', day: '2-digit', month: 'long' });
       const titreT = '📅 Votre démo Sofy, c\'est demain !';
       const texteT = `Didier, rendez-vous ${demain} à 10:00 avec Sarah pour votre démonstration Sofy. Nous avons hâte de vous retrouver ! 😊 Un empêchement ? 📞 Appelez Alicia au +33612345678. (ceci est un TEST)`;
-      const envT = await envoyerSofy(telT, titreT, texteT, { label: '📞 Je reporte mon RDV', url: 'tel:' + telT });
+      const envT = await envoyerSofy(telT, titreT, texteT, { label: '📞 Je reporte mon RDV', url: 'tel:' + telT },
+        `Rappel Sofy : votre démo demain 10:00 avec Sarah. Un empêchement ? Appelez le ${telT}. (TEST)`);
       return res.status(200).json({ ok: envT.ok, test: true, tel: telT, canal: envT.canal || null, id: envT.id || null,
         statut: envT.statut || null, rcs_echec: envT.rcs_echec || null, detail: envT.erreur || null,
         suivi: envT.id ? 'Statut d\'acheminement : ?statut=' + envT.id : null });
@@ -228,7 +235,10 @@ export default async function handler(req, res) {
         VALUES (${m.id}, ${type}, ${tel}, ${nomC}) ON CONFLICT (meeting_id, type) DO NOTHING RETURNING id`;
       if (!ins.length) { resume.ignores.push({ meeting: m.id, type, raison: 'déjà envoyé' }); continue; }
 
-      const env = await envoyerSofy(tel, titre, texte, bouton);
+      const replicourt = (type === 'j1'
+        ? `Rappel Sofy : votre démo demain à ${heure}.`
+        : `Rappel Sofy : votre démo à ${heure} (dans 2 h).`) + (telSdr ? ` Empêchement ? ${telSdr}` : '');
+      const env = await envoyerSofy(tel, titre, texte, bouton, replicourt);
       if (env.ok) {
         resume.envoyes.push({ meeting: m.id, type, tel, contact: nomC, canal: env.canal });
         // 📝 Trace dans le bloc-notes de la fiche (timeline par email du contact)
