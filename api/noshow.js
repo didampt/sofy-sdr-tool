@@ -91,6 +91,30 @@ export default async function handler(req, res) {
           for (const d of detailsGagnes) { d.ae = parId.get(String(d.owner_id)) || null; delete d.owner_id; }
         }
       } catch (_) {}
+      // Email du contact associé à chaque deal gagné → rapprochement factures Zoho par email
+      // (cas Bricopro : client Zoho « j.moueza@brico2000.fr », introuvable par le nom du deal)
+      try {
+        const dids = detailsGagnes.map(d => d.id).filter(Boolean);
+        if (dids.length) {
+          const ra = await fetch(`${HS}/crm/v4/associations/deals/contacts/batch/read`, {
+            method: 'POST', headers: H, body: JSON.stringify({ inputs: dids.map(id => ({ id })) })
+          });
+          const da = await ra.json().catch(() => ({}));
+          const contactDe = new Map(); const cids = new Set();
+          for (const r of (da.results || [])) {
+            const cid = r.to && r.to[0] && (r.to[0].toObjectId || r.to[0].id);
+            if (r.from && cid) { contactDe.set(String(r.from.id), String(cid)); cids.add(String(cid)); }
+          }
+          if (cids.size) {
+            const rc = await fetch(`${HS}/crm/v3/objects/contacts/batch/read`, {
+              method: 'POST', headers: H, body: JSON.stringify({ properties: ['email'], inputs: [...cids].map(id => ({ id })) })
+            });
+            const dc = await rc.json().catch(() => ({}));
+            const emailDe = new Map((dc.results || []).map(c => [String(c.id), ((c.properties && c.properties.email) || '').toLowerCase()]));
+            for (const d of detailsGagnes) { const cid = contactDe.get(String(d.id)); d.email = (cid && emailDe.get(cid)) || null; }
+          }
+        }
+      } catch (_) {}
       cycles.sort((a, b) => a - b);
       details.sort((a, b) => new Date(b.date) - new Date(a.date));
       return res.status(200).json({
