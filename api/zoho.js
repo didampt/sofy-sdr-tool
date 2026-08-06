@@ -84,8 +84,9 @@ export default async function handler(req, res) {
         access_expire: Date.now() + 3000 * 1000,
         organization_id: cfgPrev.organization_id || orgId, organisation: cfgPrev.organisation || orgNom,
         dc: DC(), configure_le: new Date().toISOString() });
-      return res.status(200).json({ ok: true, organisation: orgNom, organization_id: orgId,
-        info: orgId ? 'Zoho Billing connecté ✓ — teste ?ca=1' : 'Token OK mais organisation introuvable — vérifie le datacenter ZOHO_DC' });
+      const orgFinal = cfgPrev.organisation || orgNom, orgIdFinal = cfgPrev.organization_id || orgId;
+      return res.status(200).json({ ok: true, organisation: orgFinal, organization_id: orgIdFinal,
+        info: orgIdFinal ? `Zoho Billing connecté ✓ — organisation active : ${orgFinal} — teste ?ca=1` : 'Token OK mais organisation introuvable — vérifie le datacenter ZOHO_DC' });
     }
 
     if (!['admin', 'superadmin'].includes(user.role)) return res.status(403).json({ erreur: 'Réservé admin' });
