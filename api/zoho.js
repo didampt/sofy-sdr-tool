@@ -121,8 +121,8 @@ export default async function handler(req, res) {
       const d = await zGet(`/invoices?per_page=200&page=${page}&sort_column=date&sort_order=D`, token, orgId);
       const lot = d.invoices || [];
       for (const f of lot) {
-        const dt = String(f.date || '');
-        if (dt > au) continue;
+        const dt = String(f.invoice_date || f.date || ''); // ⚠️ Zoho Billing : le champ est invoice_date
+        if (!dt || dt > au) continue;
         if (dt < du) { page = 99; break; } // tri desc : tout le reste est plus ancien
         factures.push({
           numero: f.number || f.invoice_number || '', client: f.customer_name || '',
@@ -134,9 +134,11 @@ export default async function handler(req, res) {
       if (!(d.page_context && d.page_context.has_more_page) || page >= 99) break;
     }
     const encaisse = factures.reduce((s, f) => s + f.encaisse, 0);
+    const facture = factures.reduce((s, f) => s + f.montant, 0);
     return res.status(200).json({
       ok: true, organisation: cfg.organisation || null, du, au,
-      total_encaisse: Math.round(encaisse * 100) / 100,
+      total_facture: Math.round(facture * 100) / 100,   // émis sur la période (payé ou non)
+      total_encaisse: Math.round(encaisse * 100) / 100, // réellement payé (total − solde)
       nb_factures: factures.length,
       factures: factures.slice(0, 200)
     });
