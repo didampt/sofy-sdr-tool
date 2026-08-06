@@ -69,7 +69,7 @@ export default async function handler(req, res) {
             method: 'POST', headers: H,
             body: JSON.stringify({
               filterGroups: [{ filters: [{ propertyName: propW, operator: 'BETWEEN', value: t0, highValue: t1 }] }],
-              properties: ['dealname', propW, propP, 'hubspot_owner_id'], limit: 100
+              properties: ['dealname', propW, propP, 'hubspot_owner_id', 'revops_source', 'sdr'], limit: 100
             })
           });
           const dW = await rW.json().catch(() => ({}));
@@ -77,7 +77,8 @@ export default async function handler(req, res) {
           for (const x of (dW.results || [])) {
             const a = x.properties[propP], b = x.properties[propW];
             if (a && b) { const j = (new Date(b) - new Date(a)) / 86400000; if (j >= 0 && j < 400) cycles.push(j); }
-            detailsGagnes.push({ id: x.id, nom: x.properties.dealname || '', date: x.properties[propW] || null, pipeline: p.label, owner_id: x.properties.hubspot_owner_id || null });
+            detailsGagnes.push({ id: x.id, nom: x.properties.dealname || '', date: x.properties[propW] || null, pipeline: p.label, owner_id: x.properties.hubspot_owner_id || null,
+              origine: x.properties.revops_source || null, sdr_deal: x.properties.sdr || null });
           }
         }
       }
