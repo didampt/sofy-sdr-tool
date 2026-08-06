@@ -2031,7 +2031,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v300';
+const VERSION='v301';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -8041,6 +8041,41 @@ async function stjToggleCoach(){
    +'<div style="font-size:11.5px;color:var(--ink-soft);margin-top:8px">Le détail appel par appel (audio + grille complète) est dans 🎧 Journal des appels.</div>';
  }catch(e){z.innerHTML='Erreur : '+e.message;}
 }
+// 💶 CA Zoho Billing (admin) : tuile chargée en asynchrone après les tuiles principales.
+// montant = total TTC des factures émises sur la période ; encaissé = total − solde restant.
+function stjNzCA(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');}
+async function stjZoho(){
+ const b=stjBornes();
+ try{
+  const r=await api('/api/zoho?ca=1&du='+b.du+'&au='+b.au);
+  if(!r.ok)return; // 403 SDR / non configuré → pas de tuile
+  const d=await r.json();
+  if(!d.ok||STJ===null)return;
+  STJ.zoho=d;
+  const el=document.getElementById('stj-tuiles');if(!el)return;
+  const old=document.getElementById('stj-tuile-zoho');if(old)old.remove();
+  el.insertAdjacentHTML('beforeend',`<div id="stj-tuile-zoho" style="display:contents">`+
+   stjTuile('💶 CA FACTURÉ TTC',(Math.round(d.total_facture)||0).toLocaleString('fr-FR')+' €','','',(Math.round(d.total_encaisse)||0).toLocaleString('fr-FR')+' € encaissés · '+d.nb_factures+' factures (Zoho Billing)','stjToggleZoho()')+`</div>`);
+ }catch(_){}
+}
+// Détail CA : clients agrégés, ✅ = client retrouvé dans les ventes conclues HubSpot de la période
+function stjToggleZoho(){
+ const z=document.getElementById('stj-rdv-liste');if(!z)return;
+ if(z.style.display!=='none'&&z.dataset.mode==='zoho'){z.style.display='none';return;}
+ z.dataset.mode='zoho';
+ const d=(STJ&&STJ.zoho)||{};const fs=d.factures||[];
+ if(!fs.length){z.innerHTML='<span style="color:var(--ink-soft)">Aucune facture sur la période.</span>';z.style.display='block';return;}
+ const ventes=((STJ&&STJ.noshow&&STJ.noshow.details_gagnes)||[]).map(v=>stjNzCA(String(v.nom||'').split(' - ')[0]));
+ const parClient={};
+ fs.forEach(f=>{const k=f.client||'?';(parClient[k]=parClient[k]||{n:0,montant:0,encaisse:0}).n++;parClient[k].montant+=f.montant;parClient[k].encaisse+=f.encaisse;});
+ const rows=Object.entries(parClient).sort((a,b)=>b[1].montant-a[1].montant).slice(0,40);
+ z.innerHTML='<div style="font-weight:800;margin-bottom:6px">💶 CA par client sur la période (Zoho Billing)</div>'
+  +'<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px">TTC · ✅ = client aussi dans les ventes conclues HubSpot de la période · encaissé = déjà payé</div>'
+  +rows.map(([nom,v])=>{const nv=stjNzCA(nom);const gagne=ventes.some(x=>x&&(nv.includes(x)||x.includes(nv)));
+   return `<div style="display:flex;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px"><b style="flex:1">${htmlSafe(nom)}${gagne?' ✅':''}</b><span style="color:var(--ink-soft)">${v.n} fact.</span><span style="min-width:110px;text-align:right;font-weight:700">${Math.round(v.montant).toLocaleString('fr-FR')} €</span><span style="min-width:120px;text-align:right;color:${v.encaisse>=v.montant-1?'#0FA968':'var(--ink-soft)'}">${Math.round(v.encaisse).toLocaleString('fr-FR')} € encaissés</span></div>`;}).join('')
+  +(fs.length>rows.length?`<div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px">Top 40 affiché (${Object.keys(parClient).length} clients).</div>`:'');
+ z.style.display='block';
+}
 // Tuile Ventes conclues cliquable : les deals « Fermé gagné » de la période, lien direct HubSpot
 function stjToggleVentes(){
  const z=document.getElementById('stj-rdv-liste');if(!z)return;
@@ -8048,7 +8083,12 @@ function stjToggleVentes(){
  const ds=ns.details_gagnes||[];
  if(z.style.display!=='none'&&z.dataset.mode==='ventes'){z.style.display='none';return;}
  z.dataset.mode='ventes';
- z.innerHTML=ds.length?'<div style="font-weight:800;margin-bottom:6px">💼 Ventes conclues sur la période</div>'+ds.map(r=>`<div style="display:flex;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px"><span style="min-width:90px;color:var(--ink-soft)">${r.date?new Date(r.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}):''}</span>${ns.portal_id&&r.id?`<a href="https://app.hubspot.com/contacts/${ns.portal_id}/record/0-3/${r.id}" target="_blank" style="flex:1;font-weight:700;color:var(--accent)" title="Ouvrir le deal dans HubSpot">${htmlSafe(r.nom||'')} ↗</a>`:`<b style="flex:1">${htmlSafe(r.nom||'')}</b>`}<span style="color:var(--ink-soft)">${htmlSafe(r.pipeline||'')}</span></div>`).join(''):'<span style="color:var(--ink-soft)">Aucune vente conclue sur la période.</span>';
+ // Rapprochement Zoho : CA TTC facturé sur la période pour le client du deal (nom « Société - Produit »)
+ const fsZ=(STJ&&STJ.zoho&&STJ.zoho.factures)||[];
+ const caDe=nomDeal=>{const nd=stjNzCA(String(nomDeal||'').split(' - ')[0]);if(!nd||!fsZ.length)return null;
+  const tot=fsZ.filter(f=>{const nf=stjNzCA(f.client);return nf&&(nf.includes(nd)||nd.includes(nf));}).reduce((s,f)=>s+f.montant,0);
+  return tot>0?Math.round(tot):null;};
+ z.innerHTML=ds.length?'<div style="font-weight:800;margin-bottom:6px">💼 Ventes conclues sur la période</div>'+ds.map(r=>{const ca=caDe(r.nom);return `<div style="display:flex;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px"><span style="min-width:90px;color:var(--ink-soft)">${r.date?new Date(r.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}):''}</span>${ns.portal_id&&r.id?`<a href="https://app.hubspot.com/contacts/${ns.portal_id}/record/0-3/${r.id}" target="_blank" style="flex:1;font-weight:700;color:var(--accent)" title="Ouvrir le deal dans HubSpot">${htmlSafe(r.nom||'')} ↗</a>`:`<b style="flex:1">${htmlSafe(r.nom||'')}</b>`}${ca!=null?`<span title="Factures Zoho de ce client sur la période (TTC)" style="font-weight:700;color:#0FA968;white-space:nowrap">💶 ${ca.toLocaleString('fr-FR')} €</span>`:''}<span style="color:var(--ink-soft)">${htmlSafe(r.pipeline||'')}</span></div>`;}).join('')+(fsZ.length?'':'<div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px">💶 Les montants Zoho s’affichent quand la tuile CA est chargée.</div>'):'<span style="color:var(--ink-soft)">Aucune vente conclue sur la période.</span>';
  z.style.display='block';
 }
 // Tuile No-show cliquable : les deals passés en No show sur la période (pipeline HubSpot)
@@ -8106,6 +8146,7 @@ function rendreStatsJournees(d){
   stjTuile('📈 JOIGNABILITÉ',(t.taux_decroche||0)+' %',p.jours?stjPill(t.taux_decroche||0,tauxP,true):'',stjSpark(sp.map(x=>x.a?Math.round(100*x.d/x.a):0),'#12B5CB'),(t.decroches||0)+' décrochés')+
   stjTuile('⏱️ DURÉE MOY.',stjDuree(t.duree_moy_sec),'',stjSpark(sp.map(x=>x.d?Math.round(x.du/x.d):0),'#8A90A2'),'par appel décroché')+
   (c?stjTuile('💰 COÛT PÉRIODE',c.total.toLocaleString('fr-FR')+' €',stjPill(c.conso,p.cout_conso,false),stjSpark(spc.map(x=>x.cout),'#E5484D'),c.conso.toLocaleString('fr-FR')+' € conso + '+c.abos_prorata.toLocaleString('fr-FR')+' € abos'):'');
+ stjZoho(); // 💶 tuile CA Zoho (admin) — chargée en asynchrone, s'ajoute en fin de grille
  // ② activité
  const g=d.graphe||[];const maxG=Math.max(1,...g.map(x=>x.appels));
  document.getElementById('stj-graphe').innerHTML=g.length?g.map(x=>`<div title="${new Date(x.jour+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'short',day:'2-digit',month:'2-digit'})} — ${x.appels} appel${x.appels>1?'s':''}${x.rdv?' · 🏆 '+x.rdv+' RDV':''}" style="flex:1;max-width:30px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%"><div style="font-size:10px;line-height:1.4">${x.rdv?'🏆':''}</div><div style="width:100%;background:var(--accent);opacity:${(0.4+0.6*x.appels/maxG).toFixed(2)};height:${Math.max(4,Math.round(74*x.appels/maxG))}px;border-radius:3px 3px 0 0"></div></div>`).join(''):'<span style="font-size:12px;color:var(--ink-soft)">Aucune journée consignée sur la période.</span>';
