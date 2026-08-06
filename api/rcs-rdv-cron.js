@@ -113,6 +113,20 @@ export default async function handler(req, res) {
         suivi: envT.id ? 'Statut d\'acheminement : ?statut=' + envT.id : null });
     }
 
+    // ── Expéditeurs RCS de l'organisation (superadmin) : ?senders=1 → id à mettre dans SOFY_RCS_SENDER_ID ──
+    if (req.query.senders) {
+      if (!user || user.role !== 'superadmin') return res.status(403).json({ erreur: 'Réservé superadmin' });
+      const hd = { Authorization: `Bearer ${cleV2()}` };
+      for (const chemin of ['/v2/rcs/senders', '/v2/senders', '/v2/rcs/sender-ids']) {
+        try {
+          const r = await fetch('https://api.sofy.fr' + chemin, { headers: hd });
+          const d = await r.json().catch(() => ({}));
+          if (r.ok) return res.status(200).json({ ok: true, via: chemin, senders: d });
+        } catch (_) {}
+      }
+      return res.status(404).json({ erreur: 'Endpoint senders introuvable — récupère l\'ID dans le dashboard Sofy (section RCS)' });
+    }
+
     // ── Suivi d'acheminement d'un message (superadmin) : ?statut=<id> ──
     if (req.query.statut) {
       if (!user || user.role !== 'superadmin') return res.status(403).json({ erreur: 'Réservé superadmin' });
