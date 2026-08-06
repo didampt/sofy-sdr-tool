@@ -7,6 +7,7 @@
 // Cron horaire jours ouvrés (vercel.json) — en-tête x-vercel-cron, Bearer CRON_SECRET ou superadmin.
 
 import { verifierToken, sql, ensureSchema } from './db.js';
+import { jetonRdv } from './rdv-confirme.js';
 
 const HS = 'https://api.hubapi.com';
 
@@ -21,8 +22,18 @@ async function ensureRcsRdv() {
     ts TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (meeting_id, type)
   )`;
-  // colonne ajoutée après coup (rattachement des réponses webhook à la fiche) — ADD IF NOT EXISTS = sûr
+  // colonnes ajoutées après coup — ADD IF NOT EXISTS = sûr
   await sql`ALTER TABLE rcs_rdv_envoyes ADD COLUMN IF NOT EXISTS email TEXT`;
+  await sql`ALTER TABLE rcs_rdv_envoyes ADD COLUMN IF NOT EXISTS date_rdv TIMESTAMPTZ`;
+  await sql`ALTER TABLE rcs_rdv_envoyes ADD COLUMN IF NOT EXISTS reponse TEXT`;
+}
+
+// 🗓 Lien « Ajouter à mon agenda Google » (RCS = Android : Google Calendar est le bon réflexe)
+function lienAgenda(debutMs, ae) {
+  const deb = new Date(debutMs), fin = new Date(debutMs + 45 * 60000);
+  const f = d => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  return 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent('Démo Sofy' + (ae ? ' avec ' + ae : ''))
+    + '&dates=' + f(deb) + '/' + f(fin) + '&details=' + encodeURIComponent('Votre démonstration Sofy — sofy.fr');
 }
 
 // Numéro FR/DOM → E.164 (+590 Guadeloupe, +596 Martinique, +594 Guyane, +262 Réunion/Mayotte, +33 métropole)
@@ -107,9 +118,18 @@ export default async function handler(req, res) {
       if (!telT) return res.status(400).json({ erreur: 'Numéro invalide' });
       const demain = new Date(Date.now() + 24 * 3600 * 1000).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris', weekday: 'long', day: '2-digit', month: 'long' });
       const titreT = '📅 Votre démo Sofy, c\'est demain !';
-      const texteT = `Didier, rendez-vous ${demain} à 10:00 avec Sarah pour votre démonstration Sofy. Nous avons hâte de vous retrouver ! 😊 Un empêchement ? 📞 Appelez Alicia au +33612345678. (ceci est un TEST)`;
-      const envT = await envoyerSofy(telT, titreT, texteT, { label: '📞 Je reporte mon RDV', url: 'https://www.sofyscrap.com/appel.html?tel=' + encodeURIComponent(telT) },
-        `Rappel Sofy : votre démo demain 10:00 avec Sarah. Un empêchement ? Appelez le ${telT}. (TEST)`);
+      const texteT = `Didier, rendez-vous ${demain} à 10:00 avec Sarah — 30 minutes pour découvrir comment booster vos avis Google et votre relation client. ✅ Un clic pour confirmer, et c'est noté ! Un imprévu ? 📞 Alicia au +33612345678. (ceci est un TEST)`;
+      // Meeting fictif « test » enregistré → le bouton de confirmation fonctionne de bout en bout
+      try { await sql`INSERT INTO rcs_rdv_envoyes (meeting_id, type, tel, contact, email, date_rdv)
+        VALUES ('test', 'j1', ${telT}, 'Didier (test)', ${user.email || null}, ${new Date(Date.now() + 24 * 3600 * 1000).toISOString()})
+        ON CONFLICT (meeting_id, type) DO UPDATE SET reponse = NULL, date_rdv = ${new Date(Date.now() + 24 * 3600 * 1000).toISOString()}`; } catch (_) {}
+      const forceSms = req.query.canal === 'sms'; // ?canal=sms → teste le repli SMS (RCS sauté)
+      const boutonT = { label: '✅ Je confirme mon RDV', url: 'https://www.sofyscrap.com/api/rdv-confirme?m=test&t=' + jetonRdv('test') };
+      const envT = forceSms
+        ? await (async () => { const s = process.env.SOFY_RCS_SENDER_ID; delete process.env.SOFY_RCS_SENDER_ID;
+            const rT = await envoyerSofy(telT, titreT, texteT, boutonT, null); if (s) process.env.SOFY_RCS_SENDER_ID = s; return rT; })()
+        : await envoyerSofy(telT, titreT, texteT, boutonT,
+          `Rappel Sofy : votre démo demain 10:00 avec Sarah. Un empêchement ? Appelez le ${telT}. (TEST)`);
       return res.status(200).json({ ok: envT.ok, test: true, tel: telT, canal: envT.canal || null, id: envT.id || null,
         statut: envT.statut || null, rcs_echec: envT.rcs_echec || null, detail: envT.erreur || null,
         suivi: envT.id ? 'Statut d\'acheminement : ?statut=' + envT.id : null });
@@ -237,19 +257,23 @@ export default async function handler(req, res) {
       const ae = ownersMap.get(String((m.properties || {}).hubspot_owner_id || '')) || null;
       const sdrS = sourceurDe(c && c.company);
       const telSdr = sdrS ? (telParSdr[sdrS] || null) : null;
-      const aide = telSdr ? `Un empêchement ? 📞 Appelez ${sdrS} au ${telSdr}.` : `Un empêchement ? Appelez votre interlocuteur Sofy habituel.`;
-      // L'API RCS n'accepte que des URL https (pas de tel:) → page de rebond qui lance le composeur
-      const bouton = telSdr ? { label: '📞 Je reporte mon RDV', url: 'https://www.sofyscrap.com/appel.html?tel=' + encodeURIComponent(telSdr) } : null;
-      const titre = type === 'j1' ? '📅 Votre démo Sofy, c\'est demain !' : '⏰ Votre démo Sofy commence bientôt';
+      const aide = telSdr ? `Un imprévu ? 📞 ${sdrS} au ${telSdr}.` : `Un imprévu ? Appelez votre interlocuteur Sofy habituel.`;
+      // J-1 : LE bouton (un seul autorisé) = confirmation en un clic (engagement actif, meilleur
+      // anti no-show) — la page de confirmation propose ensuite l'ajout à l'agenda Google.
+      // H-2 : bouton agenda direct (confirmer à 2 h du RDV n'a plus de sens).
+      const bouton = type === 'j1'
+        ? { label: '✅ Je confirme mon RDV', url: 'https://www.sofyscrap.com/api/rdv-confirme?m=' + encodeURIComponent(m.id) + '&t=' + jetonRdv(m.id) }
+        : { label: '🗓 Ajouter à mon agenda', url: lienAgenda(debut, ae) };
+      const titre = type === 'j1' ? '📅 Votre démo Sofy, c\'est demain !' : '⏰ On se retrouve dans 2 h !';
       const texte = type === 'j1'
-        ? `${prenom ? prenom + ', r' : 'R'}endez-vous ${quand}${ae ? ' avec ' + ae : ''} pour votre démonstration Sofy. Nous avons hâte de vous retrouver ! 😊 ${aide}`
-        : `${prenom ? prenom + ', v' : 'V'}otre démonstration Sofy${ae ? ' avec ' + ae : ''} commence à ${heure} ⏰ (dans 2 h). À tout à l'heure ! ${aide}`;
+        ? `${prenom ? prenom + ', r' : 'R'}endez-vous ${quand}${ae ? ' avec ' + ae : ''} — 30 minutes pour découvrir comment booster vos avis Google et votre relation client. ✅ Un clic pour confirmer, et c'est noté ! ${aide}`
+        : `${prenom ? prenom + ', v' : 'V'}otre démo Sofy${ae ? ' avec ' + ae : ''} commence à ${heure}. Tout est prêt de notre côté 😊 ${aide}`;
 
       if (dry) { resume.envoyes.push({ meeting: m.id, type, tel, contact: nomC, ae, sdr: sdrS, bouton, simulation: true, texte: titre + ' — ' + texte }); continue; }
 
       // Anti-doublon : INSERT unique — si la ligne existe déjà, un autre passage a déjà envoyé
-      const ins = await sql`INSERT INTO rcs_rdv_envoyes (meeting_id, type, tel, contact, email)
-        VALUES (${m.id}, ${type}, ${tel}, ${nomC}, ${(c && c.email) ? String(c.email).toLowerCase() : null})
+      const ins = await sql`INSERT INTO rcs_rdv_envoyes (meeting_id, type, tel, contact, email, date_rdv)
+        VALUES (${m.id}, ${type}, ${tel}, ${nomC}, ${(c && c.email) ? String(c.email).toLowerCase() : null}, ${new Date(debut).toISOString()})
         ON CONFLICT (meeting_id, type) DO NOTHING RETURNING id`;
       if (!ins.length) { resume.ignores.push({ meeting: m.id, type, raison: 'déjà envoyé' }); continue; }
 
