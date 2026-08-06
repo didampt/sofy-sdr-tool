@@ -238,11 +238,17 @@ export default async function handler(req, res) {
         if (statut && e.traite_le) { const t = new Date(e.traite_le); if (t >= debutHier && t < debutJour) statueesHierL++; }
         // File d'appel = fiches enrichies ET appelables : sans aucun numéro (contact, enrich,
         // GMB, web/IA), la fiche reste dans sa liste mais n'entre pas dans « à prospecter ».
-        if (!statut && (e.score || (e.gmb && e.gmb.trouve)) && (info.tel || info.tel_standard)) {
+        // Signal LinkedIn récent (<7 j, import likers / veille) : la fiche matchée remonte EN TÊTE
+        // de la file d'appel — avant, seul le Slack prévenait le SDR (angle mort, 06/08).
+        const sigE = (e.signal && (e.signal.type === 'linkedin' || e.signal.post)) ? e.signal
+          : (((e.contacts || []).map(c => c && c.signal).find(s => s && (s.type === 'linkedin' || s.post))) || null);
+        const sigRecent = !!(sigE && sigE.date && (Date.now() - new Date(sigE.date).getTime()) < 7 * 24 * 3600 * 1000);
+        if (!statut && (e.score || (e.gmb && e.gmb.trouve) || sigRecent) && (info.tel || info.tel_standard)) {
           restantesL++;
           if (!listeChoisie || l.id === listeChoisie) prospecter.push({
             ...info,
-            score: (e.score && e.score.scores && e.score.scores.global) || 0,
+            score: ((e.score && e.score.scores && e.score.scores.global) || 0) + (sigRecent ? 1000 : 0),
+            signal_lk: sigRecent ? { date: sigE.date, interaction: sigE.interaction || 'a réagi', accroche: sigE.accroche || null } : null,
             angle: angleDe(e), contacts: info.contacts_detail.length
           });
         }
@@ -277,7 +283,7 @@ export default async function handler(req, res) {
             contact: c0H ? ((c0H.prenom || '') + ' ' + (c0H.nom || '')).trim() : '',
             tel: telDe(e, c0H),
             email_cle: emH ? String(emH.enrich.email).toLowerCase() : null,
-            type: estSignup ? 'signup' : 'visite',
+            type: estSignup ? 'signup' : ((e.signal && e.signal.type === 'linkedin') ? 'linkedin' : 'visite'),
             date: (e.signal && e.signal.date) || e.date_hotlead || null,
             pages: e.pages_visitees || (e.signal && e.signal.pages) || [],
             pris_par: e.pris_par || null,

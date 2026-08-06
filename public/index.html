@@ -2031,7 +2031,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v299';
+const VERSION='v300';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -7147,7 +7147,7 @@ function rendreCockpit(sdrAffiche){
  if(tuileSel==='hot'){
   if(!urgents.length)h+='<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 6px">Aucun signal chaud pour l\u2019instant \u2014 ouvertures, r\u00e9ponses, visites sofy.fr et signups apparaissent ici.</p>';
   for(const c of urgents){
-   const label=c._k==='chaud'?(c.signal||''):(c.type==='signup'?'\ud83c\udd95 Signup':'\ud83d\udccd Visite sofy.fr'+((c.pages&&c.pages.length)?' \u00b7 '+c.pages.slice(0,2).join(', '):''));
+   const label=c._k==='chaud'?(c.signal||''):(c.type==='signup'?'\ud83c\udd95 Signup':(c.type==='linkedin'?'\ud83d\udc99 Signal LinkedIn (likers)':'\ud83d\udccd Visite sofy.fr'+((c.pages&&c.pages.length)?' \u00b7 '+c.pages.slice(0,2).join(', '):'')));
    const inner=`<div style="flex:1;min-width:220px">
     <div style="font-size:14px;font-weight:700">${htmlSafe(c.nom)}${c.contact?` <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">\u00b7 ${htmlSafe(c.contact)}${c.fonction?', '+htmlSafe(c.fonction):''}</span>`:''}${c.pris_par?' <span style="font-size:11px;font-weight:800;color:#B91C1C">\u00b7 \u00e0 toi</span>':''}</div>
     <div style="font-size:12px;color:#B91C1C;margin-top:2px">${htmlSafe(label)} \u00b7 ${depuis(c._ts)}${c.liste_nom?' \u00b7 '+htmlSafe(c.liste_nom):''}</div>
@@ -7196,11 +7196,14 @@ function rendreCockpit(sdrAffiche){
  h+=`<span style="font-size:11.5px;color:var(--ink-soft)">${d.restants} fiche${d.restants>1?'s':''} sans issue d'appel${d.restants>25?' \u2014 25 affich\u00e9es':''}</span></div>`;
  if(!d.prospecter.length)h+='<p style="font-size:12.5px;color:var(--ink-soft)">Rien \u00e0 prospecter ici \ud83d\udcaa \u2014 choisis une autre liste ou cr\u00e9e la prochaine.</p>';
  for(const p of d.prospecter){
-  const sc=p.score||0,scCol=sc>=60?'#15803D':(sc>=40?'#B45309':'#64748B'),scBg=sc>=60?'#F0FDF4':(sc>=40?'#FFFBEB':'#F1F5F9');
-  h+=ckRow(p,`<span style="font-size:12px;font-weight:700;color:${scCol};background:${scBg};border:1px solid var(--line);border-radius:6px;padding:2px 8px">${sc}</span>
+  // p.score contient +1000 de boost serveur quand signal LinkedIn r\u00e9cent (tri) \u2192 on affiche le score r\u00e9el
+  const scB=p.score||0,sc=scB>=1000?scB-1000:scB,scCol=sc>=60?'#15803D':(sc>=40?'#B45309':'#64748B'),scBg=sc>=60?'#F0FDF4':(sc>=40?'#FFFBEB':'#F1F5F9');
+  const lk=p.signal_lk?`<span style="font-size:11px;font-weight:800;color:#1D4ED8;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:2px 8px;white-space:nowrap" title="A r\u00e9agi \u00e0 un post suivi (import likers / veille) \u2014 \u00e0 appeler en priorit\u00e9">\ud83d\udc99 ${htmlSafe(p.signal_lk.interaction||'a r\u00e9agi')}</span>`:'';
+  h+=ckRow(p,`<span style="font-size:12px;font-weight:700;color:${scCol};background:${scBg};border:1px solid var(--line);border-radius:6px;padding:2px 8px">${sc}</span>${lk}
   <div style="flex:1;min-width:200px">
    <div style="font-size:14px;font-weight:700">${htmlSafe(p.nom)}${p.ville?` <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">\u00b7 ${htmlSafe(p.ville)}</span>`:''} <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">\u00b7 ${htmlSafe(p.liste_nom||'')}</span></div>
    <div style="font-size:12px;color:var(--ink-soft);margin-top:2px">${htmlSafe(p.angle||'')}${p.contacts?` \u00b7 ${p.contacts} contact${p.contacts>1?'s':''}`:''}</div>
+   ${p.signal_lk&&p.signal_lk.accroche?`<div style="font-size:12px;color:#1D4ED8;margin-top:2px">\ud83d\udde3 ${htmlSafe(p.signal_lk.accroche)}</div>`:''}
   </div>${p.tel?`<span style="font-size:13px;font-weight:700;white-space:nowrap">${htmlSafe(p.tel)}</span>`:''}`,
   '',true,false);
  }
