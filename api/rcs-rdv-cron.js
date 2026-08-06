@@ -21,6 +21,8 @@ async function ensureRcsRdv() {
     ts TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (meeting_id, type)
   )`;
+  // colonne ajoutée après coup (rattachement des réponses webhook à la fiche) — ADD IF NOT EXISTS = sûr
+  await sql`ALTER TABLE rcs_rdv_envoyes ADD COLUMN IF NOT EXISTS email TEXT`;
 }
 
 // Numéro FR/DOM → E.164 (+590 Guadeloupe, +596 Martinique, +594 Guyane, +262 Réunion/Mayotte, +33 métropole)
@@ -246,8 +248,9 @@ export default async function handler(req, res) {
       if (dry) { resume.envoyes.push({ meeting: m.id, type, tel, contact: nomC, ae, sdr: sdrS, bouton, simulation: true, texte: titre + ' — ' + texte }); continue; }
 
       // Anti-doublon : INSERT unique — si la ligne existe déjà, un autre passage a déjà envoyé
-      const ins = await sql`INSERT INTO rcs_rdv_envoyes (meeting_id, type, tel, contact)
-        VALUES (${m.id}, ${type}, ${tel}, ${nomC}) ON CONFLICT (meeting_id, type) DO NOTHING RETURNING id`;
+      const ins = await sql`INSERT INTO rcs_rdv_envoyes (meeting_id, type, tel, contact, email)
+        VALUES (${m.id}, ${type}, ${tel}, ${nomC}, ${(c && c.email) ? String(c.email).toLowerCase() : null})
+        ON CONFLICT (meeting_id, type) DO NOTHING RETURNING id`;
       if (!ins.length) { resume.ignores.push({ meeting: m.id, type, raison: 'déjà envoyé' }); continue; }
 
       const replicourt = (type === 'j1'
