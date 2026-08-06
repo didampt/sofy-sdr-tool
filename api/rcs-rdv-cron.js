@@ -83,8 +83,10 @@ async function envoyerSofy(tel, titre, texte, bouton, replicourt) {
   }
   // 2) SMS direct
   // « from » alphanumérique : uniquement s'il est déclaré côté Sofy (SOFY_SMS_FROM) — sinon
-  // expéditeur par défaut du compte v2 (« Sofy » non déclaré = rejected by provider, test 06/08)
-  const corpsSms = { to: tel, body: titre + ' — ' + texte, isTransactional: true };
+  // expéditeur par défaut du compte v2. ⚠️ Constaté le 07/08 : le défaut est le code court DOM
+  // 36789 → rejeté vers un +33 métropole ; il faut un expéditeur adapté dans SOFY_SMS_FROM.
+  // Corps = repli COURT sans émojis (le texte long UCS-2 partait en 5 segments).
+  const corpsSms = { to: tel, body: fbk, isTransactional: true };
   if (process.env.SOFY_SMS_FROM) corpsSms.from = process.env.SOFY_SMS_FROM;
   const r2 = await fetch('https://api.sofy.fr/v2/sms', {
     method: 'POST', headers,
