@@ -69,7 +69,7 @@ export default async function handler(req, res) {
             method: 'POST', headers: H,
             body: JSON.stringify({
               filterGroups: [{ filters: [{ propertyName: propW, operator: 'BETWEEN', value: t0, highValue: t1 }] }],
-              properties: ['dealname', propW, propP], limit: 100
+              properties: ['dealname', propW, propP, 'hubspot_owner_id'], limit: 100
             })
           });
           const dW = await rW.json().catch(() => ({}));
@@ -77,10 +77,20 @@ export default async function handler(req, res) {
           for (const x of (dW.results || [])) {
             const a = x.properties[propP], b = x.properties[propW];
             if (a && b) { const j = (new Date(b) - new Date(a)) / 86400000; if (j >= 0 && j < 400) cycles.push(j); }
-            detailsGagnes.push({ id: x.id, nom: x.properties.dealname || '', date: x.properties[propW] || null, pipeline: p.label });
+            detailsGagnes.push({ id: x.id, nom: x.properties.dealname || '', date: x.properties[propW] || null, pipeline: p.label, owner_id: x.properties.hubspot_owner_id || null });
           }
         }
       }
+      // Nom de l'AE (propriétaire du deal) sur les ventes conclues
+      try {
+        const ids = [...new Set(detailsGagnes.map(d => d.owner_id).filter(Boolean))];
+        if (ids.length) {
+          const ro = await fetch(`${HS}/crm/v3/owners/?limit=500`, { headers: H });
+          const doo = await ro.json().catch(() => ({}));
+          const parId = new Map((doo.results || []).map(o => [String(o.id), [o.firstName, o.lastName].filter(Boolean).join(' ') || o.email || '']));
+          for (const d of detailsGagnes) { d.ae = parId.get(String(d.owner_id)) || null; delete d.owner_id; }
+        }
+      } catch (_) {}
       cycles.sort((a, b) => a - b);
       details.sort((a, b) => new Date(b.date) - new Date(a.date));
       return res.status(200).json({

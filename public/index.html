@@ -2031,7 +2031,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v301';
+const VERSION='v302';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -8041,54 +8041,57 @@ async function stjToggleCoach(){
    +'<div style="font-size:11.5px;color:var(--ink-soft);margin-top:8px">Le détail appel par appel (audio + grille complète) est dans 🎧 Journal des appels.</div>';
  }catch(e){z.innerHTML='Erreur : '+e.message;}
 }
-// 💶 CA Zoho Billing (admin) : tuile chargée en asynchrone après les tuiles principales.
-// montant = total TTC des factures émises sur la période ; encaissé = total − solde restant.
+// 💶 CA des VENTES CONCLUES (admin) : factures Zoho rapprochées des deals gagnés HubSpot de la
+// période — le CA généré par les RDV SDR, pas la facturation globale (demande Didier 06/08).
+// Fenêtre factures élargie jusqu'à aujourd'hui : une vente signée en fin de mois est facturée après.
 function stjNzCA(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');}
+function stjCAVentes(){
+ const fs=(STJ&&STJ.zoho&&STJ.zoho.factures)||[];
+ const ds=(STJ&&STJ.noshow&&STJ.noshow.details_gagnes)||[];
+ const parDeal=new Map();let totFact=0,totEnc=0,rapprochees=0;
+ for(const v of ds){
+  const nd=stjNzCA(String(v.nom||'').split(' - ')[0]);
+  const m=nd?fs.filter(f=>{const nf=stjNzCA(f.client);return nf&&(nf.includes(nd)||nd.includes(nf));}):[];
+  if(!m.length){parDeal.set(v.id,null);continue;}
+  const fact=m.reduce((s,f)=>s+f.montant,0),enc=m.reduce((s,f)=>s+f.encaisse,0);
+  parDeal.set(v.id,{fact,enc});totFact+=fact;totEnc+=enc;rapprochees++;
+ }
+ return {parDeal,totFact,totEnc,rapprochees,nbVentes:ds.length};
+}
 async function stjZoho(){
  const b=stjBornes();
+ const auj=new Date().toISOString().slice(0,10);
  try{
-  const r=await api('/api/zoho?ca=1&du='+b.du+'&au='+b.au);
+  const r=await api('/api/zoho?ca=1&du='+b.du+'&au='+(b.au<auj?auj:b.au));
   if(!r.ok)return; // 403 SDR / non configuré → pas de tuile
   const d=await r.json();
   if(!d.ok||STJ===null)return;
   STJ.zoho=d;
   const el=document.getElementById('stj-tuiles');if(!el)return;
   const old=document.getElementById('stj-tuile-zoho');if(old)old.remove();
+  const ca=stjCAVentes();
+  if(!ca.nbVentes)return; // ventes HubSpot pas encore chargées → la tuile viendra au re-render
   el.insertAdjacentHTML('beforeend',`<div id="stj-tuile-zoho" style="display:contents">`+
-   stjTuile('💶 CA FACTURÉ TTC',(Math.round(d.total_facture)||0).toLocaleString('fr-FR')+' €','','',(Math.round(d.total_encaisse)||0).toLocaleString('fr-FR')+' € encaissés · '+d.nb_factures+' factures (Zoho Billing)','stjToggleZoho()')+`</div>`);
+   stjTuile('💶 CA VENTES CONCLUES',Math.round(ca.totFact).toLocaleString('fr-FR')+' €','','',Math.round(ca.totEnc).toLocaleString('fr-FR')+' € encaissés · '+ca.rapprochees+'/'+ca.nbVentes+' ventes facturées (Zoho)','stjToggleVentes()')+`</div>`);
  }catch(_){}
 }
-// Détail CA : clients agrégés, ✅ = client retrouvé dans les ventes conclues HubSpot de la période
-function stjToggleZoho(){
- const z=document.getElementById('stj-rdv-liste');if(!z)return;
- if(z.style.display!=='none'&&z.dataset.mode==='zoho'){z.style.display='none';return;}
- z.dataset.mode='zoho';
- const d=(STJ&&STJ.zoho)||{};const fs=d.factures||[];
- if(!fs.length){z.innerHTML='<span style="color:var(--ink-soft)">Aucune facture sur la période.</span>';z.style.display='block';return;}
- const ventes=((STJ&&STJ.noshow&&STJ.noshow.details_gagnes)||[]).map(v=>stjNzCA(String(v.nom||'').split(' - ')[0]));
- const parClient={};
- fs.forEach(f=>{const k=f.client||'?';(parClient[k]=parClient[k]||{n:0,montant:0,encaisse:0}).n++;parClient[k].montant+=f.montant;parClient[k].encaisse+=f.encaisse;});
- const rows=Object.entries(parClient).sort((a,b)=>b[1].montant-a[1].montant).slice(0,40);
- z.innerHTML='<div style="font-weight:800;margin-bottom:6px">💶 CA par client sur la période (Zoho Billing)</div>'
-  +'<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px">TTC · ✅ = client aussi dans les ventes conclues HubSpot de la période · encaissé = déjà payé</div>'
-  +rows.map(([nom,v])=>{const nv=stjNzCA(nom);const gagne=ventes.some(x=>x&&(nv.includes(x)||x.includes(nv)));
-   return `<div style="display:flex;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px"><b style="flex:1">${htmlSafe(nom)}${gagne?' ✅':''}</b><span style="color:var(--ink-soft)">${v.n} fact.</span><span style="min-width:110px;text-align:right;font-weight:700">${Math.round(v.montant).toLocaleString('fr-FR')} €</span><span style="min-width:120px;text-align:right;color:${v.encaisse>=v.montant-1?'#0FA968':'var(--ink-soft)'}">${Math.round(v.encaisse).toLocaleString('fr-FR')} € encaissés</span></div>`;}).join('')
-  +(fs.length>rows.length?`<div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px">Top 40 affiché (${Object.keys(parClient).length} clients).</div>`:'');
- z.style.display='block';
-}
-// Tuile Ventes conclues cliquable : les deals « Fermé gagné » de la période, lien direct HubSpot
+// Tuile Ventes conclues cliquable : deals « Fermé gagné » + AE + New/Parc + facturé vs encaissé (Zoho)
 function stjToggleVentes(){
  const z=document.getElementById('stj-rdv-liste');if(!z)return;
  const ns=(STJ&&STJ.noshow)||{};
  const ds=ns.details_gagnes||[];
  if(z.style.display!=='none'&&z.dataset.mode==='ventes'){z.style.display='none';return;}
  z.dataset.mode='ventes';
- // Rapprochement Zoho : CA TTC facturé sur la période pour le client du deal (nom « Société - Produit »)
- const fsZ=(STJ&&STJ.zoho&&STJ.zoho.factures)||[];
- const caDe=nomDeal=>{const nd=stjNzCA(String(nomDeal||'').split(' - ')[0]);if(!nd||!fsZ.length)return null;
-  const tot=fsZ.filter(f=>{const nf=stjNzCA(f.client);return nf&&(nf.includes(nd)||nd.includes(nf));}).reduce((s,f)=>s+f.montant,0);
-  return tot>0?Math.round(tot):null;};
- z.innerHTML=ds.length?'<div style="font-weight:800;margin-bottom:6px">💼 Ventes conclues sur la période</div>'+ds.map(r=>{const ca=caDe(r.nom);return `<div style="display:flex;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px"><span style="min-width:90px;color:var(--ink-soft)">${r.date?new Date(r.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}):''}</span>${ns.portal_id&&r.id?`<a href="https://app.hubspot.com/contacts/${ns.portal_id}/record/0-3/${r.id}" target="_blank" style="flex:1;font-weight:700;color:var(--accent)" title="Ouvrir le deal dans HubSpot">${htmlSafe(r.nom||'')} ↗</a>`:`<b style="flex:1">${htmlSafe(r.nom||'')}</b>`}${ca!=null?`<span title="Factures Zoho de ce client sur la période (TTC)" style="font-weight:700;color:#0FA968;white-space:nowrap">💶 ${ca.toLocaleString('fr-FR')} €</span>`:''}<span style="color:var(--ink-soft)">${htmlSafe(r.pipeline||'')}</span></div>`;}).join('')+(fsZ.length?'':'<div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px">💶 Les montants Zoho s’affichent quand la tuile CA est chargée.</div>'):'<span style="color:var(--ink-soft)">Aucune vente conclue sur la période.</span>';
+ if(!ds.length){z.innerHTML='<span style="color:var(--ink-soft)">Aucune vente conclue sur la période.</span>';z.style.display='block';return;}
+ const ca=stjCAVentes();
+ // 🥧 New business (Sales - New…) vs Parc (client existant)
+ const estParc=p=>/parc/i.test(String(p||''));
+ const nParc=ds.filter(r=>estParc(r.pipeline)).length,nNew=ds.length-nParc;
+ const pcNew=Math.round(100*nNew/ds.length),pcParc=100-pcNew;
+ const camembert=`<div style="display:flex;gap:14px;align-items:center;margin-bottom:10px"><div title="New business vs parc client" style="width:84px;height:84px;border-radius:50%;background:conic-gradient(#2B4BF2 0deg ${(3.6*pcNew).toFixed(1)}deg,#0FA968 ${(3.6*pcNew).toFixed(1)}deg 360deg)"></div><div style="font-size:12px"><div style="display:flex;align-items:center;gap:6px;margin:2px 0"><span style="width:10px;height:10px;border-radius:3px;background:#2B4BF2;display:inline-block"></span>🆕 New business — <b>${nNew}</b> (${pcNew} %)</div><div style="display:flex;align-items:center;gap:6px;margin:2px 0"><span style="width:10px;height:10px;border-radius:3px;background:#0FA968;display:inline-block"></span>🏢 Parc client — <b>${nParc}</b> (${pcParc} %)</div>${ca.rapprochees?`<div style="margin-top:4px;color:var(--ink-soft)">💶 <b>${Math.round(ca.totFact).toLocaleString('fr-FR')} €</b> facturés · <b>${Math.round(ca.totEnc).toLocaleString('fr-FR')} €</b> encaissés (${ca.rapprochees}/${ca.nbVentes} ventes rapprochées Zoho)</div>`:''}</div></div>`;
+ z.innerHTML='<div style="font-weight:800;margin-bottom:6px">💼 Ventes conclues sur la période</div>'+camembert
+  +ds.map(r=>{const m=ca.parDeal.get(r.id);const parc=estParc(r.pipeline);
+   return `<div style="display:flex;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px;align-items:center;flex-wrap:wrap"><span style="min-width:44px;color:var(--ink-soft)">${r.date?new Date(r.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}):''}</span>${ns.portal_id&&r.id?`<a href="https://app.hubspot.com/contacts/${ns.portal_id}/record/0-3/${r.id}" target="_blank" style="flex:1;min-width:160px;font-weight:700;color:var(--accent)" title="Ouvrir le deal dans HubSpot">${htmlSafe(r.nom||'')} ↗</a>`:`<b style="flex:1;min-width:160px">${htmlSafe(r.nom||'')}</b>`}${r.ae?`<span title="AE (propriétaire du deal HubSpot)">🧑‍💼 ${htmlSafe(r.ae)}</span>`:''}<span style="font-size:11px;font-weight:800;border-radius:6px;padding:2px 8px;${parc?'color:#0FA968;background:#F0FDF4;border:1px solid #BBF7D0':'color:#2B4BF2;background:#EFF6FF;border:1px solid #BFDBFE'}">${parc?'🏢 Parc':'🆕 New'}</span>${m?`<span title="Factures Zoho de ce client (fenêtre élargie jusqu'à aujourd'hui)" style="font-weight:700;white-space:nowrap">💶 ${Math.round(m.fact).toLocaleString('fr-FR')} € <span style="color:${m.enc>=m.fact-1?'#0FA968':'var(--ink-soft)'};font-weight:600">· ${Math.round(m.enc).toLocaleString('fr-FR')} € encaissés</span></span>`:`<span style="color:var(--ink-soft);font-size:11.5px">pas de facture rapprochée</span>`}</div>`;}).join('');
  z.style.display='block';
 }
 // Tuile No-show cliquable : les deals passés en No show sur la période (pipeline HubSpot)
