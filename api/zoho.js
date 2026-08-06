@@ -79,8 +79,11 @@ export default async function handler(req, res) {
         const orgs = od.organizations || [];
         if (orgs.length) { orgId = orgs[0].organization_id; orgNom = orgs[0].name; }
       } catch (_) {}
+      const cfgPrev = await lireCfg(); // re-setup (ajout de scopes) : on garde l'organisation déjà choisie
       await ecrireCfg({ refresh_token: d.refresh_token, access_token: d.access_token,
-        access_expire: Date.now() + 3000 * 1000, organization_id: orgId, organisation: orgNom, dc: DC(), configure_le: new Date().toISOString() });
+        access_expire: Date.now() + 3000 * 1000,
+        organization_id: cfgPrev.organization_id || orgId, organisation: cfgPrev.organisation || orgNom,
+        dc: DC(), configure_le: new Date().toISOString() });
       return res.status(200).json({ ok: true, organisation: orgNom, organization_id: orgId,
         info: orgId ? 'Zoho Billing connecté ✓ — teste ?ca=1' : 'Token OK mais organisation introuvable — vérifie le datacenter ZOHO_DC' });
     }
@@ -141,6 +144,23 @@ export default async function handler(req, res) {
       if (!(d.page_context && d.page_context.has_more_page)) break;
       if (minDt < du) break; // page déjà entièrement plus ancienne → les suivantes aussi
     }
+    // 📝 Devis ACCEPTÉS (ventes signées pas encore facturées, ex. abonnement Somarec) —
+    // silencieux si le token n'a pas le scope estimates (re-générer un code pour l'activer).
+    let devis = [];
+    try {
+      for (let page = 1; page <= 5; page++) {
+        const d = await zGet(`/estimates?per_page=200&page=${page}`, token, orgId);
+        const lot = d.estimates || [];
+        for (const e of lot) {
+          if (!/accept/i.test(String(e.status || ''))) continue;
+          const dt = String(e.estimate_date || e.date || '');
+          if (dt && (dt < du || dt > au)) continue;
+          devis.push({ numero: e.estimate_number || e.number || '', client: e.customer_name || '',
+            email: (e.email || '').toLowerCase(), date: dt, montant: Number(e.total || 0), statut: e.status || '' });
+        }
+        if (!(d.page_context && d.page_context.has_more_page)) break;
+      }
+    } catch (_) {}
     const encaisse = factures.reduce((s, f) => s + f.encaisse, 0);
     const facture = factures.reduce((s, f) => s + f.montant, 0);
     return res.status(200).json({
@@ -150,7 +170,8 @@ export default async function handler(req, res) {
       nb_factures: factures.length,
       // ⚠️ plafond large : à 200, les factures de début de fenêtre sortaient de la liste dès que la
       // fenêtre dépassait le mois (rapprochement ventes perdait Somarec & co, 06/08)
-      factures: factures.slice(0, 1000)
+      factures: factures.slice(0, 1000),
+      devis_acceptes: devis.slice(0, 300)
     });
   } catch (e) {
     return res.status(500).json({ erreur: 'Zoho', detail: String((e && e.message) || e).slice(0, 300) });
