@@ -106,7 +106,7 @@ export default async function handler(req, res) {
       const demain = new Date(Date.now() + 24 * 3600 * 1000).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris', weekday: 'long', day: '2-digit', month: 'long' });
       const titreT = '📅 Votre démo Sofy, c\'est demain !';
       const texteT = `Didier, rendez-vous ${demain} à 10:00 avec Sarah pour votre démonstration Sofy. Nous avons hâte de vous retrouver ! 😊 Un empêchement ? 📞 Appelez Alicia au +33612345678. (ceci est un TEST)`;
-      const envT = await envoyerSofy(telT, titreT, texteT, { label: '📞 Je reporte mon RDV', url: 'tel:' + telT },
+      const envT = await envoyerSofy(telT, titreT, texteT, { label: '📞 Je reporte mon RDV', url: 'https://www.sofyscrap.com/appel.html?tel=' + encodeURIComponent(telT) },
         `Rappel Sofy : votre démo demain 10:00 avec Sarah. Un empêchement ? Appelez le ${telT}. (TEST)`);
       return res.status(200).json({ ok: envT.ok, test: true, tel: telT, canal: envT.canal || null, id: envT.id || null,
         statut: envT.statut || null, rcs_echec: envT.rcs_echec || null, detail: envT.erreur || null,
@@ -222,7 +222,8 @@ export default async function handler(req, res) {
       const sdrS = sourceurDe(c && c.company);
       const telSdr = sdrS ? (telParSdr[sdrS] || null) : null;
       const aide = telSdr ? `Un empêchement ? 📞 Appelez ${sdrS} au ${telSdr}.` : `Un empêchement ? Appelez votre interlocuteur Sofy habituel.`;
-      const bouton = telSdr ? { label: '📞 Je reporte mon RDV', url: 'tel:' + telSdr } : null;
+      // L'API RCS n'accepte que des URL https (pas de tel:) → page de rebond qui lance le composeur
+      const bouton = telSdr ? { label: '📞 Je reporte mon RDV', url: 'https://www.sofyscrap.com/appel.html?tel=' + encodeURIComponent(telSdr) } : null;
       const titre = type === 'j1' ? '📅 Votre démo Sofy, c\'est demain !' : '⏰ Votre démo Sofy commence bientôt';
       const texte = type === 'j1'
         ? `${prenom ? prenom + ', r' : 'R'}endez-vous ${quand}${ae ? ' avec ' + ae : ''} pour votre démonstration Sofy. Nous avons hâte de vous retrouver ! 😊 ${aide}`
