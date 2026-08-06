@@ -115,6 +115,22 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, organisation: cfg.organisation, exemple: d });
     }
 
+    // ── Lignes d'articles de factures précises (ventilation du CA par module) ──
+    if (q.lignes) {
+      const ids = String(q.lignes).split(',').map(s => s.trim()).filter(Boolean).slice(0, 25);
+      const lignes = {};
+      for (const id of ids) {
+        try {
+          const d = await zGet(`/invoices/${encodeURIComponent(id)}`, token, orgId);
+          const inv = d.invoice || {};
+          lignes[id] = (inv.invoice_items || inv.line_items || []).map(li => ({
+            nom: li.name || li.description || '', montant: Number(li.item_total || li.total || 0)
+          }));
+        } catch (_) { lignes[id] = []; }
+      }
+      return res.status(200).json({ ok: true, lignes });
+    }
+
     // ── 2. CA encaissé sur une période ──
     const jour = new Date().toISOString().slice(0, 10);
     const du = String(q.du || jour.slice(0, 7) + '-01');
@@ -136,6 +152,7 @@ export default async function handler(req, res) {
         if (!dt || dt > au || dt < du) continue;
         if (['draft', 'void'].includes(String(f.status || ''))) continue; // tests / annulées
         factures.push({
+          id: f.invoice_id || null,
           numero: f.number || f.invoice_number || '', client: f.customer_name || '',
           email: (f.email || '').toLowerCase(), date: dt, statut: f.status || '',
           montant: Number(f.total || 0), encaisse: Math.max(0, Number(f.total || 0) - Number(f.balance || 0)),

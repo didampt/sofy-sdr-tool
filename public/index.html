@@ -2031,7 +2031,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v307';
+const VERSION='v308';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -8064,6 +8064,47 @@ function stjMatchDocs(v,docs){
  if(nd&&nd.length>=3){const m=docs.filter(f=>{const fd=stjDomCA(f.email);return fd&&(fd.includes(nd)||nd.includes(fd));});if(m.length)return m;}
  return [];
 }
+// 📦 Ventilation du CA par module depuis les LIGNES des factures rapprochées (1 appel Zoho,
+// résultats en cache). Repli : modules déduits du nom du deal, à parts égales.
+async function stjChargerModules(fact,ca){
+ const zone=()=>document.getElementById('stj-mod-zone');
+ try{
+  STJ._lignesCache=STJ._lignesCache||{};
+  const ids=[];
+  fact.forEach(r=>{const m=ca.parDeal.get(r.id);((m&&m.factures)||[]).forEach(f=>{if(f.id&&!(f.id in STJ._lignesCache)&&ids.indexOf(f.id)<0)ids.push(f.id);});});
+  if(ids.length){
+   const r=await api('/api/zoho?lignes='+encodeURIComponent(ids.slice(0,25).join(',')));
+   const d=await r.json().catch(()=>({}));
+   if(d&&d.ok)Object.assign(STJ._lignesCache,d.lignes||{});
+  }
+  const modArt=nom=>{const s=String(nom||'').toLowerCase();
+   if(/view/.test(s))return '⭐ Soview';
+   if(/connect/.test(s))return '💬 SoConnect';
+   if(/rcs/.test(s))return '📱 SoReach RCS';
+   if(/sms/.test(s))return '📱 SoReach SMS';
+   if(/config|installation|frais|setup|licence|license|formation/.test(s))return '🔧 Frais & licences';
+   return 'Autre';};
+  const modsNom=nom=>{const s=String(nom||'').toLowerCase();const out=[];if(/so[\s\-]?view/.test(s))out.push('⭐ Soview');if(/so[\s\-]?connect/.test(s))out.push('💬 SoConnect');if(/rcs/.test(s))out.push('📱 SoReach RCS');else if(/sms/.test(s))out.push('📱 SoReach SMS');return out.length?out:['Autre'];};
+  const parMod={},dealsMod={};
+  fact.forEach(r=>{
+   const m=ca.parDeal.get(r.id);if(!m)return;
+   ((m.factures)||[]).forEach(f=>{
+    const lis=STJ._lignesCache[f.id]||[];
+    const somme=lis.reduce((s,li)=>s+(li.montant||0),0);
+    if(lis.length&&somme>0){
+     // TTC de la facture réparti au prorata des lignes HT (SO-VIEW 440 / SO-CONNECT 319 / frais 499)
+     lis.forEach(li=>{const md=modArt(li.nom);(parMod[md]=parMod[md]||{fact:0}).fact+=f.montant*(li.montant||0)/somme;(dealsMod[md]=dealsMod[md]||new Set()).add(r.id);});
+    }else{
+     const mods=modsNom(r.nom);
+     mods.forEach(md=>{(parMod[md]=parMod[md]||{fact:0}).fact+=f.montant/mods.length;(dealsMod[md]=dealsMod[md]||new Set()).add(r.id);});
+    }
+   });
+  });
+  const z=zone();if(!z)return;
+  const ents=Object.entries(parMod).sort((a,b)=>b[1].fact-a[1].fact);
+  z.innerHTML=ents.length?ents.map(([md,v])=>{const n=(dealsMod[md]||new Set()).size;return `<span>${md} — <b>${n}</b> vente${n>1?'s':''} · <b>${Math.round(v.fact).toLocaleString('fr-FR')} €</b></span>`;}).join(''):'<span style="color:var(--ink-soft)">Aucune ligne de facture sur ces ventes.</span>';
+ }catch(_){const z=zone();if(z)z.innerHTML='<span style="color:var(--ink-soft)">Lignes de factures indisponibles.</span>';}
+}
 // Re-rend le panneau détail s'il est ouvert (changement de période/SDR, données Zoho arrivées) —
 // sans lui, il gardait le contenu de l'ancienne période (constat Didier 06/08).
 function stjRafraichirPanneau(){
@@ -8100,7 +8141,7 @@ function stjCAVentes(){
   const m=stjMatchDocs(v,fs);
   if(m.length){
    const fact=m.reduce((s,f)=>s+f.montant,0),enc=m.reduce((s,f)=>s+f.encaisse,0);
-   parDeal.set(v.id,{fact,enc});totFact+=fact;totEnc+=enc;rapprochees++;
+   parDeal.set(v.id,{fact,enc,factures:m});totFact+=fact;totEnc+=enc;rapprochees++;
   }else{
    parDeal.set(v.id,null);
    const md=stjMatchDocs(v,dv); // 📝 pas de facture mais un devis ACCEPTÉ = vendu, à facturer
@@ -8158,16 +8199,10 @@ function stjToggleVentes(){
   for(const k in srcs){if(k.includes(nd)||nd.includes(k))return srcs[k];}return null;};
  const caParSdr={};ds.forEach(r=>{const s=srcDe(r.nom);const m=ca.parDeal.get(r.id);if(s&&m)caParSdr[s]=(caParSdr[s]||0)+m.fact;});
  const camembert=`<div style="display:flex;gap:14px;align-items:center;margin-bottom:10px"><div title="New business vs parc client" style="width:84px;height:84px;border-radius:50%;background:conic-gradient(#2B4BF2 0deg ${(3.6*pcNew).toFixed(1)}deg,#0FA968 ${(3.6*pcNew).toFixed(1)}deg 360deg)"></div><div style="font-size:12px"><div style="display:flex;align-items:center;gap:6px;margin:2px 0"><span style="width:10px;height:10px;border-radius:3px;background:#2B4BF2;display:inline-block"></span>🆕 New business — <b>${nNew}</b> vente${nNew>1?'s':''} facturée${nNew>1?'s':''} (${pcNew} %)${factNew?` · <b>${Math.round(factNew).toLocaleString('fr-FR')} €</b> facturés`:''}</div><div style="display:flex;align-items:center;gap:6px;margin:2px 0"><span style="width:10px;height:10px;border-radius:3px;background:#0FA968;display:inline-block"></span>🏢 Parc client — <b>${nParc}</b> vente${nParc>1?'s':''} facturée${nParc>1?'s':''} (${pcParc} %)${factParc?` · <b>${Math.round(factParc).toLocaleString('fr-FR')} €</b> facturés`:''}</div>${ca.rapprochees?`<div style="margin-top:4px;color:var(--ink-soft)">💶 <b>${Math.round(ca.totFact).toLocaleString('fr-FR')} €</b> facturés · <b>${Math.round(ca.totEnc).toLocaleString('fr-FR')} €</b> encaissés (${ca.rapprochees}/${ca.nbVentes} ventes rapprochées Zoho)</div>`:''}${ca.totDevis?`<div style="margin-top:2px;color:#B45309">📝 + <b>${Math.round(ca.totDevis).toLocaleString('fr-FR')} €</b> vendus en devis acceptés, pas encore facturés</div>`:''}${Object.keys(caParSdr).length?`<div style="margin-top:2px;color:var(--ink-soft)">🎣 CA par sourceur : ${Object.entries(caParSdr).sort((a,b)=>b[1]-a[1]).map(([s,v])=>htmlSafe(s)+' <b>'+Math.round(v).toLocaleString('fr-FR')+' €</b>').join(' · ')}</div>`:''}</div></div>`;
- // 📦 Répartition par module (déduite du nom du deal « Société - Produits ») — ventes FACTURÉES.
- // Un deal multi-modules compte dans chacun de ses modules (le CA du deal aussi).
- const modsDe=nom=>{const s=String(nom||'').toLowerCase();const out=[];
-  if(/so[\s\-]?view/.test(s))out.push('⭐ Soview');
-  if(/so[\s\-]?connect/.test(s))out.push('💬 SoConnect');
-  if(/rcs/.test(s))out.push('📱 SoReach RCS');else if(/sms/.test(s))out.push('📱 SoReach SMS');
-  return out.length?out:['Autre'];};
- // CA d'un deal multi-modules réparti à PARTS ÉGALES entre ses modules (Σ modules = CA total)
- const parMod={};fact.forEach(r=>{const m=ca.parDeal.get(r.id);const mods=modsDe(r.nom);mods.forEach(md=>{(parMod[md]=parMod[md]||{n:0,fact:0}).n++;if(m)parMod[md].fact+=m.fact/mods.length;});});
- const repartModules=Object.keys(parMod).length?'<div style="font-weight:700;font-size:12.5px;margin:4px 0 2px">📦 Par module <span style="font-weight:400;color:var(--ink-soft)">(deal multi-modules : CA réparti à parts égales)</span></div><div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;background:var(--paper);border-radius:8px;padding:8px 12px;margin-bottom:10px">'+Object.entries(parMod).sort((a,b)=>b[1].fact-a[1].fact).map(([md,v])=>`<span>${md} — <b>${v.n}</b> vente${v.n>1?'s':''} · <b>${Math.round(v.fact).toLocaleString('fr-FR')} €</b></span>`).join('')+'</div>':'';
+ // 📦 Répartition par module : VENTILÉE PAR LIGNES DE FACTURES Zoho (SO-VIEW 440 € ≠ SO-CONNECT
+ // 319 € sur la même facture Bourbon — le partage à parts égales était faux, constat Didier 06/08).
+ const repartModules='<div style="font-weight:700;font-size:12.5px;margin:4px 0 2px">📦 Par module <span style="font-weight:400;color:var(--ink-soft)">(ventilé par lignes de factures Zoho)</span></div><div id="stj-mod-zone" style="display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;background:var(--paper);border-radius:8px;padding:8px 12px;margin-bottom:10px"><span style="color:var(--ink-soft)">Chargement des lignes de factures…</span></div>';
+ stjChargerModules(fact,ca);
  // 🏅 Indice de performance : SDR = CA facturé issu de ses RDV ÷ RDV pris sur la période ;
  // AE = ventes facturées closes et CA correspondant.
  let perf='';
