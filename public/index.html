@@ -2031,7 +2031,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v308';
+const VERSION='v309';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -8135,20 +8135,31 @@ function stjVentesSel(){
 function stjCAVentes(){
  const fs=(STJ&&STJ.zoho&&STJ.zoho.factures)||[];
  const dv=(STJ&&STJ.zoho&&STJ.zoho.devis_acceptes)||[];
+ const ab=(STJ&&STJ.zoho&&STJ.zoho.abonnements)||[];
  const ds=stjVentesSel();
- const parDeal=new Map(),parDevis=new Map();let totFact=0,totEnc=0,totDevis=0,rapprochees=0;
+ const parDeal=new Map(),parDevis=new Map(),parAnn=new Map();
+ let totFact=0,totEnc=0,totDevis=0,totAnn=0,rapprochees=0;
  for(const v of ds){
   const m=stjMatchDocs(v,fs);
+  let fact=0,devisT=0;
   if(m.length){
-   const fact=m.reduce((s,f)=>s+f.montant,0),enc=m.reduce((s,f)=>s+f.encaisse,0);
+   fact=m.reduce((s,f)=>s+f.montant,0);const enc=m.reduce((s,f)=>s+f.encaisse,0);
    parDeal.set(v.id,{fact,enc,factures:m});totFact+=fact;totEnc+=enc;rapprochees++;
   }else{
    parDeal.set(v.id,null);
    const md=stjMatchDocs(v,dv); // 📝 pas de facture mais un devis ACCEPTÉ = vendu, à facturer
-   if(md.length){const t=md.reduce((s,f)=>s+f.montant,0);parDevis.set(v.id,t);totDevis+=t;}
+   if(md.length){devisT=md.reduce((s,f)=>s+f.montant,0);parDevis.set(v.id,devisT);totDevis+=devisT;}
   }
+  // 📅 CA ANNUALISÉ (valeur contractuelle SaaS, engagement 12 mois — calcul Didier 06/08) :
+  // abonnements Zoho du client (MRR × 12) + one-shot facturé (packs SMS, frais d'installation) ;
+  // sans abonnement : facturé tel quel ; sans facture : devis à valeur faciale.
+  const ma=stjMatchDocs(v,ab);
+  const acv=ma.reduce((s,a)=>s+(a.mrr||0)*12,0);
+  const oneShot=m.filter(f=>!/renewal|subscription/i.test(String(f.type||''))).reduce((s,f)=>s+f.montant,0);
+  const ann=acv>0?acv+oneShot:(fact>0?fact:devisT);
+  if(ann>0){parAnn.set(v.id,ann);totAnn+=ann;}
  }
- return {parDeal,parDevis,totFact,totEnc,totDevis,rapprochees,nbVentes:ds.length};
+ return {parDeal,parDevis,parAnn,totFact,totEnc,totDevis,totAnn,rapprochees,nbVentes:ds.length};
 }
 async function stjZoho(){
  const b=stjBornes();
@@ -8164,7 +8175,7 @@ async function stjZoho(){
   const ca=stjCAVentes();
   if(!ca.nbVentes)return; // ventes HubSpot pas encore chargées → la tuile viendra au re-render
   el.insertAdjacentHTML('beforeend',`<div id="stj-tuile-zoho" style="display:contents">`+
-   stjTuile('💶 CA VENTES CONCLUES'+(((document.getElementById('stj-sdr')||{}).value)?' · '+(document.getElementById('stj-sdr')||{}).value:''),Math.round(ca.totFact).toLocaleString('fr-FR')+' €','','',Math.round(ca.totEnc).toLocaleString('fr-FR')+' € encaissés · '+ca.rapprochees+' facturée'+(ca.rapprochees>1?'s':'')+' / '+ca.nbVentes+' gagnées'+(ca.totDevis?' · +'+Math.round(ca.totDevis).toLocaleString('fr-FR')+' € en devis acceptés':'')+' (Zoho)','stjToggleVentes()')+
+   stjTuile('💶 CA VENTES CONCLUES'+(((document.getElementById('stj-sdr')||{}).value)?' · '+(document.getElementById('stj-sdr')||{}).value:''),Math.round(ca.totFact).toLocaleString('fr-FR')+' €','','',Math.round(ca.totEnc).toLocaleString('fr-FR')+' € encaissés · '+ca.rapprochees+' facturée'+(ca.rapprochees>1?'s':'')+' / '+ca.nbVentes+' gagnées'+(ca.totDevis?' · +'+Math.round(ca.totDevis).toLocaleString('fr-FR')+' € en devis acceptés':'')+(ca.totAnn?' · ≈'+Math.round(ca.totAnn).toLocaleString('fr-FR')+' €/an':'')+' (Zoho)','stjToggleVentes()')+
    (function(){ // 🧲 ROI : CA des ventes conclues ÷ coût de la période (conso + abos prorata)
     var c=STJ&&STJ.couts;if(!c||!c.total||!ca.totFact)return '';
     var roi=Math.round(10*ca.totFact/c.total)/10;
@@ -8198,7 +8209,7 @@ function stjToggleVentes(){
  const srcDe=nomDeal=>{const nd=stjNzCA(String(nomDeal||'').split(' - ')[0]);if(!nd)return null;
   for(const k in srcs){if(k.includes(nd)||nd.includes(k))return srcs[k];}return null;};
  const caParSdr={};ds.forEach(r=>{const s=srcDe(r.nom);const m=ca.parDeal.get(r.id);if(s&&m)caParSdr[s]=(caParSdr[s]||0)+m.fact;});
- const camembert=`<div style="display:flex;gap:14px;align-items:center;margin-bottom:10px"><div title="New business vs parc client" style="width:84px;height:84px;border-radius:50%;background:conic-gradient(#2B4BF2 0deg ${(3.6*pcNew).toFixed(1)}deg,#0FA968 ${(3.6*pcNew).toFixed(1)}deg 360deg)"></div><div style="font-size:12px"><div style="display:flex;align-items:center;gap:6px;margin:2px 0"><span style="width:10px;height:10px;border-radius:3px;background:#2B4BF2;display:inline-block"></span>🆕 New business — <b>${nNew}</b> vente${nNew>1?'s':''} facturée${nNew>1?'s':''} (${pcNew} %)${factNew?` · <b>${Math.round(factNew).toLocaleString('fr-FR')} €</b> facturés`:''}</div><div style="display:flex;align-items:center;gap:6px;margin:2px 0"><span style="width:10px;height:10px;border-radius:3px;background:#0FA968;display:inline-block"></span>🏢 Parc client — <b>${nParc}</b> vente${nParc>1?'s':''} facturée${nParc>1?'s':''} (${pcParc} %)${factParc?` · <b>${Math.round(factParc).toLocaleString('fr-FR')} €</b> facturés`:''}</div>${ca.rapprochees?`<div style="margin-top:4px;color:var(--ink-soft)">💶 <b>${Math.round(ca.totFact).toLocaleString('fr-FR')} €</b> facturés · <b>${Math.round(ca.totEnc).toLocaleString('fr-FR')} €</b> encaissés (${ca.rapprochees}/${ca.nbVentes} ventes rapprochées Zoho)</div>`:''}${ca.totDevis?`<div style="margin-top:2px;color:#B45309">📝 + <b>${Math.round(ca.totDevis).toLocaleString('fr-FR')} €</b> vendus en devis acceptés, pas encore facturés</div>`:''}${Object.keys(caParSdr).length?`<div style="margin-top:2px;color:var(--ink-soft)">🎣 CA par sourceur : ${Object.entries(caParSdr).sort((a,b)=>b[1]-a[1]).map(([s,v])=>htmlSafe(s)+' <b>'+Math.round(v).toLocaleString('fr-FR')+' €</b>').join(' · ')}</div>`:''}</div></div>`;
+ const camembert=`<div style="display:flex;gap:14px;align-items:center;margin-bottom:10px"><div title="New business vs parc client" style="width:84px;height:84px;border-radius:50%;background:conic-gradient(#2B4BF2 0deg ${(3.6*pcNew).toFixed(1)}deg,#0FA968 ${(3.6*pcNew).toFixed(1)}deg 360deg)"></div><div style="font-size:12px"><div style="display:flex;align-items:center;gap:6px;margin:2px 0"><span style="width:10px;height:10px;border-radius:3px;background:#2B4BF2;display:inline-block"></span>🆕 New business — <b>${nNew}</b> vente${nNew>1?'s':''} facturée${nNew>1?'s':''} (${pcNew} %)${factNew?` · <b>${Math.round(factNew).toLocaleString('fr-FR')} €</b> facturés`:''}</div><div style="display:flex;align-items:center;gap:6px;margin:2px 0"><span style="width:10px;height:10px;border-radius:3px;background:#0FA968;display:inline-block"></span>🏢 Parc client — <b>${nParc}</b> vente${nParc>1?'s':''} facturée${nParc>1?'s':''} (${pcParc} %)${factParc?` · <b>${Math.round(factParc).toLocaleString('fr-FR')} €</b> facturés`:''}</div>${ca.rapprochees?`<div style="margin-top:4px;color:var(--ink-soft)">💶 <b>${Math.round(ca.totFact).toLocaleString('fr-FR')} €</b> facturés · <b>${Math.round(ca.totEnc).toLocaleString('fr-FR')} €</b> encaissés (${ca.rapprochees}/${ca.nbVentes} ventes rapprochées Zoho)</div>`:''}${ca.totDevis?`<div style="margin-top:2px;color:#B45309">📝 + <b>${Math.round(ca.totDevis).toLocaleString('fr-FR')} €</b> vendus en devis acceptés, pas encore facturés</div>`:''}${ca.totAnn?`<div style="margin-top:2px;color:#7A5AF8">📅 CA annualisé ≈ <b>${Math.round(ca.totAnn).toLocaleString('fr-FR')} €</b> <span style="color:var(--ink-soft)">(abonnements × 12 + one-shot ; sans abonnement : facturé, sinon devis)</span></div>`:''}${Object.keys(caParSdr).length?`<div style="margin-top:2px;color:var(--ink-soft)">🎣 CA par sourceur : ${Object.entries(caParSdr).sort((a,b)=>b[1]-a[1]).map(([s,v])=>htmlSafe(s)+' <b>'+Math.round(v).toLocaleString('fr-FR')+' €</b>').join(' · ')}</div>`:''}</div></div>`;
  // 📦 Répartition par module : VENTILÉE PAR LIGNES DE FACTURES Zoho (SO-VIEW 440 € ≠ SO-CONNECT
  // 319 € sur la même facture Bourbon — le partage à parts égales était faux, constat Didier 06/08).
  const repartModules='<div style="font-weight:700;font-size:12.5px;margin:4px 0 2px">📦 Par module <span style="font-weight:400;color:var(--ink-soft)">(ventilé par lignes de factures Zoho)</span></div><div id="stj-mod-zone" style="display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;background:var(--paper);border-radius:8px;padding:8px 12px;margin-bottom:10px"><span style="color:var(--ink-soft)">Chargement des lignes de factures…</span></div>';
@@ -8217,7 +8228,7 @@ function stjToggleVentes(){
   if(lignesSdr||lignesAe)perf='<div style="font-weight:700;font-size:12.5px;margin:4px 0 2px">🏅 Indice de performance (période : CA facturé rapproché)</div><div style="background:var(--paper);border-radius:8px;padding:6px 12px;margin-bottom:10px">'+lignesSdr+lignesAe+'</div>';
  }catch(_){}
  const ligneDe=r=>{const m=ca.parDeal.get(r.id);const parc=estParc(r.pipeline);
-   return `<div style="display:flex;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px;align-items:center;flex-wrap:wrap"><span style="min-width:44px;color:var(--ink-soft)">${r.date?new Date(r.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}):''}</span>${ns.portal_id&&r.id?`<a href="https://app.hubspot.com/contacts/${ns.portal_id}/record/0-3/${r.id}" target="_blank" style="flex:1;min-width:160px;font-weight:700;color:var(--accent)" title="Ouvrir le deal dans HubSpot">${htmlSafe(r.nom||'')} ↗</a>`:`<b style="flex:1;min-width:160px">${htmlSafe(r.nom||'')}</b>`}${r.ae?`<span title="AE (propriétaire du deal HubSpot)">🧑‍💼 ${htmlSafe(r.ae)}</span>`:''}${r.origine?`<span title="Origine du lead (Revops source HubSpot)" style="font-size:11px;font-weight:700;color:#7A5AF8;background:#F5F3FF;border:1px solid #DDD6FE;border-radius:6px;padding:2px 8px">📍 ${htmlSafe(r.origine)}</span>`:''}${(function(){var s=srcDe(r.nom);return s?`<span title="SDR qui a pris le RDV (fiche Sofy)" style="color:var(--ink-soft)">🎣 ${htmlSafe(s)}</span>`:'';})()}<span style="font-size:11px;font-weight:800;border-radius:6px;padding:2px 8px;${parc?'color:#0FA968;background:#F0FDF4;border:1px solid #BBF7D0':'color:#2B4BF2;background:#EFF6FF;border:1px solid #BFDBFE'}">${parc?'🏢 Parc':'🆕 New'}</span>${m?`<span title="Factures Zoho de ce client (fenêtre élargie jusqu'à aujourd'hui)" style="font-weight:700;white-space:nowrap">💶 ${Math.round(m.fact).toLocaleString('fr-FR')} € <span style="color:${m.enc>=m.fact-1?'#0FA968':'var(--ink-soft)'};font-weight:600">· ${Math.round(m.enc).toLocaleString('fr-FR')} € encaissés</span></span>`:(ca.parDevis.get(r.id)?`<span title="Devis Zoho accepté — vente signée, facturation à venir" style="color:#B45309;font-size:12px;font-weight:700">📝 devis accepté ${Math.round(ca.parDevis.get(r.id)).toLocaleString('fr-FR')} € — à facturer</span>`:`<span style="color:#B45309;font-size:11.5px;font-weight:700">⏳ ni facture ni devis Zoho — hors CA</span>`)}</div>`;};
+   return `<div style="display:flex;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px;align-items:center;flex-wrap:wrap"><span style="min-width:44px;color:var(--ink-soft)">${r.date?new Date(r.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}):''}</span>${ns.portal_id&&r.id?`<a href="https://app.hubspot.com/contacts/${ns.portal_id}/record/0-3/${r.id}" target="_blank" style="flex:1;min-width:160px;font-weight:700;color:var(--accent)" title="Ouvrir le deal dans HubSpot">${htmlSafe(r.nom||'')} ↗</a>`:`<b style="flex:1;min-width:160px">${htmlSafe(r.nom||'')}</b>`}${r.ae?`<span title="AE (propriétaire du deal HubSpot)">🧑‍💼 ${htmlSafe(r.ae)}</span>`:''}${r.origine?`<span title="Origine du lead (Revops source HubSpot)" style="font-size:11px;font-weight:700;color:#7A5AF8;background:#F5F3FF;border:1px solid #DDD6FE;border-radius:6px;padding:2px 8px">📍 ${htmlSafe(r.origine)}</span>`:''}${(function(){var s=srcDe(r.nom);return s?`<span title="SDR qui a pris le RDV (fiche Sofy)" style="color:var(--ink-soft)">🎣 ${htmlSafe(s)}</span>`:'';})()}<span style="font-size:11px;font-weight:800;border-radius:6px;padding:2px 8px;${parc?'color:#0FA968;background:#F0FDF4;border:1px solid #BBF7D0':'color:#2B4BF2;background:#EFF6FF;border:1px solid #BFDBFE'}">${parc?'🏢 Parc':'🆕 New'}</span>${m?`<span title="Factures Zoho de ce client (fenêtre élargie jusqu'à aujourd'hui)" style="font-weight:700;white-space:nowrap">💶 ${Math.round(m.fact).toLocaleString('fr-FR')} € <span style="color:${m.enc>=m.fact-1?'#0FA968':'var(--ink-soft)'};font-weight:600">· ${Math.round(m.enc).toLocaleString('fr-FR')} € encaissés</span></span>`:(ca.parDevis.get(r.id)?`<span title="Devis Zoho accepté — vente signée, facturation à venir" style="color:#B45309;font-size:12px;font-weight:700">📝 devis accepté ${Math.round(ca.parDevis.get(r.id)).toLocaleString('fr-FR')} € — à facturer</span>`:`<span style="color:#B45309;font-size:11.5px;font-weight:700">⏳ ni facture ni devis Zoho — hors CA</span>`)}${ca.parAnn.get(r.id)?`<span title="Valeur contractuelle annualisée : abonnements Zoho du client × 12 + one-shot facturé (ou facturé/devis à défaut)" style="color:#7A5AF8;font-weight:700;white-space:nowrap">📅 ≈ ${Math.round(ca.parAnn.get(r.id)).toLocaleString('fr-FR')} €/an</span>`:''}</div>`;};
  z.innerHTML='<div style="font-weight:800;margin-bottom:6px">💼 Ventes conclues sur la période'+(sdrSelV?' — sourcées par '+htmlSafe(sdrSelV):'')+'</div>'+camembert+repartModules+perf
   +fact.map(ligneDe).join('')
   +(nonFact.length?`<div style="margin-top:12px;font-weight:700;font-size:12.5px;color:#B45309">⏳ Gagnées HubSpot mais SANS facture Zoho — non comptées dans le CA (à facturer ? deal mal clos ? nom/email différent ?)</div><div style="opacity:.75">${nonFact.map(ligneDe).join('')}</div>`:'');

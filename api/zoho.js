@@ -156,7 +156,7 @@ export default async function handler(req, res) {
           numero: f.number || f.invoice_number || '', client: f.customer_name || '',
           email: (f.email || '').toLowerCase(), date: dt, statut: f.status || '',
           montant: Number(f.total || 0), encaisse: Math.max(0, Number(f.total || 0) - Number(f.balance || 0)),
-          devise: f.currency_code || 'EUR'
+          type: f.transaction_type || '', devise: f.currency_code || 'EUR'
         });
       }
       if (!(d.page_context && d.page_context.has_more_page)) break;
@@ -179,6 +179,24 @@ export default async function handler(req, res) {
         if (!(d.page_context && d.page_context.has_more_page)) break;
       }
     } catch (_) {}
+    // 📅 Abonnements actifs (module subscriptions) → MRR par client, pour le CA annualisé (MRR × 12)
+    let abos = [];
+    try {
+      for (let page = 1; page <= 5; page++) {
+        const d = await zGet(`/subscriptions?per_page=200&page=${page}`, token, orgId);
+        for (const s of (d.subscriptions || [])) {
+          const st = String(s.status || '').toLowerCase();
+          if (!['live', 'unpaid', 'non_renewing', 'future', 'trial'].includes(st)) continue;
+          const unit = String(s.interval_unit || 'months').toLowerCase();
+          const iv = Number(s.interval || 1) || 1;
+          const amt = Number(s.amount || 0);
+          const mrr = unit.startsWith('year') ? amt / (12 * iv) : amt / iv;
+          abos.push({ client: s.customer_name || '', email: (s.email || '').toLowerCase(),
+            plan: s.plan_name || s.name || '', statut: st, mrr: Math.round(mrr * 100) / 100 });
+        }
+        if (!(d.page_context && d.page_context.has_more_page)) break;
+      }
+    } catch (_) {}
     const encaisse = factures.reduce((s, f) => s + f.encaisse, 0);
     const facture = factures.reduce((s, f) => s + f.montant, 0);
     return res.status(200).json({
@@ -189,7 +207,8 @@ export default async function handler(req, res) {
       // ⚠️ plafond large : à 200, les factures de début de fenêtre sortaient de la liste dès que la
       // fenêtre dépassait le mois (rapprochement ventes perdait Somarec & co, 06/08)
       factures: factures.slice(0, 1000),
-      devis_acceptes: devis.slice(0, 300)
+      devis_acceptes: devis.slice(0, 300),
+      abonnements: abos.slice(0, 500)
     });
   } catch (e) {
     return res.status(500).json({ erreur: 'Zoho', detail: String((e && e.message) || e).slice(0, 300) });
