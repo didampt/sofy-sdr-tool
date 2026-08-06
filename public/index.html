@@ -1205,31 +1205,8 @@ Spot-Hit</textarea>
             </div>
           </div>
         </div>
-        <div id="hotlead-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:903;align-items:center;justify-content:center" onclick="if(event.target===this)this.style.display='none'">
-          <div style="background:var(--card,#fff);border-radius:14px;padding:22px 24px;max-width:520px;width:94%">
-            <div style="font-size:18px;font-weight:800;margin-bottom:6px">➕ Hot lead manuel</div>
-            <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:12px">Demande entrante (téléphone, email, salon…) → fiche dans les Hot Leads partagés, tuile 🔥 de « Ma journée », annonce Slack à l'équipe.</div>
-            <input class="field" id="hl-nom" placeholder="Prénom Nom du contact *" style="width:100%;margin-bottom:8px">
-            <input class="field" id="hl-entreprise" placeholder="Entreprise" style="width:100%;margin-bottom:8px">
-            <input class="field" id="hl-fonction" placeholder="Fonction (ex : Gérant)" style="width:100%;margin-bottom:8px">
-            <div style="display:flex;gap:8px;margin-bottom:8px">
-              <input class="field" id="hl-email" placeholder="Email" style="flex:1">
-              <input class="field" id="hl-tel" placeholder="Téléphone" style="flex:1">
-            </div>
-            <select class="field" id="hl-source" style="width:100%;margin-bottom:8px">
-              <option value="appel entrant">📞 Appel entrant</option>
-              <option value="email entrant">✉️ Email entrant</option>
-              <option value="salon / événement">🤝 Salon / événement</option>
-              <option value="recommandation">💬 Recommandation</option>
-              <option value="autre">Autre</option>
-            </select>
-            <textarea class="field" id="hl-detail" rows="2" placeholder="Contexte (ex : veut une démo SoView pour ses 3 boutiques)" style="width:100%"></textarea>
-            <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
-              <button class="btn" style="background:var(--paper)" onclick="document.getElementById('hotlead-modal').style.display='none'">Annuler</button>
-              <button class="btn btn-primary" id="hl-btn" onclick="envoyerHotLeadManuel()">🔥 Créer le hot lead</button>
-            </div>
-          </div>
-        </div>
+        <!-- ⚠️ hotlead-modal est déclarée APRÈS </main> (niveau document) : elle s'ouvre depuis
+             « Ma journée » — nichée ici dans view-params, elle restait invisible (parent masqué). -->
       </div>
       <div class="map-card">
         <h2>💶 Tarifs unitaires des API</h2>
@@ -1270,6 +1247,33 @@ Spot-Hit</textarea>
     </section>
 
   </main>
+</div>
+<!-- ➕ Hot lead manuel — au niveau document (position:fixed) : ouvrable depuis TOUTES les vues,
+     notamment « Ma journée ». Ne pas la remettre dans une <section class="view"> (parent masqué = invisible). -->
+<div id="hotlead-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:903;align-items:center;justify-content:center" onclick="if(event.target===this)this.style.display='none'">
+  <div style="background:var(--card,#fff);border-radius:14px;padding:22px 24px;max-width:520px;width:94%">
+    <div style="font-size:18px;font-weight:800;margin-bottom:6px">➕ Hot lead manuel</div>
+    <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:12px">Demande entrante (téléphone, email, salon…) → fiche dans les Hot Leads partagés, tuile 🔥 de « Ma journée », annonce Slack à l'équipe.</div>
+    <input class="field" id="hl-nom" placeholder="Prénom Nom du contact *" style="width:100%;margin-bottom:8px">
+    <input class="field" id="hl-entreprise" placeholder="Entreprise" style="width:100%;margin-bottom:8px">
+    <input class="field" id="hl-fonction" placeholder="Fonction (ex : Gérant)" style="width:100%;margin-bottom:8px">
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <input class="field" id="hl-email" placeholder="Email" style="flex:1">
+      <input class="field" id="hl-tel" placeholder="Téléphone" style="flex:1">
+    </div>
+    <select class="field" id="hl-source" style="width:100%;margin-bottom:8px">
+      <option value="appel entrant">📞 Appel entrant</option>
+      <option value="email entrant">✉️ Email entrant</option>
+      <option value="salon / événement">🤝 Salon / événement</option>
+      <option value="recommandation">💬 Recommandation</option>
+      <option value="autre">Autre</option>
+    </select>
+    <textarea class="field" id="hl-detail" rows="2" placeholder="Contexte (ex : veut une démo SoView pour ses 3 boutiques)" style="width:100%"></textarea>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+      <button class="btn" style="background:var(--paper)" onclick="document.getElementById('hotlead-modal').style.display='none'">Annuler</button>
+      <button class="btn btn-primary" id="hl-btn" onclick="envoyerHotLeadManuel()">🔥 Créer le hot lead</button>
+    </div>
+  </div>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -2027,7 +2031,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v298';
+const VERSION='v299';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
