@@ -6,7 +6,7 @@
 // Env requis : SOFY_API_KEY (sofy_live_…) ; optionnels : SOFY_RCS_SENDER_ID, SOFY_SMS_FROM (déf. Sofy).
 // Cron horaire jours ouvrés (vercel.json) — en-tête x-vercel-cron, Bearer CRON_SECRET ou superadmin.
 
-import { verifierToken, sql, ensureSchema } from './db.js';
+import { verifierToken, sql, ensureSchema, envoyerSmsSofy } from './db.js';
 import { jetonRdv } from './rdv-confirme.js';
 
 const HS = 'https://api.hubapi.com';
@@ -57,7 +57,7 @@ function e164(brut) {
 // SOFY_API_KEY_ID/SECRET de l'API v1 utilisée par l'envoi SMS SoReach (db.js).
 const cleV2 = () => process.env.SOFY_API_KEY_V2 || process.env.SOFY_API_KEY || '';
 
-async function envoyerSofy(tel, titre, texte, bouton, replicourt) {
+async function envoyerSofy(tel, titre, texte, bouton, replicourt, sauterV2) {
   const cle = cleV2();
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${cle}` };
   const senderId = process.env.SOFY_RCS_SENDER_ID;
@@ -82,6 +82,14 @@ async function envoyerSofy(tel, titre, texte, bouton, replicourt) {
     } catch (e) { var rcsEchec = 'RCS exception: ' + e.message; }
   }
   // 2) SMS direct
+  if (sauterV2) { // test ?canal=sms&v1=1 : valider directement l'étage v1 (le POST v2 répond 201
+    // mais le provider rejette ensuite — l'API ne nous laisse pas le voir de façon synchrone)
+    try {
+      const v1 = await envoyerSmsSofy({ to: tel, message: fbk, user: 'rcs-rdv', liste_id: null });
+      if (v1.ok) return { ok: true, canal: 'sms (v1)', id: v1.id || null };
+      return { ok: false, erreur: 'v1: ' + (v1.detail || v1.status) };
+    } catch (e) { return { ok: false, erreur: 'v1: ' + e.message }; }
+  }
   // « from » alphanumérique : uniquement s'il est déclaré côté Sofy (SOFY_SMS_FROM) — sinon
   // expéditeur par défaut du compte v2. ⚠️ Constaté le 07/08 : le défaut est le code court DOM
   // 36789 → rejeté vers un +33 métropole ; il faut un expéditeur adapté dans SOFY_SMS_FROM.
@@ -94,6 +102,12 @@ async function envoyerSofy(tel, titre, texte, bouton, replicourt) {
   });
   const d2 = await r2.json().catch(() => ({}));
   if (r2.ok && d2.id) return { ok: true, canal: 'sms', id: d2.id, statut: d2.status || null, rcs_echec: typeof rcsEchec !== 'undefined' ? rcsEchec : null };
+  // 3) Dernier étage : l'API v1 (celle des SMS SoReach quotidiens, éprouvée) — la route SMS de la
+  //    clé v2 est « rejected by provider » toutes destinations (constat 07/08, à régler côté produit)
+  try {
+    const v1 = await envoyerSmsSofy({ to: tel, message: fbk, user: 'rcs-rdv', liste_id: null });
+    if (v1.ok) return { ok: true, canal: 'sms (v1)', id: v1.id || null, rcs_echec: typeof rcsEchec !== 'undefined' ? rcsEchec : null, sms_v2_echec: JSON.stringify(d2).slice(0, 150) };
+  } catch (_) {}
   return { ok: false, erreur: JSON.stringify(d2).slice(0, 200), rcs_echec: typeof rcsEchec !== 'undefined' ? rcsEchec : null };
 }
 
@@ -129,7 +143,9 @@ export default async function handler(req, res) {
       const boutonT = { label: '✅ Je confirme mon RDV', url: 'https://www.sofyscrap.com/api/rdv-confirme?m=test&t=' + jetonRdv('test') };
       const envT = forceSms
         ? await (async () => { const s = process.env.SOFY_RCS_SENDER_ID; delete process.env.SOFY_RCS_SENDER_ID;
-            const rT = await envoyerSofy(telT, titreT, texteT, boutonT, null); if (s) process.env.SOFY_RCS_SENDER_ID = s; return rT; })()
+            const rT = await envoyerSofy(telT, titreT, texteT, boutonT,
+              `Rappel Sofy : votre démo demain 10:00 avec Sarah. Un imprévu ? Appelez le ${telT}. (TEST)`, req.query.v1 === '1');
+            if (s) process.env.SOFY_RCS_SENDER_ID = s; return rT; })()
         : await envoyerSofy(telT, titreT, texteT, boutonT,
           `Rappel Sofy : votre démo demain 10:00 avec Sarah. Un empêchement ? Appelez le ${telT}. (TEST)`);
       return res.status(200).json({ ok: envT.ok, test: true, tel: telT, canal: envT.canal || null, id: envT.id || null,
