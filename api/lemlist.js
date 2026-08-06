@@ -114,6 +114,12 @@ export default async function handler(req, res) {
     }
 
     if (!maj && !ajoute) {
+      // « graveyard » = cet email a déjà existé dans Lemlist puis a été supprimé/désinscrit :
+      // Lemlist bloque volontairement son ré-ajout (anti re-contact). Message actionnable pour le SDR.
+      if (/graveyard/i.test(String((diag.postEmail && diag.postEmail.body) || ''))) {
+        return res.status(409).json({ erreur: 'Contact bloqué par Lemlist (déjà contacté puis supprimé/désinscrit)',
+          detail: 'Lemlist garde cet email au « cimetière » et refuse le ré-envoi. S\'il s\'était DÉSINSCRIT : ne pas le relancer par email (appel ou SMS). Si c\'est une simple suppression passée : un admin peut le retirer dans Lemlist → Settings → Graveyard, puis relancer la séquence.', diag });
+      }
       const dt = 'PATCH ' + diag.patchEmail.status + (diag.postEmail ? ' · POST ' + diag.postEmail.status + (diag.postEmail.body ? ': ' + diag.postEmail.body : '') : '') + (diag.patchId ? ' · PATCH#2 ' + diag.patchId : '');
       return res.status(502).json({ erreur: 'Lemlist a refusé le lead', detail: dt, diag });
     }
