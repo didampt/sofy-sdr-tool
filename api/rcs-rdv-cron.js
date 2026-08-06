@@ -63,7 +63,8 @@ async function envoyerSofy(tel, titre, texte, bouton) {
       });
       const d = await r.json().catch(() => ({}));
       if (r.ok && d.id) return { ok: true, canal: d.isSmsFallback ? 'sms (repli)' : 'rcs', id: d.id };
-    } catch (_) {}
+      var rcsEchec = 'RCS ' + r.status + ': ' + JSON.stringify(d).slice(0, 200); // → diagnostic
+    } catch (e) { var rcsEchec = 'RCS exception: ' + e.message; }
   }
   // 2) SMS direct
   const r2 = await fetch('https://api.sofy.fr/v2/sms', {
@@ -71,8 +72,8 @@ async function envoyerSofy(tel, titre, texte, bouton) {
     body: JSON.stringify({ to: tel, from: process.env.SOFY_SMS_FROM || 'Sofy', body: titre + ' — ' + texte, isTransactional: true })
   });
   const d2 = await r2.json().catch(() => ({}));
-  if (r2.ok && d2.id) return { ok: true, canal: 'sms', id: d2.id };
-  return { ok: false, erreur: JSON.stringify(d2).slice(0, 200) };
+  if (r2.ok && d2.id) return { ok: true, canal: 'sms', id: d2.id, statut: d2.status || null, rcs_echec: typeof rcsEchec !== 'undefined' ? rcsEchec : null };
+  return { ok: false, erreur: JSON.stringify(d2).slice(0, 200), rcs_echec: typeof rcsEchec !== 'undefined' ? rcsEchec : null };
 }
 
 export default async function handler(req, res) {
@@ -100,7 +101,24 @@ export default async function handler(req, res) {
       const titreT = '📅 Votre démo Sofy, c\'est demain !';
       const texteT = `Didier, rendez-vous ${demain} à 10:00 avec Sarah pour votre démonstration Sofy. Nous avons hâte de vous retrouver ! 😊 Un empêchement ? 📞 Appelez Alicia au +33612345678. (ceci est un TEST)`;
       const envT = await envoyerSofy(telT, titreT, texteT, { label: '📞 Je reporte mon RDV', url: 'tel:' + telT });
-      return res.status(200).json({ ok: envT.ok, test: true, tel: telT, canal: envT.canal || null, detail: envT.erreur || null });
+      return res.status(200).json({ ok: envT.ok, test: true, tel: telT, canal: envT.canal || null, id: envT.id || null,
+        statut: envT.statut || null, rcs_echec: envT.rcs_echec || null, detail: envT.erreur || null,
+        suivi: envT.id ? 'Statut d\'acheminement : ?statut=' + envT.id : null });
+    }
+
+    // ── Suivi d'acheminement d'un message (superadmin) : ?statut=<id> ──
+    if (req.query.statut) {
+      if (!user || user.role !== 'superadmin') return res.status(403).json({ erreur: 'Réservé superadmin' });
+      const idM = String(req.query.statut);
+      const hd = { Authorization: `Bearer ${cleV2()}` };
+      for (const chemin of ['/v2/sms/', '/v2/rcs/']) {
+        try {
+          const r = await fetch('https://api.sofy.fr' + chemin + encodeURIComponent(idM), { headers: hd });
+          const d = await r.json().catch(() => ({}));
+          if (r.ok && (d.id || d.status)) return res.status(200).json({ ok: true, via: chemin, message: d });
+        } catch (_) {}
+      }
+      return res.status(404).json({ erreur: 'Message introuvable (id inconnu des deux canaux)' });
     }
 
     const cleHS = process.env.HUBSPOT_API_KEY;
