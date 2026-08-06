@@ -44,7 +44,7 @@ function e164(brut) {
 // SOFY_API_KEY_ID/SECRET de l'API v1 utilisée par l'envoi SMS SoReach (db.js).
 const cleV2 = () => process.env.SOFY_API_KEY_V2 || process.env.SOFY_API_KEY || '';
 
-async function envoyerSofy(tel, titre, texte) {
+async function envoyerSofy(tel, titre, texte, bouton) {
   const cle = cleV2();
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${cle}` };
   const senderId = process.env.SOFY_RCS_SENDER_ID;
@@ -52,8 +52,11 @@ async function envoyerSofy(tel, titre, texte) {
   if (senderId) {
     try {
       const corps = { to: tel, senderId, title: titre, description: texte, fallback: { enabled: true, text: titre + ' — ' + texte } };
-      // 🖼️ Visuel « Votre RDV Sofy » (URL publique, ex. hébergée sur www.sofy.fr) — optionnel
-      if (process.env.SOFY_RCS_IMAGE_URL) corps.imageUrl = process.env.SOFY_RCS_IMAGE_URL;
+      // 🖼️ Visuel « Votre rendez-vous approche » — hébergé sur sofyscrap.com (public/rcs-rdv.jpg),
+      // surchargeable par SOFY_RCS_IMAGE_URL
+      corps.imageUrl = process.env.SOFY_RCS_IMAGE_URL || 'https://www.sofyscrap.com/rcs-rdv.jpg';
+      // 📞 Bouton « Je reporte » → lance l'appel vers le SDR qui a pris le RDV (lien tel:)
+      if (bouton && bouton.url) corps.button = bouton;
       const r = await fetch('https://api.sofy.fr/v2/rcs/rich-card', {
         method: 'POST', headers,
         body: JSON.stringify(corps)
@@ -88,6 +91,18 @@ export default async function handler(req, res) {
     const cfg = cfgRows.length ? (cfgRows[0].valeur || {}) : {};
     if (cfg.actif === false) return res.status(200).json({ ok: true, info: 'Désactivé (config rcs_rdv.actif=false)' });
 
+    // ── Test réel vers un numéro (superadmin) : ?test_tel=+33687834783 ──
+    if (req.query.test_tel) {
+      if (!user || user.role !== 'superadmin') return res.status(403).json({ erreur: 'Réservé superadmin' });
+      const telT = e164(req.query.test_tel);
+      if (!telT) return res.status(400).json({ erreur: 'Numéro invalide' });
+      const demain = new Date(Date.now() + 24 * 3600 * 1000).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris', weekday: 'long', day: '2-digit', month: 'long' });
+      const titreT = '📅 Votre démo Sofy, c\'est demain !';
+      const texteT = `Didier, rendez-vous ${demain} à 10:00 avec Sarah pour votre démonstration Sofy. Nous avons hâte de vous retrouver ! 😊 Un empêchement ? 📞 Appelez Alicia au +33612345678. (ceci est un TEST)`;
+      const envT = await envoyerSofy(telT, titreT, texteT, { label: '📞 Je reporte mon RDV', url: 'tel:' + telT });
+      return res.status(200).json({ ok: envT.ok, test: true, tel: telT, canal: envT.canal || null, detail: envT.erreur || null });
+    }
+
     const cleHS = process.env.HUBSPOT_API_KEY;
     if (!cleHS) return res.status(200).json({ ok: true, info: 'HUBSPOT_API_KEY absente' });
     const H = { Authorization: `Bearer ${cleHS}`, 'Content-Type': 'application/json' };
@@ -98,7 +113,7 @@ export default async function handler(req, res) {
       method: 'POST', headers: H,
       body: JSON.stringify({
         filterGroups: [{ filters: [{ propertyName: 'hs_meeting_start_time', operator: 'BETWEEN', value: String(mtn), highValue: String(mtn + 26 * 3600 * 1000) }] }],
-        properties: ['hs_meeting_start_time', 'hs_meeting_title', 'hs_meeting_outcome'], limit: 100
+        properties: ['hs_meeting_start_time', 'hs_meeting_title', 'hs_meeting_outcome', 'hubspot_owner_id'], limit: 100
       })
     });
     const dM = await rM.json().catch(() => ({}));
@@ -128,6 +143,33 @@ export default async function handler(req, res) {
       for (const c of (dC.results || [])) parContact.set(String(c.id), c.properties || {});
     }
 
+    // ── 2b. AE des réunions (owners) + SDR sourceur par entreprise (fiches Sofy) + n° Ringover ──
+    let ownersMap = new Map();
+    try {
+      const ro = await fetch(`${HS}/crm/v3/owners/?limit=500`, { headers: H });
+      const doo = await ro.json().catch(() => ({}));
+      ownersMap = new Map((doo.results || []).map(o => [String(o.id), [o.firstName, o.lastName].filter(Boolean).join(' ') || o.email || '']));
+    } catch (_) {}
+    const normE = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+    const srcParEnt = {}, telParSdr = {};
+    try {
+      const sd = await sql`SELECT nom, ringover_numero FROM sdrs`;
+      for (const s of sd) if (s.ringover_numero) telParSdr[s.nom] = e164(s.ringover_numero);
+      const ls = await sql`SELECT entreprises FROM listes`;
+      for (const l of ls) for (const e of (Array.isArray(l.entreprises) ? l.entreprises : [])) {
+        const st = (e.tags_sdr || [])[0] || e.statut_appel || '';
+        if (String(st).indexOf('RDV') < 0 || !e.traite_par) continue;
+        const k = normE(e.enseigne_ia || e.enseigne || e.nom);
+        if (k && k.length >= 3 && !srcParEnt[k]) srcParEnt[k] = e.traite_par;
+      }
+    } catch (_) {}
+    const sourceurDe = societe => {
+      const k = normE(societe); if (!k || k.length < 3) return null;
+      if (srcParEnt[k]) return srcParEnt[k];
+      for (const s in srcParEnt) { if (s.includes(k) || k.includes(s)) return srcParEnt[s]; }
+      return null;
+    };
+
     // ── 3. Fenêtres J-1 / H-2 + envoi (anti-doublon en base) ──
     for (const m of meetings) {
       const debut = new Date((m.properties || {}).hs_meeting_start_time || 0).getTime();
@@ -149,19 +191,26 @@ export default async function handler(req, res) {
       const quand = new Date(debut).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', weekday: 'long', day: '2-digit', month: 'long', hour: '2-digit', minute: '2-digit' });
       const heure = new Date(debut).toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' });
       const prenom = (c && c.firstname) ? c.firstname : '';
+      // AE qui tient la démo (propriétaire de la réunion) + SDR qui a pris le RDV (fiches Sofy) :
+      // le RCS n'est PAS conversationnel → jamais « répondez », toujours un numéro à appeler.
+      const ae = ownersMap.get(String((m.properties || {}).hubspot_owner_id || '')) || null;
+      const sdrS = sourceurDe(c && c.company);
+      const telSdr = sdrS ? (telParSdr[sdrS] || null) : null;
+      const aide = telSdr ? `Un empêchement ? 📞 Appelez ${sdrS} au ${telSdr}.` : `Un empêchement ? Appelez votre interlocuteur Sofy habituel.`;
+      const bouton = telSdr ? { label: '📞 Je reporte mon RDV', url: 'tel:' + telSdr } : null;
       const titre = type === 'j1' ? '📅 Votre démo Sofy, c\'est demain !' : '⏰ Votre démo Sofy commence bientôt';
       const texte = type === 'j1'
-        ? `${prenom ? prenom + ', r' : 'R'}endez-vous ${quand} pour votre démonstration Sofy. Un empêchement ? Répondez à ce message ou appelez-nous, on trouvera un autre créneau.`
-        : `${prenom ? prenom + ', v' : 'V'}otre démonstration Sofy commence à ${heure} (dans 2 h). À tout à l'heure !`;
+        ? `${prenom ? prenom + ', r' : 'R'}endez-vous ${quand}${ae ? ' avec ' + ae : ''} pour votre démonstration Sofy. Nous avons hâte de vous retrouver ! 😊 ${aide}`
+        : `${prenom ? prenom + ', v' : 'V'}otre démonstration Sofy${ae ? ' avec ' + ae : ''} commence à ${heure} ⏰ (dans 2 h). À tout à l'heure ! ${aide}`;
 
-      if (dry) { resume.envoyes.push({ meeting: m.id, type, tel, contact: nomC, simulation: true, texte: titre + ' — ' + texte }); continue; }
+      if (dry) { resume.envoyes.push({ meeting: m.id, type, tel, contact: nomC, ae, sdr: sdrS, bouton, simulation: true, texte: titre + ' — ' + texte }); continue; }
 
       // Anti-doublon : INSERT unique — si la ligne existe déjà, un autre passage a déjà envoyé
       const ins = await sql`INSERT INTO rcs_rdv_envoyes (meeting_id, type, tel, contact)
         VALUES (${m.id}, ${type}, ${tel}, ${nomC}) ON CONFLICT (meeting_id, type) DO NOTHING RETURNING id`;
       if (!ins.length) { resume.ignores.push({ meeting: m.id, type, raison: 'déjà envoyé' }); continue; }
 
-      const env = await envoyerSofy(tel, titre, texte);
+      const env = await envoyerSofy(tel, titre, texte, bouton);
       if (env.ok) {
         resume.envoyes.push({ meeting: m.id, type, tel, contact: nomC, canal: env.canal });
         // 📝 Trace dans le bloc-notes de la fiche (timeline par email du contact)
