@@ -40,8 +40,12 @@ function e164(brut) {
   return null;
 }
 
+// ⚠️ L'API v2 (RCS) attend un jeton Bearer sofy_live_… — différent du couple
+// SOFY_API_KEY_ID/SECRET de l'API v1 utilisée par l'envoi SMS SoReach (db.js).
+const cleV2 = () => process.env.SOFY_API_KEY_V2 || process.env.SOFY_API_KEY || '';
+
 async function envoyerSofy(tel, titre, texte) {
-  const cle = process.env.SOFY_API_KEY;
+  const cle = cleV2();
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${cle}` };
   const senderId = process.env.SOFY_RCS_SENDER_ID;
   // 1) RCS rich-card si un expéditeur RCS est configuré (repli SMS géré par Sofy via fallback)
@@ -78,7 +82,8 @@ export default async function handler(req, res) {
   try {
     await ensureSchema();
     await ensureRcsRdv();
-    if (!process.env.SOFY_API_KEY) return res.status(200).json({ ok: true, info: 'SOFY_API_KEY absente — rappels RCS inactifs' });
+    if (!cleV2()) return res.status(200).json({ ok: true, info: 'SOFY_API_KEY_V2 absente — rappels RCS inactifs' });
+    if (!String(cleV2()).startsWith('sofy_live_')) return res.status(200).json({ ok: true, info: 'La clé trouvée n\'est pas un jeton API v2 (sofy_live_…) — crée SOFY_API_KEY_V2 dans Vercel' });
     const cfgRows = await sql`SELECT valeur FROM config WHERE cle = 'rcs_rdv'`;
     const cfg = cfgRows.length ? (cfgRows[0].valeur || {}) : {};
     if (cfg.actif === false) return res.status(200).json({ ok: true, info: 'Désactivé (config rcs_rdv.actif=false)' });
