@@ -476,19 +476,23 @@ function formatNumeroSms(brut) {
   }
   return n;
 }
-export async function envoyerSmsSofy({ to, message, user, liste_id }) {
+export async function envoyerSmsSofy({ to, message, user, liste_id, transactionnel }) {
   const keyId = process.env.SOFY_API_KEY_ID, keySecret = process.env.SOFY_API_KEY_SECRET;
   if (!keyId || !keySecret) return { ok: false, status: 0, detail: 'SOFY_API_KEY_ID/SECRET manquante' };
   const dest = formatNumeroSms(to);
   if (!/^\d{10,14}$/.test(dest)) return { ok: false, status: 0, detail: 'Numero invalide : ' + dest };
   const estDom = /^(590|596|594|262)/.test(dest);
   const stop = estDom ? 'STOP au 36789' : 'STOP au 36229';
-  const corps = String(message || '').replace(/\s*STOP au \d{5}\.?\s*$/i, '').trim() + ' ' + stop;
+  // Route ALERTE (transactionnel:true, ex. rappels de RDV) : pas de mention STOP et pas de fenêtre
+  // horaire marketing. Les SoReach de prospection restent en marketing (STOP), rien ne change pour eux.
+  const corps = transactionnel
+    ? String(message || '').trim()
+    : String(message || '').replace(/\s*STOP au \d{5}\.?\s*$/i, '').trim() + ' ' + stop;
   try {
     const r = await fetch('https://api.sofy.fr/v1/sms', {
       method: 'POST',
       headers: { 'accept': 'application/json', 'Content-Type': 'application/json', 'X-API-KEY-ID': keyId, 'X-API-KEY-SECRET': keySecret },
-      body: JSON.stringify({ from: 'Sofy', to: dest, body: corps, shortenUrls: true, isTransactional: false })
+      body: JSON.stringify({ from: 'Sofy', to: dest, body: corps, shortenUrls: true, isTransactional: !!transactionnel })
     });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) return { ok: false, status: r.status, detail: JSON.stringify(data).slice(0, 300) };

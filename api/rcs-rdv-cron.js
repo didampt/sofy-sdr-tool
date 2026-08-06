@@ -85,7 +85,7 @@ async function envoyerSofy(tel, titre, texte, bouton, replicourt, sauterV2) {
   if (sauterV2) { // test ?canal=sms&v1=1 : valider directement l'étage v1 (le POST v2 répond 201
     // mais le provider rejette ensuite — l'API ne nous laisse pas le voir de façon synchrone)
     try {
-      const v1 = await envoyerSmsSofy({ to: tel, message: fbk, user: 'rcs-rdv', liste_id: null });
+      const v1 = await envoyerSmsSofy({ to: tel, message: fbk, user: 'rcs-rdv', liste_id: null, transactionnel: true });
       if (v1.ok) return { ok: true, canal: 'sms (v1)', id: v1.id || null };
       return { ok: false, erreur: 'v1: ' + (v1.detail || v1.status) };
     } catch (e) { return { ok: false, erreur: 'v1: ' + e.message }; }
@@ -105,7 +105,7 @@ async function envoyerSofy(tel, titre, texte, bouton, replicourt, sauterV2) {
   // 3) Dernier étage : l'API v1 (celle des SMS SoReach quotidiens, éprouvée) — la route SMS de la
   //    clé v2 est « rejected by provider » toutes destinations (constat 07/08, à régler côté produit)
   try {
-    const v1 = await envoyerSmsSofy({ to: tel, message: fbk, user: 'rcs-rdv', liste_id: null });
+    const v1 = await envoyerSmsSofy({ to: tel, message: fbk, user: 'rcs-rdv', liste_id: null, transactionnel: true });
     if (v1.ok) return { ok: true, canal: 'sms (v1)', id: v1.id || null, rcs_echec: typeof rcsEchec !== 'undefined' ? rcsEchec : null, sms_v2_echec: JSON.stringify(d2).slice(0, 150) };
   } catch (_) {}
   return { ok: false, erreur: JSON.stringify(d2).slice(0, 200), rcs_echec: typeof rcsEchec !== 'undefined' ? rcsEchec : null };
