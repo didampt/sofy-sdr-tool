@@ -2039,7 +2039,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v314';
+const VERSION='v315';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -7196,9 +7196,18 @@ function rendreCockpit(sdrAffiche){
   ${tb('retenter','\ud83d\udd01','\u00c0 RETENTER',retenter.length,'#475569','#F1F5F9','injoignables \u00b7 3\u1d49 \u00e9chec \u2192 s\u00e9quence auto')}
  </div>`;
  if(tuileSel==='hot'){
+  // Filtre par source (le volume LinkedIn noie les visites sofy.fr / signups, plus chauds)
+  const srcDe=x=>x._k==='chaud'?'engagement':(x.type||'visite');
+  const CH=[['','Tous'],['linkedin','\ud83d\udc99 LinkedIn'],['visite','\ud83d\udccd Visite sofy.fr'],['signup','\ud83c\udd95 Signup'],['manuel','\u2795 Manuel'],['engagement','\u2709\ufe0f Engagement']];
+  const nPar={};urgents.forEach(x=>{const s=srcDe(x);nPar[s]=(nPar[s]||0)+1;});
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px">'+CH.filter(([v])=>!v||nPar[v]).map(([v,l])=>{
+   const on=CK_HOT_F===v;
+   return `<button class="act" style="padding:3px 10px;font-size:12px;${on?'background:#B91C1C;border-color:#B91C1C;color:#fff':''}" onclick="CK_HOT_F='${v}';rendreCockpit(CK&&CK.sdr)">${l}${v?' ('+(nPar[v]||0)+')':' ('+urgents.length+')'}</button>`;}).join('')+'</div>';
+  const liste=CK_HOT_F?urgents.filter(x=>srcDe(x)===CK_HOT_F):urgents;
   if(!urgents.length)h+='<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 6px">Aucun signal chaud pour l\u2019instant \u2014 ouvertures, r\u00e9ponses, visites sofy.fr et signups apparaissent ici.</p>';
-  for(const c of urgents){
-   const label=c._k==='chaud'?(c.signal||''):(c.type==='signup'?'\ud83c\udd95 Signup':(c.type==='linkedin'?'\ud83d\udc99 Signal LinkedIn (likers)':'\ud83d\udccd Visite sofy.fr'+((c.pages&&c.pages.length)?' \u00b7 '+c.pages.slice(0,2).join(', '):'')));
+  else if(!liste.length)h+='<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 6px">Aucun signal de ce type \u2014 choisis une autre source.</p>';
+  for(const c of liste){
+   const label=c._k==='chaud'?(c.signal||''):(c.type==='signup'?'\ud83c\udd95 Signup':(c.type==='linkedin'?'\ud83d\udc99 Signal LinkedIn (likers)':(c.type==='manuel'?'\u2795 Hot lead manuel':'\ud83d\udccd Visite sofy.fr'+((c.pages&&c.pages.length)?' \u00b7 '+c.pages.slice(0,2).join(', '):''))));
    const inner=`<div style="flex:1;min-width:220px">
     <div style="font-size:14px;font-weight:700">${htmlSafe(c.nom)}${c.contact?` <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">\u00b7 ${htmlSafe(c.contact)}${c.fonction?', '+htmlSafe(c.fonction):''}</span>`:''}${c.pris_par?' <span style="font-size:11px;font-weight:800;color:#B91C1C">\u00b7 \u00e0 toi</span>':''}</div>
     <div style="font-size:12px;color:#B91C1C;margin-top:2px">${htmlSafe(label)} \u00b7 ${depuis(c._ts)}${c.liste_nom?' \u00b7 '+htmlSafe(c.liste_nom):''}</div>
@@ -7262,7 +7271,7 @@ function rendreCockpit(sdrAffiche){
  if(admin){remplirSelectSdr('ck-sdr').then(()=>{const s=document.getElementById('ck-sdr');if(s&&sdrAffiche)s.value=sdrAffiche;});}
  ckChargerAppels(sdrAffiche||d.sdr);
 }
-let CK_APPELS_CACHE=null;
+let CK_APPELS_CACHE=null,CK_HOT_F='';
 async function ckChargerAppels(sdr){
  try{
   if(CK_APPELS_CACHE&&CK_APPELS_CACHE.sdr===sdr&&(Date.now()-CK_APPELS_CACHE.ts)<60000){ckPeindreAppels(CK_APPELS_CACHE.a);return;}
