@@ -9,9 +9,9 @@
 import { verifierToken, sql, ensureSchema, envoyerSmsSofy, loggerConso } from './db.js';
 
 const cleV2 = () => process.env.SOFY_API_KEY_V2 || '';
-// Page de demande de démo PUBLIQUE (le lien go.sofy.fr/meetings/… est réservé aux SDR
-// pour réserver un créneau AE — jamais à envoyer à un prospect)
-const LIEN_DEMO = process.env.SOFY_LIEN_DEMO || 'https://www.sofy.fr/demo';
+// Réservation de démo côté PROSPECT (parcours « site web », adapté au mobile).
+// ⚠️ Ne pas utiliser demo-sdr : c'est le calendrier interne réservé aux SDR.
+const LIEN_DEMO = process.env.SOFY_LIEN_DEMO || 'https://go.sofy.fr/meetings/mbouly/demo-site-web';
 const VISUEL = process.env.SOFY_RCS_IMAGE_DEMO || 'https://www.sofyscrap.com/rcs-demo.jpg';
 
 function e164(brut) {
