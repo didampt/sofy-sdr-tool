@@ -222,6 +222,14 @@ export default async function handler(req, res) {
       for (const c of (dC.results || [])) parContact.set(String(c.id), c.properties || {});
     }
 
+    // ── 2a. Portal id HubSpot (liens cliquables vers les fiches contact dans Slack) ──
+    let portalId = null;
+    try {
+      const rP = await fetch(`${HS}/account-info/v3/details`, { headers: H });
+      const dP = await rP.json().catch(() => ({}));
+      portalId = dP.portalId || null;
+    } catch (_) {}
+
     // ── 2b. AE des réunions (owners) + SDR sourceur par entreprise (fiches Sofy) + n° Ringover ──
     let ownersMap = new Map();
     try {
@@ -300,7 +308,9 @@ export default async function handler(req, res) {
         : `Rappel Sofy : votre démo à ${heure} (dans 2 h).`) + (telSdr ? ` Empêchement ? ${telSdr}` : '');
       const env = await envoyerSofy(tel, titre, texte, bouton, replicourt);
       if (env.ok) {
-        resume.envoyes.push({ meeting: m.id, type, tel, contact: nomC, canal: env.canal });
+        resume.envoyes.push({ meeting: m.id, type, tel, contact: nomC, canal: env.canal,
+          titre_reunion: (m.properties || {}).hs_meeting_title || '',
+          lien: (portalId && cid) ? `https://app.hubspot.com/contacts/${portalId}/record/0-1/${cid}` : null });
         // 📝 Trace dans le bloc-notes de la fiche (timeline par email du contact)
         try {
           const emailC = (c && c.email) ? String(c.email).toLowerCase() : null;
@@ -322,7 +332,7 @@ export default async function handler(req, res) {
         const hook = process.env.SLACK_WEBHOOK_URL;
         if (hook) await fetch(hook, { method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: `🛡️ *Anti no-show* — ${resume.envoyes.length} rappel(s) de démo envoyé(s) :\n` +
-            resume.envoyes.map(e => `• ${e.contact || e.tel} — ${e.type === 'j1' ? 'J-1' : 'H-2'} (${e.canal})`).join('\n') }) });
+            resume.envoyes.map(e => `• ${e.lien ? '<' + e.lien + '|' + (e.contact || e.tel) + '>' : (e.contact || e.tel)} — ${e.type === 'j1' ? 'J-1' : 'H-2'} (${e.canal})${e.titre_reunion ? ' · « ' + e.titre_reunion.slice(0, 60) + ' »' : ''}`).join('\n') }) });
       } catch (_) {}
     }
     return res.status(200).json(resume);
