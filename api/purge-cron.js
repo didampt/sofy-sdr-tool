@@ -33,6 +33,19 @@ export default async function handler(req, res) {
     const [aPurger] = await sql`SELECT COUNT(*)::int AS n FROM lemlist_events WHERE recu_le < NOW() - (${jours} || ' days')::interval`;
     out.avant = { lignes: avant.lignes, taille_mo: mo(avant.octets) };
     out.a_purger = aPurger.n;
+    // Âge des données : dit quand la purge commencera à mordre et à quel palier la table se stabilise
+    try {
+      const [age] = await sql`SELECT MIN(recu_le) AS plus_ancien, MAX(recu_le) AS plus_recent,
+        (COUNT(*)::float / GREATEST(1, EXTRACT(EPOCH FROM (MAX(recu_le) - MIN(recu_le))) / 86400))::int AS par_jour
+        FROM lemlist_events`;
+      const jAnc = age.plus_ancien ? Math.floor((Date.now() - new Date(age.plus_ancien).getTime()) / 86400000) : 0;
+      out.age = {
+        plus_ancien_jours: jAnc,
+        evenements_par_jour: age.par_jour,
+        purge_effective_dans_jours: Math.max(0, jours - jAnc),
+        palier_stable_estime_mo: Math.round((age.par_jour || 0) * jours * 1.8 / 1024 * 10) / 10
+      };
+    } catch (_) {}
 
     if (dry) return res.status(200).json({ ...out, info: 'Simulation — rien supprimé. Retire ?dry=1 pour exécuter.' });
 
