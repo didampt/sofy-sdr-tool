@@ -33,10 +33,11 @@ export default async function handler(req, res) {
     };
 
     // ── 2. Taille des tables (données + index) ──
-    const tables = await sql`SELECT relname AS table, pg_total_relation_size(c.oid) AS octets, n_live_tup AS lignes
+    // pg_class et pg_stat_user_tables ont toutes deux une colonne relname → préfixer (500 le 07/08)
+    const tables = await sql`SELECT c.relname AS nom_table, pg_total_relation_size(c.oid) AS octets, s.n_live_tup AS lignes
       FROM pg_class c JOIN pg_stat_user_tables s ON s.relid = c.oid
       WHERE c.relkind = 'r' ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 12`;
-    out.tables = tables.map(t => ({ table: t.table, lignes: Number(t.lignes || 0), taille_mo: mo(t.octets) }));
+    out.tables = tables.map(t => ({ table: t.nom_table, lignes: Number(t.lignes || 0), taille_mo: mo(t.octets) }));
 
     // ── 3. Chronos des requêtes réellement utilisées (les plus lourdes du produit) ──
     const chrono = async (nom, fn) => { const d = Date.now(); let n = 0; try { n = await fn(); } catch (e) { return { nom, erreur: String(e.message || e).slice(0, 80) }; } return { nom, ms: Date.now() - d, lignes: n }; };
