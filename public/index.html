@@ -2039,7 +2039,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v315';
+const VERSION='v316';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -7203,21 +7203,24 @@ function rendreCockpit(sdrAffiche){
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px">'+CH.filter(([v])=>!v||nPar[v]).map(([v,l])=>{
    const on=CK_HOT_F===v;
    return `<button class="act" style="padding:3px 10px;font-size:12px;${on?'background:#B91C1C;border-color:#B91C1C;color:#fff':''}" onclick="CK_HOT_F='${v}';rendreCockpit(CK&&CK.sdr)">${l}${v?' ('+(nPar[v]||0)+')':' ('+urgents.length+')'}</button>`;}).join('')+'</div>';
-  const liste=CK_HOT_F?urgents.filter(x=>srcDe(x)===CK_HOT_F):urgents;
+  const filtres=CK_HOT_F?urgents.filter(x=>srcDe(x)===CK_HOT_F):urgents;
+  const liste=filtres.slice(0,20); // 20 max à l'écran : au-delà ce n'est plus une file de travail
   if(!urgents.length)h+='<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 6px">Aucun signal chaud pour l\u2019instant \u2014 ouvertures, r\u00e9ponses, visites sofy.fr et signups apparaissent ici.</p>';
   else if(!liste.length)h+='<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 6px">Aucun signal de ce type \u2014 choisis une autre source.</p>';
   for(const c of liste){
    const label=c._k==='chaud'?(c.signal||''):(c.type==='signup'?'\ud83c\udd95 Signup':(c.type==='linkedin'?'\ud83d\udc99 Signal LinkedIn (likers)':(c.type==='manuel'?'\u2795 Hot lead manuel':'\ud83d\udccd Visite sofy.fr'+((c.pages&&c.pages.length)?' \u00b7 '+c.pages.slice(0,2).join(', '):''))));
-   const inner=`<div style="flex:1;min-width:220px">
-    <div style="font-size:14px;font-weight:700">${htmlSafe(c.nom)}${c.contact?` <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">\u00b7 ${htmlSafe(c.contact)}${c.fonction?', '+htmlSafe(c.fonction):''}</span>`:''}${c.pris_par?' <span style="font-size:11px;font-weight:800;color:#B91C1C">\u00b7 \u00e0 toi</span>':''}</div>
-    <div style="font-size:12px;color:#B91C1C;margin-top:2px">${htmlSafe(label)} \u00b7 ${depuis(c._ts)}${c.liste_nom?' \u00b7 '+htmlSafe(c.liste_nom):''}</div>
-   </div>${c.tel?`<span style="font-size:13px;font-weight:700;white-space:nowrap">${htmlSafe(c.tel)}</span>`:''}`;
+   const pastille=c._k==='chaud'?'\u2709\ufe0f':(c.type==='signup'?'\ud83c\udd95':(c.type==='linkedin'?'\ud83d\udc99':(c.type==='manuel'?'\u2795':'\ud83d\udccd')));
+   const inner=`<span title="${htmlSafe(label)}" style="font-size:15px">${pastille}</span>
+   <div style="flex:1;min-width:180px;line-height:1.35">
+    <span style="font-size:13.5px;font-weight:700">${htmlSafe(c.nom)}</span>${c.contact&&c.contact!==c.nom?`<span style="font-size:12px;color:var(--ink-soft)"> \u00b7 ${htmlSafe(c.contact)}</span>`:''}${c.fonction?`<span style="font-size:11.5px;color:var(--ink-soft)"> \u00b7 ${htmlSafe(String(c.fonction).slice(0,42))}</span>`:''}${c.pris_par?' <span style="font-size:11px;font-weight:800;color:#B91C1C">\u00b7 \u00e0 toi</span>':''}
+   </div>${c.tel?`<span style="font-size:12.5px;font-weight:700;white-space:nowrap">${htmlSafe(c.tel)}</span>`:'<span style="font-size:11px;color:var(--ink-soft);white-space:nowrap">sans t\u00e9l</span>'}<span style="font-size:11px;color:var(--ink-soft);white-space:nowrap">${depuis(c._ts)}</span>`;
    if(c._k==='hot'&&!c.pris_par){
-    h+=`<div style="border:1px solid #FECACA;border-left:3px solid #E24B4A;border-radius:0 10px 10px 0;padding:10px 14px;margin-bottom:8px;background:var(--card)"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">${inner}<div style="display:flex;gap:6px"><button class="act act-call" style="background:#B91C1C;border-color:#B91C1C;color:#fff" onclick="ckPrendre(${c.liste_id},'${jsArg(c.cle)}')" title="Le lead disparait chez les autres SDR et passe dans ta file \u2014 SLA 2 h">\ud83d\udd25 Je prends</button></div></div></div>`;
+    h+=`<div style="border:1px solid #FECACA;border-left:3px solid #E24B4A;border-radius:0 8px 8px 0;padding:6px 12px;margin-bottom:5px;background:var(--card)"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">${inner}<button class="act act-call" style="background:#B91C1C;border-color:#B91C1C;color:#fff;padding:3px 10px;font-size:12px" onclick="ckPrendre(${c.liste_id},'${jsArg(c.cle)}')" title="Le lead disparait chez les autres SDR et passe dans ta file \u2014 SLA 2 h">\ud83d\udd25 Je prends</button></div></div>`;
    }else{
-    h+=ckRow(c,inner,'border-left:3px solid #E24B4A;border-radius:0 10px 10px 0;',true,false);
+    h+=ckRow(c,inner,'border-left:3px solid #E24B4A;border-radius:0 8px 8px 0;',true,false);
    }
   }
+  if(filtres.length>liste.length)h+=`<div style="font-size:12px;color:var(--ink-soft);padding:4px 2px">\u2026 ${filtres.length-liste.length} autre(s) en attente \u2014 traite ceux-ci d\u2019abord, ils r\u00e9appara\u00eetront ensuite.</div>`;
  }
  if(tuileSel==='promis'){
   if(!promis.length)h+='<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 6px">Aucun rappel promis d\u00fb aujourd\u2019hui.</p>';
