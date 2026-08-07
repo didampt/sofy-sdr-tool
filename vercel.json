@@ -47,6 +47,10 @@
     {
       "path": "/api/sources-veille",
       "schedule": "0 6 * * 1"
+    },
+    {
+      "path": "/api/purge-cron",
+      "schedule": "0 4 1 * *"
     }
   ],
   "headers": [

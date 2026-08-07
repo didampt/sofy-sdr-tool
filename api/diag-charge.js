@@ -59,7 +59,7 @@ export default async function handler(req, res) {
       return r[0].n;
     }));
     out.requetes.push(await chrono('Listing Historique (200 listes, sans les fiches)', async () => {
-      const r = await sql`SELECT id, nom, sdr, statut, total, cree_le FROM listes ORDER BY cree_le DESC LIMIT 200`;
+      const r = await sql`SELECT id, nom, sdr, statut, total, created_at FROM listes ORDER BY created_at DESC LIMIT 200`;
       return r.length;
     }));
 
