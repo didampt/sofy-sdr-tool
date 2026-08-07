@@ -32,8 +32,8 @@ async function ensureRcsRdv() {
 function lienAgenda(debutMs, ae) {
   const deb = new Date(debutMs), fin = new Date(debutMs + 45 * 60000);
   const f = d => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-  return 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent('Démo Sofy' + (ae ? ' avec ' + ae : ''))
-    + '&dates=' + f(deb) + '/' + f(fin) + '&details=' + encodeURIComponent('Votre démonstration Sofy — sofy.fr');
+  return 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent('Rendez-vous Sofy' + (ae ? ' avec ' + ae : ''))
+    + '&dates=' + f(deb) + '/' + f(fin) + '&details=' + encodeURIComponent('Votre rendez-vous Sofy — sofy.fr');
 }
 
 // Numéro FR/DOM → E.164 (+590 Guadeloupe, +596 Martinique, +594 Guyane, +262 Réunion/Mayotte, +33 métropole)
@@ -133,8 +133,8 @@ export default async function handler(req, res) {
       const telT = e164(req.query.test_tel);
       if (!telT) return res.status(400).json({ erreur: 'Numéro invalide' });
       const demain = new Date(Date.now() + 24 * 3600 * 1000).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris', weekday: 'long', day: '2-digit', month: 'long' });
-      const titreT = '📅 Votre démo Sofy, c\'est demain !';
-      const texteT = `Didier, rendez-vous ${demain} à 10:00 avec Sarah — 30 minutes pour découvrir comment booster vos avis Google et votre relation client. ✅ Un clic pour confirmer, et c'est noté ! Un imprévu ? 📞 Alicia au +33612345678. (ceci est un TEST)`;
+      const titreT = '📅 Votre rendez-vous Sofy, c\'est demain !';
+      const texteT = `Didier, rendez-vous ${demain} à 10:00 avec Sarah. Nous avons hâte de vous retrouver ! 😊 ✅ Un clic pour confirmer, et c'est noté. Un imprévu ? 📞 Alicia au +33612345678. (ceci est un TEST)`;
       // Meeting fictif « test » enregistré → le bouton de confirmation fonctionne de bout en bout
       try { await sql`INSERT INTO rcs_rdv_envoyes (meeting_id, type, tel, contact, email, date_rdv)
         VALUES ('test', 'j1', ${telT}, 'Didier (test)', ${user.email || null}, ${new Date(Date.now() + 24 * 3600 * 1000).toISOString()})
@@ -144,10 +144,10 @@ export default async function handler(req, res) {
       const envT = forceSms
         ? await (async () => { const s = process.env.SOFY_RCS_SENDER_ID; delete process.env.SOFY_RCS_SENDER_ID;
             const rT = await envoyerSofy(telT, titreT, texteT, boutonT,
-              `Rappel Sofy : votre démo demain 10:00 avec Sarah. Un imprévu ? Appelez le ${telT}. (TEST)`, req.query.v1 === '1');
+              `Rappel Sofy : votre rendez-vous demain 10:00 avec Sarah. Un imprévu ? Appelez le ${telT}. (TEST)`, req.query.v1 === '1');
             if (s) process.env.SOFY_RCS_SENDER_ID = s; return rT; })()
         : await envoyerSofy(telT, titreT, texteT, boutonT,
-          `Rappel Sofy : votre démo demain 10:00 avec Sarah. Un empêchement ? Appelez le ${telT}. (TEST)`);
+          `Rappel Sofy : votre rendez-vous demain 10:00 avec Sarah. Un empêchement ? Appelez le ${telT}. (TEST)`);
       return res.status(200).json({ ok: envT.ok, test: true, tel: telT, canal: envT.canal || null, id: envT.id || null,
         statut: envT.statut || null, rcs_echec: envT.rcs_echec || null, detail: envT.erreur || null,
         suivi: envT.id ? 'Statut d\'acheminement : ?statut=' + envT.id : null });
@@ -290,10 +290,10 @@ export default async function handler(req, res) {
       const bouton = type === 'j1'
         ? { label: '✅ Je confirme mon RDV', url: 'https://www.sofyscrap.com/api/rdv-confirme?m=' + encodeURIComponent(m.id) + '&t=' + jetonRdv(m.id) }
         : { label: '🗓 Ajouter à mon agenda', url: lienAgenda(debut, ae) };
-      const titre = type === 'j1' ? '📅 Votre démo Sofy, c\'est demain !' : '⏰ On se retrouve dans 2 h !';
+      const titre = type === 'j1' ? '📅 Votre rendez-vous Sofy, c\'est demain !' : '⏰ On se retrouve dans 2 h !';
       const texte = type === 'j1'
-        ? `${prenom ? prenom + ', r' : 'R'}endez-vous ${quand}${ae ? ' avec ' + ae : ''} — 30 minutes pour découvrir comment booster vos avis Google et votre relation client. ✅ Un clic pour confirmer, et c'est noté ! ${aide}`
-        : `${prenom ? prenom + ', v' : 'V'}otre démo Sofy${ae ? ' avec ' + ae : ''} commence à ${heure}. Tout est prêt de notre côté 😊 ${aide}`;
+        ? `${prenom ? prenom + ', r' : 'R'}endez-vous ${quand}${ae ? ' avec ' + ae : ''}. Nous avons hâte de vous retrouver ! 😊 ✅ Un clic pour confirmer, et c'est noté. ${aide}`
+        : `${prenom ? prenom + ', v' : 'V'}otre rendez-vous Sofy${ae ? ' avec ' + ae : ''} commence à ${heure}. Tout est prêt de notre côté 😊 ${aide}`;
 
       if (dry) { resume.envoyes.push({ meeting: m.id, type, tel, contact: nomC, ae, sdr: sdrS, bouton, simulation: true, texte: titre + ' — ' + texte }); continue; }
 
@@ -304,8 +304,8 @@ export default async function handler(req, res) {
       if (!ins.length) { resume.ignores.push({ meeting: m.id, type, raison: 'déjà envoyé' }); continue; }
 
       const replicourt = (type === 'j1'
-        ? `Rappel Sofy : votre démo demain à ${heure}.`
-        : `Rappel Sofy : votre démo à ${heure} (dans 2 h).`) + (telSdr ? ` Empêchement ? ${telSdr}` : '');
+        ? `Rappel Sofy : votre rendez-vous demain à ${heure}.`
+        : `Rappel Sofy : votre rendez-vous à ${heure} (dans 2 h).`) + (telSdr ? ` Empêchement ? ${telSdr}` : '');
       const env = await envoyerSofy(tel, titre, texte, bouton, replicourt);
       if (env.ok) {
         resume.envoyes.push({ meeting: m.id, type, tel, contact: nomC, canal: env.canal,
@@ -331,7 +331,7 @@ export default async function handler(req, res) {
       try {
         const hook = process.env.SLACK_WEBHOOK_URL;
         if (hook) await fetch(hook, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: `🛡️ *Anti no-show* — ${resume.envoyes.length} rappel(s) de démo envoyé(s) :\n` +
+          body: JSON.stringify({ text: `🛡️ *Anti no-show* — ${resume.envoyes.length} rappel(s) de rendez-vous envoyé(s) :\n` +
             resume.envoyes.map(e => `• ${e.lien ? '<' + e.lien + '|' + (e.contact || e.tel) + '>' : (e.contact || e.tel)} — ${e.type === 'j1' ? 'J-1' : 'H-2'} (${e.canal})${e.titre_reunion ? ' · « ' + e.titre_reunion.slice(0, 60) + ' »' : ''}`).join('\n') }) });
       } catch (_) {}
     }

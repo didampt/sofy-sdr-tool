@@ -38,8 +38,8 @@ export default async function handler(req, res) {
     if (r.date_rdv) {
       const deb = new Date(r.date_rdv), fin = new Date(deb.getTime() + 45 * 60000);
       const f = d => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-      agendaUrl = 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent('Démo Sofy')
-        + '&dates=' + f(deb) + '/' + f(fin) + '&details=' + encodeURIComponent('Votre démonstration Sofy — sofy.fr');
+      agendaUrl = 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent('Rendez-vous Sofy')
+        + '&dates=' + f(deb) + '/' + f(fin) + '&details=' + encodeURIComponent('Votre rendez-vous Sofy — sofy.fr');
     }
     const deja = r.reponse === 'confirmé';
     if (!deja) {
@@ -51,7 +51,7 @@ export default async function handler(req, res) {
       try {
         const hook = process.env.SLACK_WEBHOOK_URL;
         if (hook) await fetch(hook, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: `✅ *RDV confirmé* par ${r.contact || r.tel || 'un prospect'} (bouton RCS)${r.date_rdv ? ' — démo du ' + new Date(r.date_rdv).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''} 🎉` }) });
+          body: JSON.stringify({ text: `✅ *RDV confirmé* par ${r.contact || r.tel || 'un prospect'} (bouton RCS)${r.date_rdv ? ' — RDV du ' + new Date(r.date_rdv).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''} 🎉` }) });
       } catch (_) {}
     }
     return res.status(200).send(page(
