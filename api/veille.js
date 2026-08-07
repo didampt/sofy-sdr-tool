@@ -230,30 +230,50 @@ export default async function handler(req, res) {
       // des hot leads (décideurs marketing/commercial/direction d'entreprises B2C) — les étudiants,
       // scientifiques, freelances/agences, profils tech/RH sont écartés (perte de temps SDR).
       // Les profils qui MATCHENT une liste en veille ne passent pas par le filtre (déjà nos cibles).
-      let garderIA = null; // null = filtre indisponible → tout garder (comportement d'avant)
-      let socIA = {};      // indice → nom de société extrait de la tagline par l'IA (« Head of sales @ Axialys »)
+      // ⚠️ Traitement PAR LOTS de 25 : avec 91 profils d'un coup la réponse dépassait max_tokens,
+      // le JSON arrivait tronqué et le repli « tout garder » polluait les Hot Leads (07/08).
+      let garderIA = new Set();
+      let socIA = {};        // indice → société extraite de la tagline par l'IA
+      const nonAnalyses = new Set(); // lot dont l'IA a échoué → exclus (repêchables avec ♻️)
+      const CONSIGNES = `Tu qualifies des profils LinkedIn ayant réagi à un post sur le marketing local / les avis clients. Nos produits (pilotage de fiches Google & avis, centralisation des conversations clients, campagnes SMS) ciblent les DÉCIDEURS — dirigeant, DG, gérant, directeur ou responsable marketing / communication / digital / commercial / relation client / réseau-franchise-retail — d'entreprises B2C : commerces, retail, franchises, restauration/CHR, automobile, beauté/santé, services locaux, grandes marques.
+À EXCLURE : étudiants et alternants (même en marketing), chercheurs/scientifiques, freelances/consultants/agences (growth, SEO, com...), profils RH/tech/finance/juridique, **chefs de projet / project managers / product managers / product owners, formateurs, responsables pédagogiques, coachs, designers, développeurs**, employés d'éditeurs de logiciels (concurrents ou non), et TOUT profil travaillant chez l'entreprise qui a publié le post${societePost ? ` (« ${societePost} »)` : ''}. EXCLURE AUSSI les profils institutionnels et corporate SANS points de vente : fédérations/syndicats professionnels (Medef, Apec, Syntec...), présidents d'associations/fondations, cabinets de conseil/audit/expertise, banque/assurance corporate, collectivités — notre cible a des BOUTIQUES, AGENCES ou CLIENTS GRAND PUBLIC. EXCLURE AUSSI les vendeurs EXÉCUTANTS sans entreprise B2C cible identifiable : Inside Sales, Sales/Account Executive, Account Manager, SDR/BDR, Business Developer, Customer Success — un vendeur qui prospecte n'est PAS un décideur qui achète (seuls les DIRECTEURS/RESPONSABLES commerciaux d'entreprises B2C restent dans la cible). Fonction vide = GARDER ; fonction prestigieuse mais hors commerce B2C = EXCLURE. Tagline en simple liste de mots-clés d'un secteur B2C SANS employeur identifiable, SANS marqueur freelance/agence/consultant et SANS intitulé de vendeur exécutant = AMBIGUË → GARDER, le SDR tranchera. Dans le doute sur un intitulé NON commercial (projet, produit, tech, formation, RH) : EXCLURE.`;
       if (process.env.ANTHROPIC_API_KEY && nouveauxI.length) {
-        try {
-          const rIA = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-            body: JSON.stringify({
-              model: 'claude-sonnet-4-6', max_tokens: 800,
-              messages: [{ role: 'user', content: `Tu qualifies des profils LinkedIn ayant réagi à un post sur le marketing local / les avis clients. Nos produits (pilotage de fiches Google & avis, centralisation des conversations clients, campagnes SMS) ciblent les DÉCIDEURS — dirigeant, DG, gérant, directeur ou responsable marketing / communication / digital / commercial / relation client / réseau-franchise-retail — d'entreprises B2C : commerces, retail, franchises, restauration/CHR, automobile, beauté/santé, services locaux, grandes marques.
-À EXCLURE : étudiants et alternants (même en marketing), chercheurs/scientifiques, freelances/consultants/agences (growth, SEO, com...), profils RH/tech/finance/juridique, employés d'éditeurs de logiciels (concurrents ou non), et TOUT profil travaillant chez l'entreprise qui a publié le post${societePost ? ` (« ${societePost} »)` : ''}. EXCLURE AUSSI les profils institutionnels et corporate SANS points de vente : fédérations/syndicats professionnels (Medef, Apec, Syntec...), présidents d'associations/fondations, cabinets de conseil/audit/expertise, banque/assurance corporate, collectivités — notre cible a des BOUTIQUES, AGENCES ou CLIENTS GRAND PUBLIC. EXCLURE AUSSI les vendeurs EXÉCUTANTS sans entreprise B2C cible identifiable : Inside Sales, Sales/Account Executive, Account Manager, SDR/BDR, Business Developer, Customer Success — un vendeur qui prospecte n'est PAS un décideur qui achète (seuls les DIRECTEURS/RESPONSABLES commerciaux d'entreprises B2C restent dans la cible). Fonction vide = GARDER ; fonction prestigieuse mais hors commerce B2C = EXCLURE. Tagline en simple liste de mots-clés d'un secteur B2C (ex : « Food Tech Expert | E-Commerce | Marketing Digital ») SANS employeur identifiable, SANS marqueur freelance/agence/consultant et SANS intitulé de vendeur exécutant = AMBIGUË → GARDER, le SDR tranchera.
-Profils : ${JSON.stringify(nouveauxI.map((p, i) => ({ i, nom: p.nom, fonction: (p.occupation || '').slice(0, 120) })))}
-${postTexte ? `Texte du post (publié par « ${societePost || 'inconnu'} »${moduleDuPost ? `, concurrent de notre module ${MODULES_CONC[moduleDuPost]}` : ''}) : «${postTexte.slice(0, 800)}»\n` : ''}Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"garder":[indices des profils à garder],"societes":{"<indice>":"nom de l'entreprise UNIQUEMENT si la fonction du profil la mentionne (ex : Head of sales @ Décathlon → Décathlon) — omets l'indice sinon, n'invente jamais"}${postTexte ? `,"accroche":"1 phrase d’ouverture d’appel pour le SDR, 40 mots MAXIMUM et complète (jamais interrompue) : « J’ai vu que vous avez réagi au post de ${societePost || 'X'} sur [le sujet RÉEL du texte ci-dessus — INTERDICTION d’évoquer un thème absent du post] », puis un pont naturel vers ${moduleDuPost ? 'notre terrain : ' + MODULES_CONC[moduleDuPost] : 'le module Sofy le plus proche du sujet du post (Soview=avis Google/visibilité locale, SoConnect=messagerie client, SoReach=SMS/RCS)'}"` : ''}}` }]
-            })
-          });
-          const dIA = await rIA.json().catch(() => null);
-          if (rIA.ok && dIA) {
-            const brutIA = ((dIA.content || []).map(c => c.text || '').join('')).replace(/```json|```/g, '');
-            const pIA = JSON.parse(brutIA.slice(brutIA.indexOf('{'), brutIA.lastIndexOf('}') + 1));
-            if (Array.isArray(pIA.garder)) garderIA = new Set(pIA.garder.map(Number));
-            if (pIA.accroche) resImp.accroche = String(pIA.accroche).slice(0, 450); // phrase complète, jamais coupée en plein mot
-            if (pIA.societes && typeof pIA.societes === 'object') socIA = pIA.societes;
-          }
-        } catch (_) {}
+        const TAILLE = 25;
+        for (let d = 0; d < nouveauxI.length; d += TAILLE) {
+          const lot = nouveauxI.slice(d, d + TAILLE).map((p, k) => ({ i: d + k, nom: p.nom, fonction: (p.occupation || '').slice(0, 120) }));
+          const veutAccroche = postTexte && d === 0; // l'accroche ne se demande qu'une fois
+          let ok = false;
+          try {
+            const rIA = await fetch('https://api.anthropic.com/v1/messages', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+              body: JSON.stringify({
+                model: 'claude-sonnet-4-6', max_tokens: 2000,
+                messages: [{ role: 'user', content: `${CONSIGNES}
+Profils : ${JSON.stringify(lot)}
+${veutAccroche ? `Texte du post (publié par « ${societePost || 'inconnu'} »${moduleDuPost ? `, concurrent de notre module ${MODULES_CONC[moduleDuPost]}` : ''}) : «${postTexte.slice(0, 800)}»\n` : ''}Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"garder":[indices des profils à garder],"societes":{"<indice>":"nom de l'entreprise UNIQUEMENT si la fonction du profil la mentionne (ex : Head of sales @ Décathlon → Décathlon) — omets l'indice sinon, n'invente jamais"}${veutAccroche ? `,"accroche":"1 phrase d'ouverture d'appel pour le SDR, 40 mots MAXIMUM et complète : « J'ai vu que vous avez réagi au post de ${societePost || 'X'} sur [le sujet RÉEL du texte ci-dessus — INTERDICTION d'évoquer un thème absent du post] », puis un pont naturel vers ${moduleDuPost ? 'notre terrain : ' + MODULES_CONC[moduleDuPost] : 'le module Sofy le plus proche du sujet du post (Soview=avis Google/visibilité locale, SoConnect=messagerie client, SoReach=SMS/RCS)'}"` : ''}}` }]
+              })
+            });
+            const dIA = await rIA.json().catch(() => null);
+            if (rIA.ok && dIA) {
+              const brutIA = ((dIA.content || []).map(c => c.text || '').join('')).replace(/```json|```/g, '');
+              const pIA = JSON.parse(brutIA.slice(brutIA.indexOf('{'), brutIA.lastIndexOf('}') + 1));
+              if (Array.isArray(pIA.garder)) {
+                pIA.garder.map(Number).forEach(n => garderIA.add(n));
+                ok = true;
+              }
+              if (pIA.accroche) resImp.accroche = String(pIA.accroche).slice(0, 450);
+              if (pIA.societes && typeof pIA.societes === 'object') Object.assign(socIA, pIA.societes);
+            }
+          } catch (_) {}
+          // Lot non qualifié (IA en erreur / réponse illisible) : on N'ajoute PAS ces profils aux Hot
+          // Leads — ils seraient non filtrés. Ils sont signalés et restent repêchables (♻️).
+          if (!ok) lot.forEach(x => nonAnalyses.add(x.i));
+        }
+        resImp.ia_lots = Math.ceil(nouveauxI.length / TAILLE);
+        if (nonAnalyses.size) resImp.ia_non_analyses = nonAnalyses.size;
+      } else {
+        nouveauxI.forEach((_, i) => garderIA.add(i)); // pas de clé IA : comportement d'avant (tout garder)
       }
 
       for (let iP = 0; iP < nouveauxI.length; iP++) {
@@ -267,7 +287,8 @@ ${postTexte ? `Texte du post (publié par « ${societePost || 'inconnu'} »${mod
           const urlN = String(p.brut || p.url || '').toLowerCase().replace(/[\s\-]/g, '');
           const empl = exclusEmployeurs.find(c => { const n = String(c).replace(/[\s\-]/g, ''); return n.length >= 3 && (occN.includes(n) || urlN.includes(n)); });
           if (empl) { resImp.exclus_employeur++; resImp.detail.exclus.push({ nom: p.nom, raison: 'employé « ' + empl + ' »' + (occN.includes(String(empl).replace(/[\s\-]/g, '')) ? '' : ' (URL du profil)') }); continue; }
-          if (garderIA && !garderIA.has(iP)) { resImp.exclus_ia++; resImp.detail.exclus.push({ nom: p.nom, raison: 'hors cible (filtre IA)' + (p.occupation ? ' — ' + p.occupation.slice(0, 60) : '') }); continue; }
+          if (nonAnalyses.has(iP)) { resImp.exclus_ia++; resImp.detail.exclus.push({ nom: p.nom, raison: '⚠️ non analysé (filtre IA indisponible sur ce lot) — relance avec ♻️' }); continue; }
+          if (!garderIA.has(iP)) { resImp.exclus_ia++; resImp.detail.exclus.push({ nom: p.nom, raison: 'hors cible (filtre IA)' + (p.occupation ? ' — ' + p.occupation.slice(0, 60) : '') }); continue; }
           const sigT = typerSignal(nomAgentI, p);
           const r2 = await ajouterHotLead({
             nom_complet: p.nom, email: null,
