@@ -1283,6 +1283,20 @@ Spot-Hit</textarea>
     </div>
   </div>
 </div>
+<!-- 💬 RCS de démonstration (prospection) — niveau document : ouvrable depuis toutes les vues -->
+<div id="rcs-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:903;align-items:center;justify-content:center" onclick="if(event.target===this)this.style.display='none'">
+  <div style="background:var(--card,#fff);border-radius:14px;padding:22px 24px;max-width:540px;width:94%">
+    <div style="font-size:18px;font-weight:800;margin-bottom:6px">💬 RCS de démonstration</div>
+    <div style="font-size:12.5px;color:var(--ink-soft);line-height:1.55;margin-bottom:10px">Le prospect reçoit une <b>rich-card Sofy</b> — visuel, texte et bouton « 📅 Réserver ma démo » : le message <i>est</i> la démonstration du produit. Repli SMS automatique si son mobile ne gère pas le RCS.</div>
+    <div id="rcs-dest" style="font-size:13px;font-weight:700;margin-bottom:8px"></div>
+    <textarea class="field" id="rcs-texte" rows="5" style="width:100%;font-size:12.5px" placeholder="Texte du message…"></textarea>
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px">La mention « répondez STOP » est ajoutée automatiquement (prospection B2B). Coût ≈ 1 crédit SoReach.</div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+      <button class="btn" style="background:var(--paper)" onclick="document.getElementById('rcs-modal').style.display='none'">Annuler</button>
+      <button class="btn btn-primary" id="rcs-btn" onclick="envoyerRcsProspect()">💬 Envoyer le RCS</button>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -2039,7 +2053,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v318';
+const VERSION='v319';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2149,6 +2163,36 @@ async function envoyerHotLeadManuel(){
   }
  }catch(e){toast('Erreur réseau : '+e.message);}
  finally{if(btn){btn.disabled=false;btn.textContent='🔥 Créer le hot lead';}}
+}
+// 💬 RCS de démonstration vers un contact du cockpit (aperçu éditable puis envoi)
+let RCS_CTX=null;
+async function ouvrirRcsProspect(rid,ci){
+ const it=CK_ITEMS[rid]||{};const c=(it.contacts_detail||[])[ci]||{};
+ if(!c.tel){toast('Ce contact n\'a pas de mobile');return;}
+ RCS_CTX={tel:c.tel,email_cle:c.email||it.email_cle||null,liste_id:it.liste_id||null};
+ const d=document.getElementById('rcs-dest');
+ if(d)d.textContent='📱 '+c.tel+' — '+(c.nom||'')+(it.nom?' · '+it.nom:'');
+ const z=document.getElementById('rcs-texte');if(z)z.value='Chargement…';
+ document.getElementById('rcs-modal').style.display='flex';
+ try{
+  const p=new URLSearchParams({prenom:(c.nom||'').split(' ')[0]||'',entreprise:it.nom||'',accroche:it.accroche||''});
+  const r=await api('/api/rcs-prospect?'+p.toString());
+  const dd=await r.json();
+  if(z)z.value=(dd&&dd.texte)||'';
+ }catch(_){ if(z)z.value=''; }
+}
+async function envoyerRcsProspect(){
+ if(!RCS_CTX)return;
+ const btn=document.getElementById('rcs-btn');const txt=((document.getElementById('rcs-texte')||{}).value||'').trim();
+ if(!txt){toast('Le texte est vide');return;}
+ if(btn){btn.disabled=true;btn.textContent='⏳ Envoi…';}
+ try{
+  const r=await api('/api/rcs-prospect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...RCS_CTX,texte:txt})});
+  const d=await r.json();
+  if(d.ok){toast('💬 Envoyé ('+d.canal+') — tracé dans le bloc-notes');document.getElementById('rcs-modal').style.display='none';}
+  else toast('RCS : '+(d.detail||d.erreur||'refusé'));
+ }catch(e){toast('Erreur réseau : '+e.message);}
+ finally{if(btn){btn.disabled=false;btn.textContent='💬 Envoyer le RCS';}}
 }
 // 📚 Bibliothèque de sources à surveiller (config 'sources_veille') — rappel DM Slack le lundi
 async function chargerSources(){
@@ -6889,6 +6933,8 @@ function ckContactLigne(c,it,rid,ci){
    const det=jsArg((c.nom||'')+' \u00b7 '+telNorm(c.tel));
    acts.push(`<a class="act" style="padding:4px 10px;font-size:12px;background:#25D366;color:#fff;text-decoration:none" href="${waLink(c.tel)}" target="_blank" onclick="ckJournal('${em}','whatsapp','\ud83d\udcac Message WhatsApp','${det}')" title="Ouvrir WhatsApp \u2014 journalis\u00e9 au bloc-notes">\ud83d\udfe2 WA</a>`);
    acts.push(`<a class="act" style="padding:4px 10px;font-size:12px;background:#F97316;color:#fff;text-decoration:none" href="sms:${htmlSafe(telNorm(c.tel))}" onclick="ckJournal('${em}','sms','\ud83d\udcac SMS direct','${det}')" title="SMS direct (application Messages) \u2014 journalis\u00e9. Pour un SMS SoReach : ouvrir la fiche compl\u00e8te">\ud83d\udcac SMS</a>`);
+   // 💬 RCS de démonstration : le prospect reçoit le produit qu'on lui vend (rich-card Sofy)
+   acts.push(`<button class="act" style="padding:4px 10px;font-size:12px;background:#7A5AF8;border-color:#7A5AF8;color:#fff" onclick="ouvrirRcsProspect('${rid}',${ci})" title="Envoyer une rich-card RCS Sofy (visuel + bouton \u00ab R\u00e9server ma d\u00e9mo \u00bb) \u2014 la meilleure d\u00e9mo du produit">\ud83d\udcac RCS</button>`);
   }
  }
  return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 0;border-top:1px dashed var(--line)">
