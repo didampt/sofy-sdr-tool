@@ -263,7 +263,7 @@ export default async function handler(req, res) {
     const restants = listeChoisie ? prospecter.length : prospecter.length; // restants = périmètre affiché
 
     // ── Tuile HOT partagée : signaux de visite + signups (liste Hot Leads auto), claim « Je prends » ──
-    let hot = [];
+    let hot = [], hotTotal = 0;
     try {
       const [hl] = await sql`SELECT id, entreprises FROM listes WHERE criteres->>'auto' = 'hotleads' LIMIT 1`;
       if (hl) {
@@ -296,7 +296,10 @@ export default async function handler(req, res) {
           });
         }
         hot.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-        hot = hot.slice(0, 12);
+        // Plafond d'AFFICHAGE (le total réel part dans hot_total pour la tuile — un plafond de 12
+        // laissait croire qu'il n'y avait que 12 hot leads, constat Didier 07/08)
+        hotTotal = hot.length;
+        hot = hot.slice(0, 50);
       }
     } catch (_) {}
 
@@ -383,7 +386,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       ok: true, sdr,
-      chauds: chauds.slice(0, 15),
+      chauds: chauds.slice(0, 15), hot_total: hotTotal,
       rappels,
       prospecter: prospecter.slice(0, 25),
       restants,

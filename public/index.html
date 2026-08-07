@@ -2039,7 +2039,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v313';
+const VERSION='v314';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -7191,7 +7191,7 @@ function rendreCockpit(sdrAffiche){
   <div style="font-size:24px;font-weight:800;color:${coul};line-height:1.2">${n}</div>
   <div style="font-size:10.5px;color:var(--ink-soft)">${desc}</div></div>`;
  h+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 10px">
-  ${tb('hot','\ud83d\udd25','HOT \u2014 SIGNAUX & SIGNUPS',urgents.length,'#B91C1C','#FEF2F2','\u00e0 prendre sous 2 h \u00b7 partag\u00e9s \u00e9quipe')}
+  ${tb('hot','\ud83d\udd25','HOT \u2014 SIGNAUX & SIGNUPS',(d.hot_total&&d.hot_total>urgents.length)?d.hot_total:urgents.length,'#B91C1C','#FEF2F2','\u00e0 prendre sous 2 h \u00b7 partag\u00e9s \u00e9quipe'+((d.hot_total&&d.hot_total>urgents.length)?' \u00b7 '+urgents.length+' affich\u00e9s':''))}
   ${tb('promis','\u23f0','RAPPELS PROMIS',promis.length,'#B45309','#FFFBEB','tes engagements client')}
   ${tb('retenter','\ud83d\udd01','\u00c0 RETENTER',retenter.length,'#475569','#F1F5F9','injoignables \u00b7 3\u1d49 \u00e9chec \u2192 s\u00e9quence auto')}
  </div>`;
