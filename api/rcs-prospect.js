@@ -56,6 +56,18 @@ export default async function handler(req, res) {
 
   const tel = e164(b.tel);
   if (!tel) return res.status(400).json({ erreur: 'Numéro invalide' });
+  // Clé de trace : email du contact, sinon clé de fiche (nom:…) — sans repli, les fiches sans
+  // email n'avaient AUCUNE note dans le bloc-notes (constat Didier 07/08).
+  const cleTrace = String(b.email_cle || b.cle_fiche || '').toLowerCase().trim() || null;
+  // 🛡️ Garde-fou : UN SEUL RCS de démonstration par lead (anti-envoi en masse). La trace fait foi.
+  try {
+    const deja = await sql`SELECT ts, auteur FROM activites
+      WHERE type = 'rcs_prospect' AND (fiche_cle = ${cleTrace || '§'} OR detail LIKE ${'%' + tel})
+      ORDER BY ts DESC LIMIT 1`;
+    if (deja.length) return res.status(409).json({
+      erreur: 'RCS déjà envoyé à ce lead le ' + new Date(deja[0].ts).toLocaleDateString('fr-FR') + (deja[0].auteur ? ' par ' + deja[0].auteur : '') + ' — un seul par lead',
+      deja: true });
+  } catch (_) {}
   const texte = (String(b.texte || '').trim() || texteProspect({ prenom, entreprise, accroche, sdr: user.nom })).slice(0, 900);
   const titre = '💬 Découvrez le futur du SMS avec le RCS';
   // Mention légale prospection B2B (droit d'opposition) — jamais retirée du repli SMS non plus
@@ -88,9 +100,9 @@ export default async function handler(req, res) {
 
     try { await loggerConso(user.nom, 'soreach', 1, b.liste_id || null); } catch (_) {}
     // Trace dans le bloc-notes de la fiche
-    if (b.email_cle) {
+    if (cleTrace) {
       try { await sql`INSERT INTO activites (fiche_cle, source, type, titre, detail, auteur, ts)
-        VALUES (${String(b.email_cle).toLowerCase()}, 'sms', 'rcs_prospect', ${'💬 RCS de démonstration envoyé (' + envoi.canal + ')'},
+        VALUES (${cleTrace}, 'sms', 'rcs_prospect', ${'💬 RCS de démonstration envoyé (' + envoi.canal + ')'},
           ${texte + ' → ' + tel}, ${user.nom || 'système'}, NOW())`; } catch (_) {}
     }
     return res.status(200).json({ ok: true, canal: envoi.canal, id: envoi.id || null, tel });
