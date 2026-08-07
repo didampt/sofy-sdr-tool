@@ -284,6 +284,10 @@ export default async function handler(req, res) {
             tel: telDe(e, c0H),
             email_cle: emH ? String(emH.enrich.email).toLowerCase() : null,
             type: estSignup ? 'signup' : (((e.signal && e.signal.type) === 'linkedin') ? 'linkedin' : (((e.signal && e.signal.type) === 'manuel') ? 'manuel' : 'visite')),
+            // Personas cherche les décideurs D'UNE ENTREPRISE : sur un liker sans société
+            // identifiée, la fiche porte le nom de la personne → bouton désactivé côté front.
+            societe_ok: !!(e.site_web || e.linkedin_entreprise || e.enseigne ||
+              (e.nom && c0 && normCk(e.nom) !== normCk(((c0.prenom || '') + ' ' + (c0.nom || '')).trim()))),
             date: (e.signal && e.signal.date) || e.date_hotlead || null,
             pages: e.pages_visitees || (e.signal && e.signal.pages) || [],
             pris_par: e.pris_par || null,

@@ -2039,7 +2039,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v317';
+const VERSION='v318';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -6857,9 +6857,10 @@ async function chargerCockpit(){
  }catch(e){zone.innerHTML='<p style="color:var(--ink-soft)">Erreur : '+e.message+'</p>';}
 }
 let CK_ITEMS={};
-function ckRow(it,inner,bord,avecStatut,estRappel){
+function ckRow(it,inner,bord,avecStatut,estRappel,btnAvant){
  const rid='ckr'+(++CK_ROW);CK_ITEMS[rid]=it;
  const btns=[];
+ if(btnAvant)btns.push(btnAvant); // ex. « 🔥 Je prends » sur un hot lead non claimé
  if(it.tel)btns.push(`<a class="act act-call" style="text-decoration:none" href="tel:${htmlSafe(telNorm(it.tel))}">\ud83d\udcde Appeler</a>`);
  btns.push(`<button class="act act-copy" id="${rid}-b" onclick="ckToggle('${rid}')" title="D\u00e9plier : tous les contacts (appel, WhatsApp, SMS), accroche et synth\u00e8se d'appel">D\u00e9plier \u25be</button>`);
  if(estRappel)btns.push(`<button class="act act-export" onclick="ckRappelFait(${it.id})" title="Marquer le rappel comme fait">Fait \u2713</button>`);
@@ -6917,7 +6918,7 @@ function ckDetailHtml(it,rid){
    <button class="act act-copy" onclick="ckAjouterNote('${rid}')">Ajouter</button>
   </div></div>`;
  const aEmail=(it.contacts_detail||[]).some(c=>c&&c.email);
- h+=`<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">${aEmail&&!it.statut?`<button class="act act-call" onclick="ouvrirCkSequence('${rid}')" title="Pousser un contact de la fiche en s\u00e9quence Lemlist (m\u00eames variables que depuis la fiche)">\u2708\ufe0f S\u00e9quence Lemlist\u2026</button>`:''}${cs.length&&it.liste_id&&it.cle?`<button class="act act-copy" onclick="ckPersonas('${rid}')" title="Chercher d'autres d\u00e9cideurs LinkedIn (Basile \u2192 IA) et les ajouter \u00e0 la fiche">\ud83d\udc65 Personas</button>`:''}${it.liste_id?`<button class="act act-copy" onclick="ouvrirListe(${it.liste_id}${it.cle?`,decodeURIComponent('${jsArg(it.cle)}')`:',null'})" title="Bloc-notes, SMS SoReach, email Lemlist, enrichissement\u2026">Ouvrir la fiche compl\u00e8te \u2192</button>`:''}</div>`;
+ h+=`<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">${aEmail&&!it.statut?`<button class="act act-call" onclick="ouvrirCkSequence('${rid}')" title="Pousser un contact de la fiche en s\u00e9quence Lemlist (m\u00eames variables que depuis la fiche)">\u2708\ufe0f S\u00e9quence Lemlist\u2026</button>`:''}${cs.length&&it.liste_id&&it.cle?(it.societe_ok===false?`<button class="act act-copy" disabled style="opacity:.5;cursor:not-allowed" title="Entreprise inconnue sur cette fiche (liker sans soci\u00e9t\u00e9) \u2014 enrichis d'abord le contact ou ouvre la fiche compl\u00e8te">\ud83d\udc65 Personas</button>`:`<button class="act act-copy" onclick="ckPersonas('${rid}')" title="Chercher d'autres d\u00e9cideurs LinkedIn (Basile \u2192 IA) et les ajouter \u00e0 la fiche">\ud83d\udc65 Personas</button>`):''}${it.liste_id?`<button class="act act-copy" onclick="ouvrirListe(${it.liste_id}${it.cle?`,decodeURIComponent('${jsArg(it.cle)}')`:',null'})" title="Bloc-notes, SMS SoReach, email Lemlist, enrichissement\u2026">Ouvrir la fiche compl\u00e8te \u2192</button>`:''}</div>`;
  return h+'</div>';
 }
 let CKSEQ_CTX=null;
@@ -7215,11 +7216,11 @@ function rendreCockpit(sdrAffiche){
    <div style="flex:1;min-width:180px;line-height:1.35">
     <span style="font-size:13.5px;font-weight:700">${htmlSafe(c.nom)}</span>${c.contact&&c.contact!==c.nom?`<span style="font-size:12px;color:var(--ink-soft)"> \u00b7 ${htmlSafe(c.contact)}</span>`:''}${c.fonction?`<span style="font-size:11.5px;color:var(--ink-soft)"> \u00b7 ${htmlSafe(String(c.fonction).slice(0,42))}</span>`:''}${c.pris_par?' <span style="font-size:11px;font-weight:800;color:#B91C1C">\u00b7 \u00e0 toi</span>':''}
    </div>${c.tel?`<span style="font-size:12.5px;font-weight:700;white-space:nowrap">${htmlSafe(c.tel)}</span>`:'<span style="font-size:11px;color:var(--ink-soft);white-space:nowrap">sans t\u00e9l</span>'}<span style="font-size:11px;color:var(--ink-soft);white-space:nowrap">${depuis(c._ts)}</span>`;
-   if(c._k==='hot'&&!c.pris_par){
-    h+=`<div style="border:1px solid #FECACA;border-left:3px solid #E24B4A;border-radius:0 8px 8px 0;padding:6px 12px;margin-bottom:5px;background:var(--card)"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">${inner}<button class="act act-call" style="background:#B91C1C;border-color:#B91C1C;color:#fff;padding:3px 10px;font-size:12px" onclick="ckPrendre(${c.liste_id},'${jsArg(c.cle)}')" title="Le lead disparait chez les autres SDR et passe dans ta file \u2014 SLA 2 h">\ud83d\udd25 Je prends</button></div></div>`;
-   }else{
-    h+=ckRow(c,inner,'border-left:3px solid #E24B4A;border-radius:0 8px 8px 0;',true,false);
-   }
+   // Un hot lead se déplie comme une fiche de prospection (contacts, accroche, historique,
+   // Séquence Lemlist / Personas / fiche complète) ; « Statuer… » n'apparaît qu'une fois pris.
+   const aPrendre=(c._k==='hot'&&!c.pris_par);
+   const btnPrendre=aPrendre?`<button class="act act-call" style="background:#B91C1C;border-color:#B91C1C;color:#fff;padding:4px 10px;font-size:12px" onclick="ckPrendre(${c.liste_id},'${jsArg(c.cle)}')" title="Le lead disparait chez les autres SDR et passe dans ta file \u2014 SLA 2 h">\ud83d\udd25 Je prends</button>`:'';
+   h+=ckRow(c,inner,'border-left:3px solid #E24B4A;border-radius:0 8px 8px 0;',!aPrendre,false,btnPrendre);
   }
   if(filtres.length>liste.length)h+=`<div style="font-size:12px;color:var(--ink-soft);padding:4px 2px">\u2026 ${filtres.length-liste.length} autre(s) en attente \u2014 traite ceux-ci d\u2019abord, ils r\u00e9appara\u00eetront ensuite.</div>`;
  }
