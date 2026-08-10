@@ -197,7 +197,7 @@ Réponds UNIQUEMENT avec un tableau JSON des numéros dont l'entreprise appartie
       const r = await fetch(ANTHRO, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': apiKeyIA, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: 'claude-haiku-4-5-20251001' /* Haiku : tri sectoriel de profils (classification) — 3x moins cher que Sonnet, qualité équivalente sur cette tâche (arbitrage coût 07/08) */, max_tokens: 800, temperature: 0, messages: [{ role: 'user', content: prompt }] })
+        body: JSON.stringify({ model: 'claude-sonnet-4-6' /* tri sectoriel des listes IA : la QUALITÉ prime sur le coût (une liste mal ciblée fait perdre une journée de SDR) — arbitrage Didier 07/08 */, max_tokens: 800, temperature: 0, messages: [{ role: 'user', content: prompt }] })
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) { if (tent < 2) { await new Promise(s => setTimeout(s, 600)); continue; } return null; }
