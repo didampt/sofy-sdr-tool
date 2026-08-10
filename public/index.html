@@ -2053,7 +2053,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v321';
+const VERSION='v322';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2276,7 +2276,8 @@ async function importerLikers(){
    if(res){
     const dt=d.detail||{};
     const esc=s=>String(s||'').replace(/</g,'&lt;');
-    let h='<b>📥 '+d.importes+' lus · 🔥 '+(d.hotleads||0)+' hot leads · 🎯 '+(d.matches||0)+' matchs · 🚫 '+((d.exclus_ia||0)+(d.exclus_employeur||0))+' exclus</b>';
+    let h='<b>📥 '+d.importes+' lus · 🔥 '+(d.hotleads||0)+' hot leads · 🎯 '+(d.matches||0)+' matchs · 🚫 '+((d.exclus_ia||0)+(d.exclus_employeur||0))+' exclus</b>'
+     +(d.ia_modele?'<span style="font-size:11px;color:var(--ink-soft)"> · filtre : '+esc(d.ia_modele)+'</span>':'');
     if((dt.hotleads||[]).length)h+='<div style="margin-top:6px">🔥 <b>Hot leads créés :</b> '+dt.hotleads.map(esc).join(', ')+'</div>';
     if((dt.matches||[]).length)h+='<div>🎯 <b>Signaux sur listes en veille :</b> '+dt.matches.map(esc).join(', ')+'</div>';
     if((dt.exclus||[]).length)h+='<div style="margin-top:6px">🚫 <b>Exclus :</b><br>'+dt.exclus.map(x=>'· '+esc(x.nom)+' — <i>'+esc(x.raison)+'</i>').join('<br>')+'</div>';

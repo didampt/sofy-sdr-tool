@@ -248,7 +248,7 @@ export default async function handler(req, res) {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
               body: JSON.stringify({
-                model: 'claude-sonnet-4-6' /* filtre de qualification des likers : la QUALITÉ primes sur le coût (un faux positif pollue les Hot Leads, un faux négatif perd un lead) — arbitrage Didier 07/08 */, max_tokens: 2000,
+                model: (process.env.MODELE_FILTRE_LIKERS || 'claude-sonnet-5') /* filtre de qualification des likers : la QUALITÉ prime (un faux positif pollue les Hot Leads, un faux négatif perd un lead). Sonnet 5 en test depuis le 07/08 — plus capable ET tarif d'introduction inférieur à Sonnet 4.6 jusqu'au 31/08/2026. Repli immédiat sans redéploiement : variable Vercel MODELE_FILTRE_LIKERS = claude-sonnet-4-6 */, max_tokens: 2000,
                 messages: [{ role: 'user', content: `${CONSIGNES}
 Profils : ${JSON.stringify(lot)}
 ${veutAccroche ? `Texte du post (publié par « ${societePost || 'inconnu'} »${moduleDuPost ? `, concurrent de notre module ${MODULES_CONC[moduleDuPost]}` : ''}) : «${postTexte.slice(0, 800)}»\n` : ''}Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"garder":[indices des profils à garder],"societes":{"<indice>":"nom de l'entreprise UNIQUEMENT si la fonction du profil la mentionne (ex : Head of sales @ Décathlon → Décathlon) — omets l'indice sinon, n'invente jamais"}${veutAccroche ? `,"accroche":"1 phrase d'ouverture d'appel pour le SDR, 40 mots MAXIMUM et complète : « J'ai vu que vous avez réagi au post de ${societePost || 'X'} sur [le sujet RÉEL du texte ci-dessus — INTERDICTION d'évoquer un thème absent du post] », puis un pont naturel vers ${moduleDuPost ? 'notre terrain : ' + MODULES_CONC[moduleDuPost] : 'le module Sofy le plus proche du sujet du post (Soview=avis Google/visibilité locale, SoConnect=messagerie client, SoReach=SMS/RCS)'}"` : ''}}` }]
@@ -271,6 +271,7 @@ ${veutAccroche ? `Texte du post (publié par « ${societePost || 'inconnu'} »${
           if (!ok) lot.forEach(x => nonAnalyses.add(x.i));
         }
         resImp.ia_lots = Math.ceil(nouveauxI.length / TAILLE);
+        resImp.ia_modele = process.env.MODELE_FILTRE_LIKERS || 'claude-sonnet-5';
         if (nonAnalyses.size) resImp.ia_non_analyses = nonAnalyses.size;
       } else {
         nouveauxI.forEach((_, i) => garderIA.add(i)); // pas de clé IA : comportement d'avant (tout garder)
