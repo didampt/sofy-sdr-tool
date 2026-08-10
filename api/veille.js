@@ -248,7 +248,7 @@ export default async function handler(req, res) {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
               body: JSON.stringify({
-                model: 'claude-sonnet-4-6', max_tokens: 2000,
+                model: 'claude-haiku-4-5-20251001' /* Haiku : filtre de qualification des likers (classification binaire) — 3x moins cher que Sonnet, qualité équivalente sur cette tâche (arbitrage coût 07/08) */, max_tokens: 2000,
                 messages: [{ role: 'user', content: `${CONSIGNES}
 Profils : ${JSON.stringify(lot)}
 ${veutAccroche ? `Texte du post (publié par « ${societePost || 'inconnu'} »${moduleDuPost ? `, concurrent de notre module ${MODULES_CONC[moduleDuPost]}` : ''}) : «${postTexte.slice(0, 800)}»\n` : ''}Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"garder":[indices des profils à garder],"societes":{"<indice>":"nom de l'entreprise UNIQUEMENT si la fonction du profil la mentionne (ex : Head of sales @ Décathlon → Décathlon) — omets l'indice sinon, n'invente jamais"}${veutAccroche ? `,"accroche":"1 phrase d'ouverture d'appel pour le SDR, 40 mots MAXIMUM et complète : « J'ai vu que vous avez réagi au post de ${societePost || 'X'} sur [le sujet RÉEL du texte ci-dessus — INTERDICTION d'évoquer un thème absent du post] », puis un pont naturel vers ${moduleDuPost ? 'notre terrain : ' + MODULES_CONC[moduleDuPost] : 'le module Sofy le plus proche du sujet du post (Soview=avis Google/visibilité locale, SoConnect=messagerie client, SoReach=SMS/RCS)'}"` : ''}}` }]

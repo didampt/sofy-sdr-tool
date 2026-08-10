@@ -668,7 +668,15 @@ async function lirePageWeb(url) {
   try {
     const r = await fetch(url, { signal: ctl.signal, redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SofyScrap/1.0)' } });
     if (!r.ok || !/text\/html/.test(r.headers.get('content-type') || '')) return null;
-    return (await r.text()).slice(0, 600000);
+    // 600 000 caractères partaient à l'IA (~150 k tokens = 0,45 $ le seul input, arbitrage coût
+    // 07/08) : on nettoie le HTML inutile (scripts, styles, entêtes/pieds) et on plafonne à 120 k.
+    const brutHtml = await r.text();
+    return brutHtml
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<(noscript|svg|iframe|header|footer|nav)[\s\S]*?<\/\1>/gi, ' ')
+      .replace(/<!--[\s\S]*?-->/g, ' ')
+      .slice(0, 120000);
   } catch (_) { return null; } finally { clearTimeout(to); }
 }
 
@@ -712,7 +720,7 @@ ${textes.map((t, i) => `--- PAGE ${i + 1} ---\n${t}`).join('\n\n')}`;
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 8000, messages: [{ role: 'user', content: prompt }] })
+    body: JSON.stringify({ model: 'claude-haiku-4-5-20251001' /* Haiku : extraction de sociétés depuis une page d'annuaire — 3x moins cher que Sonnet, qualité équivalente sur cette tâche (arbitrage coût 07/08) */, max_tokens: 8000, messages: [{ role: 'user', content: prompt }] })
   });
   const data = await r.json().catch(() => null);
   if (!r.ok) throw new Error('API Claude : ' + ((data && data.error && data.error.message) || r.status));

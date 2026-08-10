@@ -60,7 +60,7 @@ IMPORTANT — équilibre : un résultat avec confiance "moyenne" vaut mieux qu'a
     });
 
     const outilsComplets = [
-      { type: 'web_search_20250305', name: 'web_search', max_uses: 4 },
+      { type: 'web_search_20250305', name: 'web_search', max_uses: 2 },
       { type: 'web_fetch_20250910', name: 'web_fetch', max_uses: 2, max_content_tokens: 6000 }
     ];
     let r = await appeler(outilsComplets);
@@ -73,7 +73,7 @@ IMPORTANT — équilibre : un résultat avec confiance "moyenne" vaut mieux qu'a
     }
     if (!r.ok && /web_fetch|beta/i.test(JSON.stringify(data.error || ''))) {
       // Repli : recherche seule si l'outil de lecture n'est pas disponible sur ce compte
-      r = await appeler([{ type: 'web_search_20250305', name: 'web_search', max_uses: 6 }]);
+      r = await appeler([{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }]);
       data = await r.json();
     }
     if (!r.ok) {

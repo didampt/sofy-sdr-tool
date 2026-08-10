@@ -2053,7 +2053,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v320';
+const VERSION='v321';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4941,7 +4941,8 @@ async function reinitFiche(i){
  if(!confirm('Réinitialiser '+(e.nom)+' ?\n(efface : résultat IA, site web, enseigne corrigée, analyse GMB — puis re-analyse complète)'))return;
  e.ia=null;e.enseigne_ia=null;e.site_web='';e.site_source=null;e.gmb=null;
  rerender(i);persister();
- await analyserFiche(i);
+ e.analyse_le=null;e.score_le=null; // reset explicite → la re-analyse ne redemande pas confirmation
+ await analyserFiche(i,{force:true});
 }
 
 function ouvrirInfo(i){
@@ -4984,10 +4985,14 @@ function verrou(e,i){
 function deverrou(e,i){e._busy=false;rerender(i);}
 
 /* Analyse unifiée : GMB → si échec/pas de domaine → IA → re-GMB. UN SEUL clic pour le SDR. */
-async function analyserFiche(i){
+async function analyserFiche(i,opts){
  const e=REAL[i];
  if(verrou(e,i))return;
+ if(!(opts&&opts.force)&&(e.gmb||e.ia)&&frais(e.analyse_le,30)){
+  if(!confirm('Fiche déjà analysée il y a '+depuisJours(e.analyse_le)+' jour(s).\nRe-analyser relance des recherches web payantes (≈0,05 €).\n\nRe-analyser quand même ?'))return;
+ }
  try{
+ e.analyse_le=new Date().toISOString(); // anti-recalcul (analyse GMB + recherches web)
  await analyserGmb(i);
  if(!(e.gmb&&e.gmb.trouve)||!domaineDe(e)){
   toast('GMB introuvable → 🤖 IA cherche sur le web…');
@@ -5250,8 +5255,16 @@ function donneesPourScore(e){
   contacts:contactsDe(e).filter(c=>c.nom).map(c=>({prenom:c.prenom,nom:c.nom,fonction:(c.enrich&&c.enrich.fonction)||c.fonction,source:c.source,
    email:(c.enrich&&c.enrich.email)||null,mobile:(c.enrich&&c.enrich.telephone)||null,linkedin:(c.enrich&&c.enrich.linkedin)||null}))};
 }
-async function scorer(i){
+// ⚙️ Anti-recalcul (arbitrage coût 07/08) : un score/analyse de moins de 30 jours ne se
+// re-paye pas par inadvertance. Les flux automatiques passent {force:true} ou n'appellent
+// ces fonctions que si la donnée est absente.
+function frais(dateIso,jours){ if(!dateIso)return false; const j=(Date.now()-new Date(dateIso).getTime())/86400000; return j>=0&&j<(jours||30); }
+function depuisJours(dateIso){ return Math.max(0,Math.round((Date.now()-new Date(dateIso).getTime())/86400000)); }
+async function scorer(i,opts){
  const e=REAL[i];
+ if(!(opts&&opts.force)&&e.score&&e.score.scores&&frais(e.score_le,30)){
+  if(!confirm('Fiche déjà scorée il y a '+depuisJours(e.score_le)+' jour(s).\nRe-scorer relance un appel IA payant (≈0,02 €).\n\nRe-scorer quand même ?'))return true;
+ }
  try{
   const r=await api('/api/score',{method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({entreprise:donneesPourScore(e),sdr:(state.user&&state.user.nom)||state.sdr||''})});
@@ -5259,6 +5272,7 @@ async function scorer(i){
   try{d=await r.json();}catch(_){toast('Scoring : réponse invalide ('+r.status+')');return false;}
   if(d.erreur){toast('Scoring : '+d.erreur+(d.detail?' — '+d.detail:''));return false;}
   e.score=d.resultat||null;
+  if(e.score)e.score_le=new Date().toISOString(); // sert à l'anti-recalcul
   rerender(i);persister();
   return !!e.score;
  }catch(err){toast('Scoring erreur réseau : '+err.message);return false;}

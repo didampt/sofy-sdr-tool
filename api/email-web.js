@@ -54,7 +54,7 @@ Règles ABSOLUES :
         model: 'claude-sonnet-4-6',
         max_tokens: 1200,
         temperature: 0,
-        tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 4 }],
+        tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 2 }],
         messages: [{ role: 'user', content: prompt }]
       })
     });
