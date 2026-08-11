@@ -2053,7 +2053,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v322';
+const VERSION='v323';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -8138,7 +8138,16 @@ async function chargerStatsJournees(){
   // 👻 No-show (pipeline HubSpot) : chargé après coup (appel HubSpot plus lent), admins only
   if(d.admin){
    api('/api/noshow?du='+b.du+'&au='+b.au).then(r2=>r2.json()).then(n=>{
-    if(n&&n.ok&&STJ===d){STJ.noshow=n;rendreStatsJournees(STJ);}
+    if(!(n&&n.ok)||STJ!==d)return;
+    // Réponse partielle (rate limit HubSpot) : on ne l'utilise que faute de mieux, et on
+    // relance une fois — sinon les tuiles afficheraient des montants faux (constat 07/08).
+    const mieux=!STJ.noshow||(STJ.noshow.gagnes||0)<=(n.gagnes||0);
+    if(mieux){STJ.noshow=n;rendreStatsJournees(STJ);}
+    if(n.incomplet){
+     setTimeout(()=>{api('/api/noshow?du='+b.du+'&au='+b.au).then(r3=>r3.json()).then(n2=>{
+      if(n2&&n2.ok&&STJ===d&&!n2.incomplet&&(n2.gagnes||0)>=((STJ.noshow&&STJ.noshow.gagnes)||0)){STJ.noshow=n2;rendreStatsJournees(STJ);}
+     }).catch(()=>{});},4000);
+    }
    }).catch(()=>{});
   }
  }catch(e){toast('Erreur réseau Insights : '+e.message);}
@@ -8328,7 +8337,7 @@ async function stjZoho(){
   const ca=stjCAVentes();
   if(!ca.nbVentes)return; // ventes HubSpot pas encore chargées → la tuile viendra au re-render
   el.insertAdjacentHTML('beforeend',`<div id="stj-tuile-zoho" style="display:contents">`+
-   stjTuile('💶 CA VENTES CONCLUES'+(((document.getElementById('stj-sdr')||{}).value)?' · '+(document.getElementById('stj-sdr')||{}).value:''),Math.round(ca.totFact).toLocaleString('fr-FR')+' €','','',Math.round(ca.totEnc).toLocaleString('fr-FR')+' € encaissés · '+ca.rapprochees+' facturée'+(ca.rapprochees>1?'s':'')+' / '+ca.nbVentes+' gagnées'+(ca.totDevis?' · +'+Math.round(ca.totDevis).toLocaleString('fr-FR')+' € en devis acceptés':'')+(ca.totAnn?' · ≈'+Math.round(ca.totAnn).toLocaleString('fr-FR')+' €/an':'')+' (Zoho)','stjToggleVentes()')+
+   stjTuile('💶 CA VENTES CONCLUES'+(((document.getElementById('stj-sdr')||{}).value)?' · '+(document.getElementById('stj-sdr')||{}).value:''),Math.round(ca.totFact).toLocaleString('fr-FR')+' €','','',Math.round(ca.totEnc).toLocaleString('fr-FR')+' € encaissés · '+ca.rapprochees+' facturée'+(ca.rapprochees>1?'s':'')+' / '+ca.nbVentes+' gagnées'+(ca.totDevis?' · +'+Math.round(ca.totDevis).toLocaleString('fr-FR')+' € en devis acceptés':'')+(ca.totAnn?' · ≈'+Math.round(ca.totAnn).toLocaleString('fr-FR')+' €/an':'')+' (Zoho)'+((STJ.noshow&&STJ.noshow.incomplet)?' ⏳ HubSpot partiel — actualisation…':''),'stjToggleVentes()')+
    (function(){ // 🧲 ROI : CA des ventes conclues ÷ coût de la période (conso + abos prorata)
     var c=STJ&&STJ.couts;if(!c||!c.total||!ca.totFact)return '';
     var roi=Math.round(10*ca.totFact/c.total)/10;

@@ -7,6 +7,26 @@ import { verifierToken } from './db.js';
 
 const HS = 'https://api.hubapi.com';
 
+// HubSpot limite le débit : noshow enchaîne ~10 appels et un 429 faisait contribuer 0 au pipeline
+// concerné → réponse PARTIELLE affichée comme définitive (2 ventes au lieu de 6, CA 107 € au lieu
+// de 11 420 €, constat Didier 07/08). On réessaie, et on signale l'incomplétude au front.
+async function hsFetch(url, opts, etat) {
+  for (let essai = 0; essai < 3; essai++) {
+    try {
+      const r = await fetch(url, opts);
+      if (r.status === 429 || r.status >= 500) {
+        if (essai < 2) { await new Promise(x => setTimeout(x, 1200 * (essai + 1))); continue; }
+        if (etat) etat.incomplet = true;
+        return r;
+      }
+      return r;
+    } catch (e) {
+      if (essai === 2) { if (etat) etat.incomplet = true; throw e; }
+      await new Promise(x => setTimeout(x, 1200 * (essai + 1)));
+    }
+  }
+}
+
 export default async function handler(req, res) {
   const user = verifierToken(req);
   if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
@@ -28,16 +48,17 @@ export default async function handler(req, res) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(au)) au = auj;
       const t0 = String(new Date(du + 'T00:00:00+02:00').getTime());
       const t1 = String(new Date(au + 'T23:59:59+02:00').getTime());
-      const rp0 = await fetch(`${HS}/crm/v3/pipelines/deals`, { headers: H });
+      const etatHS = { incomplet: false }; // signale une réponse partielle (rate limit HubSpot)
+      const rp0 = await hsFetch(`${HS}/crm/v3/pipelines/deals`, { headers: H }, etatHS);
       const dp0 = await rp0.json().catch(() => ({}));
       const compte = async (prop, avecDetails) => {
-        const r = await fetch(`${HS}/crm/v3/objects/deals/search`, {
+        const r = await hsFetch(`${HS}/crm/v3/objects/deals/search`, {
           method: 'POST', headers: H,
           body: JSON.stringify({
             filterGroups: [{ filters: [{ propertyName: prop, operator: 'BETWEEN', value: t0, highValue: t1 }] }],
             properties: ['dealname', prop], limit: avecDetails ? 100 : 1
           })
-        });
+        }, etatHS);
         const d = await r.json().catch(() => ({}));
         return { total: d.total || 0, deals: avecDetails ? (d.results || []).map(x => ({ nom: x.properties.dealname, date: x.properties[prop] })) : [] };
       };
@@ -45,7 +66,7 @@ export default async function handler(req, res) {
       // Portal id HubSpot (liens directs vers les deals depuis Insights)
       let portalId = null;
       try {
-        const ra = await fetch(`${HS}/account-info/v3/details`, { headers: H });
+        const ra = await hsFetch(`${HS}/account-info/v3/details`, { headers: H }, etatHS);
         const da = await ra.json().catch(() => ({}));
         portalId = da.portalId || null;
       } catch (_) {}
@@ -65,13 +86,13 @@ export default async function handler(req, res) {
         // 💼 Ventes conclues sur la période + cycle de vente (entrée Démo planifiée → Fermé gagné)
         if (stW && stP) {
           const propW = `hs_v2_date_entered_${stW.id}`, propP = `hs_v2_date_entered_${stP.id}`;
-          const rW = await fetch(`${HS}/crm/v3/objects/deals/search`, {
+          const rW = await hsFetch(`${HS}/crm/v3/objects/deals/search`, {
             method: 'POST', headers: H,
             body: JSON.stringify({
               filterGroups: [{ filters: [{ propertyName: propW, operator: 'BETWEEN', value: t0, highValue: t1 }] }],
               properties: ['dealname', propW, propP, 'hubspot_owner_id', 'revops_source', 'sdr'], limit: 100
             })
-          });
+          }, etatHS);
           const dW = await rW.json().catch(() => ({}));
           gagnes += dW.total || 0;
           for (const x of (dW.results || [])) {
@@ -86,7 +107,7 @@ export default async function handler(req, res) {
       try {
         const ids = [...new Set(detailsGagnes.map(d => d.owner_id).filter(Boolean))];
         if (ids.length) {
-          const ro = await fetch(`${HS}/crm/v3/owners/?limit=500`, { headers: H });
+          const ro = await hsFetch(`${HS}/crm/v3/owners/?limit=500`, { headers: H }, etatHS);
           const doo = await ro.json().catch(() => ({}));
           const parId = new Map((doo.results || []).map(o => [String(o.id), [o.firstName, o.lastName].filter(Boolean).join(' ') || o.email || '']));
           for (const d of detailsGagnes) { d.ae = parId.get(String(d.owner_id)) || null; delete d.owner_id; }
@@ -97,9 +118,9 @@ export default async function handler(req, res) {
       try {
         const dids = detailsGagnes.map(d => d.id).filter(Boolean);
         if (dids.length) {
-          const ra = await fetch(`${HS}/crm/v4/associations/deals/contacts/batch/read`, {
+          const ra = await hsFetch(`${HS}/crm/v4/associations/deals/contacts/batch/read`, {
             method: 'POST', headers: H, body: JSON.stringify({ inputs: dids.map(id => ({ id })) })
-          });
+          }, etatHS);
           const da = await ra.json().catch(() => ({}));
           const contactDe = new Map(); const cids = new Set();
           for (const r of (da.results || [])) {
@@ -107,9 +128,9 @@ export default async function handler(req, res) {
             if (r.from && cid) { contactDe.set(String(r.from.id), String(cid)); cids.add(String(cid)); }
           }
           if (cids.size) {
-            const rc = await fetch(`${HS}/crm/v3/objects/contacts/batch/read`, {
+            const rc = await hsFetch(`${HS}/crm/v3/objects/contacts/batch/read`, {
               method: 'POST', headers: H, body: JSON.stringify({ properties: ['email'], inputs: [...cids].map(id => ({ id })) })
-            });
+            }, etatHS);
             const dc = await rc.json().catch(() => ({}));
             const emailDe = new Map((dc.results || []).map(c => [String(c.id), ((c.properties && c.properties.email) || '').toLowerCase()]));
             for (const d of detailsGagnes) { const cid = contactDe.get(String(d.id)); d.email = (cid && emailDe.get(cid)) || null; }
@@ -120,6 +141,7 @@ export default async function handler(req, res) {
       details.sort((a, b) => new Date(b.date) - new Date(a.date));
       return res.status(200).json({
         ok: true, periode: { du, au }, planifies, noshows, realises, gagnes,
+        incomplet: etatHS.incomplet, // le front n'écrase pas des données complètes avec du partiel
         taux_pct: planifies ? Math.round(100 * noshows / planifies) : null,
         taux_vente_pct: planifies ? Math.round(100 * gagnes / planifies) : null,
         cycle_median_j: cycles.length ? Math.round(cycles[Math.floor(cycles.length / 2)]) : null,
@@ -132,7 +154,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const rp = await fetch(`${HS}/crm/v3/pipelines/deals`, { headers: H });
+    const rp = await hsFetch(`${HS}/crm/v3/pipelines/deals`, { headers: H }, etatHS);
     const dp = await rp.json().catch(() => ({}));
     if (!rp.ok) return res.status(502).json({ erreur: 'HubSpot pipelines', detail: JSON.stringify(dp).slice(0, 300) });
     const pipelines = (dp.results || []).map(p => ({
@@ -145,14 +167,14 @@ export default async function handler(req, res) {
       const st = p.stages.find(s => /no[ -]?show/i.test(s.label));
       if (!st) continue;
       const prop = `hs_v2_date_entered_${st.id}`;
-      const rs = await fetch(`${HS}/crm/v3/objects/deals/search`, {
+      const rs = await hsFetch(`${HS}/crm/v3/objects/deals/search`, {
         method: 'POST', headers: H,
         body: JSON.stringify({
           filterGroups: [{ filters: [{ propertyName: 'dealstage', operator: 'EQ', value: st.id }] }],
           properties: ['dealname', 'dealstage', 'hubspot_owner_id', prop, 'hs_v2_date_entered_' + st.id],
           limit: 2, sorts: [{ propertyName: 'hs_lastmodifieddate', direction: 'DESCENDING' }]
         })
-      });
+      }, etatHS);
       const ds = await rs.json().catch(() => ({}));
       sonde = {
         pipeline: p.label, stage_noshow: st, propriete_testee: prop,
