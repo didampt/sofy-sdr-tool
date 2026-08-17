@@ -1243,6 +1243,10 @@ Spot-Hit</textarea>
           <span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">À lancer une fois après une mise à jour, pour pré-calculer les statistiques des anciennes listes.</span>
         </div>
         <div class="save-bar" style="justify-content:flex-start;margin-top:10px">
+          <button class="btn" style="background:var(--paper)" id="btn-diag-enrich" onclick="diagEnrich()">📊 Rendement de l'enrichissement</button>
+          <span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">Taux de réussite et coût par email trouvé de chaque étage du waterfall (Dropcontact → FullEnrich → Kaspr → Lemlist). Lecture seule, gratuit.</span>
+        </div>
+        <div class="save-bar" style="justify-content:flex-start;margin-top:10px">
           <button class="btn" style="background:var(--paper)" id="btn-test-snitcher" onclick="testerSnitcher()">🧪 Tester le webhook Snitcher</button>
           <span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">Envoie un faux événement « entreprise » à l'endpoint → crée un Hot Lead de test + alerte Slack.</span>
         </div>
@@ -2057,7 +2061,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v325';
+const VERSION='v326';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -6707,6 +6711,32 @@ async function migrerStats(){
   else toast('Erreur : '+(d.erreur||'migration impossible'));
  }catch(e){toast('Erreur réseau : '+e.message);}
  if(btn){btn.disabled=false;btn.textContent='📊 Recalculer les stats des listes';}
+}
+// 📊 Rendement du waterfall d'enrichissement (superadmin) : tentatives (table consommations)
+// croisées avec les succès réels (chaque email porte sa provenance) → taux et coût par donnée.
+// Évite de passer par la console : les endpoints exigent le Bearer, donc une URL seule renvoie 401.
+async function diagEnrich(){
+ const btn=document.getElementById('btn-diag-enrich');
+ const libelle='📊 Rendement de l\'enrichissement';
+ if(btn){btn.disabled=true;btn.textContent='⏳ Analyse en cours…';}
+ try{
+  const d=await (await api('/api/diag-enrich')).json();
+  if(!d.ok){toast('Diagnostic : '+(d.erreur||'indisponible')+(d.detail?' — '+d.detail:''));return;}
+  const eur=x=>x==null?'—':(Math.round(x*100)/100).toLocaleString('fr-FR')+' €';
+  const lignes=(d.rendement||[]).map(r=>`<tr><td><b>${htmlSafe(r.outil)}</b>${r.note?`<br><span style="font-size:11px;color:var(--ink-soft)">${htmlSafe(r.note)}</span>`:''}</td>
+    <td style="text-align:right">${r.tentatives==null?'—':r.tentatives}</td>
+    <td style="text-align:right">${r.emails_trouves}</td><td style="text-align:right">${r.mobiles_trouves}</td>
+    <td style="text-align:right">${r.taux_email_pct==null?'—':r.taux_email_pct+' %'}</td>
+    <td style="text-align:right">${eur(r.cout_total_eur)}</td><td style="text-align:right"><b>${eur(r.cout_par_donnee_eur)}</b></td></tr>`).join('');
+  document.getElementById('info-titre').textContent='📊 Rendement du waterfall d\'enrichissement';
+  document.getElementById('info-corps').innerHTML=`
+   <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px">Fenêtre : ${htmlSafe(d.fenetre)} · ${d.base.contacts_nominatifs} contact(s) nominatif(s) · <b>${d.base.pct_email} %</b> avec email · <b>${d.base.pct_mobile} %</b> avec mobile</div>
+   <div style="overflow-x:auto"><table class="map-table"><tr><th>Outil</th><th>Tentatives</th><th>Emails</th><th>Mobiles</th><th>Taux email</th><th>Coût</th><th>€ / donnée</th></tr>${lignes}</table></div>
+   <div style="margin-top:12px;padding:10px 12px;background:var(--paper);border-radius:8px;font-size:13px;line-height:1.5">${htmlSafe(d.verdict)}</div>
+   <div style="font-size:11.5px;color:var(--ink-soft);margin-top:8px">Cascade épuisée sans rien trouver : <b>${d.cascade.cascade_epuisee_sans_rien}</b> contact(s) — ils ont coûté sans jamais rien rendre. Lecture seule : aucun réglage n'a été modifié.</div>`;
+  document.getElementById('info-modal').style.display='flex';
+ }catch(e){toast('Erreur réseau : '+e.message);}
+ finally{if(btn){btn.disabled=false;btn.textContent=libelle;}}
 }
 async function testerSnitcher(){
  const btn=document.getElementById('btn-test-snitcher');

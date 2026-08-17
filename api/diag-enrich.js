@@ -82,32 +82,52 @@ export default async function handler(req, res) {
       ['lemlist', 'Lemlist (niveau 4 — email + mobile)', null],
       ['ia_web_email', 'Recherche web IA (emails génériques)', 'ia_web_email']
     ];
+    // Lemlist ne passe pas par `consommations` : il facture À LA RÉUSSITE (≈0,05 $/email,
+    // ≈0,20 $/mobile) — on estime donc son coût sur les données trouvées, pas sur les tentatives.
+    const LEM_EMAIL = 0.05, LEM_MOBILE = 0.20;
     const rendement = OUTILS.map(([cle, libelle, apiConso]) => {
-      const nT = apiConso ? (tentatives[apiConso] || 0) : null; // Lemlist n'est pas journalisé en conso
+      const nT = apiConso ? (tentatives[apiConso] || 0) : null;
       const nE = emails[cle === 'ia_web_email' ? 'ia_web' : cle] || 0;
       const nM = tels[cle] || 0;
       const prix = tarifs[apiConso || cle] != null ? tarifs[apiConso || cle] : null;
-      const cout = (nT != null && prix != null) ? Math.round(nT * prix * 100) / 100 : null;
+      let cout = (nT != null && prix != null) ? Math.round(nT * prix * 100) / 100 : null;
+      let estime = false;
+      if (cle === 'lemlist') { cout = Math.round((nE * LEM_EMAIL + nM * LEM_MOBILE) * 100) / 100; estime = true; }
       const trouves = nE + nM;
       return {
         outil: libelle,
+        facturation: cle === 'lemlist' ? 'à la réussite' : 'à la tentative',
         tentatives: nT,
         emails_trouves: nE,
         mobiles_trouves: nM,
+        donnees_trouvees: trouves,
         taux_email_pct: (nT && nT > 0) ? Math.round(100 * nE / nT) : null,
         cout_total_eur: cout,
         cout_par_donnee_eur: (cout != null && trouves > 0) ? Math.round(cout / trouves * 100) / 100 : null,
-        note: apiConso ? undefined : 'non journalisé dans consommations (facturé à la réussite par Lemlist)'
+        note: cle === 'lemlist' ? 'coût ESTIMÉ (facturé à la réussite : ~0,05 $/email + 0,20 $/mobile) — non journalisé dans consommations' : undefined
       };
     });
 
-    // ── 4. Lecture : Dropcontact vaut-il sa place en niveau 1 ? ──
-    const dc = rendement[0], fe = rendement[1];
-    let verdict;
-    if (!dc.tentatives) verdict = 'Aucune tentative Dropcontact sur la fenêtre analysée — rien à conclure.';
-    else if (dc.taux_email_pct >= 45) verdict = `✅ Dropcontact garde sa place en niveau 1 (${dc.taux_email_pct} % de réussite, ${dc.cout_par_donnee_eur} € par email trouvé).`;
-    else if (dc.taux_email_pct >= 25) verdict = `🟠 Rendement moyen (${dc.taux_email_pct} %). Il reste rentable s'il coûte moins par email que FullEnrich (${fe.cout_par_donnee_eur ?? '—'} €) — sinon, inverser l'ordre du waterfall.`;
-    else verdict = `⛔ Rendement faible (${dc.taux_email_pct} % de réussite pour ${dc.cout_total_eur} €). FullEnrich derrière rattrape ${fe.emails_trouves} email(s) : envisager de passer FullEnrich en niveau 1 et Dropcontact en repli (ou de le retirer).`;
+    // ── 4. Lecture : le bon critère est le COÛT PAR DONNÉE OBTENUE, pas le taux de réussite ──
+    // Un outil à 21 % de réussite mais 0,26 €/donnée est plus rentable qu'un outil à 15 % et
+    // 0,61 €/donnée. Et un outil facturé à la réussite n'a aucun coût d'échec : il doit remonter
+    // haut dans la cascade, quel que soit son taux.
+    const classables = rendement.filter(r => r.cout_par_donnee_eur != null && r.donnees_trouvees >= 20)
+      .sort((a, b) => a.cout_par_donnee_eur - b.cout_par_donnee_eur);
+    const coutTotal = Math.round(rendement.reduce((s, r) => s + (r.cout_total_eur || 0), 0) * 100) / 100;
+    const verdicts = [];
+    if (classables.length) {
+      verdicts.push('💶 Classement par coût réel d\'une donnée obtenue (email ou mobile) : ' +
+        classables.map(r => `${r.outil.split(' (')[0]} ${r.cout_par_donnee_eur} €`).join(' · ') + '.');
+      const ordreActuel = ['Dropcontact', 'FullEnrich', 'Kaspr', 'Lemlist'];
+      const ordreIdeal = classables.map(r => r.outil.split(' (')[0]).filter(n => ordreActuel.includes(n));
+      const malPlaces = ordreIdeal.filter((n, i) => ordreActuel.indexOf(n) !== ordreActuel.filter(x => ordreIdeal.includes(x)).indexOf(n));
+      if (malPlaces.length) verdicts.push(`🔄 L'ordre du waterfall ne suit pas les coûts : ordre actuel ${ordreActuel.join(' → ')}, ordre le moins cher ${ordreIdeal.join(' → ')}. Chaque étage cher appelé trop tôt facture des échecs que l'étage suivant aurait résolus moins cher.`);
+      const aLaReussite = rendement.find(r => r.facturation === 'à la réussite' && r.donnees_trouvees >= 20);
+      if (aLaReussite) verdicts.push(`🎯 ${aLaReussite.outil.split(' (')[0]} est facturé À LA RÉUSSITE (${aLaReussite.donnees_trouvees} données pour ~${aLaReussite.cout_total_eur} € estimés) : un échec ne coûte rien. Le remonter dans la cascade est le levier le moins risqué — il ne peut pas faire grimper la facture.`);
+    }
+    if (echecTotal >= 20) verdicts.push(`🕳️ ${echecTotal} contact(s) ont épuisé toute la cascade sans rendre ni email ni mobile — chacun a été facturé par plusieurs étages (~${Math.round(echecTotal * 0.55)} € au minimum). Un garde-fou « stop après 2 échecs » économiserait cette perte sèche.`);
+    verdicts.push(`📊 Total enrichissement sur la fenêtre : ~${coutTotal} € (premier appel le ${depuis ? String(depuis).slice(0, 10) : '?'}).`);
 
     return res.status(200).json({
       ok: true,
@@ -124,8 +144,10 @@ export default async function handler(req, res) {
         cascade_epuisee_sans_rien: echecTotal,
         emails_par_provenance: emails, mobiles_par_provenance: tels
       },
-      verdict,
-      rappel: 'Lecture seule — aucune modification du waterfall. Les emails « non_attribue » viennent de fiches antérieures au marquage des sources.'
+      cout_total_eur: coutTotal,
+      verdict: verdicts.join('\n'),
+      verdicts,
+      rappel: 'Lecture seule — aucune modification du waterfall. Les emails « non_attribue » viennent de fiches antérieures au marquage des sources ; « saisi_sdr » = trouvés par les SDR (site web, Google Maps, ajout manuel), donc gratuits.'
     });
   } catch (e) {
     return res.status(500).json({ erreur: 'Diagnostic impossible', detail: String((e && e.message) || e).slice(0, 300) });
