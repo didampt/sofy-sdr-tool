@@ -197,6 +197,29 @@ Premiers retours terrain des SDR sur « Ma journée » → 3 lots livrés le jou
 
 Admin (côté Didier, à relancer) : Romain → superadmin ; lignes Ringover de chaque SDR dans Paramètres ; liens RDV des AE ; supprimer du repo `basile-debug*`, `basile-geo`, `basile-secteur` ; déployer (optionnel) le `snitcher.js` avec debug.
 
+## 17 août 2026 — Rendement du waterfall d'enrichissement mesuré, puis réordonné (v326-v327)
+
+Question de départ : « utilise-t-on toujours Dropcontact ? ». Nouvel endpoint **`/api/diag-enrich`** (superadmin, lecture seule, bouton dans Paramètres → Maintenance) : croise les **tentatives** (table `consommations`, 1 ligne/appel) avec les **succès réels** (chaque email/mobile porte sa provenance — `email_source`/`tel_source`, ou `source:'dropcontact'` pour le niveau 1).
+
+**Mesure sur 2 mois (12/06 → 17/08) — 2 469 contacts, 67 % avec email, 61 % avec mobile :**
+
+| Étage | Tentatives | Emails | Mobiles | Coût | **€ / donnée obtenue** |
+|---|---|---|---|---|---|
+| Lemlist *(facturé à la réussite)* | — (423 clics manuels) | 63 | 180 | ~39 € estimés | **0,16 €** |
+| Dropcontact | 2 309 | 488 | 391 | 231 € | **0,26 €** |
+| FullEnrich | 1 762 | 262 | 463 | 441 € | 0,61 € |
+| Kaspr | 1 416 | 66 | 278 | 283 € | 0,82 € |
+
+**Total ~994 € en 2 mois (~450 €/mois) — soit ~2× le coût de l'API Claude (268 $/mois)** qui inquiétait Didier : le vrai poste de dépense était là. 761 emails (46 %) ont été trouvés gratuitement par les SDR eux-mêmes (site web, Google Maps, saisie).
+
+⚠️ **Le taux de réussite seul est un mauvais critère** : le premier verdict codé (seuil « 45 % ») concluait « ⛔ retirer Dropcontact (21 %) », alors qu'il est **le moins cher par donnée**. Corrigé : le verdict classe désormais par **coût d'une donnée obtenue** et signale les étages facturés *à la réussite* (aucun coût d'échec → doivent remonter dans la cascade).
+
+**Décision Didier → v327** : `pipelineFiche()` devient **Dropcontact → 🔵 Lemlist → FullEnrich**.
+- Lemlist était le **seul étage non automatisé** alors qu'il est le moins cher et qu'il rendait 243 données sur les cas déjà ratés par les trois autres. En mode auto : `enrichirLemlist(i,j,{max:2,silencieux:true})` (attente courte) ; les résultats tardifs sont récupérés **gratuitement** par `reprendreLemlistEnAttente()` à l'ouverture de la liste.
+- **Kaspr sorti du pipeline auto** (283 € pour 278 mobiles, après un FullEnrich qui en trouvait déjà 463). Bouton conservé sur la fiche, tooltip = son coût réel.
+- Colonne « 📲 Kaspr » du modal de progression → « 🔵 Lem ».
+- **À vérifier au prochain diagnostic** : la couverture mobile (61 %) ne doit pas décrocher. Si elle baisse nettement, remettre Kaspr en dernier étage du pipeline. Reste en réserve : garde-fou « stop après 2 échecs » (280 contacts ont épuisé toute la cascade sans rien rendre ≈ 154 € de perte sèche).
+
 ## Pièges connus (ne pas se refaire avoir)
 
 - **Du code affiché dans le HTML doit être ÉCHAPPÉ (`&amp;` `&lt;` `&gt;`)**. Le mini-extracteur de likers vivait en clair dans un `<pre>` : le jour où le script a contenu `uniq<Math.ceil(...)`, le parser HTML a lu `<M` comme une **balise ouvrante** et a avalé silencieusement toute la fin du bloc — 3702 caractères affichés au lieu de 4192, plus le paragraphe suivant absorbé. Aucune erreur, aucun symptôme côté dev : le SDR copiait un script coupé net (`const alerte=(arr.length>2&&uniq`) et n'avait qu'une `SyntaxError` dans sa console (17/08). Un `<` suivi d'une lettre suffit. Contrôle : `document.querySelector('pre').textContent.length` en prod doit égaler la longueur du JS source.
