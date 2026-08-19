@@ -14,7 +14,14 @@
 
 import { verifierToken, sql, ensureSchema, loggerConso } from './db.js';
 
-export const config = { maxDuration: 60 };
+// 300 s : sur une grosse enseigne (Veepee, 1 091 avis) la recherche dépassait les 60 s et Vercel
+// renvoyait une page d'erreur HTML — que le front lisait comme du JSON (« Unexpected token 'A' »).
+export const config = { maxDuration: 300 };
+
+// Garde-fous (demande Didier 17/08) : ne jamais relancer en boucle une recherche qui n'aboutit pas.
+const ECHECS_MAX = 2;        // au-delà, on met l'entreprise en quarantaine
+const QUARANTAINE_H = 6;     // durée de la quarantaine
+const VERROU_MIN = 4;        // une seule recherche simultanée par entreprise
 
 // Qualité de l'accroche = cœur de la valeur → Opus par défaut. Bascule sans redéploiement :
 // MODELE_RADAR=claude-sonnet-5 dans Vercel divise le coût par ~2,5.
@@ -41,7 +48,22 @@ async function ensureRadar() {
     modele TEXT,
     maj_le TIMESTAMPTZ DEFAULT NOW()
   )`;
+  // Colonnes du garde-fou, ajoutées paresseusement (jamais de bump SCHEMA_VERSION)
+  await sql`ALTER TABLE radar_cache ADD COLUMN IF NOT EXISTS echecs INTEGER DEFAULT 0`;
+  await sql`ALTER TABLE radar_cache ADD COLUMN IF NOT EXISTS dernier_echec TIMESTAMPTZ`;
+  await sql`ALTER TABLE radar_cache ADD COLUMN IF NOT EXISTS motif_echec TEXT`;
+  await sql`ALTER TABLE radar_cache ADD COLUMN IF NOT EXISTS en_cours_depuis TIMESTAMPTZ`;
   radarPret = true;
+}
+
+// Trace l'échec et met l'entreprise en quarantaine au-delà de ECHECS_MAX tentatives
+async function noterEchec(cle, nom, motif) {
+  try {
+    await sql`INSERT INTO radar_cache (cle, entreprise, resultat, echecs, dernier_echec, motif_echec, en_cours_depuis)
+      VALUES (${cle}, ${nom || ''}, '{}'::jsonb, 1, NOW(), ${String(motif || '').slice(0, 200)}, NULL)
+      ON CONFLICT (cle) DO UPDATE SET echecs = COALESCE(radar_cache.echecs, 0) + 1,
+        dernier_echec = NOW(), motif_echec = EXCLUDED.motif_echec, en_cours_depuis = NULL`;
+  } catch (_) {}
 }
 
 // Clé de cache : le domaine si connu (stable), sinon le nom normalisé
@@ -115,18 +137,49 @@ export async function radarEntreprise(e, user, opts = {}) {
   if (!cle) return { erreur: 'Entreprise non identifiable (ni site ni nom)' };
   await ensureRadar();
 
+  // ── État en base : cache valide, quarantaine après échecs, verrou anti-doublon ──
+  let etat = null;
+  try {
+    const [c] = await sql`SELECT resultat, maj_le, echecs, dernier_echec, motif_echec, en_cours_depuis,
+      (resultat ? 'signaux') AS a_resultat FROM radar_cache WHERE cle = ${cle}`;
+    etat = c || null;
+  } catch (_) {}
+
   // Cache 30 jours : une entreprise qui revisite dix fois ne coûte qu'une fois
-  if (!opts.forcer) {
-    try {
-      const [c] = await sql`SELECT resultat, maj_le FROM radar_cache
-        WHERE cle = ${cle} AND maj_le > NOW() - INTERVAL '30 days'`;
-      if (c) return { ok: true, radar: c.resultat, cache: true, maj_le: c.maj_le };
-    } catch (_) {}
+  if (!opts.forcer && etat && etat.a_resultat && new Date(etat.maj_le).getTime() > Date.now() - 30 * 86400000) {
+    return { ok: true, radar: etat.resultat, cache: true, maj_le: etat.maj_le };
   }
+
+  if (etat) {
+    // Verrou : une recherche déjà en cours sur cette entreprise (autre SDR, ou le cron)
+    if (etat.en_cours_depuis && Date.now() - new Date(etat.en_cours_depuis).getTime() < VERROU_MIN * 60000) {
+      return { erreur: 'Une recherche est déjà en cours sur cette entreprise — réessaie dans 2 minutes.', en_cours: true };
+    }
+    // Quarantaine : on ne relance pas indéfiniment une recherche qui échoue (demande Didier)
+    const n = etat.echecs || 0;
+    if (n >= ECHECS_MAX && etat.dernier_echec &&
+        Date.now() - new Date(etat.dernier_echec).getTime() < QUARANTAINE_H * 3600000) {
+      const restant = Math.ceil((QUARANTAINE_H * 3600000 - (Date.now() - new Date(etat.dernier_echec).getTime())) / 3600000);
+      return {
+        erreur: `${n} tentatives ont échoué sur cette entreprise (${etat.motif_echec || 'cause inconnue'}). Nouvelle tentative possible dans ~${restant} h.`,
+        quarantaine: true, echecs: n
+      };
+    }
+  }
+  // Pose le verrou avant de dépenser
+  try {
+    await sql`INSERT INTO radar_cache (cle, entreprise, resultat, en_cours_depuis)
+      VALUES (${cle}, ${e.enseigne || e.nom || ''}, '{}'::jsonb, NOW())
+      ON CONFLICT (cle) DO UPDATE SET en_cours_depuis = NOW()`;
+  } catch (_) {}
 
   const corps = (outils) => ({
     model: MODELE(),
-    max_tokens: 8000, // large : sur Opus 5 la réflexion est comptée dans max_tokens
+    max_tokens: 5000, // la réflexion est comptée dedans : assez pour 5 signaux + 2 accroches
+    // « medium » : la tâche est de la recherche et de l'extraction, pas du raisonnement profond.
+    // À effort haut, Veepee dépassait les 60 s de la fonction. Ne PAS désactiver la réflexion :
+    // sans elle le modèle peut écrire ses appels d'outils en texte au lieu de les exécuter.
+    output_config: { effort: 'medium' },
     messages: [{ role: 'user', content: prompt(e) }],
     tools: outils
   });
@@ -138,9 +191,10 @@ export async function radarEntreprise(e, user, opts = {}) {
 
   // Outils 2026 : le filtrage de domaines écarte les annuaires qui monopolisent la 1re page
   const outils2026 = [
-    { type: 'web_search_20260209', name: 'web_search', max_uses: 6, blocked_domains: DOMAINES_BLOQUES },
-    { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 3, max_content_tokens: 8000 }
+    { type: 'web_search_20260209', name: 'web_search', max_uses: 4, blocked_domains: DOMAINES_BLOQUES },
+    { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 2, max_content_tokens: 6000 }
   ];
+  const nom0 = e.enseigne || e.nom || '';
   let r, data;
   try {
     r = await appeler(outils2026);
@@ -148,18 +202,26 @@ export async function radarEntreprise(e, user, opts = {}) {
     if (r.status === 429) { await new Promise(x => setTimeout(x, 20000)); r = await appeler(outils2026); data = await r.json(); }
     // Repli : versions d'outils antérieures si le compte ou le modèle ne les expose pas
     if (!r.ok && /web_search_20260209|web_fetch_20260209|tool/i.test(JSON.stringify(data.error || ''))) {
-      r = await appeler([{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }]);
+      r = await appeler([{ type: 'web_search_20250305', name: 'web_search', max_uses: 4 }]);
       data = await r.json();
     }
-    if (!r.ok) return { erreur: 'API Claude', detail: (data.error && data.error.message) || JSON.stringify(data).slice(0, 200) };
-  } catch (err) { return { erreur: 'Réseau Claude', detail: String(err.message || err).slice(0, 150) }; }
+    if (!r.ok) {
+      const det = (data.error && data.error.message) || JSON.stringify(data).slice(0, 200);
+      await noterEchec(cle, nom0, 'API Claude ' + r.status);
+      return { erreur: 'API Claude', detail: det };
+    }
+  } catch (err) {
+    const m = String(err.message || err).slice(0, 150);
+    await noterEchec(cle, nom0, 'réseau : ' + m);
+    return { erreur: 'Appel Claude interrompu', detail: m };
+  }
 
   const textes = (data.content || []).filter(b => b.type === 'text').map(b => b.text);
   const brut = (textes[textes.length - 1] || '').replace(/```json|```/g, '').trim();
   const d0 = brut.indexOf('{'), d1 = brut.lastIndexOf('}');
   let p = null;
   if (d0 >= 0 && d1 > d0) { try { p = JSON.parse(brut.slice(d0, d1 + 1)); } catch (_) {} }
-  if (!p) return { erreur: 'Réponse IA non exploitable' };
+  if (!p) { await noterEchec(cle, nom0, 'réponse IA non exploitable'); return { erreur: 'Réponse IA non exploitable' }; }
 
   // ── Validation : pas de source + date = pas de signal (règle non négociable) ──
   const rejetes = [];
@@ -189,11 +251,13 @@ export async function radarEntreprise(e, user, opts = {}) {
     radar_le: new Date().toISOString()
   };
 
+  // Succès : on écrit le résultat, on lève le verrou et on remet le compteur d'échecs à zéro
   try {
-    await sql`INSERT INTO radar_cache (cle, entreprise, resultat, signaux_n, modele, maj_le)
-      VALUES (${cle}, ${e.enseigne || e.nom || ''}, ${JSON.stringify(radar)}::jsonb, ${signaux.length}, ${MODELE()}, NOW())
+    await sql`INSERT INTO radar_cache (cle, entreprise, resultat, signaux_n, modele, maj_le, echecs, dernier_echec, motif_echec, en_cours_depuis)
+      VALUES (${cle}, ${nom0}, ${JSON.stringify(radar)}::jsonb, ${signaux.length}, ${MODELE()}, NOW(), 0, NULL, NULL, NULL)
       ON CONFLICT (cle) DO UPDATE SET resultat = EXCLUDED.resultat, signaux_n = EXCLUDED.signaux_n,
-        modele = EXCLUDED.modele, entreprise = EXCLUDED.entreprise, maj_le = NOW()`;
+        modele = EXCLUDED.modele, entreprise = EXCLUDED.entreprise, maj_le = NOW(),
+        echecs = 0, dernier_echec = NULL, motif_echec = NULL, en_cours_depuis = NULL`;
   } catch (_) {}
   try { await loggerConso(user || { nom: 'système' }, 'ia_claude', 1, opts.liste_id || null); } catch (_) {}
 
@@ -211,10 +275,20 @@ export default async function handler(req, res) {
     const cle = cleRadar({ site: req.query.site, nom: req.query.nom, enseigne: req.query.enseigne });
     if (!cle) return res.status(400).json({ erreur: 'site ou nom requis' });
     try {
-      const [c] = await sql`SELECT resultat, maj_le FROM radar_cache WHERE cle = ${cle}`;
+      const [c] = await sql`SELECT resultat, maj_le, echecs, dernier_echec, motif_echec, en_cours_depuis,
+        (resultat ? 'signaux') AS a_resultat FROM radar_cache WHERE cle = ${cle}`;
       if (!c) return res.status(200).json({ ok: true, radar: null });
       const jours = Math.floor((Date.now() - new Date(c.maj_le).getTime()) / 86400000);
-      return res.status(200).json({ ok: true, radar: c.resultat, maj_le: c.maj_le, jours, perime: jours >= 30 });
+      // L'état du garde-fou part au front : il grise le bouton au lieu de laisser relancer en boucle
+      const n = c.echecs || 0;
+      const enQuarantaine = n >= ECHECS_MAX && c.dernier_echec &&
+        Date.now() - new Date(c.dernier_echec).getTime() < QUARANTAINE_H * 3600000;
+      return res.status(200).json({
+        ok: true, radar: c.a_resultat ? c.resultat : null, maj_le: c.maj_le, jours, perime: jours >= 30,
+        echecs: n, motif_echec: c.motif_echec || null, quarantaine: !!enQuarantaine,
+        reprise_dans_h: enQuarantaine ? Math.ceil((QUARANTAINE_H * 3600000 - (Date.now() - new Date(c.dernier_echec).getTime())) / 3600000) : null,
+        en_cours: !!(c.en_cours_depuis && Date.now() - new Date(c.en_cours_depuis).getTime() < VERROU_MIN * 60000)
+      });
     } catch (e) { return res.status(500).json({ erreur: 'Lecture impossible', detail: String(e.message || e).slice(0, 150) }); }
   }
 
@@ -225,6 +299,7 @@ export default async function handler(req, res) {
     nom: b.nom, enseigne: b.enseigne, site: b.site, ville: b.ville, cp: b.cp,
     secteur: b.secteur, effectif: b.effectif, pages: b.pages || []
   }, user, { forcer: !!b.forcer, liste_id: b.liste_id });
-  if (out.erreur) return res.status(502).json(out);
+  // 429 = refus volontaire du garde-fou (quarantaine ou recherche déjà en cours), pas une panne
+  if (out.erreur) return res.status(out.quarantaine || out.en_cours ? 429 : 502).json(out);
   return res.status(200).json(out);
 }
