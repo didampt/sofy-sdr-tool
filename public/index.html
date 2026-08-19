@@ -2061,7 +2061,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v330';
+const VERSION='v331';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4198,6 +4198,19 @@ async function lireJson(r){
   return {erreur:'Réponse serveur illisible (HTTP '+r.status+')'};
  }
 }
+// 🔓 Lève un verrou orphelin (fonction tuée par un timeout : le code de nettoyage n'a pas tourné)
+// ou sort l'entreprise de quarantaine. Admin uniquement.
+async function libererRadar(i){
+ const e=REAL[i];if(!e)return;
+ try{
+  const r=await api('/api/radar',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({nom:e.nom,enseigne:enseigneDe(e),site:domaineDe(e),liberer:true})});
+  const d=await lireJson(r);
+  if(d.erreur){toast('Déblocage : '+d.erreur);return;}
+  e._radarQuarantaine=false;e._radarMotif=null;e._radarEchecs=0;
+  toast('🔓 Débloqué — tu peux relancer la recherche');rerender(i);
+ }catch(err){toast('Déblocage : '+err.message);}
+}
 async function chargerRadar(i,forcer){
  const e=REAL[i];if(!e)return;
  if(e._radarEnCours){toast('Recherche déjà en cours sur cette fiche ⏳');return;}
@@ -4243,7 +4256,7 @@ function radarHtml(e,i){
  if(!r||!(r.signaux||[]).length){
   const rej=(r&&(r.signaux_rejetes||[]).length)||0;
   // Garde-fou visible : après 2 échecs le bouton est grisé, avec la raison et le délai de reprise
-  if(e._radarQuarantaine)return entete('<span class="badge b-signal">⛔ recherche suspendue</span>')
+  if(e._radarQuarantaine)return entete('<span class="badge b-signal">⛔ recherche suspendue</span>'+((state.user&&['admin','superadmin'].includes(state.user.role))?`<button class="act act-copy" style="padding:3px 10px;font-size:12px;margin-left:auto" onclick="libererRadar(${i})" title="Lever le blocage et remettre le compteur d'échecs à zéro">🔓 Débloquer</button>`:''))
    +`<div style="font-size:12.5px;color:#B45309;line-height:1.5">${htmlSafe(e._radarMotif||'Trop de tentatives échouées sur cette entreprise.')}<br><span style="color:var(--ink-soft)">Le bouton est volontairement bloqué : relancer coûterait sans rien rendre. Le radar réessaiera tout seul.</span></div></div>`;
   return entete(`<button class="act act-call" style="padding:3px 10px;font-size:12px" onclick="chargerRadar(${i},true)" title="Recherche web sur l'entreprise : presse, communiqués, offres d'emploi, LinkedIn public (~0,15 €, jusqu'à 1 min sur une grosse enseigne)">🔎 Chercher le contexte</button>`)
    +`<div style="font-size:12.5px;color:var(--ink-soft)">${r?('Aucun signal fiable trouvé'+(r.recherches_faites!=null?' après '+r.recherches_faites+' recherche(s) web':'')+(rej?' — '+rej+' piste(s) écartée(s) faute de source vérifiable':'')+'. Relance si l\'entreprise a fait parler d\'elle depuis.'):'Pas encore de recherche sur cette entreprise.'}${e._radarEchecs?` <span style="color:#B45309">· ${e._radarEchecs} tentative(s) échouée(s)</span>`:''}</div></div>`;

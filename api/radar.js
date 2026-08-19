@@ -21,7 +21,9 @@ export const config = { maxDuration: 300 };
 // Garde-fous (demande Didier 17/08) : ne jamais relancer en boucle une recherche qui n'aboutit pas.
 const ECHECS_MAX = 2;        // au-delà, on met l'entreprise en quarantaine
 const QUARANTAINE_H = 6;     // durée de la quarantaine
-const VERROU_MIN = 4;        // une seule recherche simultanée par entreprise
+const VERROU_MIN = 2;        // une seule recherche simultanée par entreprise. Volontairement
+// court : une fonction tuée par un timeout Vercel n'exécute pas son code de nettoyage et laisse
+// le verrou posé — il doit donc expirer de lui-même vite (constat Didier 17/08).
 
 // Qualité de l'accroche = cœur de la valeur → Opus par défaut. Bascule sans redéploiement :
 // MODELE_RADAR=claude-sonnet-5 dans Vercel divise le coût par ~2,5.
@@ -160,7 +162,12 @@ export async function radarEntreprise(e, user, opts = {}) {
   if (etat) {
     // Verrou : une recherche déjà en cours sur cette entreprise (autre SDR, ou le cron)
     if (etat.en_cours_depuis && Date.now() - new Date(etat.en_cours_depuis).getTime() < VERROU_MIN * 60000) {
-      return { erreur: 'Une recherche est déjà en cours sur cette entreprise — réessaie dans 2 minutes.', en_cours: true };
+      const sec = Math.round((Date.now() - new Date(etat.en_cours_depuis).getTime()) / 1000);
+      const reste = Math.max(1, VERROU_MIN * 60 - sec);
+      return {
+        erreur: `Une recherche est déjà en cours sur cette entreprise (lancée il y a ${sec} s). Le verrou se libère dans ${reste} s.`,
+        en_cours: true, verrou_secondes: sec, reste_secondes: reste
+      };
     }
     // Quarantaine : on ne relance pas indéfiniment une recherche qui échoue (demande Didier)
     const n = etat.echecs || 0;
@@ -323,6 +330,17 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ erreur: 'GET (cache) ou POST (recherche)' });
   const b = req.body || {};
   if (!b.nom && !b.enseigne && !b.site) return res.status(400).json({ erreur: 'nom, enseigne ou site requis' });
+  // { liberer: true } (admin) : lève un verrou orphelin (fonction tuée par un timeout) et sort
+  // l'entreprise de quarantaine. Sans ça, il faut attendre 2 min — ou 6 h après deux échecs.
+  if (b.liberer && ['admin', 'superadmin'].includes(user.role)) {
+    const cle = cleRadar({ site: b.site, nom: b.nom, enseigne: b.enseigne });
+    if (!cle) return res.status(400).json({ erreur: 'site ou nom requis' });
+    try {
+      await sql`UPDATE radar_cache SET en_cours_depuis = NULL, echecs = 0, dernier_echec = NULL, motif_echec = NULL WHERE cle = ${cle}`;
+      return res.status(200).json({ ok: true, libere: true, cle, info: 'Verrou levé et compteur d\'échecs remis à zéro — tu peux relancer.' });
+    } catch (e) { return res.status(500).json({ erreur: 'Libération impossible', detail: String(e.message || e).slice(0, 150) }); }
+  }
+
   // ?debug=1 (superadmin) : montre les requêtes web lancées, les rejets et la réponse brute —
   // indispensable pour distinguer « n'a rien trouvé » de « n'a pas cherché ».
   const debug = (req.query || {}).debug === '1' && user.role === 'superadmin';
