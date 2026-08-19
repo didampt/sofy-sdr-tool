@@ -74,6 +74,19 @@ const SEED = [
     titre: 'Audit SEO Soview : un score sur 100 par établissement et par pilier',
     contenu: "L'audit note chaque établissement sur 100 et détaille quatre piliers : profil, avis, posts, médias. Il produit une synthèse de groupe (score moyen, meilleur et moins bon établissement) et pointe les lacunes structurelles qui freinent la visibilité — par exemple une note parfaite mais aucune adresse physique renseignée et aucune actualité publiée.",
     source: 'Deck Sofy « Enjeux Visibilité & IA », slide 16 (capture produit Audit SEO)' },
+  // Cas clients — interviews publiées sur le blog Sofy, donc citables publiquement (accord
+  // Didier 19/08). Le secteur et le territoire servent au générateur à choisir le cas le plus
+  // proche du prospect : un garage guadeloupéen doit lire Marimax, pas un réseau télécom.
+  { cle_seed: 'cas-marimax', type: 'cas_client', module: 'soconnect',
+    titre: 'Marimax — 150 demandes par jour, objectif du call center dépassé de 30 %',
+    secteur: 'distribution de pièces détachées automobiles', territoire: 'Guadeloupe',
+    contenu: "Distributeur de pièces auto, 2 sites (Baie-Mahault et Pointe-à-Pitre). **Avant :** 150 demandes par jour éclatées sur 5 canaux (Instagram, Facebook, WhatsApp, Messenger, téléphone), des délais de réponse qui s'allongeaient, des opportunités commerciales perdues, une réputation locale peu exploitée (60 à 70 avis) et des données clients dispersées. **Modules :** SoConnect, Soview, SoReach. **Résultats :** temps de réponse divisé par deux (30 min → 10-15 min) · objectif du call center dépassé de +30 % · plus de 500 avis Google collectés dont 329 avis 5 étoiles · note Google passée de 3,4/5 en 2023 à 4,25/5 en 2026 · 20 000 leads qualifiés en base · plus de 140 000 SMS envoyés en 2025 · chiffre d'affaires commercial doublé entre 2023 et 2025. **Verbatim client :** « Sofy est la seule interface qui regroupait tout ce dont on avait besoin. »",
+    source: 'Interview client publiée sur le blog Sofy — sofy.fr/articles-de-blog/150-demandes-par-jour-et-un-objectif-du-call-center-depasse-de-30' },
+  { cle_seed: 'cas-groupe-kiosque', type: 'cas_client', module: 'soview',
+    titre: 'Groupe Kiosque — 32 points de vente, 4 territoires, 436 avis en 6 mois',
+    secteur: 'télécommunications et services numériques', territoire: 'Martinique, Guadeloupe, Guyane, Burkina Faso',
+    contenu: "Réseau de 32 établissements sur 4 territoires. **Avant :** 32 fiches Google Business gérées séparément, aucune vision centralisée de l'e-réputation, campagnes mobiles peu coordonnées entre établissements, temps de gestion important et analyse manuelle imprécise. **Modules :** Soview et SoReach SMS (SoConnect prévu). **Résultats en 6 mois :** 436 avis Google collectés · notes d'établissement jusqu'à 4,9/5 · réponse aux avis en 24 heures maximum · campagnes SMS à 85,7 % d'ouverture et 47,14 % de clic · base de contacts centralisée de plus de 11 000 contacts. **Verbatim client :** « La relation client est excellente. Les équipes sont accessibles, réactives et nous accompagnent aussi bien sur la prise en main que sur des problématiques spécifiques. »",
+    source: 'Interview client publiée sur le blog Sofy — sofy.fr/articles-de-blog/comment-le-groupe-kiosque-pilote-sa-visibilite-locale-et-son-e-reputation-sur-32-points-de-vente-et-4-territoires-g2835' },
   { cle_seed: 'tarifs-2026-08', type: 'tarif', module: 'tous',
     titre: 'Grille tarifaire de référence',
     contenu: "Soview à partir de 440 €/mois par établissement. SoConnect 319 €/mois. Frais d'installation et de configuration facturés séparément selon le périmètre.",
