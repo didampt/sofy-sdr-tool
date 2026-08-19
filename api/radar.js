@@ -88,6 +88,12 @@ Nom : ${e.nom || ''}${e.enseigne && e.enseigne !== e.nom ? ` (enseigne : ${e.ens
 ${e.site ? `Site : ${e.site}\n` : ''}${e.ville || e.cp ? `Lieu : ${[e.ville, e.cp].filter(Boolean).join(' ')}\n` : ''}${e.secteur ? `Secteur : ${e.secteur}\n` : ''}${e.effectif ? `Effectif : ${e.effectif}\n` : ''}${pages ? `Pages qu'elle vient de consulter sur sofy.fr : ${pages}\n` : ''}
 Elle vient de visiter notre site. Le SDR doit comprendre POURQUOI, et ouvrir l'appel sur un fait récent et vérifiable la concernant.
 
+MÉTHODE — OBLIGATOIRE
+Commence par **au moins deux recherches web** avant de répondre, quoi qu'il arrive. Ne réponds jamais de mémoire, même si tu connais déjà l'entreprise : tes connaissances sont datées et le SDR a besoin de faits récents et cliquables. Première recherche : le nom de l'entreprise avec un mot d'actualité (« actualité », « lance », « ouvre », « recrute », « nomme », « partenariat », « CRM », « avis clients »). Ensuite, affine selon ce que tu trouves.
+
+NE PRÉ-FILTRE PAS PAR PERTINENCE COMMERCIALE
+Remonte **tout fait notable et récent** concernant l'entreprise, même si aucun module Sofy ne s'y rattache directement — mets alors "module": null. C'est le commercial qui juge de l'exploitation ; ton travail est de fournir des faits sourcés. Une entreprise sans points de vente physiques (pur e-commerce, marketplace, service en ligne) reste un prospect valable : elle a des avis clients, un service client à outiller et des campagnes à envoyer. Ne renvoie une liste vide que si tes recherches ne donnent réellement aucun fait daté et sourcé.
+
 CE QUE TU CHERCHES (12 derniers mois en priorité, 18 maximum)
 1. 🔧 Refonte digitale, nouveau CRM, nouvelle plateforme marketing, nouveau site e-commerce — le meilleur signal : ils investissent déjà dans la relation client, et le canal mobile est souvent absent du dispositif.
 2. ⚔️ Un outil concurrent nommé publiquement (Brevo, Partoo, Digitaleo, Guest Suite, Solocal, Skeepers, Custplace, Uberall, Alcméon, SMSPartner, Esendex, Octopush, Sinch…) — on sait alors à qui on parle.
@@ -107,7 +113,8 @@ OÙ CHERCHER
 · Facebook et Instagram ne sont pas consultables (contenu derrière authentification) : ne prétends jamais avoir lu leurs publications. Reporte simplement l'URL de leurs comptes si tu la trouves, dans « reseaux ».
 
 RÈGLES ABSOLUES
-· Chaque signal doit citer une **URL source réelle** que tu as consultée et une **date** (même approximative : "03/2026"). Sans les deux, ne le mentionne pas : il sera rejeté automatiquement.
+· Chaque signal doit citer une **URL source réelle que tu as consultée** — c'est le seul critère éliminatoire : sans URL, le signal est rejeté automatiquement.
+· Donne la **date** de l'information dès que la page l'affiche (même approximative : "03/2026"). Si la page n'est pas datée, écris "non datée" — le signal reste utile, il sera simplement signalé comme tel au commercial. N'invente jamais une date.
 · N'invente jamais un fait, un chiffre, un nom de dirigeant ou un outil. Si tu ne trouves rien de solide, renvoie une liste de signaux vide — c'est une réponse acceptable et utile.
 · Vérifie que la source parle bien de CETTE entreprise (homonymes fréquents : même nom, autre région, autre activité). En cas de doute, écarte.
 · Les accroches sont dites AU TÉLÉPHONE : une phrase courte, orale, qui cite le fait puis pose une question ouverte menant vers Soview, SoConnect ou SoReach. Pas de jargon, pas de flatterie.
@@ -216,6 +223,11 @@ export async function radarEntreprise(e, user, opts = {}) {
     return { erreur: 'Appel Claude interrompu', detail: m };
   }
 
+  // Traçabilité : ce que le modèle a RÉELLEMENT cherché. Sans ça, un « rien trouvé » est
+  // indiscernable d'un « n'a pas cherché » (cas Veepee, 17/08).
+  const recherches = (data.content || []).filter(b => b.type === 'server_tool_use')
+    .map(b => ({ outil: b.name, requete: (b.input && (b.input.query || b.input.url)) || null }));
+  const nbResultats = (data.content || []).filter(b => /tool_result/.test(String(b.type || ''))).length;
   const textes = (data.content || []).filter(b => b.type === 'text').map(b => b.text);
   const brut = (textes[textes.length - 1] || '').replace(/```json|```/g, '').trim();
   const d0 = brut.indexOf('{'), d1 = brut.lastIndexOf('}');
@@ -223,13 +235,16 @@ export async function radarEntreprise(e, user, opts = {}) {
   if (d0 >= 0 && d1 > d0) { try { p = JSON.parse(brut.slice(d0, d1 + 1)); } catch (_) {} }
   if (!p) { await noterEchec(cle, nom0, 'réponse IA non exploitable'); return { erreur: 'Réponse IA non exploitable' }; }
 
-  // ── Validation : pas de source + date = pas de signal (règle non négociable) ──
+  // ── Validation : l'URL source est le seul critère éliminatoire ──
+  // La date était aussi obligatoire jusqu'au 17/08 : sur Veepee, tout partait à la poubelle
+  // parce que beaucoup de pages ne portent pas de date lisible. Une source vérifiable en un
+  // clic suffit à la crédibilité ; l'absence de date est signalée au SDR, pas éliminatoire.
   const rejetes = [];
   const signaux = (Array.isArray(p.signaux) ? p.signaux : []).filter(s => {
     if (!s || !s.titre) return false;
-    if (!estUrl(s.source_url) || !String(s.date || '').trim()) { rejetes.push(String(s.titre).slice(0, 90)); return false; }
+    if (!estUrl(s.source_url)) { rejetes.push({ titre: String(s.titre).slice(0, 90), raison: 'aucune URL source' }); return false; }
     return true;
-  }).slice(0, 5);
+  }).map(s => ({ ...s, date: String(s.date || '').trim() || 'non datée' })).slice(0, 5);
   const titres = new Set(signaux.map(s => String(s.titre)));
   // Une accroche ne survit que si le signal qui la porte a survécu
   const accroches = (Array.isArray(p.accroches) ? p.accroches : [])
@@ -247,6 +262,7 @@ export async function radarEntreprise(e, user, opts = {}) {
     resume: String(p.resume || '').slice(0, 400),
     confiance: signaux.length ? (['haute', 'moyenne', 'basse'].includes(p.confiance) ? p.confiance : 'moyenne') : 'basse',
     signaux_rejetes: rejetes.slice(0, 5), // traçabilité : ce que le garde-fou a écarté
+    recherches_faites: recherches.length,
     modele: MODELE(),
     radar_le: new Date().toISOString()
   };
@@ -261,7 +277,19 @@ export async function radarEntreprise(e, user, opts = {}) {
   } catch (_) {}
   try { await loggerConso(user || { nom: 'système' }, 'ia_claude', 1, opts.liste_id || null); } catch (_) {}
 
-  return { ok: true, radar, cache: false };
+  const out = { ok: true, radar, cache: false };
+  if (opts.debug) out.debug = {
+    modele: MODELE(),
+    recherches_lancees: recherches,          // les requêtes réellement envoyées au web
+    blocs_resultats_web: nbResultats,
+    signaux_bruts: (Array.isArray(p.signaux) ? p.signaux : []).length,
+    signaux_gardes: signaux.length,
+    rejets: rejetes,
+    stop_reason: data.stop_reason || null,
+    usage: data.usage || null,
+    reponse_brute: brut.slice(0, 2500)       // pour voir ce que le modèle a vraiment écrit
+  };
+  return out;
 }
 
 export default async function handler(req, res) {
@@ -295,10 +323,13 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ erreur: 'GET (cache) ou POST (recherche)' });
   const b = req.body || {};
   if (!b.nom && !b.enseigne && !b.site) return res.status(400).json({ erreur: 'nom, enseigne ou site requis' });
+  // ?debug=1 (superadmin) : montre les requêtes web lancées, les rejets et la réponse brute —
+  // indispensable pour distinguer « n'a rien trouvé » de « n'a pas cherché ».
+  const debug = (req.query || {}).debug === '1' && user.role === 'superadmin';
   const out = await radarEntreprise({
     nom: b.nom, enseigne: b.enseigne, site: b.site, ville: b.ville, cp: b.cp,
     secteur: b.secteur, effectif: b.effectif, pages: b.pages || []
-  }, user, { forcer: !!b.forcer, liste_id: b.liste_id });
+  }, user, { forcer: !!b.forcer, liste_id: b.liste_id, debug });
   // 429 = refus volontaire du garde-fou (quarantaine ou recherche déjà en cours), pas une panne
   if (out.erreur) return res.status(out.quarantaine || out.en_cours ? 429 : 502).json(out);
   return res.status(200).json(out);

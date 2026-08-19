@@ -2061,7 +2061,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v329';
+const VERSION='v330';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4246,7 +4246,7 @@ function radarHtml(e,i){
   if(e._radarQuarantaine)return entete('<span class="badge b-signal">⛔ recherche suspendue</span>')
    +`<div style="font-size:12.5px;color:#B45309;line-height:1.5">${htmlSafe(e._radarMotif||'Trop de tentatives échouées sur cette entreprise.')}<br><span style="color:var(--ink-soft)">Le bouton est volontairement bloqué : relancer coûterait sans rien rendre. Le radar réessaiera tout seul.</span></div></div>`;
   return entete(`<button class="act act-call" style="padding:3px 10px;font-size:12px" onclick="chargerRadar(${i},true)" title="Recherche web sur l'entreprise : presse, communiqués, offres d'emploi, LinkedIn public (~0,15 €, jusqu'à 1 min sur une grosse enseigne)">🔎 Chercher le contexte</button>`)
-   +`<div style="font-size:12.5px;color:var(--ink-soft)">${r?('Aucun signal fiable trouvé'+(rej?' — '+rej+' piste(s) écartée(s) faute de source vérifiable':'')+'. Relance si l\'entreprise a fait parler d\'elle depuis.'):'Pas encore de recherche sur cette entreprise.'}${e._radarEchecs?` <span style="color:#B45309">· ${e._radarEchecs} tentative(s) échouée(s)</span>`:''}</div></div>`;
+   +`<div style="font-size:12.5px;color:var(--ink-soft)">${r?('Aucun signal fiable trouvé'+(r.recherches_faites!=null?' après '+r.recherches_faites+' recherche(s) web':'')+(rej?' — '+rej+' piste(s) écartée(s) faute de source vérifiable':'')+'. Relance si l\'entreprise a fait parler d\'elle depuis.'):'Pas encore de recherche sur cette entreprise.'}${e._radarEchecs?` <span style="color:#B45309">· ${e._radarEchecs} tentative(s) échouée(s)</span>`:''}</div></div>`;
  }
  const sig=(r.signaux||[]).map(s=>`<div style="display:flex;gap:9px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--line)">
    <span style="font-size:15px;line-height:1.3">${htmlSafe(s.emoji||'·')}</span>
