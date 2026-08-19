@@ -18,6 +18,7 @@ export const config = { maxDuration: 60 };
 
 const TYPES = ['chiffre_marche', 'preuve', 'fonctionnalite', 'cas_client', 'objection', 'tarif', 'charte'];
 const MODULES = ['soview', 'soconnect', 'soreach', 'tous'];
+const TYPES_SENSIBLES = ['tarif', 'charte']; // engagent l'entreprise → admins seulement
 const PEREMPTION_MOIS = 6; // au-delà, le bloc est signalé « à rafraîchir » et l'IA ne s'en sert plus
 
 let kbPrete = false;
@@ -38,6 +39,13 @@ async function ensureKb() {
     cle_seed TEXT UNIQUE,
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`;
+  // Gouvernance : tout le monde propose, un admin (ou le CMO) valide. Seuls les blocs validés
+  // sont servis au générateur — un chiffre non relu ne peut pas partir dans un document client.
+  await sql`ALTER TABLE kb_sales ADD COLUMN IF NOT EXISTS statut TEXT DEFAULT 'propose'`;
+  await sql`ALTER TABLE kb_sales ADD COLUMN IF NOT EXISTS propose_par TEXT`;
+  await sql`ALTER TABLE kb_sales ADD COLUMN IF NOT EXISTS valide_par TEXT`;
+  await sql`ALTER TABLE kb_sales ADD COLUMN IF NOT EXISTS valide_le TIMESTAMPTZ`;
+  await sql`ALTER TABLE kb_sales ADD COLUMN IF NOT EXISTS motif_refus TEXT`;
   await sql`CREATE INDEX IF NOT EXISTS idx_kb_sales_module ON kb_sales(module, type) WHERE actif`;
   kbPrete = true;
 }
@@ -117,21 +125,27 @@ export default async function handler(req, res) {
       return res.status(200).json({
         ok: true, blocs, total: blocs.length,
         a_rafraichir: blocs.filter(b => b.perime).length,
+        en_attente: blocs.filter(b => b.statut === 'propose').length,
+        utilisables: blocs.filter(b => b.statut === 'valide' && !b.perime).length,
         peremption_mois: PEREMPTION_MOIS, types: TYPES, modules: MODULES
       });
     }
 
     if (req.method === 'POST') {
       const b = req.body || {};
-      if (!admin) return res.status(403).json({ erreur: 'Réservé aux admins' });
+      // L'amorçage et les types sensibles restent admin ; la contribution ordinaire est ouverte
+      // aux SDR et aux AE : ce sont eux qui rencontrent les objections et les cas terrain.
+      if ((b.seed || TYPES_SENSIBLES.includes(b.type)) && !admin) {
+        return res.status(403).json({ erreur: b.seed ? 'Amorçage réservé aux admins' : `Le type « ${b.type} » engage l'entreprise : seul un admin peut l'ajouter.` });
+      }
 
       // Amorçage : injecte le contenu du deck Sofy. Idempotent (cle_seed unique) → relançable
       // sans créer de doublons, et sans écraser une correction faite à la main.
       if (b.seed) {
         let ajoutes = 0;
         for (const s of SEED) {
-          const r = await sql`INSERT INTO kb_sales (type, module, titre, contenu, source, cle_seed, verifie_le)
-            VALUES (${s.type}, ${s.module}, ${s.titre}, ${s.contenu}, ${s.source}, ${s.cle_seed}, CURRENT_DATE)
+          const r = await sql`INSERT INTO kb_sales (type, module, titre, contenu, source, cle_seed, verifie_le, statut, valide_par, valide_le)
+            VALUES (${s.type}, ${s.module}, ${s.titre}, ${s.contenu}, ${s.source}, ${s.cle_seed}, CURRENT_DATE, 'valide', ${user.nom}, NOW())
             ON CONFLICT (cle_seed) DO NOTHING RETURNING id`;
           if (r.length) ajoutes++;
         }
@@ -148,16 +162,44 @@ export default async function handler(req, res) {
       if (['chiffre_marche', 'cas_client'].includes(b.type) && !String(b.source || '').trim()) {
         return res.status(400).json({ erreur: 'Une source est obligatoire pour un chiffre de marché ou un cas client — sans elle, l\'IA ne pourra pas le citer.' });
       }
-      const [row] = await sql`INSERT INTO kb_sales (type, module, titre, contenu, source, secteur, territoire, verifie_le)
+      // Un admin (ou le CMO) valide directement ce qu'il ajoute ; un SDR/AE propose.
+      const statut = admin ? 'valide' : 'propose';
+      const [row] = await sql`INSERT INTO kb_sales (type, module, titre, contenu, source, secteur, territoire,
+          verifie_le, statut, propose_par, valide_par, valide_le)
         VALUES (${b.type}, ${MODULES.includes(b.module) ? b.module : 'tous'}, ${b.titre}, ${b.contenu},
-                ${b.source || null}, ${b.secteur || null}, ${b.territoire || null}, CURRENT_DATE) RETURNING *`;
-      return res.status(200).json({ ok: true, bloc: row });
+                ${b.source || null}, ${b.secteur || null}, ${b.territoire || null}, CURRENT_DATE,
+                ${statut}, ${user.nom}, ${admin ? user.nom : null}, ${admin ? new Date().toISOString() : null}) RETURNING *`;
+      return res.status(200).json({
+        ok: true, bloc: row,
+        info: admin ? 'Bloc ajouté et validé — utilisable dès la prochaine présentation.'
+                    : 'Bloc proposé. Il sera utilisé par l\'IA dès qu\'un admin l\'aura validé.'
+      });
     }
 
     if (req.method === 'PUT') {
       const b = req.body || {};
-      if (!admin) return res.status(403).json({ erreur: 'Réservé aux admins' });
       if (!b.id) return res.status(400).json({ erreur: 'id requis' });
+      const [avant] = await sql`SELECT * FROM kb_sales WHERE id = ${parseInt(b.id)}`;
+      if (!avant) return res.status(404).json({ erreur: 'Bloc introuvable' });
+      // Un contributeur peut corriger SA proposition tant qu'elle n'est pas validée
+      if (!admin && !(avant.statut === 'propose' && avant.propose_par === user.nom)) {
+        return res.status(403).json({ erreur: 'Tu ne peux modifier que tes propres propositions non encore validées.' });
+      }
+      // Validation / refus : admin uniquement
+      if (b.action && admin) {
+        if (b.action === 'valider') {
+          const [v] = await sql`UPDATE kb_sales SET statut = 'valide', valide_par = ${user.nom}, valide_le = NOW(),
+            motif_refus = NULL, verifie_le = CURRENT_DATE WHERE id = ${parseInt(b.id)} RETURNING *`;
+          return res.status(200).json({ ok: true, bloc: v, info: 'Validé — l\'IA peut désormais s\'en servir.' });
+        }
+        if (b.action === 'refuser') {
+          const [v] = await sql`UPDATE kb_sales SET statut = 'refuse', motif_refus = ${String(b.motif || '').slice(0, 300)},
+            valide_par = ${user.nom}, valide_le = NOW() WHERE id = ${parseInt(b.id)} RETURNING *`;
+          return res.status(200).json({ ok: true, bloc: v, info: 'Refusé — le bloc reste visible avec son motif, pour que le contributeur comprenne.' });
+        }
+        return res.status(400).json({ erreur: 'action inconnue : valider | refuser' });
+      }
+      if (b.action && !admin) return res.status(403).json({ erreur: 'Validation réservée aux admins' });
       // Toute modification remet la date de vérification à aujourd'hui : c'est le geste qui
       // sort un bloc de l'état « à rafraîchir ».
       const [row] = await sql`UPDATE kb_sales SET
@@ -194,7 +236,7 @@ export default async function handler(req, res) {
 export async function blocsUtilisables(module) {
   await ensureKb();
   const rows = await sql`SELECT type, module, titre, contenu, source, secteur, territoire, verifie_le
-    FROM kb_sales WHERE actif AND (module = ${module || 'tous'} OR module = 'tous')
+    FROM kb_sales WHERE actif AND statut = 'valide' AND (module = ${module || 'tous'} OR module = 'tous')
       AND verifie_le > CURRENT_DATE - (${PEREMPTION_MOIS} || ' months')::interval
     ORDER BY type, id`;
   return rows;

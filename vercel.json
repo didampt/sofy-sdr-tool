@@ -83,5 +83,11 @@
         }
       ]
     }
+  ],
+  "rewrites": [
+    {
+      "source": "/p/:jeton",
+      "destination": "/api/p?j=:jeton"
+    }
   ]
 }
