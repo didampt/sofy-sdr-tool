@@ -51,6 +51,10 @@
     {
       "path": "/api/purge-cron",
       "schedule": "0 4 1 * *"
+    },
+    {
+      "path": "/api/radar-cron",
+      "schedule": "*/10 7-19 * * 1-5"
     }
   ],
   "headers": [

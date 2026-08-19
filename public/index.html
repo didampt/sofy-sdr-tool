@@ -2061,7 +2061,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v327';
+const VERSION='v328';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4179,6 +4179,79 @@ function ouvrirFicheDepuisAppel(listeId,n9){
 
 /* ───────── Appel entrant Ringover (bandeau temps réel) ───────── */
 let APPEL_AFFICHE_ID=null, APPEL_TIMER=null;
+/* ───────── 📰 RADAR — contexte business du lead (demande Franck 17/08) ─────────
+   Le SDR perdait « plusieurs heures par semaine » à chercher pourquoi une entreprise a visité
+   sofy.fr. Le radar (cron toutes les 10 min + bouton) livre des signaux SOURCÉS et 2 accroches.
+   Règle affichée à l'écran : chaque signal porte sa source cliquable et sa date — le SDR vérifie
+   en 2 secondes avant de décrocher. Un signal sans source est rejeté côté serveur, pas ici. */
+function radarParams(e){
+ return new URLSearchParams({site:domaineDe(e)||'',nom:e.nom||'',enseigne:enseigneDe(e)||''}).toString();
+}
+async function chargerRadar(i,forcer){
+ const e=REAL[i];if(!e)return;
+ if(e._radarEnCours)return;
+ e._radarEnCours=true;
+ if(forcer)rerender(i);
+ try{
+  let d;
+  if(forcer){
+   const r=await api('/api/radar',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({nom:e.nom,enseigne:enseigneDe(e),site:domaineDe(e),ville:e.ville,cp:e.code_postal,
+     secteur:e.secteur_rb2b||e.activite,effectif:e.effectif,
+     pages:(e.pages_visitees&&e.pages_visitees.length)?e.pages_visitees:((e.signal&&e.signal.pages)||[]),
+     liste_id:state.savedId,forcer:true})});
+   d=await r.json();
+   if(d.erreur){toast('Radar : '+d.erreur+(d.detail?' — '+String(d.detail).slice(0,90):''));}
+   else toast('📰 Radar terminé — '+((d.radar&&d.radar.signaux||[]).length)+' signal(aux) sourcé(s)');
+  }else{
+   const r=await api('/api/radar?'+radarParams(e));
+   d=await r.json();
+  }
+  e._radar=(d&&d.radar)||null;e._radarJours=(d&&d.jours);e._radarLu=true;
+ }catch(err){if(forcer)toast('Radar : erreur réseau — '+err.message);e._radarLu=true;}
+ finally{e._radarEnCours=false;rerender(i);}
+}
+function radarHtml(e,i){
+ const r=e._radar;
+ const enCours=!!e._radarEnCours;
+ const entete=(droite)=>`<div style="background:var(--card);border:1px solid var(--line);border-left:3px solid #1D4ED8;border-radius:0 10px 10px 0;padding:12px 14px;margin-top:10px">
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+   <span style="font-size:13.5px;font-weight:800">📰 Contexte business</span>${droite}</div>`;
+ if(enCours)return entete('<span style="font-size:12px;color:var(--ink-soft)">⏳ recherche en cours (20-40 s)…</span>')+'</div>';
+ if(!e._radarLu)return entete(`<button class="act act-copy" style="padding:3px 10px;font-size:12px" onclick="chargerRadar(${i},false)" title="Lire le contexte déjà trouvé (gratuit)">📰 Voir le contexte</button>`)+'</div>';
+ if(!r||!(r.signaux||[]).length){
+  const rej=(r&&(r.signaux_rejetes||[]).length)||0;
+  return entete(`<button class="act act-call" style="padding:3px 10px;font-size:12px" onclick="chargerRadar(${i},true)" title="Recherche web sur l'entreprise : presse, communiqués, offres d'emploi, LinkedIn public (~0,15 €)">🔎 Chercher le contexte</button>`)
+   +`<div style="font-size:12.5px;color:var(--ink-soft)">${r?('Aucun signal fiable trouvé'+(rej?' — '+rej+' piste(s) écartée(s) faute de source vérifiable':'')+'. Relance si l\'entreprise a fait parler d\'elle depuis.'):'Pas encore de recherche sur cette entreprise.'}</div></div>`;
+ }
+ const sig=(r.signaux||[]).map(s=>`<div style="display:flex;gap:9px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--line)">
+   <span style="font-size:15px;line-height:1.3">${htmlSafe(s.emoji||'·')}</span>
+   <div style="flex:1;min-width:0">
+    <div style="font-size:13.5px;font-weight:650;line-height:1.4">${htmlSafe(s.titre)}</div>
+    ${s.pourquoi?`<div style="font-size:12.5px;color:var(--ink-soft);line-height:1.45">${htmlSafe(s.pourquoi)}</div>`:''}
+   </div>
+   <a href="${htmlSafe(s.source_url)}" target="_blank" onclick="event.stopPropagation()" style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--accent);white-space:nowrap;text-align:right" title="Vérifie la source avant d'appeler">${htmlSafe((s.media||'source')).slice(0,22)} ↗<br>${htmlSafe(s.date||'')}</a>
+  </div>`).join('');
+ const acc=(r.accroches||[]).map((a,k)=>`<div style="background:var(--warn-soft,#FEF6E7);border:1px solid #B45309;border-radius:8px;padding:10px 12px;margin-top:8px;font-size:13.5px;line-height:1.5">
+   <div style="font-family:ui-monospace,Menlo,monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:#B45309;margin-bottom:4px">${k?'Accroche de repli':'Accroche d\'appel — à dire tel quel'}</div>
+   « ${htmlSafe(a.texte)} »
+   <button class="act act-copy" style="padding:2px 8px;font-size:11px;margin-left:6px" onclick="navigator.clipboard.writeText(decodeURIComponent('${jsArg(a.texte)}'));toast('Accroche copiée ✓')">📋</button>
+  </div>`).join('');
+ const res=(r.reseaux)||{};
+ const liens=[['linkedin','💼 LinkedIn'],['facebook','📘 Facebook'],['instagram','📸 Instagram']]
+  .filter(([k])=>res[k]&&/^https?:\/\//.test(res[k]))
+  .map(([k,l])=>`<a class="act" style="padding:2px 9px;font-size:11.5px;text-decoration:none" href="${htmlSafe(res[k])}" target="_blank" onclick="event.stopPropagation()">${l} ↗</a>`).join(' ');
+ return entete(`<span class="badge b-gmb">${(r.signaux||[]).length} signal(aux) · confiance ${htmlSafe(r.confiance||'')}</span>
+   ${e._radarJours!=null?`<span style="font-size:11px;color:var(--ink-soft)">radar d'il y a ${e._radarJours} j</span>`:''}
+   <button class="act act-copy" style="padding:3px 10px;font-size:12px;margin-left:auto" onclick="chargerRadar(${i},true)" title="Relancer la recherche web (~0,15 €)">↻ Actualiser</button>`)
+  +(r.resume?`<div style="font-size:12.5px;color:var(--ink-soft);line-height:1.5;margin-bottom:4px">${htmlSafe(r.resume)}</div>`:'')
+  +sig+acc
+  +((r.questions||[]).length?`<div style="font-size:12.5px;color:var(--ink-soft);margin-top:9px">↳ <b>Questions de découverte :</b> ${r.questions.map(q=>htmlSafe(q)).join(' · ')}</div>`:'')
+  +((r.a_eviter||[]).length?`<div style="font-size:12.5px;color:#B45309;margin-top:6px">⚠️ <b>À ne pas évoquer :</b> ${r.a_eviter.map(x=>htmlSafe(x)).join(' · ')}</div>`:'')
+  +(liens?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;align-items:center"><span style="font-size:11.5px;color:var(--ink-soft)">Leurs réseaux (non lisibles par l'IA — juge en un clic) :</span>${liens}</div>`:'')
+  +((r.signaux_rejetes||[]).length?`<div style="font-size:11px;color:var(--ink-faint,#8B93A6);margin-top:8px">🛡️ ${r.signaux_rejetes.length} piste(s) écartée(s) : aucune source vérifiable. Une accroche fausse coûte plus cher que pas d'accroche.</div>`:'')
+  +'</div>';
+}
 function estVisiteSite(e){var ty=((e.signal&&e.signal.type)||'').toString().toLowerCase();if(ty==='visite_site')return true;if(ty==='linkedin')return false;/* like/commentaire d'un post = signal LinkedIn, pas une visite (même si la source contient "sofy") */var s1=((e.source_hotlead)||'').toString().toLowerCase();var s2=((e.signal&&e.signal.source)||'').toString().toLowerCase();function ok(v){return v==='rb2b'||v==='snitcher'||v==='sofy.fr'||v.indexOf('snitcher')>=0||v.indexOf('sofy')>=0;}return ok(s1)||ok(s2);}
 function escAppel(s){return String(s==null?'':s).replace(/[&<>"]/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m];});}
 function demarrerPollAppels(){
@@ -4776,6 +4849,7 @@ function ficheReal(e,i){
       <div class="visit-meta">${[e.secteur_rb2b,e.effectif&&e.effectif+' salariés',e.chiffre_affaires_estime,[e.ville,e.region].filter(Boolean).join(' ')].filter(Boolean).join(' · ')}${e.linkedin_entreprise?` · <a href="${e.linkedin_entreprise}" target="_blank" onclick="event.stopPropagation()">Page LinkedIn société ↗</a>`:''}</div>
      </div>`;
     })():''}
+   ${estVisiteSite(e)?radarHtml(e,i):''}
    <div class="fiche-cols">
     <div>
      <div class="col-title">Contact</div>
@@ -6184,6 +6258,8 @@ async function chargerActiviteDB(i){
  }catch(_){ e._act=e._act||[]; }
  e._actLoaded=true; e._actLoading=false;
  if(e._open)rerender(i);
+ // Radar : lecture du cache uniquement (gratuit) — la recherche payante reste sur clic ou cron
+ if(estVisiteSite(e)&&!e._radarLu)chargerRadar(i,false);
 }
 function sourceFiche(e){
  if(e.signal_hot||e.source_hotlead){
@@ -7030,7 +7106,7 @@ function ckToggle(rid){
  const pnl=document.getElementById(rid+'-d'),b=document.getElementById(rid+'-b');
  if(!pnl)return;
  if(pnl.style.display!=='none'){pnl.style.display='none';if(b)b.innerHTML='D\u00e9plier \u25be';return;}
- if(!pnl.innerHTML){pnl.innerHTML=ckDetailHtml(CK_ITEMS[rid]||{},rid);ckChargerHisto(rid);}
+ if(!pnl.innerHTML){pnl.innerHTML=ckDetailHtml(CK_ITEMS[rid]||{},rid);ckChargerHisto(rid);ckRadar(rid);}
  pnl.style.display='block';if(b)b.innerHTML='Replier \u25b4';
 }
 function ckContactLigne(c,it,rid,ci){
@@ -7061,6 +7137,8 @@ function ckContactLigne(c,it,rid,ci){
 function ckDetailHtml(it,rid){
  let h='<div style="margin-top:10px">';
  h+=`<div id="${rid}-prog" style="display:none;margin-bottom:8px;padding:8px 12px;background:var(--paper);border:1px solid var(--line);border-radius:8px;font-size:12.5px"><span id="${rid}-progtxt"></span><div class="ck-progress"><div></div></div></div>`;
+ // \ud83d\udcf0 Radar : le contexte presse est charg\u00e9 depuis le cache (gratuit) pour les visites du site
+ if(it.type!=='linkedin'&&it.type!=='manuel'&&it.type!=='signup')h+=`<div id="${rid}-radar" style="margin-bottom:8px"></div>`;
  if(it.accroche)h+=`<div style="font-size:12.5px;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-bottom:8px">\ud83c\udfaf <b>Accroche :</b> ${htmlSafe(it.accroche)}</div>`;
  if(it.synthese)h+=`<div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;line-height:1.5">${htmlSafe(it.synthese)}</div>`;
  const cs=it.contacts_detail||[];
@@ -7112,6 +7190,28 @@ async function envoyerCkSequence(){
   // Marque la fiche (cohérence flux fiche + sequences-cron) — sans toucher au statut
   try{await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:it.liste_id,fiche_cle:it.cle,marquer_lemlist:true})});}catch(_){}
  }catch(e){toast('Erreur réseau : '+e.message);}
+}
+// 📰 Radar dans « Ma journée » : c'est ici que le SDR travaille, l'accroche doit être lisible
+// sans ouvrir la fiche. Lecture du cache seulement (gratuit) ; la recherche payante est lancée
+// par le cron radar ou par le bouton de la fiche complète.
+async function ckRadar(rid){
+ const it=CK_ITEMS[rid],z=document.getElementById(rid+'-radar');
+ if(!it||!z)return;
+ try{
+  const p=new URLSearchParams({site:it.site||'',nom:it.nom_officiel||it.nom||'',enseigne:it.nom||''});
+  const d=await (await api('/api/radar?'+p.toString())).json();
+  const r=d&&d.radar;
+  if(!r||!(r.signaux||[]).length){z.innerHTML='';return;}
+  const acc=(r.accroches||[])[0];
+  const sig=(r.signaux||[]).slice(0,2).map(s=>`<div style="font-size:12px;color:var(--ink-soft);margin-top:3px">${htmlSafe(s.emoji||'·')} ${htmlSafe(s.titre)} · <a href="${htmlSafe(s.source_url)}" target="_blank" style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--accent)">${htmlSafe((s.media||'source')).slice(0,20)} ↗</a></div>`).join('');
+  z.innerHTML=`<div style="background:var(--card);border:1px solid var(--line);border-left:3px solid #1D4ED8;border-radius:0 8px 8px 0;padding:9px 12px">
+   <div style="font-size:12.5px;font-weight:800;margin-bottom:4px">📰 Contexte · ${htmlSafe(r.confiance||'')}</div>
+   ${acc?`<div style="background:var(--paper);border:1px solid #B45309;border-radius:7px;padding:8px 10px;font-size:12.5px;line-height:1.45">🗣 « ${htmlSafe(acc.texte)} »
+     <button class="act act-copy" style="padding:2px 7px;font-size:11px;margin-left:4px" onclick="navigator.clipboard.writeText(decodeURIComponent('${jsArg(acc.texte)}'));toast('Accroche copiée ✓')">📋</button></div>`:''}
+   ${sig}
+   ${(r.a_eviter||[]).length?`<div style="font-size:11.5px;color:#B45309;margin-top:5px">⚠️ À éviter : ${htmlSafe(r.a_eviter[0])}</div>`:''}
+  </div>`;
+ }catch(_){z.innerHTML='';}
 }
 // Historique du bloc-notes dans le panneau déplié (chargé au dépli, 1 requête légère)
 async function ckChargerHisto(rid){
