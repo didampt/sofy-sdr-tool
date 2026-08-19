@@ -119,6 +119,7 @@ RÈGLES ABSOLUES
 · Donne la **date** de l'information dès que la page l'affiche (même approximative : "03/2026"). Si la page n'est pas datée, écris "non datée" — le signal reste utile, il sera simplement signalé comme tel au commercial. N'invente jamais une date.
 · N'invente jamais un fait, un chiffre, un nom de dirigeant ou un outil. Si tu ne trouves rien de solide, renvoie une liste de signaux vide — c'est une réponse acceptable et utile.
 · Vérifie que la source parle bien de CETTE entreprise (homonymes fréquents : même nom, autre région, autre activité). En cas de doute, écarte.
+· **Les sources non officielles ne sont pas des signaux** : sites de signalement de pannes, forums, agrégateurs de plaintes, avis consommateurs isolés. Elles n'occupent jamais une place dans "signaux" — si le sujet est utile, il va dans "a_eviter" avec sa raison. Les cinq places sont réservées à des faits établis par une source identifiable (média, communiqué, site officiel, offre d'emploi publiée).
 · Les accroches sont dites AU TÉLÉPHONE : une phrase courte, orale, qui cite le fait puis pose une question ouverte menant vers Soview, SoConnect ou SoReach. Pas de jargon, pas de flatterie.
 
 Réponds UNIQUEMENT par cet objet JSON, sans texte autour, sans backticks :
@@ -266,7 +267,14 @@ export async function radarEntreprise(e, user, opts = {}) {
     reseaux: p.reseaux && typeof p.reseaux === 'object' ? p.reseaux : {},
     sources_consultees: (Array.isArray(p.sources_consultees) ? p.sources_consultees : []).filter(estUrl).slice(0, 10),
     non_accessibles: (Array.isArray(p.non_accessibles) ? p.non_accessibles : []).slice(0, 4),
-    resume: String(p.resume || '').slice(0, 400),
+    // Coupe sur une frontière de phrase, jamais en plein mot (« …pour ses marq », 17/08)
+    resume: (() => {
+      const t = String(p.resume || '').trim();
+      if (t.length <= 600) return t;
+      const c = t.slice(0, 600);
+      const fin = Math.max(c.lastIndexOf('. '), c.lastIndexOf(' ; '), c.lastIndexOf(', '));
+      return (fin > 300 ? c.slice(0, fin + 1) : c.slice(0, c.lastIndexOf(' '))) + ' […]';
+    })(),
     confiance: signaux.length ? (['haute', 'moyenne', 'basse'].includes(p.confiance) ? p.confiance : 'moyenne') : 'basse',
     signaux_rejetes: rejetes.slice(0, 5), // traçabilité : ce que le garde-fou a écarté
     recherches_faites: recherches.length,
