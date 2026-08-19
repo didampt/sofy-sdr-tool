@@ -174,9 +174,25 @@ export default async function handler(req, res) {
     return res.status(204).end();
   }
 
+  // Page publique : un jeton inconnu — ou une table pas encore créée (aucune présentation
+  // générée à ce jour, code PG 42P01) — doit donner un 404 lisible, jamais une erreur serveur.
+  const introuvable = () => res.status(404)
+    .setHeader('Content-Type', 'text/html; charset=utf-8')
+    .send('<!doctype html><meta charset="utf-8"><title>Analyse introuvable</title><meta name="robots" content="noindex">'
+      + '<div style="font-family:system-ui,sans-serif;max-width:34em;margin:16vh auto;padding:0 6vw;color:#14103A">'
+      + '<p style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin:0 0 10px">Cette analyse n\'est plus disponible.</p>'
+      + '<p style="color:#5A5580;line-height:1.6;margin:0">Le lien a peut-être expiré. Demandez-en un nouveau à votre interlocuteur Sofy — il le régénère en une minute.</p></div>');
+
+  let row = null;
   try {
-    const [row] = await sql`SELECT * FROM prez WHERE jeton = ${jeton}`;
-    if (!row) return res.status(404).send('Cette analyse n\'existe plus.');
+    const r = await sql`SELECT * FROM prez WHERE jeton = ${jeton}`;
+    row = r[0] || null;
+  } catch (e) {
+    if (/relation .*prez.* does not exist|42P01/i.test(String(e && e.message))) return introuvable();
+    return res.status(500).send('Analyse momentanément indisponible.');
+  }
+  try {
+    if (!row) return introuvable();
     const doc = row.contenu || {};
 
     // Coordonnées du commercial, lues au rendu pour rester à jour
