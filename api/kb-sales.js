@@ -1,0 +1,188 @@
+// /api/kb-sales.js — 📚 Base de connaissance des présentations sales.
+// C'est la pièce qui rend Didier autonome : il ajoute un cas client ou corrige un tarif, et la
+// prochaine présentation générée s'en sert — sans modification de code.
+//
+// RÈGLE QUI PROTÈGE SOFY : l'IA n'a le droit d'écrire un chiffre que s'il vient soit des données
+// MESURÉES du client (sa note Google, ses avis, ses établissements), soit d'un bloc de cette
+// base AVEC sa source. Un « +30 % de CA » sans source ne doit jamais sortir d'un document qui
+// porte le nom de Sofy.
+//
+// GET    ?module=&type=&tous=1   → blocs actifs (les périmés sont marqués, pas supprimés)
+// POST   { …bloc }               → créer · { seed: true } → injecter le deck Sofy (idempotent)
+// PUT    { id, … }               → modifier (met à jour verifie_le)
+// DELETE ?id=N                   → désactiver (jamais de suppression : on garde la trace)
+
+import { verifierToken, sql } from './db.js';
+
+export const config = { maxDuration: 60 };
+
+const TYPES = ['chiffre_marche', 'preuve', 'fonctionnalite', 'cas_client', 'objection', 'tarif', 'charte'];
+const MODULES = ['soview', 'soconnect', 'soreach', 'tous'];
+const PEREMPTION_MOIS = 6; // au-delà, le bloc est signalé « à rafraîchir » et l'IA ne s'en sert plus
+
+let kbPrete = false;
+async function ensureKb() {
+  if (kbPrete || !sql) return;
+  // Table PARESSEUSE (pas de bump SCHEMA_VERSION — cf. incident « analyse » du 03/08)
+  await sql`CREATE TABLE IF NOT EXISTS kb_sales (
+    id SERIAL PRIMARY KEY,
+    type TEXT NOT NULL,
+    module TEXT NOT NULL DEFAULT 'tous',
+    titre TEXT NOT NULL,
+    contenu TEXT NOT NULL,
+    source TEXT,
+    secteur TEXT,
+    territoire TEXT,
+    verifie_le DATE DEFAULT CURRENT_DATE,
+    actif BOOLEAN DEFAULT TRUE,
+    cle_seed TEXT UNIQUE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_kb_sales_module ON kb_sales(module, type) WHERE actif`;
+  kbPrete = true;
+}
+
+// ── Contenu de départ, extrait du deck « Sofy — Enjeux Visibilité & IA » (19 slides, 08/2026) ──
+// Chaque bloc porte sa source telle qu'elle figure sur la slide : c'est ce qui autorise l'IA à
+// réutiliser le chiffre dans un document client.
+const SEED = [
+  { cle_seed: 'deck1-recherche-categorie', type: 'chiffre_marche', module: 'soview',
+    titre: '84 % des recherches portent sur une catégorie, pas sur votre nom',
+    contenu: "84 % des recherches qui font découvrir une fiche Google portent sur une catégorie ou un service — pas sur le nom de l'enseigne. Autrement dit : l'entreprise est trouvée par des clients qui ne la connaissaient pas, à condition que sa fiche soit complète et bien catégorisée.",
+    source: 'Étude sectorielle fiches Google · 2025 (deck Sofy « Enjeux Visibilité & IA », slide 2)' },
+  { cle_seed: 'deck1-avis-google', type: 'chiffre_marche', module: 'soview',
+    titre: '84 % des consommateurs consultent les avis Google avant de venir',
+    contenu: "84 % des consommateurs utilisent Google pour consulter les avis d'une entreprise locale. Avant de pousser la porte, le client a déjà cherché, comparé et jugé en ligne.",
+    source: 'Étude consommateurs locaux · 2025 (deck Sofy « Enjeux Visibilité & IA », slide 2)' },
+  { cle_seed: 'deck1-reponse-avis-63', type: 'chiffre_marche', module: 'soview',
+    titre: '63 % attendent une réponse à leur avis sous 2 à 7 jours',
+    contenu: "63 % des consommateurs attendent une réponse à leur avis sous 2 à 7 jours. Répondre à tous les avis augmente fortement la confiance ; un avis laissé sans réponse est un signal négatif public.",
+    source: 'Étude consommateurs locaux · 2025 (deck Sofy « Enjeux Visibilité & IA », slides 2 et 6)' },
+  { cle_seed: 'deck1-cinq-dimensions', type: 'preuve', module: 'soview',
+    titre: 'Les avis ne se subissent pas, ils se pilotent — les 5 dimensions',
+    contenu: "**Le volume** : un flux régulier d'avis récents rassure davantage qu'un stock ancien, même flatteur. **La note** : premier filtre visuel, mais elle ne suffit plus à décider seule. **La fraîcheur** : un avis de moins de deux semaines pèse nettement plus lourd dans la décision. **La réponse** : 63 % des consommateurs l'attendent sous 2 à 7 jours. **Le contenu** : ce que les clients écrivent nourrit les mots-clés sur lesquels l'enseigne ressort — et ce que les IA racontent d'elle.",
+    source: 'Deck Sofy « Enjeux Visibilité & IA », slide 6 (Levier 2 — Réputation)' },
+  { cle_seed: 'deck1-store-locator', type: 'preuve', module: 'soview',
+    titre: 'Store locator : une page par magasin, lisible par Google et par les IA',
+    contenu: "**Une URL par établissement** : chaque point de vente devient une page indexable, avec ses horaires, ses avis et son itinéraire. **Données structurées Schema.org** : le balisage que les agents IA lisent en priorité — la même donnée que les fiches, sans divergence. **Maillage géographique** : ville, quartier, zone — le maillage qui fait sortir sur « près de moi ».",
+    source: 'Deck Sofy « Enjeux Visibilité & IA », slide 10 (Le store locator)' },
+  { cle_seed: 'deck1-prise-en-charge', type: 'fonctionnalite', module: 'soview',
+    titre: 'Ce que Sofy prend en charge (les 5 engagements)',
+    contenu: "**1. Vos fiches, à jour partout** — une seule saisie diffusée sur Google, Maps, Apple Plans, Waze, Facebook et Instagram. **2. Vos avis, collectés et traités** — invitations par SMS, QR code ou carte NFC ; réponses rédigées par Budy, validées par vous. **3. Budy, votre IA incluse** — réponses aux avis, suggestions de publication, analyse concurrentielle, sans surcoût. **4. Vos résultats, lisibles** — visibilité locale et comparaison avec les concurrents directs, sans tableau de bord illisible. **5. Un coach Sofy dédié** — un interlocuteur humain qui connaît votre réseau, inclus, sans option payante.",
+    source: 'Deck Sofy « Enjeux Visibilité & IA », slide 16' },
+  { cle_seed: 'deck1-audit-seo', type: 'fonctionnalite', module: 'soview',
+    titre: 'Audit SEO Soview : un score sur 100 par établissement et par pilier',
+    contenu: "L'audit note chaque établissement sur 100 et détaille quatre piliers : profil, avis, posts, médias. Il produit une synthèse de groupe (score moyen, meilleur et moins bon établissement) et pointe les lacunes structurelles qui freinent la visibilité — par exemple une note parfaite mais aucune adresse physique renseignée et aucune actualité publiée.",
+    source: 'Deck Sofy « Enjeux Visibilité & IA », slide 16 (capture produit Audit SEO)' },
+  { cle_seed: 'tarifs-2026-08', type: 'tarif', module: 'tous',
+    titre: 'Grille tarifaire de référence',
+    contenu: "Soview à partir de 440 €/mois par établissement. SoConnect 319 €/mois. Frais d'installation et de configuration facturés séparément selon le périmètre.",
+    source: 'Grille commerciale interne · relevée sur facturation Zoho 08/2026 — à confirmer avant toute mention chiffrée dans un document client' },
+  { cle_seed: 'charte-deck-sofy', type: 'charte', module: 'tous',
+    titre: 'Charte visuelle des présentations Sofy',
+    contenu: "Deux fonds alternés : **clair** (dégradé blanc vers lavande et rose très pâle) et **sombre** (bleu nuit #0F0B29 vers violet profond). Accent : dégradé violet #5B4FE9 vers rose #F0428A, appliqué sur un segment du titre et sur le trait qui le souligne. Structure de chaque planche : logo sofy en haut à gauche, pagination « 05 / 19 » en haut à droite, eyebrow en petites capitales espacées et colorée, titre géant gras sur deux lignes, trait dégradé, sous-titre gris, puis le contenu. Cartes blanches à ombre douce sur fond clair, bleu nuit translucide à fine bordure sur fond sombre. Listes numérotées en pastilles dégradées. Chiffres géants en violet avec leur source en petit gris juste dessous. Captures produit présentées dans un cadre de navigateur. Pied de page : « sofy.fr » à gauche, nom de la section à droite.",
+    source: 'Deck Sofy « Enjeux Visibilité & IA » (19 slides, 08/2026) — référence de style pour toute présentation générée' }
+];
+
+export default async function handler(req, res) {
+  const user = verifierToken(req);
+  if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
+  await ensureKb();
+  const admin = ['admin', 'superadmin'].includes(user.role);
+
+  try {
+    if (req.method === 'GET') {
+      const q = req.query || {};
+      const rows = await sql`SELECT * FROM kb_sales
+        WHERE (${q.tous === '1'} OR actif)
+          AND (${q.module || ''} = '' OR module = ${q.module || ''} OR module = 'tous')
+          AND (${q.type || ''} = '' OR type = ${q.type || ''})
+        ORDER BY type, module, id`;
+      const perime = r => r.verifie_le &&
+        (Date.now() - new Date(r.verifie_le).getTime()) > PEREMPTION_MOIS * 30 * 86400000;
+      const blocs = rows.map(r => ({ ...r, perime: !!perime(r) }));
+      return res.status(200).json({
+        ok: true, blocs, total: blocs.length,
+        a_rafraichir: blocs.filter(b => b.perime).length,
+        peremption_mois: PEREMPTION_MOIS, types: TYPES, modules: MODULES
+      });
+    }
+
+    if (req.method === 'POST') {
+      const b = req.body || {};
+      if (!admin) return res.status(403).json({ erreur: 'Réservé aux admins' });
+
+      // Amorçage : injecte le contenu du deck Sofy. Idempotent (cle_seed unique) → relançable
+      // sans créer de doublons, et sans écraser une correction faite à la main.
+      if (b.seed) {
+        let ajoutes = 0;
+        for (const s of SEED) {
+          const r = await sql`INSERT INTO kb_sales (type, module, titre, contenu, source, cle_seed, verifie_le)
+            VALUES (${s.type}, ${s.module}, ${s.titre}, ${s.contenu}, ${s.source}, ${s.cle_seed}, CURRENT_DATE)
+            ON CONFLICT (cle_seed) DO NOTHING RETURNING id`;
+          if (r.length) ajoutes++;
+        }
+        return res.status(200).json({
+          ok: true, ajoutes, deja_presents: SEED.length - ajoutes,
+          info: ajoutes ? `${ajoutes} bloc(s) ajouté(s) depuis le deck Sofy.` : 'Tous les blocs du deck étaient déjà là — rien écrasé.'
+        });
+      }
+
+      if (!b.titre || !b.contenu) return res.status(400).json({ erreur: 'titre et contenu requis' });
+      if (!TYPES.includes(b.type)) return res.status(400).json({ erreur: 'type invalide : ' + TYPES.join(', ') });
+      // Un chiffre de marché ou un cas client sans source ne doit pas entrer : c'est exactement
+      // ce que l'IA irait recopier dans un document qui sort de l'entreprise.
+      if (['chiffre_marche', 'cas_client'].includes(b.type) && !String(b.source || '').trim()) {
+        return res.status(400).json({ erreur: 'Une source est obligatoire pour un chiffre de marché ou un cas client — sans elle, l\'IA ne pourra pas le citer.' });
+      }
+      const [row] = await sql`INSERT INTO kb_sales (type, module, titre, contenu, source, secteur, territoire, verifie_le)
+        VALUES (${b.type}, ${MODULES.includes(b.module) ? b.module : 'tous'}, ${b.titre}, ${b.contenu},
+                ${b.source || null}, ${b.secteur || null}, ${b.territoire || null}, CURRENT_DATE) RETURNING *`;
+      return res.status(200).json({ ok: true, bloc: row });
+    }
+
+    if (req.method === 'PUT') {
+      const b = req.body || {};
+      if (!admin) return res.status(403).json({ erreur: 'Réservé aux admins' });
+      if (!b.id) return res.status(400).json({ erreur: 'id requis' });
+      // Toute modification remet la date de vérification à aujourd'hui : c'est le geste qui
+      // sort un bloc de l'état « à rafraîchir ».
+      const [row] = await sql`UPDATE kb_sales SET
+        titre = COALESCE(${b.titre || null}, titre),
+        contenu = COALESCE(${b.contenu || null}, contenu),
+        source = COALESCE(${b.source || null}, source),
+        module = COALESCE(${MODULES.includes(b.module) ? b.module : null}, module),
+        secteur = COALESCE(${b.secteur || null}, secteur),
+        territoire = COALESCE(${b.territoire || null}, territoire),
+        actif = COALESCE(${typeof b.actif === 'boolean' ? b.actif : null}, actif),
+        verifie_le = CURRENT_DATE
+        WHERE id = ${parseInt(b.id)} RETURNING *`;
+      if (!row) return res.status(404).json({ erreur: 'Bloc introuvable' });
+      return res.status(200).json({ ok: true, bloc: row });
+    }
+
+    if (req.method === 'DELETE') {
+      if (!admin) return res.status(403).json({ erreur: 'Réservé aux admins' });
+      const id = parseInt((req.query || {}).id);
+      if (!id) return res.status(400).json({ erreur: 'id requis' });
+      // Désactivation, jamais suppression : on garde la trace de ce qui a servi aux présentations
+      await sql`UPDATE kb_sales SET actif = FALSE WHERE id = ${id}`;
+      return res.status(200).json({ ok: true, desactive: id });
+    }
+
+    return res.status(405).json({ erreur: 'GET, POST, PUT ou DELETE' });
+  } catch (e) {
+    return res.status(500).json({ erreur: 'Base de connaissance indisponible', detail: String((e && e.message) || e).slice(0, 250) });
+  }
+}
+
+// Utilisé par le générateur de présentations : ne renvoie que les blocs utilisables
+// (actifs et non périmés) pour un module donné.
+export async function blocsUtilisables(module) {
+  await ensureKb();
+  const rows = await sql`SELECT type, module, titre, contenu, source, secteur, territoire, verifie_le
+    FROM kb_sales WHERE actif AND (module = ${module || 'tous'} OR module = 'tous')
+      AND verifie_le > CURRENT_DATE - (${PEREMPTION_MOIS} || ' months')::interval
+    ORDER BY type, id`;
+  return rows;
+}
