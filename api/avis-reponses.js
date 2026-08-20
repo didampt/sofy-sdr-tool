@@ -21,7 +21,11 @@ import { verifierToken, sql } from './db.js';
 
 export const config = { maxDuration: 60 };
 
-const NB_AVIS = 20;          // un échantillon de 20 avis récents suffit à juger la pratique
+// SerpApi refuse le paramètre `num` sur la PREMIÈRE page : « num parameter should not be used on
+// the initial page unless next_page_token, topic_id, or query is set. It always returns 8 results ».
+// On prend donc les 8 avis de la première page, puis UNE page de plus via next_page_token — soit
+// une quinzaine d'avis récents pour deux appels, ce qui suffit à juger une pratique de réponse.
+const PAGES = 2;
 const CACHE_JOURS = 30;
 
 let pret = false;
@@ -89,34 +93,42 @@ export default async function handler(req, res) {
     return { ok: r.ok, status: r.status, d };
   };
 
-  let data, via = 'place_id';
+  let avis = [], via = 'place_id', titre = null;
   try {
-    let rep = await lire({ engine: 'google_maps_reviews', place_id: placeId, sort_by: 'newestFirst', num: String(NB_AVIS) });
-    const rate = rep.d && (rep.d.error || '');
-    const sansAvis = !rep.ok || rate || !Array.isArray(rep.d.reviews);
-    if (sansAvis) {
-      // Étape de repli : la fiche par son place_id, pour en extraire le data_id.
+    // Première page : SANS `num` (l'API le refuse ici), triée du plus récent au plus ancien.
+    const base = { engine: 'google_maps_reviews', sort_by: 'newestFirst' };
+    let rep = await lire({ ...base, place_id: placeId });
+    let jeton = null;
+
+    if (!rep.ok || (rep.d && rep.d.error) || !Array.isArray(rep.d.reviews)) {
+      // Repli : retrouver le data_id de la fiche, que SerpApi reconnaît toujours.
       const pl = await lire({ engine: 'google_maps', type: 'place', place_id: placeId });
       const did = pl.d && ((pl.d.place_results && pl.d.place_results.data_id) || (pl.d.search_metadata || {}).data_id);
-      if (did) {
-        via = 'data_id';
-        rep = await lire({ engine: 'google_maps_reviews', data_id: did, sort_by: 'newestFirst', num: String(NB_AVIS) });
-      }
+      if (did) { via = 'data_id'; rep = await lire({ ...base, data_id: did }); }
       if (!rep.ok || (rep.d && rep.d.error) || !Array.isArray(rep.d.reviews)) {
         return res.status(502).json({
           erreur: 'SerpApi n\'a pas rendu les avis',
-          detail: String((rep.d && rep.d.error) || rate || ('HTTP ' + rep.status)).slice(0, 220),
-          piste: did ? 'Le data_id a été trouvé mais les avis restent inaccessibles — la fiche est peut-être sans avis.'
+          detail: String((rep.d && rep.d.error) || ('HTTP ' + rep.status)).slice(0, 220),
+          piste: did ? 'Le data_id a été trouvé mais les avis restent inaccessibles — la fiche est peut-être sans avis publics.'
                      : 'Impossible de retrouver l\'identifiant Maps de cette fiche. Relance l\'analyse GMB, ou rattache la fiche par son lien Maps.'
         });
       }
     }
-    data = rep.d;
+    avis = rep.d.reviews.slice();
+    titre = (rep.d.place_info && rep.d.place_info.title) || null;
+    jeton = (rep.d.serpapi_pagination && rep.d.serpapi_pagination.next_page_token) || null;
+    const idBase = via === 'data_id' ? { data_id: rep.d.search_parameters && rep.d.search_parameters.data_id } : { place_id: placeId };
+
+    // Pages suivantes : ici `num` est autorisé puisqu'un next_page_token accompagne la requête.
+    for (let k = 1; k < PAGES && jeton; k++) {
+      const suite = await lire({ ...base, ...idBase, next_page_token: jeton, num: '20' });
+      if (!suite.ok || !Array.isArray(suite.d.reviews) || !suite.d.reviews.length) break;
+      avis = avis.concat(suite.d.reviews);
+      jeton = (suite.d.serpapi_pagination && suite.d.serpapi_pagination.next_page_token) || null;
+    }
   } catch (e) {
     return res.status(502).json({ erreur: 'SerpApi injoignable', detail: String((e && e.message) || e).slice(0, 160) });
   }
-
-  const avis = Array.isArray(data.reviews) ? data.reviews : [];
   if (!avis.length) {
     return res.status(200).json({
       ok: true, vide: true,
@@ -142,7 +154,7 @@ export default async function handler(req, res) {
 
   const mesure = {
     place_id: placeId,
-    nom: b.nom ? String(b.nom).slice(0, 160) : ((data.place_info && data.place_info.title) || null),
+    nom: b.nom ? String(b.nom).slice(0, 160) : titre,
     analyses: avis.length,
     repondus,
     taux: Math.round((repondus / avis.length) * 100),
