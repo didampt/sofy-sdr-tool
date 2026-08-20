@@ -306,6 +306,18 @@ export default async function handler(req, res) {
               ${b.cle_fiche || null}, ${b.destinataire || null},
               ${JSON.stringify({ ...out.doc, _mes: mes, _sdr: user.nom, _module: module })}::jsonb,
               NOW() + (${jours} || ' days')::interval)`;
+
+    // Trace dans le bloc-notes de la fiche : le lien doit être retrouvable dans l'historique
+    // de la relation, à côté des appels et des notes — pas seulement dans l'encart du haut.
+    if (b.cle_fiche) {
+      try {
+        await sql`INSERT INTO activites (fiche_cle, source, type, titre, detail, auteur, ts)
+          VALUES (${String(b.cle_fiche).toLowerCase()}, 'prez', 'note',
+            ${'🎨 Analyse client générée (' + (NOM_MODULE[module] || module) + ')'},
+            ${BASE_PUB() + '/p/' + jeton + ' — lien valable ' + jours + ' jours'},
+            ${user.nom}, NOW())`;
+      } catch (_) {}
+    }
     try { await loggerConso(user, 'ia_claude', 1, b.liste_id || null); } catch (_) {}
 
     return res.status(200).json({

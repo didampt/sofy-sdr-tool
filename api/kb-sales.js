@@ -112,6 +112,11 @@ const SEED = [
 // Amorçage du contenu du deck Sofy. Idempotent (cle_seed unique) → relançable sans doublon et
 // sans écraser une correction faite à la main. Exporté parce que le générateur l'appelle tout
 // seul quand la base est vide : demander une requête technique à un SDR n'est pas une option.
+// Réutilisés par /api/kb-ingest : les types et modules ne doivent exister qu'à un seul endroit.
+export const TYPES_KB = TYPES;
+export const MODULES_KB = MODULES;
+export const ensureKbPublique = ensureKb;
+
 export async function amorcer(par) {
   await ensureKb();
   let ajoutes = 0, remis = 0;

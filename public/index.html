@@ -542,6 +542,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
     <button class="nav-btn" data-view="results" onclick="nav('results',this)">📞 Résultats</button>
     <button class="nav-btn" data-view="history" onclick="nav('history',this);chargerHistorique()">🗂 Historique</button>
     <button class="nav-btn" id="nav-archives" data-view="archives" onclick="nav('archives',this);chargerArchives()">🗄️ Archives</button>
+    <button class="nav-btn" data-view="prez" onclick="nav('prez',this);ouvrirPrez()">🎨 Prez sales <span id="kb-badge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:2px" title="Blocs en attente de validation"></span></button>
     <button class="nav-btn" data-view="mapping" onclick="nav('mapping',this);chargerEnvois();chargerConcurrents()">⚙️ Envois & mapping</button>
     <button class="nav-btn" data-view="stats" onclick="nav('stats',this);chargerStats()">📊 Statistiques</button>
     <button class="nav-btn" data-view="appels" onclick="nav('appels',this);chargerAppels()">🎧 Appels</button>
@@ -1044,6 +1045,49 @@ Spot-Hit</textarea>
           <input class="field" value="{Société} — {Produit dominant} — via SDR Tool">
         </div>
         <div class="save-bar"><button class="btn btn-primary" onclick="toast('Mapping HubSpot enregistré (mode démo)')">Enregistrer</button></div>
+      </div>
+    </section>
+
+    <!-- ════ VUE : 🎨 PREZ SALES ════ -->
+    <section class="view" id="view-prez">
+      <div class="eyebrow">Documents client</div>
+      <h1 style="margin-bottom:4px">Prez sales</h1>
+      <p style="color:var(--ink-soft);max-width:74ch;margin:0 0 16px;line-height:1.55">Une analyse personnalisée par prospect, construite sur ce que Sofy Scrap a déjà mesuré chez lui. La base de connaissance est ce qui autorise l'IA à citer un chiffre : sans bloc source, elle n'écrit rien.</p>
+
+      <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:16px">
+        <button class="btn btn-primary" id="pz-t-gen" onclick="sousOngletPrez('gen')">Générateur</button>
+        <button class="btn" id="pz-t-kb" style="background:var(--paper)" onclick="sousOngletPrez('kb')">Base de connaissance</button>
+        <button class="btn" id="pz-t-mes" style="background:var(--paper)" onclick="sousOngletPrez('mes')">Mes présentations</button>
+      </div>
+
+      <!-- ── Générateur ── -->
+      <div id="pz-gen">
+        <div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;max-width:820px">
+          <p style="margin:0 0 12px;font-size:14.5px;line-height:1.6">L'analyse se lance depuis la fiche du prospect : c'est là que se trouvent les mesures qu'elle utilise (note Google, pire point de vente, avis réel, concurrents, technos). Ouvre une liste, déplie la fiche, puis <strong>🎨 Analyse client</strong>.</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary" onclick="nav('history',null);chargerHistorique()">🗂 Ouvrir une liste</button>
+            <button class="btn" style="background:var(--paper)" onclick="nav('cockpit',null);chargerCockpit()">☀️ Voir mes hot leads</button>
+          </div>
+          <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line);font-size:13px;color:var(--ink-soft);line-height:1.6">
+            Le document suit toujours la même logique : <strong>ce qu'on a mesuré</strong> → <strong>ce que ça coûte</strong> → <strong>la brique Sofy qui y répond</strong> → <strong>le résultat visé, chiffré</strong> → un cas client comparable → la prise de rendez-vous. Chaque lien vit 15 jours et compte ses lecteurs.
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Base de connaissance ── -->
+      <div id="pz-kb" style="display:none">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+          <button class="btn btn-primary" onclick="formBlocKb()">+ Ajouter un bloc</button>
+          <button class="btn" style="background:var(--paper)" onclick="formSourceKb()">📥 Importer une source</button>
+          <span id="kb-compteurs" style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto"></span>
+        </div>
+        <div id="kb-form" style="display:none;margin-bottom:16px"></div>
+        <div id="kb-liste"><p style="color:var(--ink-soft)">Chargement…</p></div>
+      </div>
+
+      <!-- ── Mes présentations ── -->
+      <div id="pz-mes" style="display:none">
+        <div id="mes-prez"><p style="color:var(--ink-soft)">Chargement…</p></div>
       </div>
     </section>
 
@@ -2061,7 +2105,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v334';
+const VERSION='v335';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4791,6 +4835,296 @@ function copierEmail(i){
  navigator.clipboard.writeText('Objet : '+m.objet+'\n\n'+m.corps);
  toast('✉️ Email copié dans le presse-papier');
 }
+// ═══════════════════════════════════════════════════════════════════════════
+// 🎨 PREZ SALES — générateur, base de connaissance, historique
+// La base de connaissance est la pièce qui permet aux présentations de rester à jour sans
+// modification de code : le CMO ajoute un cas client, il est utilisable dès qu'il est validé.
+// ═══════════════════════════════════════════════════════════════════════════
+const KB_TYPES={chiffre_marche:'📊 chiffre marché',preuve:'🧩 preuve',fonctionnalite:'⚙️ fonctionnalité',cas_client:'🏆 cas client',objection:'🛡 objection',tarif:'💰 tarif',charte:'🎨 charte'};
+const KB_SENSIBLES=['tarif','charte'];
+let KB=[],KB_INFO={};
+
+function estAdmin(){return !!(state.user&&['admin','superadmin'].includes(state.user.role));}
+
+function ouvrirPrez(){sousOngletPrez(window._pzOnglet||'gen');}
+function sousOngletPrez(o){
+ window._pzOnglet=o;
+ ['gen','kb','mes'].forEach(function(x){
+  const p=document.getElementById('pz-'+x),b=document.getElementById('pz-t-'+x);
+  if(p)p.style.display=(x===o?'':'none');
+  if(b){b.className='btn'+(x===o?' btn-primary':'');b.style.background=(x===o?'':'var(--paper)');}
+ });
+ if(o==='kb')chargerKb();
+ if(o==='mes')chargerMesPrez();
+}
+
+// ── Base de connaissance ──────────────────────────────────────────────────
+async function chargerKb(){
+ const c=document.getElementById('kb-liste');
+ try{
+  const r=await api('/api/kb-sales?tous=1');
+  const d=await r.json();
+  if(d.erreur){c.innerHTML='<p style="color:var(--danger)">'+htmlSafe(d.erreur)+'</p>';return;}
+  KB=d.blocs||[];KB_INFO=d;
+  const b=document.getElementById('kb-badge');
+  if(b){const n=KB.filter(x=>x.statut==='propose').length;b.style.display=(n&&estAdmin())?'':'none';b.textContent=n;}
+  document.getElementById('kb-compteurs').innerHTML=
+   `<span class="badge b-gmb">${d.utilisables||0} utilisable(s) par l'IA</span>`+
+   (d.en_attente?`<span class="badge b-signal">⏳ ${d.en_attente} en attente de validation</span>`:'')+
+   (d.a_rafraichir?`<span class="badge b-signal">🕒 ${d.a_rafraichir} à rafraîchir</span>`:'');
+  rendreKb();
+ }catch(e){c.innerHTML='<p style="color:var(--danger)">Base illisible : '+htmlSafe(e.message)+'</p>';}
+}
+
+function rendreKb(){
+ const c=document.getElementById('kb-liste');
+ if(!KB.length){
+  c.innerHTML=`<div style="background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:20px;max-width:620px">
+   <p style="margin:0 0 10px;font-weight:700">La base est vide.</p>
+   <p style="margin:0 0 12px;color:var(--ink-soft);line-height:1.6">Elle s'amorce toute seule à la première analyse générée, avec le contenu du deck Sofy et les cas clients du blog. Tu peux aussi l'amorcer maintenant.</p>
+   ${estAdmin()?'<button class="btn btn-primary" onclick="amorcerKb()">Amorcer avec le deck Sofy</button>':'<p style="color:var(--ink-soft);font-size:13px">Demande à un admin de l\'amorcer.</p>'}</div>`;
+  return;
+ }
+ // Les propositions passent devant : c'est la file de travail du CMO
+ const attente=KB.filter(x=>x.statut==='propose'),refuses=KB.filter(x=>x.statut==='refuse');
+ const valides=KB.filter(x=>x.statut==='valide');
+ const groupes=[['⏳ En attente de validation',attente],['✅ Utilisés par l\'IA',valides],['🚫 Refusés',refuses]];
+ c.innerHTML=groupes.filter(g=>g[1].length).map(function(g){
+  return `<h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-soft);margin:18px 0 8px">${g[0]} <span style="color:var(--ink-soft);font-weight:400">(${g[1].length})</span></h3>`
+   +g[1].map(blocKbHtml).join('');
+ }).join('');
+}
+
+function blocKbHtml(b){
+ const perime=b.perime;
+ const modLib={soview:'⭐ Soview',soconnect:'💬 SoConnect',soreach:'📱 SoReach',tous:'🎯 tous modules'}[b.module]||b.module;
+ const ia=/lecture IA/.test(String(b.propose_par||''));
+ return `<div style="background:var(--card);border:1px solid var(--line);${b.statut==='propose'?'border-left:3px solid #B45309;':(b.statut==='refuse'?'border-left:3px solid var(--danger);opacity:.7;':'')}border-radius:10px;padding:13px 15px;margin-bottom:9px">
+  <div style="display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px">
+   <span class="badge">${htmlSafe(KB_TYPES[b.type]||b.type)}</span>
+   <span style="font-size:12px;color:var(--ink-soft)">${htmlSafe(modLib)}</span>
+   <strong style="font-size:14.5px;line-height:1.3">${htmlSafe(b.titre)}</strong>
+   ${perime?'<span class="badge b-signal">🕒 à rafraîchir</span>':''}
+   ${ia?'<span class="badge" title="Extrait automatiquement d\'une source — à relire de près">🤖 lecture IA</span>':''}
+  </div>
+  <div style="font-size:13.5px;line-height:1.6;color:var(--ink)">${gras(b.contenu)}</div>
+  ${(b.secteur||b.territoire)?`<div style="font-size:12px;color:var(--ink-soft);margin-top:6px">Cible : ${htmlSafe([b.secteur,b.territoire].filter(Boolean).join(' · '))}</div>`:''}
+  <div style="font-size:11.5px;color:var(--ink-soft);margin-top:8px;padding-top:7px;border-top:1px solid var(--line);display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+   <span>${b.source?'Source : '+htmlSafe(b.source):'<span style="color:#B45309">sans source</span>'}</span>
+   <span>· vérifié ${htmlSafe(String(b.verifie_le||'').slice(0,10))}</span>
+   ${b.propose_par?'<span>· proposé par '+htmlSafe(b.propose_par)+'</span>':''}
+   ${b.motif_refus?'<span style="color:var(--danger)">· refusé : '+htmlSafe(b.motif_refus)+'</span>':''}
+   <span style="margin-left:auto;display:flex;gap:5px">
+    ${(b.statut==='propose'&&estAdmin())?`<button class="act act-call" style="padding:2px 9px;font-size:11.5px" onclick="validerKb(${b.id},true)">✅ Valider</button>
+      <button class="act" style="padding:2px 9px;font-size:11.5px" onclick="validerKb(${b.id},false)">🚫 Refuser</button>`:''}
+    ${(estAdmin()||b.propose_par===((state.user&&state.user.nom)||''))?`<button class="act act-copy" style="padding:2px 9px;font-size:11.5px" onclick="formBlocKb(${b.id})">✏️ Modifier</button>`:''}
+    ${estAdmin()?`<button class="act" style="padding:2px 9px;font-size:11.5px" onclick="supprimerKb(${b.id})">🗑</button>`:''}
+   </span>
+  </div>
+ </div>`;
+}
+function gras(t){return htmlSafe(String(t||'')).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');}
+
+async function amorcerKb(){
+ toast('Amorçage…');
+ try{
+  const r=await api('/api/kb-sales',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({seed:true})});
+  const d=await r.json();
+  toast(d.erreur?('Amorçage : '+d.erreur):(d.info||'Amorcé ✓'));
+  chargerKb();
+ }catch(e){toast('Amorçage : '+e.message);}
+}
+
+// ── Formulaire d'un bloc ──────────────────────────────────────────────────
+function formBlocKb(id){
+ const b=id?KB.find(x=>x.id===id):null;
+ const f=document.getElementById('kb-form');
+ const opts=Object.keys(KB_TYPES).filter(t=>estAdmin()||!KB_SENSIBLES.includes(t))
+  .map(t=>`<option value="${t}"${b&&b.type===t?' selected':''}>${KB_TYPES[t]}</option>`).join('');
+ f.style.display='';
+ f.innerHTML=`<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;max-width:780px">
+  <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:12px">
+   <strong style="font-size:15px">${b?'Modifier le bloc':'Nouveau bloc'}</strong>
+   <span style="font-size:12.5px;color:var(--ink-soft)">${estAdmin()?'Validé immédiatement (tu es admin).':'Sera soumis à validation.'}</span>
+   <button class="act" style="margin-left:auto;padding:2px 9px;font-size:11.5px" onclick="document.getElementById('kb-form').style.display='none'">Fermer</button>
+  </div>
+  <div style="display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+   <label style="font-size:12.5px;color:var(--ink-soft)">Type<select id="kbf-type" class="field" style="width:100%;margin-top:3px">${opts}</select></label>
+   <label style="font-size:12.5px;color:var(--ink-soft)">Module<select id="kbf-mod" class="field" style="width:100%;margin-top:3px">
+    ${['tous','soview','soconnect','soreach'].map(m=>`<option value="${m}"${b&&b.module===m?' selected':''}>${m}</option>`).join('')}</select></label>
+   <label style="font-size:12.5px;color:var(--ink-soft)">Secteur ciblé (facultatif)<input id="kbf-sect" class="field" style="width:100%;margin-top:3px" placeholder="ex : distribution auto" value="${b?htmlSafe(b.secteur||''):''}"></label>
+   <label style="font-size:12.5px;color:var(--ink-soft)">Territoire (facultatif)<input id="kbf-terr" class="field" style="width:100%;margin-top:3px" placeholder="ex : Guadeloupe" value="${b?htmlSafe(b.territoire||''):''}"></label>
+  </div>
+  <label style="display:block;margin-top:10px;font-size:12.5px;color:var(--ink-soft)">Titre — l'idée en une ligne
+   <input id="kbf-titre" class="field" style="width:100%;margin-top:3px" value="${b?htmlSafe(b.titre):''}"></label>
+  <label style="display:block;margin-top:10px;font-size:12.5px;color:var(--ink-soft)">Contenu — **gras** autorisé
+   <textarea id="kbf-contenu" class="field" style="width:100%;margin-top:3px;min-height:110px;font-family:inherit">${b?htmlSafe(b.contenu):''}</textarea></label>
+  <label style="display:block;margin-top:10px;font-size:12.5px;color:var(--ink-soft)">Source — obligatoire pour un chiffre ou un cas client
+   <input id="kbf-source" class="field" style="width:100%;margin-top:3px" placeholder="ex : interview client publiée sur sofy.fr/…" value="${b?htmlSafe(b.source||''):''}"></label>
+  <div style="font-size:12px;color:var(--ink-soft);margin-top:8px;line-height:1.5">Un chiffre sans source ne peut pas entrer : c'est exactement ce que l'IA irait recopier dans un document qui porte le nom de Sofy.</div>
+  <div style="margin-top:14px;display:flex;gap:8px"><button class="btn btn-primary" onclick="enregistrerKb(${b?b.id:'null'})">${b?'Enregistrer':'Ajouter'}</button></div>
+ </div>`;
+ f.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+async function enregistrerKb(id){
+ const v=x=>document.getElementById('kbf-'+x).value.trim();
+ const corps={type:v('type'),module:v('mod'),titre:v('titre'),contenu:v('contenu'),
+              source:v('source'),secteur:v('sect'),territoire:v('terr')};
+ if(!corps.titre||!corps.contenu){toast('Titre et contenu sont nécessaires');return;}
+ if(id)corps.id=id;
+ try{
+  const r=await api('/api/kb-sales',{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(corps)});
+  const d=await r.json();
+  if(d.erreur){toast(d.erreur);return;}
+  toast(d.info||'Enregistré ✓');
+  document.getElementById('kb-form').style.display='none';
+  chargerKb();
+ }catch(e){toast('Enregistrement : '+e.message);}
+}
+
+async function validerKb(id,ok){
+ let motif=null;
+ if(!ok){motif=prompt('Motif du refus (il sera visible par la personne qui a proposé) :');if(motif===null)return;}
+ try{
+  const r=await api('/api/kb-sales',{method:'PUT',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({id,action:ok?'valider':'refuser',motif:motif||''})});
+  const d=await r.json();
+  toast(d.erreur||(ok?'Validé — utilisable dès la prochaine analyse ✓':'Refusé'));
+  chargerKb();
+ }catch(e){toast('Validation : '+e.message);}
+}
+
+async function supprimerKb(id){
+ const b=KB.find(x=>x.id===id);
+ if(!await confirmSofy('Retirer ce bloc ?',(b?'« '+b.titre+' »\n\n':'')+'Il ne sera plus utilisé dans les prochaines analyses. Il reste archivé (on garde la trace de ce qui a servi aux documents déjà envoyés), et les analyses déjà générées ne changent pas.','Retirer'))return;
+ try{
+  const r=await api('/api/kb-sales?id='+id,{method:'DELETE'});
+  const d=await r.json();
+  toast(d.erreur||'Bloc retiré de la base');
+  chargerKb();
+ }catch(e){toast('Suppression : '+e.message);}
+}
+
+// ── Import d'une source : URL, texte collé, PDF ou image ──────────────────
+function formSourceKb(){
+ const f=document.getElementById('kb-form');
+ f.style.display='';
+ f.innerHTML=`<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;max-width:780px">
+  <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px">
+   <strong style="font-size:15px">📥 Importer une source</strong>
+   <button class="act" style="margin-left:auto;padding:2px 9px;font-size:11.5px" onclick="document.getElementById('kb-form').style.display='none'">Fermer</button>
+  </div>
+  <p style="font-size:13.5px;color:var(--ink-soft);line-height:1.6;margin:0 0 14px">Claude lit la source, en extrait des blocs et les dépose <strong>en proposition</strong>. Personne ne découpe un PDF de 130 pages à la main — mais rien n'est utilisé avant relecture, même proposé par un admin.</p>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+   <button class="btn btn-primary" id="src-t-url" onclick="ongletSource('url')">🔗 Une page web</button>
+   <button class="btn" id="src-t-txt" style="background:var(--paper)" onclick="ongletSource('txt')">📝 Texte collé</button>
+   <button class="btn" id="src-t-fic" style="background:var(--paper)" onclick="ongletSource('fic')">📎 PDF ou image</button>
+  </div>
+  <div id="src-url">
+   <label style="font-size:12.5px;color:var(--ink-soft)">Adresse de la page — article, interview client, page produit, page d'un concurrent
+    <input id="srcf-url" class="field" style="width:100%;margin-top:3px" placeholder="https://sofy.fr/articles-de-blog/…"></label>
+   <div style="font-size:12px;color:var(--ink-soft);margin-top:6px">Aucune limite de taille, et rafraîchissable : relance l'import sur la même adresse quand la page a changé.</div>
+  </div>
+  <div id="src-txt" style="display:none">
+   <label style="font-size:12.5px;color:var(--ink-soft)">Colle ton texte — FAQ, argumentaire, notes de rendez-vous, compte rendu
+    <textarea id="srcf-txt" class="field" style="width:100%;margin-top:3px;min-height:150px;font-family:inherit"></textarea></label>
+   <label style="display:block;margin-top:8px;font-size:12.5px;color:var(--ink-soft)">D'où vient ce texte ? (sert de source aux blocs)
+    <input id="srcf-orig" class="field" style="width:100%;margin-top:3px" placeholder="ex : FAQ produit interne, mise à jour 08/2026"></label>
+  </div>
+  <div id="src-fic" style="display:none">
+   <input type="file" id="srcf-fic" accept=".pdf,.png,.jpg,.jpeg,.webp" style="font-size:13px">
+   <div style="font-size:12px;color:var(--ink-soft);margin-top:8px;line-height:1.5">PDF, PNG, JPEG et WebP, jusqu'à environ 2 Mo. Un PowerPoint doit être exporté en PDF (Fichier › Exporter) — le .pptx lui-même n'est pas lisible.</div>
+  </div>
+  <label style="display:block;margin-top:12px;font-size:12.5px;color:var(--ink-soft)">Module concerné
+   <select id="srcf-mod" class="field" style="margin-top:3px">${['tous','soview','soconnect','soreach'].map(m=>`<option value="${m}">${m}</option>`).join('')}</select></label>
+  <div style="margin-top:14px"><button class="btn btn-primary" onclick="lancerImportKb()">📥 Lire la source (≈ 0,05 à 0,20 €)</button></div>
+  <div id="src-res" style="margin-top:14px"></div>
+ </div>`;
+ f.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function ongletSource(o){
+ window._srcOnglet=o;
+ ['url','txt','fic'].forEach(function(x){
+  const p=document.getElementById('src-'+x),b=document.getElementById('src-t-'+x);
+  if(p)p.style.display=(x===o?'':'none');
+  if(b){b.className='btn'+(x===o?' btn-primary':'');b.style.background=(x===o?'':'var(--paper)');}
+ });
+}
+
+async function lancerImportKb(){
+ const mode=window._srcOnglet||'url';
+ const corps={module:document.getElementById('srcf-mod').value};
+ if(mode==='url'){
+  const u=document.getElementById('srcf-url').value.trim();
+  if(!/^https?:\/\//i.test(u)){toast('Donne une adresse commençant par http');return;}
+  corps.url=u;
+ }else if(mode==='txt'){
+  const t=document.getElementById('srcf-txt').value.trim();
+  if(t.length<40){toast('Texte trop court');return;}
+  corps.texte=t;corps.origine=document.getElementById('srcf-orig').value.trim();
+ }else{
+  const inp=document.getElementById('srcf-fic'),fic=inp.files&&inp.files[0];
+  if(!fic){toast('Choisis un fichier');return;}
+  if(fic.size>2_200_000){toast('Fichier trop lourd (2 Mo maximum) — envoie les pages utiles');return;}
+  const b64=await new Promise(function(ok,ko){
+   const fr=new FileReader();
+   fr.onload=()=>ok(String(fr.result).split(',')[1]);fr.onerror=ko;fr.readAsDataURL(fic);
+  });
+  corps.fichier={nom:fic.name,type:fic.type,b64:b64};
+ }
+ const v=voileTravail('📥 Lecture de la source','Claude dépouille le document et en extrait des blocs candidats. Ils arriveront en attente de validation.');
+ try{
+  const r=await api('/api/kb-ingest',{method:'POST',headers:{'Content-Type':'application/json'},signal:v.signal,body:JSON.stringify(corps)});
+  const d=await lireJson(r);
+  const box=document.getElementById('src-res');
+  if(d.erreur){if(box)box.innerHTML=`<div style="background:#FEF2F2;border:1px solid var(--danger);border-radius:9px;padding:12px 14px;font-size:13.5px;line-height:1.55"><strong>${htmlSafe(d.erreur)}</strong>${d.detail?'<br>'+htmlSafe(d.detail):''}</div>`;return;}
+  if(box)box.innerHTML=`<div style="background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:12px 14px;font-size:13.5px;line-height:1.6">
+   <strong>${htmlSafe(d.info||'')}</strong>
+   ${d.commentaire?'<div style="color:var(--ink-soft);margin-top:6px">'+htmlSafe(d.commentaire)+'</div>':''}
+   ${(d.proposes||[]).length?'<ul style="margin:8px 0 0;padding-left:19px">'+d.proposes.map(x=>'<li>'+htmlSafe(KB_TYPES[x.type]||x.type)+' — '+htmlSafe(x.titre)+'</li>').join('')+'</ul>':''}
+   ${(d.rejetes||[]).length?'<div style="color:#B45309;margin-top:8px">'+d.rejetes.length+' bloc(s) écarté(s) : '+htmlSafe(d.rejetes.map(x=>x.motif).join(' · '))+'</div>':''}
+   ${d.cout_estime_eur?'<div style="color:var(--ink-soft);font-size:12px;margin-top:8px">Coût de la lecture : '+String(d.cout_estime_eur).replace('.',',')+' €</div>':''}
+  </div>`;
+  toast(d.info||'Source lue ✓');
+  chargerKb();
+ }catch(err){
+  if(v.arrete||err.name==='AbortError')toast('Lecture arrêtée');
+  else toast('Import : '+err.message);
+ }finally{v.fermer();}
+}
+
+// ── Mes présentations ─────────────────────────────────────────────────────
+async function chargerMesPrez(){
+ const c=document.getElementById('mes-prez');
+ try{
+  const r=await api('/api/prez?mes=1');
+  const d=await r.json();
+  if(d.erreur){c.innerHTML='<p style="color:var(--danger)">'+htmlSafe(d.erreur)+'</p>';return;}
+  const L=d.prez||[];
+  if(!L.length){c.innerHTML='<p style="color:var(--ink-soft)">Aucune analyse générée pour l\'instant. Lance-en une depuis la fiche d\'un prospect.</p>';return;}
+  c.innerHTML=L.map(function(p){
+   const ouv=p.ouvertures||0;
+   return `<div style="background:var(--card);border:1px solid var(--line);${ouv?'border-left:3px solid var(--danger);':''}border-radius:10px;padding:13px 15px;margin-bottom:9px">
+    <div style="display:flex;gap:9px;align-items:baseline;flex-wrap:wrap">
+     <strong style="font-size:14.5px;min-width:150px">${htmlSafe(p.client||'—')}</strong>
+     <span class="badge">${htmlSafe(nomModule(p.module))}</span>
+     ${ouv?`<span class="badge b-signal">👀 ouverte ${ouv}×${p.derniere_ouverture?' · '+htmlSafe(tempsRelEngag(p.derniere_ouverture)):''}</span>`
+          :'<span style="font-size:12px;color:var(--ink-soft)">jamais ouverte</span>'}
+     ${p.lecteurs_distincts>1?`<span class="badge b-signal">🔥 ${p.lecteurs_distincts} lecteurs</span>`:''}
+     ${p.profondeur?`<span class="badge">lue jusqu'à la planche ${p.profondeur+1}</span>`:''}
+     <span style="margin-left:auto;font-size:11.5px;color:var(--ink-soft)">${p.expiree?'lien expiré':(p.jours_restants!=null?'valable '+p.jours_restants+' j':'')}</span>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;align-items:center">
+     ${p.expiree?'':`<a class="act act-call" style="padding:2px 9px;font-size:11.5px;text-decoration:none" href="${htmlSafe(p.url)}" target="_blank">👁 Voir</a>
+     <button class="act act-copy" style="padding:2px 9px;font-size:11.5px" onclick="navigator.clipboard.writeText(decodeURIComponent('${jsArg(p.url)}'));toast('Lien copié ✓')">📋 Copier</button>`}
+     <span style="font-size:11.5px;color:var(--ink-soft)">par ${htmlSafe(p.sdr||'?')} · ${htmlSafe(String(p.created_at||'').slice(0,10))}${p.destinataire?' · envoyée à '+htmlSafe(p.destinataire):''}</span>
+    </div>
+   </div>`;
+  }).join('');
+ }catch(e){c.innerHTML='<p style="color:var(--danger)">Historique illisible : '+htmlSafe(e.message)+'</p>';}
+}
+
 // L'analyse générée vit dans la fiche, pas dans une fenêtre qui se ferme : le SDR revient
 // dessus des jours plus tard pour renvoyer le lien ou voir s'il a été lu.
 function prezHtml(e,i){
