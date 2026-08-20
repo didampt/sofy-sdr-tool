@@ -2144,7 +2144,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v361';
+const VERSION='v362';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -6455,6 +6455,8 @@ function ouvrirInfo(i){
     :`<div style="margin-top:8px"><button class="act act-copy" style="padding:3px 10px;font-size:12px" onclick="ajouterFicheGmb(${i})">➕ Ajouter une fiche</button></div>`)
    +`<div style="margin-top:8px">
       <button class="act act-call" style="padding:3px 10px;font-size:12px" onclick="mesurerReponsesAvis(${i})" title="Taux de réponse aux avis et délai réel — l'API Google ne les expose pas (≈ 0,01 $)">⭐ Mesurer les réponses aux avis</button>
+      <button class="act act-call" style="padding:3px 10px;font-size:12px;margin-left:6px" onclick="auditerFiche(${i})" title="Photos, description, horaires et position dans les résultats locaux (≈ 0,02 $)">🔍 Auditer la fiche</button>
+      ${(e.gmb.audit)?`<span class="badge" style="margin-left:6px">${e.gmb.audit.photos_total||0} photo(s)${e.gmb.audit.position_locale?' · '+e.gmb.audit.position_locale+'ᵉ sur « '+htmlSafe(e.gmb.audit.requete||'')+' »':(e.gmb.audit.requete?' · absent des résultats locaux':'')}</span>`:''}
       ${(e.gmb.reponses)?`<span class="badge ${e.gmb.reponses.taux>=40?'b-gmb':'b-signal'}" style="margin-left:6px">${e.gmb.reponses.repondus}/${e.gmb.reponses.analyses} répondus · ${e.gmb.reponses.taux} %${e.gmb.reponses.delai_median_h!=null?' · '+(e.gmb.reponses.delai_median_h<48?e.gmb.reponses.delai_median_h+' h':Math.round(e.gmb.reponses.delai_median_h/24)+' j')+' en médiane':''}</span>`:''}
      </div>`)
  }
@@ -6986,6 +6988,30 @@ async function mesurerReponsesAvis(i){
   persister();rerender(i);
   toast((d.cache?'↻ ':'⭐ ')+(d.resume||(m.taux+' % de réponses')));
  }catch(err){toast('Réponses aux avis : '+err.message);}
+}
+
+// Audit de fiche : photos, description, horaires, et POSITION dans les résultats locaux pour la
+// requête qu'un client taperait. L'API Google Places ne donne aucun de ces éléments.
+async function auditerFiche(i){
+ const e=REAL[i], g=e.gmb||{};
+ const f=(g.fiches||[])[0]||g.pire_fiche||{};
+ const pid=f.place_id||e.place_id;
+ if(!pid){toast('Aucun identifiant de fiche Google — relance l\'analyse GMB');return;}
+ // La requête locale : ce qu'un client tape pour trouver le SERVICE, pas l'enseigne.
+ const suggest=[(e.activite||e.secteur_rb2b||'').split(/[,;]/)[0]||'',e.ville||''].filter(Boolean).join(' ').trim();
+ const req=prompt('Requête locale à tester — ce qu\'un client taperait pour trouver le service :',suggest);
+ if(req===null)return;
+ toast('🔍 Audit de la fiche…');
+ try{
+  const r=await api('/api/fiche-audit',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({place_id:pid,nom:f.nom||e.nom,requete:req.trim(),
+    ll:(f.lat&&f.lng)?('@'+f.lat+','+f.lng+',13z'):''})});
+  const d=await r.json();
+  if(d.erreur){toast(d.erreur+(d.detail?' — '+d.detail:''));return;}
+  e.gmb=Object.assign({},g,{audit:d.audit});
+  persister();rerender(i);
+  toast('🔍 '+(d.resume||'')+(d.position?' · '+d.position:''));
+ }catch(err){toast('Audit : '+err.message);}
 }
 
 /* ───────── ANALYSE GMB ───────── */

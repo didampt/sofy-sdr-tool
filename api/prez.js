@@ -82,6 +82,12 @@ function mesures(e) {
         ? Math.round((g.concurrents.note_moyenne - g.note_moyenne) * 10) / 10 : null,
       // Relevé dédié (l'API Google n'expose pas les réponses du propriétaire) : c'est l'argument
       // Soview le plus direct, il doit arriver jusqu'à la rédaction.
+      audit_fiche: g.audit ? {
+        photos: g.audit.photos_total, photos_publiees_par_lenseigne: g.audit.photos_enseigne,
+        description: !!g.audit.description_presente, horaires: !!g.audit.horaires_presents,
+        position_locale: g.audit.position_locale, requete_testee: g.audit.requete,
+        trois_premiers: g.audit.concurrents || null
+      } : null,
       reponses_aux_avis: g.reponses ? {
         avis_analyses: g.reponses.analyses,
         avis_avec_reponse: g.reponses.repondus,
@@ -119,6 +125,18 @@ function mesures(e) {
       if (sansAdresse) d.push(`${sansAdresse} de vos fiches n'ont pas d'adresse exploitable : Google ne peut pas les rattacher à une zone, elles ne sortent pas sur « près de moi ».`);
       const noms = new Set(fs.map(f => String(f.nom || '').toLowerCase().replace(/[^a-z0-9]/g, '')));
       if (noms.size === fs.length && fs.length > 2) d.push('Vos fiches portent des libellés tous différents : pour Google et pour les assistants IA, ce sont autant d\'entreprises distinctes plutôt qu\'un réseau.');
+    }
+    if (g.audit) {
+      const a2 = g.audit;
+      if (a2.requete && a2.position_locale == null) {
+        d.push(`Sur « ${a2.requete} », votre fiche n'apparaît pas dans les résultats locaux : un client qui cherche le service, et non votre nom, ne vous voit pas.`);
+      } else if (a2.position_locale && a2.position_locale > 3 && (a2.concurrents || []).length) {
+        const c1 = a2.concurrents[0];
+        d.push(`Sur « ${a2.requete} », vous êtes ${a2.position_locale}ᵉ : ${c1.nom}${c1.note ? ` (${String(c1.note).replace('.', ',')}★)` : ''} occupe la première place.`);
+      }
+      if ((a2.photos_total || 0) < 8) {
+        d.push(`${a2.photos_total || 0} photo(s) sur la fiche : un client qui hésite n'a presque rien à regarder avant de vous choisir.`);
+      }
     }
     if (g.reponses && typeof g.reponses.taux === 'number') {
       const r = g.reponses;
@@ -307,7 +325,29 @@ function scorer(e) {
   } else {
     v.push(crit('Réponses aux avis', 'inconnu', 0, 0, 'non mesuré — l\'API Google ne l\'expose pas, un relevé dédié est nécessaire'));
   }
-  v.push(crit('Fraîcheur et photos', 'inconnu', 0, 0, 'à auditer fiche par fiche au premier rendez-vous'));
+  // Photos et complétude : mesurés par l'audit SerpApi quand il a été lancé sur la fiche.
+  const au = g.audit || null;
+  if (au) {
+    const ph = au.photos_total || 0;
+    v.push(crit('Photos de la fiche', ph >= 20 ? 'ok' : (ph >= 8 ? 'moyen' : 'faible'),
+      ph >= 20 ? 12 : (ph >= 8 ? 7 : 2), 12,
+      `${ph} photo(s)${au.photos_enseigne === 0 && ph > 0 ? ' — aucune publiée par vous : vos clients seuls racontent votre lieu' : ''}`));
+    const complet = (au.description_presente ? 1 : 0) + (au.horaires_presents ? 1 : 0);
+    v.push(crit('Complétude de la fiche', complet === 2 ? 'ok' : (complet === 1 ? 'moyen' : 'faible'),
+      complet * 6, 12,
+      [au.description_presente ? null : 'aucune description', au.horaires_presents ? null : 'aucun horaire']
+        .filter(Boolean).join(', ') || 'description et horaires renseignés'));
+    if (au.position_locale != null || au.requete) {
+      v.push(crit('Position sur les recherches locales',
+        au.position_locale == null ? 'faible' : (au.position_locale <= 3 ? 'ok' : (au.position_locale <= 10 ? 'moyen' : 'faible')),
+        au.position_locale == null ? 0 : (au.position_locale <= 3 ? 18 : (au.position_locale <= 10 ? 9 : 3)), 18,
+        au.position_locale == null
+          ? `absent des résultats locaux sur « ${au.requete} »`
+          : `${au.position_locale}ᵉ sur « ${au.requete} »`));
+    }
+  } else {
+    v.push(crit('Photos et complétude', 'inconnu', 0, 0, 'non mesuré — un audit de fiche dédié est nécessaire'));
+  }
   axes.push({ nom: 'Visibilité locale', module: 'Soview', criteres: v });
 
   // ── Relation client (SoConnect) ──
