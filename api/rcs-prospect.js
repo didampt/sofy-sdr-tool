@@ -7,12 +7,29 @@
 // ⚠️ Prospection B2B : mention de désinscription obligatoire dans le texte (ajoutée automatiquement).
 
 import { verifierToken, sql, ensureSchema, envoyerSmsSofy, loggerConso } from './db.js';
+import { gsmifier, analyserSms } from './sms-gsm.js';
 
 const cleV2 = () => process.env.SOFY_API_KEY_V2 || '';
 // Réservation de démo côté PROSPECT (parcours « site web », adapté au mobile).
 // ⚠️ Ne pas utiliser demo-sdr : c'est le calendrier interne réservé aux SDR.
 const LIEN_DEMO = process.env.SOFY_LIEN_DEMO || 'https://go.sofy.fr/meetings/mbouly/demo-site-web';
 const VISUEL = process.env.SOFY_RCS_IMAGE_DEMO || 'https://www.sofyscrap.com/rcs-demo.jpg';
+const BASE_PUB = () => process.env.SOFY_BASE_PUBLIQUE || 'https://www.sofyscrap.com';
+// Visuel de la carte « analyse » : à défaut, celui de la démo. Un RCS sans image n'a pas
+// d'intérêt — c'est justement ce qu'on vend.
+const VISUEL_PREZ = process.env.SOFY_RCS_IMAGE_PREZ || VISUEL;
+
+// ── Mode « analyse » : le lien de la présentation, envoyé par RCS, replié en SMS ────────────────
+// Pourquoi ici et pas dans un fichier neuf : l'envoi RCS, le repli SMS, la mise en E.164, la
+// journalisation de conso et la trace dans le bloc-notes sont déjà écrits et éprouvés. Le seul
+// changement, c'est la carte : un autre titre, un autre bouton, une autre destination.
+export function textePrez({ prenom, entreprise, sdr }) {
+  const qui = prenom ? prenom : 'Bonjour';
+  const soc = entreprise ? ` de ${entreprise}` : '';
+  return `${qui}, j'ai préparé une analyse de la visibilité locale${soc} : votre fiche Google, `
+    + `vos avis, votre position quand un client cherche votre métier — et ce que nous pouvons y changer. `
+    + `Tout est sur une page privée, 2 minutes de lecture.${sdr ? ` — ${sdr}, Sofy` : ''}`;
+}
 
 function e164(brut) {
   let t = String(brut || '').replace(/[^\d+]/g, '');
@@ -52,12 +69,86 @@ export default async function handler(req, res) {
 
   // Prévisualisation (le SDR relit et peut corriger avant l'envoi)
   if (req.method === 'GET') {
+    if (String(b.mode || '') === 'prez') {
+      const jt = String(b.jeton || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
+      const u = BASE_PUB() + '/p/' + jt;
+      const rp = gsmifier(`Sofy : votre analyse de visibilite locale est prete. ${u} Repondez STOP pour ne plus etre contacte.`).slice(0, 160);
+      const dg = analyserSms(rp);
+      return res.status(200).json({ ok: true, mode: 'prez',
+        texte: textePrez({ prenom, entreprise, sdr: user.nom }), lien: u, visuel: VISUEL_PREZ,
+        bouton: '📊 Voir mon analyse', repli_sms: rp, segments_sms: dg.segments, alphabet: dg.alphabet });
+    }
     return res.status(200).json({ ok: true, texte: texteProspect({ prenom, entreprise, accroche, sdr: user.nom }), lien: LIEN_DEMO, visuel: VISUEL });
   }
   if (req.method !== 'POST') return res.status(405).json({ erreur: 'GET (aperçu) ou POST (envoi)' });
 
   const tel = e164(b.tel);
   if (!tel) return res.status(400).json({ erreur: 'Numéro invalide' });
+
+  // ══ Envoi de l'ANALYSE par RCS (bascule SMS automatique) ══
+  if (String(b.mode || '') === 'prez') {
+    const jeton = String(b.jeton || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
+    if (!jeton) return res.status(400).json({ erreur: 'jeton de l\'analyse requis' });
+    let row = null;
+    try { const r = await sql`SELECT jeton, client, sdr, expire_le, destinataire FROM prez WHERE jeton = ${jeton}`; row = r[0] || null; } catch (_) {}
+    if (!row) return res.status(404).json({ erreur: 'Analyse introuvable — régénère-la avant de l\'envoyer' });
+    if (row.expire_le && new Date(row.expire_le) < new Date()) {
+      return res.status(410).json({ erreur: 'Le lien de cette analyse a expiré — régénère-la, sinon le prospect tombera sur une page morte' });
+    }
+    const url = BASE_PUB() + '/p/' + jeton;
+    const txt = (String(b.texte || '').trim() || textePrez({ prenom, entreprise: entreprise || row.client, sdr: user.nom })).slice(0, 900);
+    const stopP = ' Pour ne plus recevoir de message : répondez STOP.';
+    // Le repli SMS doit tenir en UN segment ET rester en alphabet GSM : une apostrophe courbe
+    // ou un ★ fait basculer le message entier en UCS-2 (70 caractères au lieu de 160).
+    const brut = `Sofy : votre analyse de visibilite locale est prete. ${url} Repondez STOP pour ne plus etre contacte.`;
+    const repli = gsmifier(brut).slice(0, 160);
+    const diag = analyserSms(repli);
+
+    if (b.apercu) {
+      return res.status(200).json({ ok: true, apercu: true, texte: txt, url, visuel: VISUEL_PREZ,
+        bouton: '📊 Voir mon analyse', repli_sms: repli, segments_sms: diag.segments, alphabet: diag.alphabet });
+    }
+
+    let envoi = null;
+    const senderId0 = process.env.SOFY_RCS_SENDER_ID;
+    if (cleV2() && senderId0) {
+      try {
+        const r = await fetch('https://api.sofy.fr/v2/rcs/rich-card', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cleV2()}` },
+          body: JSON.stringify({
+            to: tel, senderId: senderId0,
+            title: `📊 Votre analyse Sofy${row.client ? ' — ' + row.client : ''}`.slice(0, 60),
+            description: txt + stopP, imageUrl: VISUEL_PREZ,
+            button: { label: '📊 Voir mon analyse', url },
+            fallback: { enabled: true, text: repli }
+          })
+        });
+        const d = await r.json().catch(() => ({}));
+        if (r.ok && d.id) envoi = { canal: d.isSmsFallback ? 'sms (repli Sofy)' : 'rcs', id: d.id };
+        else envoi = { erreur: 'RCS ' + r.status + ': ' + JSON.stringify(d).slice(0, 200) };
+      } catch (e) { envoi = { erreur: 'RCS injoignable : ' + String((e && e.message) || e).slice(0, 120) }; }
+    }
+    // Second filet : si l'agent RCS n'a pas répondu, le SMS v1 part quand même avec le lien.
+    if (!envoi || envoi.erreur) {
+      const v1 = await envoyerSmsSofy({ to: tel, message: repli, user: user.nom, liste_id: b.liste_id || null, transactionnel: false });
+      if (v1.ok) envoi = { canal: 'sms (v1)', id: v1.id || null, rcs_echec: envoi && envoi.erreur };
+      else return res.status(502).json({ erreur: 'Envoi refusé', detail: (envoi && envoi.erreur) || v1.detail });
+    }
+
+    try { await loggerConso(user.nom, 'soreach', 1, b.liste_id || null); } catch (_) {}
+    // Le destinataire est mémorisé sur l'analyse : c'est lui qui rend lisible le signal
+    // « quelqu'un lit » dans Ma journée (« lien envoyé à … »).
+    try { await sql`UPDATE prez SET destinataire = COALESCE(destinataire, ${tel}) WHERE jeton = ${jeton}`; } catch (_) {}
+    const cleP = String(b.email_cle || b.cle_fiche || '').toLowerCase().trim() || null;
+    if (cleP) {
+      try { await sql`INSERT INTO activites (fiche_cle, source, type, titre, detail, auteur, ts)
+        VALUES (${cleP}, 'sms', 'rcs_prez', ${'📊 Analyse envoyée par ' + envoi.canal},
+          ${url + ' → ' + tel}, ${user.nom || 'système'}, NOW())`; } catch (_) {}
+    }
+    return res.status(200).json({ ok: true, canal: envoi.canal, id: envoi.id || null, tel, url,
+      repli_sms: repli, segments_sms: diag.segments });
+  }
   // Clé de trace : email du contact, sinon clé de fiche (nom:…) — sans repli, les fiches sans
   // email n'avaient AUCUNE note dans le bloc-notes (constat Didier 07/08).
   const cleTrace = String(b.email_cle || b.cle_fiche || '').toLowerCase().trim() || null;

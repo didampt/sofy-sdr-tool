@@ -1377,10 +1377,11 @@ Spot-Hit</textarea>
 <!-- 💬 RCS de démonstration (prospection) — niveau document : ouvrable depuis toutes les vues -->
 <div id="rcs-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:903;align-items:center;justify-content:center" onclick="if(event.target===this)this.style.display='none'">
   <div style="background:var(--card,#fff);border-radius:14px;padding:22px 24px;max-width:540px;width:94%">
-    <div style="font-size:18px;font-weight:800;margin-bottom:6px">💬 RCS de démonstration</div>
-    <div style="font-size:12.5px;color:var(--ink-soft);line-height:1.55;margin-bottom:10px">Le prospect reçoit une <b>rich-card Sofy</b> — visuel, texte et bouton « 📅 Réserver ma démo » : le message <i>est</i> la démonstration du produit. Repli SMS automatique si son mobile ne gère pas le RCS.</div>
+    <div id="rcs-titre" style="font-size:18px;font-weight:800;margin-bottom:6px">💬 RCS de démonstration</div>
+    <div id="rcs-intro" style="font-size:12.5px;color:var(--ink-soft);line-height:1.55;margin-bottom:10px">Le prospect reçoit une <b>rich-card Sofy</b> — visuel, texte et bouton « 📅 Réserver ma démo » : le message <i>est</i> la démonstration du produit. Repli SMS automatique si son mobile ne gère pas le RCS.</div>
     <div id="rcs-dest" style="font-size:13px;font-weight:700;margin-bottom:8px"></div>
     <textarea class="field" id="rcs-texte" rows="5" style="width:100%;font-size:12.5px" placeholder="Texte du message…"></textarea>
+    <div id="rcs-repli" style="display:none;margin-top:8px;padding:9px 11px;border-radius:9px;background:var(--paper);border:1px solid var(--line);font-size:11.5px;line-height:1.5;color:var(--ink-soft)"></div>
     <div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px">La mention « répondez STOP » est ajoutée automatiquement (prospection B2B). Coût ≈ 1 crédit SoReach.</div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
       <button class="btn" style="background:var(--paper)" onclick="document.getElementById('rcs-modal').style.display='none'">Annuler</button>
@@ -2144,7 +2145,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v364';
+const VERSION='v365';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2294,21 +2295,64 @@ async function ouvrirRcsProspectFiche(i){
   if(z)z.value=(dd&&dd.texte)||'';
  }catch(_){ if(z)z.value=''; }
 }
+// 📊 Envoyer L'ANALYSE par RCS, avec bascule SMS. Même tuyau que le RCS de démonstration
+// (E.164, repli SMS, conso, trace) : seule la carte change — titre, bouton, destination.
+async function ouvrirRcsPrez(i){
+ const e=REAL[i];
+ if(!e||!e._prez||!e._prez.jeton){toast('Génère d\'abord l\'analyse de cette fiche');return;}
+ if(e._prez.expiree){toast('Le lien de cette analyse a expiré — régénère-la avant de l\'envoyer');return;}
+ const cs=contactsDe(e)||[];
+ const c=cs.find(x=>x&&x.enrich&&x.enrich.telephone&&estMobile(x.enrich.telephone))||cs.find(x=>x&&x.enrich&&x.enrich.telephone);
+ let tel=(c&&c.enrich&&c.enrich.telephone)||null;
+ // Un RCS n'a de sens que sur un MOBILE : le standard de l'enseigne ne le recevra pas.
+ if(!tel||!estMobile(tel)){
+  const saisi=prompt('Sur quel MOBILE envoyer l\'analyse ?\n\nLe RCS n\'arrive que sur un mobile ; un standard fixe ne recevra rien.',tel||'');
+  tel=String(saisi||'').trim();
+  if(!tel){return;}
+  if(!estMobile(tel)&&!await confirmSofy('Ce numéro n\'a pas l\'air d\'un mobile',
+    tel+'\n\nLe RCS et le SMS n\'aboutiront probablement pas. Envoyer quand même ?','Envoyer quand même'))return;
+ }
+ const nomC=c?((c.prenom||'')+' '+(c.nom||'')).trim():'';
+ RCS_CTX={mode:'prez',jeton:e._prez.jeton,tel:tel,
+  email_cle:(c&&c.enrich&&c.enrich.email)||null,cle_fiche:clesFiche(e)[0]||null,liste_id:state.savedId||null,
+  entreprise:enseigneDe(e)||e.nom||''};
+ const t=document.getElementById('rcs-titre');if(t)t.textContent='📊 Envoyer l\'analyse par RCS';
+ const intro=document.getElementById('rcs-intro');
+ if(intro)intro.innerHTML='Le prospect re\u00e7oit une <b>rich-card</b> \u2014 visuel, texte et bouton <b>\u00ab \U0001f4ca Voir mon analyse \u00bb</b> qui ouvre sa page priv\u00e9e. Si son mobile ne g\u00e8re pas le RCS, un <b>SMS</b> part automatiquement avec le m\u00eame lien.';
+ const dd=document.getElementById('rcs-dest');
+ if(dd)dd.textContent='📱 '+tel+(nomC?' \u2014 '+nomC:'')+' \u00b7 '+(enseigneDe(e)||e.nom||'');
+ const z=document.getElementById('rcs-texte');if(z)z.value='Chargement\u2026';
+ document.getElementById('rcs-modal').style.display='flex';
+ try{
+  const p=new URLSearchParams({mode:'prez',jeton:e._prez.jeton,prenom:(nomC||'').split(' ')[0]||'',
+   entreprise:enseigneDe(e)||e.nom||''});
+  const r=await api('/api/rcs-prospect?'+p.toString());const d=await r.json();
+  if(z)z.value=(d&&d.texte)||'';
+  const rp=document.getElementById('rcs-repli');
+  if(rp&&d&&d.repli_sms){
+   rp.style.display='';
+   rp.innerHTML='<b>Repli SMS</b> (si le mobile ne g\u00e8re pas le RCS) \u2014 '+htmlSafe(d.alphabet||'')+', '
+    +(d.segments_sms||1)+' segment(s) :<br><span style="font-family:ui-monospace,Menlo,monospace">'+htmlSafe(d.repli_sms)+'</span>';
+  }
+ }catch(_){ if(z)z.value=''; }
+}
+
 async function envoyerRcsProspect(){
  if(!RCS_CTX)return;
  const btn=document.getElementById('rcs-btn');const txt=((document.getElementById('rcs-texte')||{}).value||'').trim();
  if(!txt){toast('Le texte est vide');return;}
  if(btn){btn.disabled=true;btn.textContent='⏳ Envoi…';}
+ const estPrez=!!(RCS_CTX&&RCS_CTX.mode==='prez');
  try{
   const r=await api('/api/rcs-prospect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...RCS_CTX,texte:txt})});
   const d=await r.json();
-  if(d.ok){toast('💬 Envoyé ('+d.canal+') — tracé dans le bloc-notes');document.getElementById('rcs-modal').style.display='none';
+  if(d.ok){toast((estPrez?'📊 Analyse envoyée par ':'💬 Envoyé (')+d.canal+(estPrez?'':')')+' — tracé dans le bloc-notes');document.getElementById('rcs-modal').style.display='none';
    try{const i=REAL.findIndex(x=>x&&x._open);if(i>=0){REAL[i]._actLoaded=false;chargerActiviteDB(i);}}catch(_){}
   }
   else if(r.status===409){toast('⚠️ '+(d.erreur||'RCS déjà envoyé à ce lead'));document.getElementById('rcs-modal').style.display='none';}
   else toast('RCS : '+(d.detail||d.erreur||'refusé'));
  }catch(e){toast('Erreur réseau : '+e.message);}
- finally{if(btn){btn.disabled=false;btn.textContent='💬 Envoyer le RCS';}}
+ finally{if(btn){btn.disabled=false;btn.textContent=(RCS_CTX&&RCS_CTX.mode==='prez')?'📊 Envoyer l\'analyse':'💬 Envoyer le RCS';}}
 }
 // 📚 Bibliothèque de sources à surveiller (config 'sources_veille') — rappel DM Slack le lundi
 async function chargerSources(){
@@ -5985,6 +6029,7 @@ function prezHtml(e,i){
     <a class="act act-call" style="padding:3px 10px;font-size:12px;text-decoration:none" href="${htmlSafe(p.url)}?apercu=1" target="_blank" title="Ouvrir la page telle que le client la voit. Ta visite n'est pas comptée dans les ouvertures.">👁 Voir</a>
     <button class="act act-copy" style="padding:3px 10px;font-size:12px" onclick="navigator.clipboard.writeText(decodeURIComponent('${jsArg(p.url)}'));toast('Lien copié ✓')">📋 Copier le lien</button>
     <button class="act act-copy" style="padding:3px 10px;font-size:12px" onclick="ouvrirEditeur('${jsArg(p.jeton)}')" title="Relire et corriger avant l'envoi">✏️ Modifier</button>
+    <button class="act act-call" style="padding:3px 10px;font-size:12px" onclick="ouvrirRcsPrez(${i})" title="Rich-card RCS avec bouton « Voir mon analyse » — repli SMS automatique si le mobile ne gère pas le RCS">💬 Envoyer par RCS</button>
     <button class="act" style="padding:3px 10px;font-size:12px" onclick="supprimerPrez('${jsArg(p.jeton)}','${jsArg(e.nom||'')}')" title="Supprimer — le lien cesse immédiatement de fonctionner">🗑</button>
     <span style="font-size:11.5px;color:var(--ink-soft)">${htmlSafe(quand)}</span>
    </div>`}
@@ -6370,6 +6415,11 @@ async function completerMesures(i){
  // planche « position locale » n'existait pas, alors que le relevé avait échoué sans le dire.
  const rater=(quoi,d)=>erreurs.push(quoi+' : '+String((d&&(d.erreur||d.info))||'réponse inattendue')
   +((d&&d.detail)?' ('+String(d.detail).slice(0,90)+')':''));
+ // Sans identifiant de fiche Google, TROIS relevés sur quatre sont impossibles : autant le dire
+ // avec le geste qui débloque, plutôt que d'énumérer trois échecs.
+ if(!pid){
+  erreurs.push('aucune fiche Google rattachée : ni réponses aux avis, ni photos, ni position locale ne sont mesurables. Lance « ↻ Analyser » sur la fiche, ou rattache-la par son lien Maps (➕ Ajouter une fiche).');
+ }
 
  // 1. Réponses aux avis et délai réel (l'API Google ne les expose pas)
  if(pid&&!g.reponses){
@@ -6403,9 +6453,32 @@ async function completerMesures(i){
  }
  // 3. Visibilité dans l'aperçu IA de Google
  if(!(e.gmb||{}).ia_visibilite){
-  const req=requeteLocale(e);
-  if(!req)erreurs.push('aperçu IA : impossible de deviner la requête (activité et ville absentes de la fiche)');
-  else{
+  // requeteLocale() lit d'abord la requête retenue par l'audit ci-dessus : elle vient de la
+  // catégorie Google de la fiche, donc elle existe même quand la fiche Sofy est vide.
+  let req=requeteLocale(e);
+  // Dernier recours : on DEMANDE au SDR plutôt que de renoncer à la meilleure page du document.
+  if(!req){
+   const saisie=prompt('Que taperait un client pour trouver ce métier, sans connaître le nom de l\'enseigne ?\n\n'
+    +'Exemple : « restaurant ailes de poulet Paris ».\n\n'
+    +'Cette fiche n\'a ni activité ni ville, et sa fiche Google n\'a pas rendu de catégorie.',
+    (enseigneDe(e)||e.nom||'')+' '+(e.ville||''));
+   req=String(saisie||'').trim();
+   if(req.length<6){ if(req)erreurs.push('aperçu IA : requête trop courte (6 caractères minimum)');
+    else erreurs.push('aperçu IA : requête non renseignée'); req=''; }
+  }
+  if(req){
+   // Requête saisie à la main alors que l'audit n'en avait pas : on relance l'audit avec elle,
+   // sinon la position locale resterait vide pour rien.
+   const au=(e.gmb||{}).audit;
+   if(pid&&au&&!au.requete){
+    try{
+     const r0=await api('/api/fiche-audit',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({place_id:pid,nom:f.nom||e.nom,requete:req,forcer:true,
+       ll:(f.lat&&f.lng)?('@'+f.lat+','+f.lng+',13z'):''})});
+     const d0=await r0.json();
+     if(d0.ok&&d0.audit){e.gmb=Object.assign({},e.gmb||{},{audit:d0.audit});faits.push('position locale');}
+    }catch(_){}
+   }
    try{
     const r=await api('/api/ai-visibilite',{method:'POST',headers:{'Content-Type':'application/json'},
      body:JSON.stringify({requete:req,domaine:domaineDe(e),nom:enseigneDe(e)||e.nom})});
@@ -6422,12 +6495,26 @@ async function completerMesures(i){
  return {faits,erreurs};
 }
 
-// La requête locale : ce qu'un client tape pour trouver le SERVICE, déduite de l'activité et de
-// la ville. C'est elle qui sert à la position locale ET à l'aperçu IA.
+// La requête locale : ce qu'un client tape pour trouver le SERVICE, sans connaître le nom de
+// l'enseigne. C'est elle qui sert à la position locale ET à l'aperçu IA.
+//
+// Quatre sources, de la plus fiable à la moins fiable. Le 20/08, Buffalo Wild Wings n'avait ni
+// activité ni ville (fiche venue de LinkedIn) et on renonçait — alors que sa fiche GOOGLE porte
+// sa catégorie (« Restaurant de poulet ») et son adresse. On va donc les chercher là.
+function villeDeAdresse(ad){
+ const a=String(ad||'');
+ const m=a.match(/\b\d{5}\b[\s,]*([^,]{2,40})/);
+ if(m)return m[1].trim();
+ const b=a.split(',').map(x=>x.trim()).filter(Boolean);
+ return b.length>=2?b[b.length-2].replace(/\b\d{5}\b/,'').trim():'';
+}
 function requeteLocale(e){
- const act=String(e.activite||e.secteur_rb2b||'').split(/[,;(]/)[0]
+ const g=e.gmb||{}, au=g.audit||{}, f=(g.fiches||[])[0]||g.pire_fiche||{};
+ // Une requête déjà retenue par l'audit fait autorité : elle vient de la fiche Google elle-même.
+ if(au.requete)return String(au.requete).slice(0,90);
+ const act=String(e.activite||e.secteur_rb2b||au.categorie||g.categorie||'').split(/[,;(]/)[0]
   .replace(/\b(autres?|divers|activités?|services? (de|d'))\b/gi,'').trim();
- const ville=e.ville||'';
+ const ville=e.ville||au.ville||villeDeAdresse(f.adresse)||'';
  if(!act&&!ville)return '';
  return [act,ville].filter(Boolean).join(' ').slice(0,90);
 }
@@ -6509,6 +6596,7 @@ async function genererPrez(i){
    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
     <a class="btn btn-primary" href="${htmlSafe(d.url)}?apercu=1" target="_blank" style="text-decoration:none" title="Aperçu interne — ta visite n'est pas comptée">👁 Voir la page du client</a>
     <button class="btn" style="background:var(--paper)" onclick="navigator.clipboard.writeText(decodeURIComponent('${jsArg(d.url)}'));toast('Lien copié ✓')">📋 Copier le lien</button>
+    <button class="btn" style="background:var(--paper)" onclick="document.getElementById('info-modal').style.display='none';ouvrirRcsPrez(${i})" title="Rich-card RCS avec bouton « Voir mon analyse », repli SMS automatique">💬 Envoyer par RCS</button>
    </div>
    <div style="font-size:12px;color:var(--ink-soft);margin-top:12px;line-height:1.5">Relis la page avant de l'envoyer — tes visites ne sont pas comptées, seules celles du prospect le sont. Tu es responsable de ce qui part chez le client. Le lien est valable <strong>${d.jours_validite||15} jours</strong> puis s'éteint. Tu sauras quand il l'ouvre (alerte Slack), et une 2ᵉ alerte part si une <strong>autre personne</strong> le lit — c'est le signe qu'il circule en interne.</div>`;
   document.getElementById('info-modal').style.display='flex';

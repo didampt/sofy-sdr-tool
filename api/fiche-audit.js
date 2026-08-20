@@ -32,11 +32,27 @@ async function ensureAudit() {
     nb_attributs INTEGER,
     position_locale INTEGER,
     requete TEXT,
+    categorie TEXT,
+    ville TEXT,
     concurrents JSONB,
     mesure_le TIMESTAMPTZ DEFAULT NOW(),
     mesure_par TEXT
   )`;
+  // Fiches auditées avant le 20/08 : colonnes ajoutées à la volée (jamais de bump SCHEMA_VERSION).
+  try { await sql`ALTER TABLE fiche_audit ADD COLUMN IF NOT EXISTS categorie TEXT`; } catch (_) {}
+  try { await sql`ALTER TABLE fiche_audit ADD COLUMN IF NOT EXISTS ville TEXT`; } catch (_) {}
   pret = true;
+}
+
+// La ville, extraite d'une adresse française : on repère le code postal et on prend ce qui suit.
+// « 12 Rue de Rivoli, 75001 Paris, France » → « Paris ».
+function villeDe(adresse) {
+  const a = String(adresse || '');
+  const m = a.match(/\b\d{5}\b[\s,]*([^,]{2,40})/);
+  if (m) return m[1].trim();
+  const bouts = a.split(',').map(x => x.trim()).filter(Boolean);
+  // Sans code postal : l'avant-dernier morceau est presque toujours la ville (le dernier = pays).
+  return bouts.length >= 2 ? bouts[bouts.length - 2].replace(/\b\d{5}\b/, '').trim() : null;
 }
 
 export default async function handler(req, res) {
@@ -99,23 +115,35 @@ export default async function handler(req, res) {
     nb_attributs: attributs,
     position_locale: null,
     requete: null,
+    // La catégorie Google et la ville : c'est ce qui manquait le 20/08 sur Buffalo Wild Wings
+    // (fiche venue de LinkedIn, sans activité ni ville) alors que Google, lui, les connaît.
+    categorie: (Array.isArray(fiche.categories) && fiche.categories[0] && (fiche.categories[0].name || fiche.categories[0]))
+      || fiche.type || (Array.isArray(fiche.types) ? fiche.types[0] : null) || null,
+    ville: villeDe(fiche.address || fiche.formatted_address),
     concurrents: null
   };
+  if (audit.categorie) audit.categorie = String(audit.categorie).slice(0, 80);
 
   // ── 2. La position locale : ce que voit un client qui cherche le SERVICE, pas l'enseigne ──
-  const requete = String(b.requete || '').trim();
+  // Si le front n'a pas su deviner la requête (fiche sans activité ni ville), on la déduit ICI :
+  // la fiche Google que nous venons de lire porte sa catégorie et son adresse. C'est la seule
+  // place où l'information existe à coup sûr.
+  const requete = String(b.requete || '').trim()
+    || [audit.categorie, audit.ville].filter(Boolean).join(' ').trim();
   // Les fiches analysées avant août 2026 n'ont pas de coordonnées stockées : SerpApi vient de nous
   // rendre celles de la fiche, on s'en sert plutôt que de renoncer à la position locale.
   const gps = fiche.gps_coordinates || {};
   const ll = String(b.ll || '').trim()
     || ((gps.latitude != null && gps.longitude != null) ? `@${gps.latitude},${gps.longitude},13z` : '');
+  // La requête retenue part TOUJOURS dans la réponse, même si la recherche locale échoue : le
+  // front la réutilise pour l'aperçu IA plutôt que de renoncer faute de l'avoir devinée.
+  audit.requete = requete || null;
   if (requete && ll) {
     try {
       const loc = await lire({ engine: 'google_maps', type: 'search', q: requete, ll });
       const liste = Array.isArray(loc.d.local_results) ? loc.d.local_results : [];
       const moi = liste.findIndex(x => x.place_id === placeId
         || (x.title && audit.nom && String(x.title).toLowerCase() === String(audit.nom).toLowerCase()));
-      audit.requete = requete;
       audit.position_locale = moi >= 0 ? (liste[moi].position || moi + 1) : null;
       // Les trois premiers : c'est à eux que le prospect se compare, pas à une moyenne.
       audit.concurrents = liste.slice(0, 3).map(x => ({
@@ -127,16 +155,18 @@ export default async function handler(req, res) {
   try {
     await sql`INSERT INTO fiche_audit (place_id, nom, photos_total, photos_enseigne,
         description_presente, horaires_presents, nb_categories, nb_attributs,
-        position_locale, requete, concurrents, mesure_le, mesure_par)
+        position_locale, requete, concurrents, categorie, ville, mesure_le, mesure_par)
       VALUES (${audit.place_id}, ${audit.nom}, ${audit.photos_total}, ${audit.photos_enseigne},
               ${audit.description_presente}, ${audit.horaires_presents}, ${audit.nb_categories},
               ${audit.nb_attributs}, ${audit.position_locale}, ${audit.requete},
-              ${JSON.stringify(audit.concurrents)}::jsonb, NOW(), ${user.nom})
+              ${JSON.stringify(audit.concurrents)}::jsonb, ${audit.categorie}, ${audit.ville},
+              NOW(), ${user.nom})
       ON CONFLICT (place_id) DO UPDATE SET nom = EXCLUDED.nom, photos_total = EXCLUDED.photos_total,
         photos_enseigne = EXCLUDED.photos_enseigne, description_presente = EXCLUDED.description_presente,
         horaires_presents = EXCLUDED.horaires_presents, nb_categories = EXCLUDED.nb_categories,
         nb_attributs = EXCLUDED.nb_attributs, position_locale = EXCLUDED.position_locale,
         requete = EXCLUDED.requete, concurrents = EXCLUDED.concurrents,
+        categorie = EXCLUDED.categorie, ville = EXCLUDED.ville,
         mesure_le = NOW(), mesure_par = EXCLUDED.mesure_par`;
   } catch (_) { }
 
