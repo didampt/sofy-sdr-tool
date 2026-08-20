@@ -205,6 +205,7 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
         ${axe.xy.map((c, k) => `<text x="${c[0].toFixed(1)}" y="${H - PY + 24}" class="crb-x">${esc(axe.pts[k].quand || '')}</text>`).join('')}
       </svg>
       ${p.courbe.appui ? `<div class="crb-s2">${md(p.courbe.appui)}</div>` : ''}
+      ${p.courbe.hypothese ? `<div class="crb-hy">${md(p.courbe.hypothese)}</div>` : ''}
     </div>`;
   }
   const jalons = (p.jalons || []).map((x, k) => `
@@ -973,6 +974,11 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .pl.dark .crb-v{fill:var(--ink-d)}
 .crb-x{font-size:14px;text-anchor:middle;fill:#9990C4}
 .pl.dark .crb-x{fill:rgba(255,255,255,.45)}
+/* L'hypothèse de calcul, écrite sous la courbe : un prospect a le droit de savoir d'où sort
+   la pente qu'on lui montre — et c'est ce qui rend le chiffre défendable en rendez-vous. */
+.crb-hy{font-size:11.5px;line-height:1.55;margin-top:9px;padding-left:11px;max-width:96ch;
+ border-left:2px solid var(--line)}
+.pl.light .crb-hy{color:#9990C4} .pl.dark .crb-hy{color:rgba(255,255,255,.42);border-left-color:var(--line-d)}
 .crb-s2{font-size:12.5px;line-height:1.5;margin-top:10px}
 .pl.light .crb-s2{color:#9990C4} .pl.dark .crb-s2{color:rgba(255,255,255,.45)}
 .jls{display:grid;gap:12px;margin-top:30px;grid-template-columns:repeat(auto-fit,minmax(215px,1fr))}
@@ -1066,7 +1072,8 @@ document.querySelectorAll('.wrap').forEach(function(w){w.classList.add('reveal')
 function anime(el){
  if(!document.documentElement.classList.contains('anim'))return; // sans animation, la valeur écrite reste
  var cible=parseFloat(el.dataset.n);if(isNaN(cible)||el.dataset.fait)return;el.dataset.fait='1';
- var u=el.querySelector('.kpi-u'),suf=u?u.outerHTML:'',dec=(String(el.dataset.n).split('.')[1]||'').length;
+ var u=el.querySelector('.kpi-u'),suf=u?u.outerHTML:'';
+ var dec=Math.min(2,(String(el.dataset.n).split('.')[1]||'').length); // 2 décimales au plus
  var t0=null,dur=1100;
  function pas(ts){
   if(!t0)t0=ts;var k=Math.min(1,(ts-t0)/dur),e=1-Math.pow(1-k,3);

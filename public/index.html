@@ -2155,7 +2155,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v366';
+const VERSION='v367';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2334,7 +2334,9 @@ async function ouvrirEnvoiPrez(opt){
  const e=(o.i!=null&&o.i>=0)?REAL[o.i]:null;
  const jeton=o.jeton||(e&&e._prez&&e._prez.jeton);
  if(!jeton){toast('Génère d\'abord l\'analyse de cette fiche');return;}
- if(e&&e._prez&&e._prez.expiree){toast('Le lien de cette analyse a expiré — régénère-la avant de l\'envoyer');return;}
+ // La fiche peut porter plusieurs analyses : on travaille sur CELLE dont le bouton a été cliqué.
+ const cette=(e&&(e._prezToutes||[]).find(x=>x&&x.jeton===jeton))||(e&&e._prez&&e._prez.jeton===jeton?e._prez:null);
+ if(cette&&cette.expiree){toast('Le lien de cette analyse a expiré — régénère-la avant de l\'envoyer');return;}
  // Trois sources de destinataires : les contacts de la fiche, ceux déjà inscrits sur l'analyse
  // (utile depuis Prez sales, où la fiche n'est pas chargée), et la saisie libre.
  const cs=[];
@@ -2342,7 +2344,7 @@ async function ouvrirEnvoiPrez(opt){
  const cleC=c=>String(c.email||c.tel||c.nom||'').toLowerCase().replace(/\s/g,'');
  // L'état de lecture des destinataires déjà inscrits, indexé pour être recollé au contact de la
  // fiche : sans ça, « Léo a ouvert 2 fois » disparaissait dès que la fiche portait aussi Léo.
- const dejaCo=o.destinataires||(e&&e._prez&&e._prez.destinataires)||[];
+ const dejaCo=o.destinataires||(cette&&cette.destinataires)||(e&&e._prez&&e._prez.destinataires)||[];
  const parCle=new Map();
  dejaCo.forEach(d=>{
   [d.email,d.tel,d.nom].filter(Boolean).forEach(v=>parCle.set(String(v).toLowerCase().replace(/\s/g,''),d));
@@ -2426,17 +2428,32 @@ async function lancerEnvoiPrez(){
        cle_fiche:e.nom?(clesFiche(e)[0]||null):null,liste_id:e.nom?(state.savedId||null):null})});
      const dd=await rr.json();
      lignes.push(dd.ok
-      ? `<div style="font-size:12.5px;color:#0F7B4F">✅ ${htmlSafe(c.nom)} — envoyé (${htmlSafe(dd.canal||'')})</div>`
+      ? `<div style="font-size:12.5px;color:#0F7B4F">✅ ${htmlSafe(c.nom)} — envoyé (${htmlSafe(dd.canal||'')})${dd.rcs_echec?`<div style="font-size:11.5px;color:#B45309;font-weight:400">⚠️ le RCS n'est pas parti, c'est le SMS qui a pris le relais : ${htmlSafe(String(dd.rcs_echec).slice(0,160))}</div>`:''}${(dd.rcs_configure===false)?`<div style="font-size:11.5px;color:#B45309;font-weight:400">⚠️ aucun agent RCS configuré (SOFY_API_KEY_V2 / SOFY_RCS_SENDER_ID) — tous les envois partiront en SMS</div>`:''}</div>`
       : `<div style="font-size:12.5px;color:#B91C1C">❌ ${htmlSafe(c.nom)} — ${htmlSafe(dd.detail||dd.erreur||'refusé')}</div>`);
     }catch(err){lignes.push(`<div style="font-size:12.5px;color:#B91C1C">❌ ${htmlSafe(c.nom)} — ${htmlSafe(err.message)}</div>`);}
    }else if(c.canal==='email'){
     // 2b. Email : on prépare tout, le SDR clique et son client mail s'ouvre pré-rempli.
-    const obj='Votre analyse de visibilité locale — '+((e.nom?(enseigneDe(e)||e.nom):ENV_CTX.client)||'');
-    const corps='Bonjour '+((c.nom||'').split(' ')[0]||'')+',\n\n'
-     +'J\'ai préparé une analyse de votre visibilité locale : votre fiche Google, vos avis, votre position quand un client cherche votre métier — et ce que nous pouvons y changer.\n\n'
-     +L.url+'\n\n'
-     +'C\'est une page privée, 2 minutes de lecture. Je reste dispo si vous voulez qu\'on en parle.\n\n'
-     +(state.user?state.user.nom:'')+'\nSofy';
+    // L'email personnalisé déjà rédigé pour cette fiche (objet + corps, adossés à ses mesures)
+    // sert de base : le SDR ne réécrit pas ce que le scoring a déjà écrit. Le lien de l'analyse
+    // remplace la conclusion générique de cet email.
+    const ep=(e.score&&e.score.email)||null;
+    const soc=(e.nom?(enseigneDe(e)||e.nom):ENV_CTX.client)||'';
+    const obj=(ep&&ep.objet)?ep.objet:('Votre analyse de visibilité locale — '+soc);
+    const prenom=(c.nom||'').split(' ')[0]||'';
+    let corps;
+    if(ep&&ep.corps){
+     // On coupe la signature et la relance de l'email de séquence : c'est le lien qui conclut ici.
+     let noyau=String(ep.corps).replace(/\n{3,}/g,'\n\n').trim();
+     noyau=noyau.replace(/\n*(15 minutes|Réservez|Seriez-vous|Qu'en pensez-vous)[\s\S]*$/i,'').trim();
+     corps=noyau+'\n\nJ\'ai mis tout ça à plat dans une page qui vous est réservée — votre fiche, vos avis, votre position quand un client cherche votre métier, et ce que nous pouvons y changer :\n\n'
+      +L.url+'\n\n2 minutes de lecture. Dites-moi ce que vous en pensez.\n\n'+(state.user?state.user.nom:'')+'\nSofy';
+    }else{
+     corps='Bonjour '+prenom+',\n\n'
+      +'J\'ai préparé une analyse de votre visibilité locale : votre fiche Google, vos avis, votre position quand un client cherche votre métier — et ce que nous pouvons y changer.\n\n'
+      +L.url+'\n\n'
+      +'C\'est une page privée, 2 minutes de lecture. Je reste dispo si vous voulez qu\'on en parle.\n\n'
+      +(state.user?state.user.nom:'')+'\nSofy';
+    }
     const href='mailto:'+encodeURIComponent(c.email)+'?subject='+encodeURIComponent(obj)+'&body='+encodeURIComponent(corps);
     lignes.push(`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:5px 0">
       <span style="font-size:12.5px">✉️ ${htmlSafe(c.nom)}</span>
@@ -6091,7 +6108,16 @@ async function supprimerPrez(jeton,client){
   if(d.erreur){toast(d.erreur);return;}
   toast(d.info||'Analyse supprimée');
   // La fiche qui la portait ne doit plus l'afficher
-  REAL.forEach(function(e,i){if(e._prez&&e._prez.jeton===j){delete e._prez;rerender(i);}});
+  REAL.forEach(function(e,i){
+   let bouge=false;
+   if(e._prezToutes&&e._prezToutes.length){
+    const reste=e._prezToutes.filter(x=>x&&x.jeton!==j);
+    if(reste.length!==e._prezToutes.length){e._prezToutes=reste;bouge=true;
+     if(e._prez&&e._prez.jeton===j)e._prez=reste[0]||null;
+     if(!e._prez)delete e._prez;}
+   }else if(e._prez&&e._prez.jeton===j){delete e._prez;bouge=true;}
+   if(bouge)rerender(i);
+  });
   chargerMesPrez();
  }catch(e){toast('Suppression : '+e.message);}
 }
@@ -6137,8 +6163,15 @@ async function chargerMesPrez(){
 
 // L'analyse générée vit dans la fiche, pas dans une fenêtre qui se ferme : le SDR revient
 // dessus des jours plus tard pour renvoyer le lien ou voir s'il a été lu.
+// Une fiche peut porter plusieurs analyses (une générique, une SoConnect…). On les affiche
+// TOUTES : le SDR choisit laquelle envoyer selon l'interlocuteur, et voit laquelle est lue.
 function prezHtml(e,i){
- const p=e._prez;if(!p)return '';
+ const L=(e._prezToutes&&e._prezToutes.length)?e._prezToutes:(e._prez?[e._prez]:[]);
+ if(!L.length)return '';
+ if(L.length===1)return prezCarte(e,i,L[0],1,1);
+ return L.map(function(p,k){return prezCarte(e,i,p,k+1,L.length);}).join('');
+}
+function prezCarte(e,i,p,rang,total){
  const jr=p.jours_restants;
  const etat=p.expiree
   ? '<span class="badge b-signal">⏱ lien expiré</span>'
@@ -6149,8 +6182,8 @@ function prezHtml(e,i){
  const quand=p.derniere_ouverture?('dernière lecture '+tempsRelEngag(p.derniere_ouverture)):'';
  return `<div style="background:var(--card);border:1px solid var(--line);border-left:3px solid #7C3AED;border-radius:0 10px 10px 0;padding:12px 14px;margin-top:10px">
   <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
-   <span style="font-size:13.5px;font-weight:800">🎨 Analyse client</span>
-   <span style="font-size:12px;color:var(--ink-soft)">${htmlSafe(nomModule(p.module))}</span>
+   <span style="font-size:13.5px;font-weight:800">🎨 Analyse client${total>1?' '+rang+'/'+total:''}</span>
+   <span class="badge">${htmlSafe(nomModule(p.module))}</span>
    ${etat}
    <span style="margin-left:auto;font-size:11.5px;color:var(--ink-soft)">${p.expiree?'':(jr!=null?(jr<=3?'<span style="color:#B45309;font-weight:700">expire dans '+jr+' j</span>':'valable '+jr+' j encore'):'')}</span>
   </div>
@@ -6160,7 +6193,7 @@ function prezHtml(e,i){
     <a class="act act-call" style="padding:3px 10px;font-size:12px;text-decoration:none" href="${htmlSafe(p.url)}?apercu=1" target="_blank" title="Ouvrir la page telle que le client la voit. Ta visite n'est pas comptée dans les ouvertures.">👁 Voir</a>
     <button class="act act-copy" style="padding:3px 10px;font-size:12px" onclick="navigator.clipboard.writeText(decodeURIComponent('${jsArg(p.url)}'));toast('Lien copié ✓')">📋 Copier le lien</button>
     <button class="act act-copy" style="padding:3px 10px;font-size:12px" onclick="ouvrirEditeur('${jsArg(p.jeton)}')" title="Relire et corriger avant l'envoi">✏️ Modifier</button>
-    <button class="act act-call" style="padding:3px 10px;font-size:12px" onclick="ouvrirEnvoiPrez({i:${i}})" title="Choisir les destinataires : RCS avec bascule SMS, ou email. Chacun reçoit son propre lien.">📤 Envoyer</button>
+    <button class="act act-call" style="padding:3px 10px;font-size:12px" onclick="ouvrirEnvoiPrez({i:${i},jeton:'${jsArg(p.jeton)}'})" title="Choisir les destinataires : RCS avec bascule SMS, ou email. Chacun reçoit son propre lien.">📤 Envoyer</button>
     <button class="act" style="padding:3px 10px;font-size:12px" onclick="supprimerPrez('${jsArg(p.jeton)}','${jsArg(e.nom||'')}')" title="Supprimer — le lien cesse immédiatement de fonctionner">🗑</button>
     <span style="font-size:11.5px;color:var(--ink-soft)">${htmlSafe(quand)}</span>
    </div>`}
@@ -6177,7 +6210,9 @@ async function chargerPrezListe(){
   let touchees=0;
   REAL.forEach(function(e,i){
    const p=d.par_fiche[e.nom];
-   if(p&&!e._prez){e._prez=p;touchees++;rerender(i);}
+   const tt=(d.toutes_par_fiche||{})[e.nom]||null;
+   if(p&&!e._prez){e._prez=p;e._prezToutes=tt;touchees++;rerender(i);}
+   else if(tt&&!e._prezToutes){e._prezToutes=tt;rerender(i);}
   });
   if(touchees)majKpisReal();
  }catch(_){}

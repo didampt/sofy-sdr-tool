@@ -160,10 +160,15 @@ export default async function handler(req, res) {
     if (cleP) {
       try { await sql`INSERT INTO activites (fiche_cle, source, type, titre, detail, auteur, ts)
         VALUES (${cleP}, 'sms', 'rcs_prez', ${'📊 Analyse envoyée par ' + envoi.canal},
-          ${url + ' → ' + tel}, ${user.nom || 'système'}, NOW())`; } catch (_) {}
+          ${url + ' → ' + tel + (envoi.rcs_echec ? ' · RCS non parti : ' + String(envoi.rcs_echec).slice(0, 180) : '')},
+          ${user.nom || 'système'}, NOW())`; } catch (_) {}
     }
     return res.status(200).json({ ok: true, canal: envoi.canal, id: envoi.id || null, tel, url,
-      repli_sms: repli, segments_sms: diag.segments });
+      repli_sms: repli, segments_sms: diag.segments,
+      // Pourquoi le RCS n'est pas parti : sans ça, « envoyé par sms (v1) » ne dit pas si l'agent
+      // RCS a refusé, si la clé manque, ou si le mobile ne gère simplement pas le RCS.
+      rcs_echec: (envoi && envoi.rcs_echec) || null,
+      rcs_configure: !!(cleV2() && process.env.SOFY_RCS_SENDER_ID) });
   }
   // Clé de trace : email du contact, sinon clé de fiche (nom:…) — sans repli, les fiches sans
   // email n'avaient AUCUNE note dans le bloc-notes (constat Didier 07/08).

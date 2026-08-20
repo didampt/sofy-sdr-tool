@@ -620,10 +620,13 @@ Remplis le cadre du document — tout sauf les duels, qui sont rédigés à part
 · points — 3 ou 4 points. "valeur" est un NOMBRE (1.7, jamais "1,7"). Le premier point est SA
   valeur mesurée aujourd'hui ("quand": "aujourd'hui"), puis "3 mois", "6 mois", "12 mois".
   Si tu n'as AUCUNE valeur de départ mesurée, mets points: [].
-· courbe2_* et points2 — une SECONDE courbe, sur un autre indicateur que la première : si la
-  première suit la note, la seconde suit le VOLUME d'avis (ou l'inverse). Les deux se lisent
-  ensemble : le volume explique la note. Mêmes règles — valeurs numériques, premier point mesuré,
-  points2: [] si tu n'as pas de départ mesuré pour ce second indicateur.
+· ⚠️ Les DEUX COURBES (note et volume d'avis) sont CALCULÉES par le serveur à partir des valeurs
+  mesurées : n'écris AUCUN chiffre de trajectoire, ni dans traj_texte, ni ailleurs. Pas de
+  « 4,2★ dans 12 mois », pas de « 350 avis ». Deux analyses du même client doivent afficher la
+  même prévision ; c'est le calcul qui la garantit, pas toi. Laisse points, points2, courbe_max
+  et courbe2_* vides.
+· traj_texte — explique le MÉCANISME, pas les chiffres : pourquoi le volume d'avis récents tire
+  la note, et ce que le prospect doit mettre en place pour que ça arrive.
 · courbe_appui — le cas client ou le chiffre sourcé qui rend cette pente défendable
 · jalons — 3 étapes de déploiement, tirées du bloc des 90 premiers jours
 · preuve_titre / preuve_texte — pourquoi ce cas client éclaire le sien, secteur différent assumé
@@ -641,7 +644,67 @@ Remplis le cadre du document — tout sauf les duels, qui sont rédigés à part
 // qui écarte ce qui est vide — une planche sans contenu ne peut plus atteindre le prospect,
 // quoi que le modèle ait renvoyé.
 const plein = v => typeof v === 'string' ? v.trim().length > 0 : !!v;
-const chiffresValides = a => (a || []).filter(x => x && plein(x.valeur));
+// Un nombre écrit par un modèle arrive parfois avec la queue du binaire : « 3,400000000000 »
+// s'est affiché tel quel sur la planche Marimax du 20/08. On le remet en forme AVANT de
+// l'enregistrer : deux décimales au maximum, zéros de fin coupés, virgule française.
+const nettoyerNombre = (v) => {
+  const t = String(v == null ? '' : v).trim();
+  // Un « chiffre » peut être « 85,7 % », « x2 », « +30 % » : on ne touche qu'au nombre lui-même.
+  return t.replace(/-?\d+[.,]\d{3,}/g, (m) => {
+    const n = Number(m.replace(',', '.'));
+    if (!isFinite(n)) return m;
+    return String(Math.round(n * 100) / 100).replace('.', ',');
+  });
+};
+
+// ── La trajectoire : calculée, jamais rédigée ────────────────────────────────────────────────
+// Deux analyses du MÊME client donnaient deux prévisions différentes (AGS le 20/08 : 4,2★ et
+// 350 avis dans un cas, 4,0★ et 330 dans l'autre). Un chiffre qui change d'un tir à l'autre n'est
+// pas une prévision, c'est une invention — et il est indéfendable en rendez-vous. Le calcul est
+// donc fait ici, à partir des seules valeurs mesurées, avec des hypothèses écrites en clair sur
+// la planche. Même prospect, même trajectoire, à la virgule près.
+//
+// Le modèle est ARITHMÉTIQUE et volontairement prudent : la note affichée est traitée comme la
+// moyenne des avis existants, et chaque avis sollicité entre dans cette moyenne. Google pondère
+// en réalité la fraîcheur — la vraie remontée est donc plus rapide que cette courbe, qui est un
+// plancher, pas une promesse.
+//
+// Les deux constantes sont les seuls réglages. Le rythme de collecte vient du seul chiffre
+// MESURÉ que nous possédions (Groupe Kiosque : 436 avis en 6 mois sur 32 points de vente, soit
+// 2,3 avis par mois et par établissement). À remplacer par le rythme réel d'un secteur dès que
+// nous l'aurons — via les variables d'environnement, sans toucher au code.
+const AVIS_MOIS_PAR_FICHE = parseFloat(process.env.PREZ_AVIS_MOIS_PAR_FICHE || '2.3');
+const NOTE_AVIS_SOLLICITE = parseFloat(process.env.PREZ_NOTE_AVIS_SOLLICITE || '4.7');
+const JALONS_TRAJ = [[0, "aujourd'hui"], [3, '3 mois'], [6, '6 mois'], [12, '12 mois']];
+
+function trajectoire(mes) {
+  const g = (mes && mes.google) || {};
+  const n0 = Number(g.total_avis), a0 = Number(g.note_moyenne);
+  if (!isFinite(n0) || !isFinite(a0) || n0 <= 0 || a0 <= 0) return null;
+  const fiches = Math.max(1, Number(g.nb_fiches) || 1);
+  const parMois = AVIS_MOIS_PAR_FICHE * fiches;
+  const notes = [], volumes = [];
+  for (const [m, lib] of JALONS_TRAJ) {
+    const nouveaux = Math.round(parMois * m);
+    const note = (a0 * n0 + NOTE_AVIS_SOLLICITE * nouveaux) / (n0 + nouveaux);
+    notes.push({ quand: lib, valeur: Math.round(Math.min(5, note) * 10) / 10 });
+    volumes.push({ quand: lib, valeur: n0 + nouveaux });
+  }
+  const finale = notes[notes.length - 1].valeur;
+  return {
+    notes, volumes, par_mois: Math.round(parMois * 10) / 10,
+    hypothese: `Calcul arithmétique sur vos ${n0} avis actuels (${String(a0).replace('.', ',')}★), `
+      + `avec ${String(Math.round(parMois * 10) / 10).replace('.', ',')} avis sollicités par mois `
+      + `(${fiches > 1 ? `${fiches} fiches × ` : ''}rythme mesuré chez Groupe Kiosque : 436 avis en 6 mois sur 32 points de vente) `
+      + `notés ${String(NOTE_AVIS_SOLLICITE).replace('.', ',')}/5 en moyenne. `
+      + `Google pondère la fraîcheur des avis : cette courbe est donc un plancher, pas une promesse.`,
+    resume: `${String(a0).replace('.', ',')}★ → ${String(finale).replace('.', ',')}★ en 12 mois, `
+      + `et ${n0} → ${volumes[volumes.length - 1].valeur} avis.`
+  };
+}
+
+const chiffresValides = a => (a || []).filter(x => x && plein(x.valeur))
+  .map(x => ({ ...x, valeur: nettoyerNombre(x.valeur) }));
 
 function assembler(cadre, duelsBruts, mes, blocs) {
   const c = cadre || {};
@@ -721,7 +784,7 @@ function assembler(cadre, duelsBruts, mes, blocs) {
         resultat: plein(d.resultat) ? d.resultat : null
       },
       chiffre_cle: plein(d.chiffre)
-        ? { valeur: d.chiffre, unite: d.chiffre_unite, legende: d.chiffre_legende, source: d.chiffre_source }
+        ? { valeur: nettoyerNombre(d.chiffre), unite: d.chiffre_unite, legende: d.chiffre_legende, source: d.chiffre_source }
         : null,
       maquette_rcs: (plein(d.rcs_titre) || plein(d.rcs_texte))
         ? { expediteur: mes.nom || '', titre: d.rcs_titre, texte: d.rcs_texte, bouton: d.rcs_bouton }
@@ -730,23 +793,25 @@ function assembler(cadre, duelsBruts, mes, blocs) {
     });
   });
 
-  const pts = (c.points || []).filter(x => x && typeof x.valeur === 'number' && isFinite(x.valeur));
+  // Les points ne viennent PLUS de la rédaction : ils sont calculés (cf. trajectoire()).
+  const tr = trajectoire(mes);
   const jal = (c.jalons || []).filter(x => x && plein(x.quand) && plein(x.texte));
-  if (pts.length > 1 || jal.length) {
+  if (tr || jal.length) {
     pl.push({
       role: 'trajectoire', eyebrow: 'LA TRAJECTOIRE VISÉE',
       titre: c.traj_titre, texte: c.traj_texte,
-      courbe: pts.length > 1 ? {
-        indicateur: c.courbe_indicateur, unite: c.courbe_unite,
-        max: c.courbe_max, points: pts, appui: c.courbe_appui
+      courbe: tr ? {
+        indicateur: 'Note Google' + ((mes.google && mes.google.nb_fiches > 1) ? ' moyenne du réseau' : ''),
+        unite: '★', max: 5, points: tr.notes,
+        appui: plein(c.courbe_appui) ? c.courbe_appui : null,
+        hypothese: tr.hypothese
       } : null,
-      // Deux courbes valent mieux qu'une : le volume d'avis explique la note (retour Didier —
-      // les deux versions générées l'intéressaient, autant les montrer ensemble).
-      courbe2: (() => {
-        const p2 = (c.points2 || []).filter(x => x && typeof x.valeur === 'number' && isFinite(x.valeur));
-        return p2.length > 1 ? { indicateur: c.courbe2_indicateur, unite: c.courbe2_unite,
-          max: c.courbe2_max, points: p2 } : null;
-      })(),
+      // Deux courbes : le volume d'avis explique la note. La seconde est le levier, la première
+      // la conséquence — les montrer ensemble évite de faire passer la note pour magique.
+      courbe2: tr ? {
+        indicateur: 'Nombre total d\'avis', unite: ' avis',
+        max: Math.ceil(tr.volumes[tr.volumes.length - 1].valeur * 1.15), points: tr.volumes
+      } : null,
       jalons: jal
     });
   }
@@ -965,16 +1030,21 @@ export default async function handler(req, res) {
           jsonb_array_length(COALESCE(lecteurs,'[]'::jsonb)) AS lecteurs_distincts
         FROM prez WHERE liste_id = ${parseInt(q.liste_id, 10) || 0} AND cle_fiche IS NOT NULL
         ORDER BY created_at DESC`;
-      const parFiche = {};
+      // TOUTES les analyses d'une fiche, pas seulement la dernière : un même prospect peut avoir
+      // une version générique et une version SoConnect, et le SDR choisit celle qu'il envoie
+      // (demande Didier 20/08). `par_fiche` garde la plus récente pour compatibilité ; la liste
+      // complète part dans `toutes_par_fiche`.
+      const parFiche = {}, toutes = {};
       for (const r of rows) {
-        if (parFiche[r.cle_fiche]) continue; // la plus récente gagne
-        parFiche[r.cle_fiche] = {
+        const enrichi = {
           ...r, url: BASE_PUB() + '/p/' + r.jeton,
           expiree: r.expire_le ? new Date(r.expire_le).getTime() < Date.now() : false,
           jours_restants: r.expire_le ? Math.ceil((new Date(r.expire_le).getTime() - Date.now()) / 86400000) : null
         };
+        if (!parFiche[r.cle_fiche]) parFiche[r.cle_fiche] = enrichi;   // la plus récente
+        (toutes[r.cle_fiche] = toutes[r.cle_fiche] || []).push(enrichi);
       }
-      return res.status(200).json({ ok: true, par_fiche: parFiche, total: rows.length });
+      return res.status(200).json({ ok: true, par_fiche: parFiche, toutes_par_fiche: toutes, total: rows.length });
     }
     if (q.jeton) {
       const [row] = await sql`SELECT * FROM prez WHERE jeton = ${String(q.jeton)}`;
