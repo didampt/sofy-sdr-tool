@@ -1057,6 +1057,7 @@ Spot-Hit</textarea>
       <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:16px">
         <button class="btn btn-primary" id="pz-t-gen" onclick="sousOngletPrez('gen')">Générateur</button>
         <button class="btn" id="pz-t-kb" style="background:var(--paper)" onclick="sousOngletPrez('kb')">Base de connaissance</button>
+        <button class="btn" id="pz-t-vis" style="background:var(--paper)" onclick="sousOngletPrez('vis')">🖼 Visuels</button>
         <button class="btn" id="pz-t-mes" style="background:var(--paper)" onclick="sousOngletPrez('mes')">Mes présentations</button>
         <button class="btn" id="pz-t-edit" style="background:var(--paper);display:none" onclick="sousOngletPrez('edit')">✏️ Éditeur</button>
       </div>
@@ -1093,6 +1094,19 @@ Spot-Hit</textarea>
         </div>
         <div id="kb-form" style="display:none;margin-bottom:16px"></div>
         <div id="kb-liste"><p style="color:var(--ink-soft)">Chargement…</p></div>
+      </div>
+
+      <!-- ── Bibliothèque de visuels ── -->
+      <div id="pz-vis" style="display:none">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+          <label class="btn btn-primary" style="cursor:pointer">🖼 Ajouter des images
+            <input type="file" id="vis-f" accept="image/*" multiple style="display:none" onchange="choisirVisuels(this)">
+          </label>
+          <span style="font-size:12.5px;color:var(--ink-soft)">Jusqu'à 8 à la fois · compressées ici, aucune limite de taille en entrée</span>
+          <span id="vis-compteurs" style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto"></span>
+        </div>
+        <div id="vis-form" style="margin-bottom:16px"></div>
+        <div id="vis-liste"><p style="color:var(--ink-soft)">Chargement…</p></div>
       </div>
 
       <!-- ── Éditeur (ouvert depuis une présentation) ── -->
@@ -2118,7 +2132,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v345';
+const VERSION='v346';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4866,7 +4880,7 @@ function estAdmin(){return !!(state.user&&['admin','superadmin'].includes(state.
 function ouvrirPrez(){sousOngletPrez(window._pzOnglet||'gen');}
 function sousOngletPrez(o){
  window._pzOnglet=o;
- ['gen','kb','mes','edit'].forEach(function(x){
+ ['gen','kb','vis','mes','edit'].forEach(function(x){
   const p=document.getElementById('pz-'+x),b=document.getElementById('pz-t-'+x);
   if(p)p.style.display=(x===o?'':'none');
   if(b){b.className='btn'+(x===o?' btn-primary':'');b.style.background=(x===o?'':'var(--paper)');}
@@ -4874,6 +4888,7 @@ function sousOngletPrez(o){
  const be=document.getElementById('pz-t-edit');
  if(be)be.style.display=(o==='edit'?'':'none');
  if(o==='gen')chargerMaPhoto();
+ if(o==='vis')chargerVisuels();
  if(o==='kb')chargerKb();
  if(o==='mes')chargerMesPrez();
 }
@@ -5114,6 +5129,53 @@ async function lancerImportKb(){
  }finally{v.fermer();}
 }
 
+// ── Compression d'image dans le navigateur ────────────────────────────────
+// Aucun utilisateur ne doit redimensionner une capture d'écran à la main pour déposer sa photo.
+// On redimensionne et on réencode ici : le serveur ne voit qu'un fichier déjà au format voulu,
+// et la limite de 4,5 Mo par requête Vercel n'est jamais atteinte.
+function chargerImage(fichier){
+ return new Promise(function(ok,ko){
+  const url=URL.createObjectURL(fichier), img=new Image();
+  img.onload=function(){URL.revokeObjectURL(url);ok(img);};
+  img.onerror=function(){URL.revokeObjectURL(url);ko(new Error('Image illisible'));};
+  img.src=url;
+ });
+}
+
+// Renvoie { data, ko, largeur, hauteur, avantKo }. Réduit la qualité puis les dimensions jusqu'à
+// tenir sous maxKo — dans cet ordre, parce qu'un JPEG à 72 % reste net alors qu'une image
+// divisée par deux ne se rattrape pas.
+async function compresserImage(fichier, maxLargeur, maxKo, carre){
+ const img=await chargerImage(fichier);
+ const avantKo=Math.round(fichier.size/1024);
+ let l=Math.min(maxLargeur, img.naturalWidth||img.width);
+ let h=Math.round((img.naturalHeight||img.height)*l/(img.naturalWidth||img.width));
+ const c=document.createElement('canvas'), ctx=c.getContext('2d');
+ for(let etape=0;etape<6;etape++){
+  if(carre){
+   // Portrait : on recadre au centre en 4/5, le format de la couverture.
+   const cible=Math.round(l*1.25);
+   c.width=l;c.height=cible;
+   ctx.fillStyle='#fff';ctx.fillRect(0,0,l,cible);
+   const ech=Math.max(l/(img.naturalWidth||img.width), cible/(img.naturalHeight||img.height));
+   const dw=(img.naturalWidth||img.width)*ech, dh=(img.naturalHeight||img.height)*ech;
+   ctx.drawImage(img,(l-dw)/2,(cible-dh)/2,dw,dh);
+  }else{
+   c.width=l;c.height=h;
+   ctx.fillStyle='#fff';ctx.fillRect(0,0,l,h); // les PNG transparents deviendraient noirs en JPEG
+   ctx.drawImage(img,0,0,l,h);
+  }
+  for(const q of [0.86,0.76,0.66,0.56,0.46]){
+   const data=c.toDataURL('image/jpeg',q);
+   const ko=Math.round(data.length*0.75/1024);
+   if(ko<=maxKo)return {data:data,ko:ko,largeur:c.width,hauteur:c.height,avantKo:avantKo};
+  }
+  l=Math.round(l*0.8);h=Math.round(h*0.8);
+ }
+ const data=c.toDataURL('image/jpeg',0.4);
+ return {data:data,ko:Math.round(data.length*0.75/1024),largeur:c.width,hauteur:c.height,avantKo:avantKo};
+}
+
 async function chargerMaPhoto(){
  try{
   const r=await api('/api/sdrs?ma_photo=1'); const d=await r.json();
@@ -5127,8 +5189,13 @@ async function envoyerMaPhoto(retirer){
  if(!retirer){
   const inp=document.getElementById('ma-photo-f'),f=inp&&inp.files&&inp.files[0];
   if(!f){toast('Choisis une image');return;}
-  if(f.size>260000){toast('Image trop lourde — 250 Ko maximum (recadre-la ou réduis-la)');return;}
-  data=await new Promise(function(ok,ko){const fr=new FileReader();fr.onload=()=>ok(String(fr.result));fr.onerror=ko;fr.readAsDataURL(f);});
+  if(!/^image\//.test(f.type)){toast('Ce fichier n\'est pas une image');return;}
+  toast('⏳ Compression…');
+  try{
+   const r=await compresserImage(f,640,180,true); // recadrée en 4/5 pour la couverture
+   data=r.data;
+   toast('Photo réduite : '+r.avantKo+' Ko → '+r.ko+' Ko ('+r.largeur+'×'+r.hauteur+')');
+  }catch(err){toast('Image illisible : '+err.message);return;}
  }
  try{
   const r=await api('/api/sdrs',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({ma_photo:retirer?null:data})});
@@ -5136,6 +5203,143 @@ async function envoyerMaPhoto(retirer){
   toast(d.erreur||d.info||'Enregistré');
   chargerMaPhoto();
  }catch(e){toast('Photo : '+e.message);}
+}
+
+// ═══ BIBLIOTHÈQUE DE VISUELS ═══════════════════════════════════════════════
+// Les images entrent par lots, compressées dans le navigateur. Deux champs sont obligatoires :
+// la description (c'est elle qui permet à l'IA de poser l'image au bon endroit) et les droits.
+const VIS_TYPES={humain:'👥 Humain',ambiance:'🏪 Ambiance',produit:'🖥 Produit',client:'🏆 Client'};
+let VIS=[], VIS_ATTENTE=[];
+
+async function chargerVisuels(){
+ const c=document.getElementById('vis-liste');
+ try{
+  const r=await api('/api/kb-visuels'); const d=await r.json();
+  if(d.erreur){c.innerHTML='<p style="color:var(--danger)">'+htmlSafe(d.erreur)+'</p>';return;}
+  VIS=d.visuels||[];
+  document.getElementById('vis-compteurs').innerHTML=
+   `<span class="badge b-gmb">${d.utilisables||0} utilisable(s)</span>`+
+   (d.en_attente?`<span class="badge b-signal">⏳ ${d.en_attente} à valider</span>`:'')+
+   `<span class="badge">${Math.round((d.poids_total_ko||0)/1024*10)/10} Mo</span>`;
+  rendreVisuels();
+ }catch(e){c.innerHTML='<p style="color:var(--danger)">Bibliothèque : '+htmlSafe(e.message)+'</p>';}
+}
+
+function rendreVisuels(){
+ const c=document.getElementById('vis-liste');
+ if(!VIS.length){
+  c.innerHTML='<div style="background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:20px;max-width:640px"><p style="margin:0 0 8px;font-weight:700">Aucun visuel pour l\'instant.</p><p style="margin:0;color:var(--ink-soft);line-height:1.6">Dépose des photos d\'équipe, des images d\'ambiance par secteur (boutique, garage, entrepôt) et des captures produit. L\'IA les posera sur les planches dont le sujet correspond, et tu pourras aussi les choisir à la main dans l\'éditeur.</p></div>';
+  return;
+ }
+ const grp=[['⏳ À valider',VIS.filter(v=>v.statut==='propose')],['✅ Utilisables',VIS.filter(v=>v.statut==='valide')],['🚫 Refusés',VIS.filter(v=>v.statut==='refuse')]];
+ c.innerHTML=grp.filter(g=>g[1].length).map(function(g){
+  return `<h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-soft);margin:18px 0 10px">${g[0]} (${g[1].length})</h3>
+   <div style="display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(250px,1fr))">${g[1].map(visuelCarte).join('')}</div>`;
+ }).join('');
+}
+
+function visuelCarte(v){
+ return `<div style="background:var(--card);border:1px solid var(--line);${v.statut==='propose'?'border-left:3px solid #B45309;':''}border-radius:11px;overflow:hidden">
+  ${v.vignette?`<img src="${htmlSafe(v.vignette)}" alt="" style="width:100%;height:130px;object-fit:cover;display:block;background:var(--paper)">`
+   :`<div style="height:130px;background:var(--paper);display:flex;align-items:center;justify-content:center;color:var(--ink-soft);font-size:12px">sans vignette</div>`}
+  <div style="padding:11px 13px">
+   <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+    <span class="badge">${htmlSafe(VIS_TYPES[v.type]||v.type)}</span>
+    ${v.secteur?`<span style="font-size:11.5px;color:var(--ink-soft)">${htmlSafe(v.secteur)}</span>`:''}
+    ${v.usages?`<span class="badge b-gmb">${v.usages} usage(s)</span>`:''}
+   </div>
+   <div style="font-size:13px;line-height:1.45">${htmlSafe(v.description)}</div>
+   <div style="font-size:11.5px;color:var(--ink-soft);margin-top:7px;padding-top:7px;border-top:1px solid var(--line)">
+    ⚖️ ${htmlSafe(v.droits)}<br>${v.largeur?v.largeur+'×'+v.hauteur+' · ':''}${v.poids_ko||'?'} Ko · proposé par ${htmlSafe(v.propose_par||'?')}
+    ${v.motif_refus?'<br><span style="color:var(--danger)">refusé : '+htmlSafe(v.motif_refus)+'</span>':''}
+   </div>
+   <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:9px">
+    ${(v.statut==='propose'&&estAdmin())?`<button class="act act-call" style="padding:2px 9px;font-size:11.5px" onclick="validerVisuel(${v.id},true)">✅ Valider</button>
+      <button class="act" style="padding:2px 9px;font-size:11.5px" onclick="validerVisuel(${v.id},false)">🚫 Refuser</button>`:''}
+    ${estAdmin()?`<button class="act" style="padding:2px 9px;font-size:11.5px" onclick="retirerVisuel(${v.id})">🗑</button>`:''}
+   </div>
+  </div>
+ </div>`;
+}
+
+async function validerVisuel(id,ok){
+ let motif=null;
+ if(!ok){motif=prompt('Motif du refus :');if(motif===null)return;}
+ try{
+  const r=await api('/api/kb-visuels',{method:'PUT',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({id,action:ok?'valider':'refuser',motif:motif||''})});
+  const d=await r.json(); toast(d.erreur||d.info||'Fait'); chargerVisuels();
+ }catch(e){toast('Validation : '+e.message);}
+}
+async function retirerVisuel(id){
+ if(!await confirmSofy('Retirer ce visuel ?','Il ne sera plus proposé pour les prochaines analyses. Les documents déjà envoyés le conservent.','Retirer'))return;
+ try{
+  const r=await api('/api/kb-visuels?id='+id,{method:'DELETE'});
+  const d=await r.json(); toast(d.erreur||d.info||'Retiré'); chargerVisuels();
+ }catch(e){toast('Retrait : '+e.message);}
+}
+
+// ── Dépôt : compression puis un formulaire par image ──
+async function choisirVisuels(inp){
+ const fichiers=[].slice.call(inp.files||[]).slice(0,8);
+ if(!fichiers.length)return;
+ const box=document.getElementById('vis-form');
+ box.innerHTML='<p style="color:var(--ink-soft)">⏳ Compression de '+fichiers.length+' image(s)…</p>';
+ VIS_ATTENTE=[];
+ for(const f of fichiers){
+  if(!/^image\//.test(f.type))continue;
+  try{
+   const gd=await compresserImage(f,1600,600,false);
+   const pt=await compresserImage(f,420,60,false);
+   VIS_ATTENTE.push({nom:f.name,image:gd.data,vignette:pt.data,largeur:gd.largeur,hauteur:gd.hauteur,
+    poids_ko:gd.ko,avantKo:gd.avantKo,type:'ambiance',module:'tous',description:'',droits:'',secteur:''});
+  }catch(e){}
+ }
+ rendreDepot();
+}
+
+function rendreDepot(){
+ const box=document.getElementById('vis-form');
+ if(!VIS_ATTENTE.length){box.innerHTML='<p style="color:var(--danger)">Aucune image lisible.</p>';return;}
+ box.innerHTML=`<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px">
+  <div style="font-size:15px;font-weight:750;margin-bottom:4px">${VIS_ATTENTE.length} image(s) prête(s)</div>
+  <div style="font-size:12.5px;color:var(--ink-soft);line-height:1.55;margin-bottom:14px">La <b>description</b> et les <b>droits</b> sont obligatoires : la première permet à l'IA de poser l'image au bon endroit, les seconds évitent qu'une photo sans accord ou sans licence partent chez un client.</div>
+  <div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(290px,1fr))">
+   ${VIS_ATTENTE.map(function(v,k){return `<div style="background:var(--paper);border:1px solid var(--line);border-radius:11px;padding:12px">
+     <img src="${htmlSafe(v.vignette)}" alt="" style="width:100%;height:110px;object-fit:cover;border-radius:8px;display:block">
+     <div style="font-size:11.5px;color:var(--ink-soft);margin:7px 0 9px">${htmlSafe(v.nom)} · ${v.avantKo} Ko → <b>${v.poids_ko} Ko</b> (${v.largeur}×${v.hauteur})</div>
+     <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">
+      ${Object.keys(VIS_TYPES).map(t=>`<button class="act${v.type===t?' act-call':''}" style="padding:2px 8px;font-size:11px" onclick="visType(${k},'${t}')">${VIS_TYPES[t]}</button>`).join('')}
+     </div>
+     <input class="field" style="width:100%;margin-bottom:6px" placeholder="Ce que montre l'image *" value="${htmlSafe(v.description)}" oninput="VIS_ATTENTE[${k}].description=this.value">
+     <input class="field" style="width:100%;margin-bottom:6px" placeholder="Droits : accord, licence *" value="${htmlSafe(v.droits)}" oninput="VIS_ATTENTE[${k}].droits=this.value">
+     <input class="field" style="width:100%" placeholder="Secteur ciblé (ex : garage, retail)" value="${htmlSafe(v.secteur)}" oninput="VIS_ATTENTE[${k}].secteur=this.value">
+   </div>`}).join('')}
+  </div>
+  <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+   <button class="btn btn-primary" onclick="envoyerVisuels()">Ajouter ${VIS_ATTENTE.length} visuel(s)</button>
+   <button class="btn" style="background:var(--paper)" onclick="VIS_ATTENTE=[];document.getElementById('vis-form').innerHTML=''">Annuler</button>
+  </div>
+ </div>`;
+}
+function visType(k,t){VIS_ATTENTE[k].type=t;rendreDepot();}
+
+async function envoyerVisuels(){
+ const sans=VIS_ATTENTE.filter(v=>v.description.trim().length<15||v.droits.trim().length<5);
+ if(sans.length){toast(sans.length+' image(s) sans description (15 caractères) ou sans droits');return;}
+ const v=voileTravail('🖼 Envoi des visuels','Compression déjà faite — il ne reste que le transfert.');
+ try{
+  const r=await api('/api/kb-visuels',{method:'POST',headers:{'Content-Type':'application/json'},
+   signal:v.signal,body:JSON.stringify({visuels:VIS_ATTENTE})});
+  const d=await lireJson(r);
+  if(d.erreur){toast(d.erreur+(d.detail?' — '+d.detail:''));return;}
+  toast(d.info||'Ajouté');
+  if((d.refuses||[]).length)setTimeout(()=>toast('Écartés : '+d.refuses.map(x=>x.nom+' ('+x.motif+')').join(' · ')),1200);
+  VIS_ATTENTE=[];document.getElementById('vis-form').innerHTML='';
+  document.getElementById('vis-f').value='';
+  chargerVisuels();
+ }catch(e){if(!v.arrete&&e.name!=='AbortError')toast('Envoi : '+e.message);}
+ finally{v.fermer();}
 }
 
 // ═══ ÉDITEUR DE PRÉSENTATION ═══════════════════════════════════════════════
@@ -5277,6 +5481,7 @@ function edPanneau(){
     }
     return edChamp(i,chemin,max,lib,edVal(i,chemin),null);
   }).join(''):"<p style=\"color:var(--ink-soft);font-size:13.5px\">Cette planche n'a pas de texte modifiable.</p>"}
+  ${(ED.visuels&&ED.visuels.length&&p.role==='duel')?edVisuel(i,p):''}
   ${verrous.length?`<div style="margin-top:14px;padding:12px 14px;background:var(--paper);border:1px dashed var(--line);border-radius:9px">
     <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:6px">🔒 Verrouillé</div>
     <div style="font-size:12.5px;color:var(--ink-soft);line-height:1.55">${verrous.map(v=>'· '+htmlSafe(v)).join('<br>')}
@@ -5284,6 +5489,19 @@ function edPanneau(){
    </div>`:''}
  </div>`;
  document.getElementById('ed-panneau').innerHTML=html;
+}
+
+// Choix de l'image posée sur cette planche : une liste fermée, jamais une URL libre.
+function edVisuel(i,p){
+ const cur=edVal(i,'visuel_id')||p.visuel_id||0;
+ const opts=ED.visuels.map(v=>`<option value="${v.id}"${(+cur===v.id)?' selected':''}>#${v.id} · ${htmlSafe((VIS_TYPES[v.type]||v.type)+(v.secteur?' · '+v.secteur:'')+' — '+String(v.description).slice(0,70))}</option>`).join('');
+ return `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
+  <label style="display:block;font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:4px">🖼 Image de cette planche</label>
+  <select class="field" style="width:100%" onchange="edSet(${i},'visuel_id',this.value?+this.value:0)">
+   <option value="0"${!cur?' selected':''}>— aucune image —</option>${opts}
+  </select>
+  <div style="font-size:12px;color:var(--ink-soft);margin-top:5px">Les images viennent de l'onglet 🖼 Visuels. Une image hors sujet fait plus de mal qu'un espace vide.</div>
+ </div>`;
 }
 
 function edChamp(i,chemin,max,lib,val,k){

@@ -10,6 +10,7 @@
 // Publique par jeton non devinable (12 caractères aléatoires), noindex : jamais référencée.
 
 import { sql } from './db.js';
+import { imagesDe } from './kb-visuels.js';
 import crypto from 'crypto';
 
 export const config = { maxDuration: 60 };
@@ -32,7 +33,7 @@ const etoiles = n => {
   return [1, 2, 3, 4, 5].map(k => `<span class="et${v >= k ? ' on' : (v > k - 1 ? ' mi' : '')}">★</span>`).join('');
 };
 
-function planche(p, i, total, mes, logo, sdr) {
+function planche(p, i, total, mes, logo, sdr, images) {
   const sombre = i % 2 === 1;
   const chiffres = (p.chiffres || []).map(c => `
     <div class="kpi">
@@ -74,7 +75,9 @@ function planche(p, i, total, mes, logo, sdr) {
   // Planche « duel » : la pièce qui vend. À gauche le problème mesuré et ce qu'il coûte, à
   // droite le mécanisme Sofy en trois étapes et le résultat visé. Format repris du deck Partoo,
   // qui met systématiquement une solution en face d'un problème plutôt qu'un catalogue.
+  const vis = p.visuel_id && images && images[p.visuel_id] ? images[p.visuel_id] : null;
   const duel = (p.probleme && p.solution) ? `
+    ${vis ? `<figure class="ill reveal"><img src="${esc(vis.image)}" alt="${esc(vis.description || '')}" loading="lazy"></figure>` : ''}
     <div class="duel">
       <div class="dl-p reveal">
         <div class="dl-lab">Ce que nous avons mesuré</div>
@@ -299,7 +302,7 @@ function planche(p, i, total, mes, logo, sdr) {
   </section>`;
 }
 
-function page(doc, meta, sdr, apercu) {
+function page(doc, meta, sdr, apercu, images) {
   const pl = Array.isArray(doc.planches) ? doc.planches : [];
   const contact = sdr ? [
     sdr.nom ? `<div class="sdr-n">${esc(sdr.nom)}</div>` : '',
@@ -510,6 +513,10 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .pl.light .ax-w{background:#FEF6E7;border:1px solid #E9C88B;color:#7A4E12}
 .pl.dark .ax-w{background:rgba(224,162,83,.12);border:1px solid rgba(224,162,83,.34);color:#E9C88B}
 @media print{.ax,.bl-k,.ae{box-shadow:none}}
+.ill{margin:30px 0 0;border-radius:16px;overflow:hidden;max-height:280px}
+.ill img{width:100%;height:100%;max-height:280px;object-fit:cover;display:block}
+@media(min-width:900px){.ill{max-height:230px}.ill img{max-height:230px}}
+@media print{.ill{max-height:150px}.ill img{max-height:150px}}
 .duel{display:grid;gap:14px;margin-top:34px;align-items:stretch;grid-template-columns:1fr}
 @media(min-width:900px){.duel{grid-template-columns:1fr 62px 1.12fr}}
 .dl-p,.dl-s{border-radius:16px;padding:22px 24px;display:flex;flex-direction:column;gap:9px}
@@ -620,7 +627,7 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
  .reveal{opacity:1!important;transform:none!important}
 }
 </style></head><body>
-${pl.map((p, i) => planche(p, i, pl.length, doc._mes || {}, doc._logo || null, sdr)).join('')}
+${pl.map((p, i) => planche(p, i, pl.length, doc._mes || {}, doc._logo || null, sdr, images)).join('')}
 ${apercu ? `<div class="apercu">👁 Aperçu interne — cette visite n'est pas comptée dans les ouvertures du prospect.</div>` : ''}
 <div class="tools"><button onclick="window.print()">⬇️ Télécharger en PDF</button></div>
 <script>
@@ -781,10 +788,17 @@ export default async function handler(req, res) {
       }
     }
 
+    // Les images des visuels posés : une seule requête, et seulement celles réellement utilisées.
+    let images = {};
+    try {
+      const ids = (doc.planches || []).map(p => p.visuel_id).filter(Boolean);
+      if (ids.length) images = await imagesDe(ids);
+    } catch (_) {}
+
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
-    return res.status(200).send(page(doc, { jeton }, sdr, interne));
+    return res.status(200).send(page(doc, { jeton }, sdr, interne, images));
   } catch (e) {
     return res.status(500).send('Analyse momentanément indisponible.');
   }

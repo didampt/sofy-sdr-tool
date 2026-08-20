@@ -16,6 +16,7 @@
 import { verifierToken, sql, ensureSchema, loggerConso } from './db.js';
 import { blocsUtilisables, amorcer } from './kb-sales.js';
 import { cleRadar } from './radar.js';
+import { visuelsUtilisables, imagesDe } from './kb-visuels.js';
 import crypto from 'crypto';
 
 export const config = { maxDuration: 300 };
@@ -258,7 +259,7 @@ function scorer(e) {
   };
 }
 
-function prompt({ mes, radar, blocs, module, consigne, sdr }) {
+function prompt({ mes, radar, blocs, module, consigne, sdr, visuels }) {
   const parType = t => blocs.filter(b => b.type === t)
     .map(b => `• ${b.titre}${b.secteur ? ` [secteur : ${b.secteur}]` : ''}${b.territoire ? ` [territoire : ${b.territoire}]` : ''}\n  ${b.contenu}\n  SOURCE : ${b.source || 'interne'}`).join('\n');
   return `Tu rédiges une présentation commerciale personnalisée pour **un prospect précis**, au nom de **Sofy** (éditeur français : Soview = avis Google et visibilité locale · SoConnect = messagerie clients unifiée avec IA Budy · SoReach = campagnes SMS et RCS).
@@ -284,6 +285,9 @@ ${parType('cas_client') || '(aucun)'}
 CHARTE ET STYLE :
 ${parType('charte') || '(aucune)'}
 
+${(visuels || []).length ? `════ VISUELS DISPONIBLES (choisis par leur identifiant) ════
+${visuels.slice(0, 25).map(v => `#${v.id} [${v.type}${v.secteur ? ' · ' + v.secteur : ''}] ${v.description}`).join('\n')}
+` : ''}
 ════ RÈGLES ABSOLUES ════
 1. **Aucun chiffre inventé.** Tu ne peux écrire un chiffre que s'il vient (a) des mesures du prospect ci-dessus, ou (b) d'un bloc de la base avec sa source. Interdiction formelle d'inventer une statistique de marché, un pourcentage de gain ou une promesse de résultat. Ce document sort de l'entreprise et engage la parole de Sofy.
 2. **Ne promets aucun résultat.** Tu peux montrer ce qu'un autre client a obtenu (cas clients, avec la source) ; tu ne peux pas affirmer que ce prospect obtiendra la même chose. Formule la trajectoire comme un objectif de travail, jamais comme un engagement.
@@ -333,11 +337,11 @@ const SCHEMA_DUELS = {
           titre: T, probleme: T, cout: T,
           solution: T, etapes: { type: 'array', items: T }, resultat: T,
           chiffre: T, chiffre_unite: T, chiffre_legende: T, chiffre_source: T,
-          rcs_titre: T, rcs_texte: T, rcs_bouton: T
+          rcs_titre: T, rcs_texte: T, rcs_bouton: T, visuel_id: { type: 'number' }
         },
         required: ['titre', 'probleme', 'cout', 'solution', 'etapes', 'resultat',
           'chiffre', 'chiffre_unite', 'chiffre_legende', 'chiffre_source',
-          'rcs_titre', 'rcs_texte', 'rcs_bouton']
+          'rcs_titre', 'rcs_texte', 'rcs_bouton', 'visuel_id']
       }
     }
   },
@@ -499,7 +503,8 @@ function assembler(cadre, duelsBruts, mes) {
         : null,
       maquette_rcs: (plein(d.rcs_titre) || plein(d.rcs_texte))
         ? { expediteur: mes.nom || '', titre: d.rcs_titre, texte: d.rcs_texte, bouton: d.rcs_bouton }
-        : null
+        : null,
+      visuel_id: (parseInt(d.visuel_id, 10) || 0) || null
     });
   });
 
@@ -550,7 +555,7 @@ const CHAMPS = {
   defauts:     [['titre', 65], ['texte', 200], ['defauts[]', 190]],
   duel:        [['titre', 65], ['probleme.constat', 120], ['probleme.cout', 130],
                 ['solution.nom', 90], ['solution.comment[]', 90], ['solution.resultat', 120],
-                ['chiffre_cle.legende', 80],
+                ['chiffre_cle.legende', 80], ['visuel_id', 0],
                 ['maquette_rcs.titre', 42], ['maquette_rcs.texte', 150], ['maquette_rcs.bouton', 22]],
   trajectoire: [['titre', 65], ['texte', 200], ['courbe.appui', 220],
                 ['jalons[].quand', 32], ['jalons[].texte', 110]],
@@ -572,6 +577,14 @@ const tronquer = (v, max) => String(v == null ? '' : v).replace(/\s+/g, ' ').tri
 // Applique une valeur sur un chemin ('solution.comment[]', 'probleme.cout') dans la planche
 // stockée, en partant TOUJOURS de l'existant : un champ absent de la requête reste inchangé.
 function appliquer(cible, source, chemin, max) {
+  // Un identifiant de visuel est un nombre, pas du texte : on le valide comme tel.
+  if (max === 0) {
+    if (source && source[chemin] !== undefined) {
+      const n = parseInt(source[chemin], 10);
+      cible[chemin] = (n > 0) ? n : null;
+    }
+    return;
+  }
   const tab = chemin.includes('[]');
   const [avant, apres] = chemin.split('[]');
   const parts = avant.split('.').filter(Boolean);
@@ -743,6 +756,7 @@ export default async function handler(req, res) {
           annulable: !!row.contenu_precedent,
           planches: (doc.planches || []).map((pl, i) => ({ ...pl, i })),
           champs: CHAMPS, verrous: VERROUS,
+          visuels: await visuelsUtilisables({ module: row.module }).catch(() => []),
           // Les chiffres citables, pour changer un chiffre d'appui sans jamais le saisir à la main
           appuis: (doc._appuis || null)
         });
@@ -863,8 +877,10 @@ export default async function handler(req, res) {
     }
 
     // Le logo se récupère pendant que Claude rédige : deux attentes en une.
+    const visuels = await visuelsUtilisables({ module, secteur: mes.activite || mes.secteur_rb2b || '' })
+      .catch(() => []);
     const [out, logo] = await Promise.all([
-      composer({ mes, radar, blocs, module, consigne: b.consigne, sdr: user.nom }),
+      composer({ mes, radar, blocs, module, consigne: b.consigne, sdr: user.nom, visuels }),
       logoDe(mes.site_web).catch(() => null)
     ]);
     if (out.erreur) return res.status(502).json(out);
@@ -913,6 +929,8 @@ export default async function handler(req, res) {
       amorcage: amorcage && amorcage.ajoutes ? amorcage.ajoutes : undefined,
       planches: (out.doc.planches || []).length,
       duels, mode_sortie: out.mode, cout_eur: out.cout_eur,
+      visuels_proposes: visuels.length,
+      visuels_utilises: out.doc.planches.filter(p => p.visuel_id).length,
       duels_erreur: out.duels_erreur || undefined,
       logo_prospect: !!logo,
       contexte_utilise: { radar: !!radar, blocs_kb: blocs.length, cas_clients: blocs.filter(x => x.type === 'cas_client').length },
