@@ -41,7 +41,8 @@ const etoiles = n => {
 const SOFY_REPERES = [
   { c: '2012', t: 'année de création' },
   { c: '5 000+', t: 'entreprises accompagnées' },
-  { c: 'ARCEP', t: 'agrégateur agréé' }
+  { c: 'ARCEP', t: 'agrégateur agréé' },
+  { c: '20', t: 'collaborateurs' }
 ];
 
 function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
@@ -355,7 +356,7 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
         </div>
         <div class="fin-d">
           ${(instit && instit.equipe) ? `<figure class="eq"><img src="${esc(instit.equipe)}" alt="L'équipe Sofy" loading="lazy"><img class="eq-l" src="/logo-icon.png" alt=""></figure>` : ''}
-          ${(instit && (instit.clients || []).length) ? `<div class="cli">${instit.clients.slice(0, 8).map(c => `<span class="cli-i"><img src="${esc(c.image)}" alt="${esc(c.description || '')}" loading="lazy"></span>`).join('')}</div>` : ''}
+          ${(instit && (instit.clients || []).length) ? `<div class="cli">${instit.clients.slice(0, 12).map(c => `<span class="cli-i"><img src="${esc(c.image)}" alt="${esc(c.description || '')}" loading="lazy"></span>`).join('')}</div>` : ''}
         </div>
       </div>
       <div class="rep">
@@ -435,13 +436,16 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 @media(min-width:920px){.fin{grid-template-columns:1.05fr .95fr}}
 .eq{margin:0;position:relative;border-radius:16px;overflow:hidden;box-shadow:0 18px 44px rgba(20,16,58,.16)}
 .eq img{width:100%;height:auto;max-height:260px;object-fit:cover;display:block}
-.eq-l{position:absolute!important;top:12px;right:12px;width:38px!important;height:38px!important;
- max-height:38px!important;opacity:.92;filter:drop-shadow(0 2px 6px rgba(0,0,0,.3))}
-.cli{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px;align-items:center}
-.cli-i{flex:none;height:42px;padding:6px 10px;border-radius:9px;background:#fff;display:flex;
+.eq-l{position:absolute;top:12px;right:12px;width:36px;height:36px;max-height:36px;max-width:36px;
+ opacity:.95;filter:drop-shadow(0 2px 6px rgba(0,0,0,.35));border-radius:8px;
+ background:rgba(255,255,255,.9);padding:4px;box-sizing:border-box}
+/* Grille régulière plutôt qu'un flux : avec neuf logos, le neuvième se retrouvait seul sur une
+   ligne — l'effet « oubli » plutôt que « référence ». */
+.cli{display:grid;grid-template-columns:repeat(auto-fit,minmax(74px,1fr));gap:8px;margin-top:14px}
+.cli-i{height:44px;padding:6px 8px;border-radius:9px;background:#fff;display:flex;
  align-items:center;justify-content:center;border:1px solid var(--line)}
 .pl.dark .cli-i{border-color:rgba(255,255,255,.14)}
-.cli-i img{max-height:28px;max-width:88px;width:auto;object-fit:contain;display:block}
+.cli-i img{max-height:30px;max-width:100%;width:auto;object-fit:contain;display:block}
 .rep{display:flex;flex-wrap:wrap;gap:14px 30px;align-items:flex-start;margin-top:30px;padding-top:20px;
  border-top:1px solid var(--line)}
 .pl.dark .rep{border-top-color:var(--line-d)}
@@ -515,12 +519,13 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .rcs{display:grid;gap:30px;margin-top:34px;align-items:center;grid-template-columns:1fr}
 @media(min-width:900px){.rcs{grid-template-columns:312px 1fr}}
 .tel{justify-self:center}
-.tel-cadre{position:relative;width:312px;max-width:100%;border-radius:46px;padding:11px;
- background:linear-gradient(160deg,#F4F4F6,#D9D9DE);box-shadow:0 3px 8px rgba(0,0,0,.2),0 22px 54px rgba(20,16,58,.34)}
-.tel-enc{position:absolute;top:20px;left:50%;transform:translateX(-50%);z-index:3;display:flex;align-items:center;gap:9px}
+.tel-cadre{position:relative;width:312px;max-width:100%;border-radius:44px;padding:4px;
+ background:linear-gradient(155deg,#5C5C66,#2A2A31 42%,#7A7A85);
+ box-shadow:0 2px 6px rgba(0,0,0,.28),0 24px 58px rgba(20,16,58,.42),inset 0 0 0 1px rgba(255,255,255,.22)}
+.tel-enc{position:absolute;top:14px;left:50%;transform:translateX(-50%);z-index:3;display:flex;align-items:center;gap:9px}
 .tel-hp{width:44px;height:5px;border-radius:3px;background:#1A1A1C;display:block}
 .tel-cam{width:9px;height:9px;border-radius:50%;background:#1A1A1C;display:block}
-.tel-ec{background:#000;border-radius:36px;overflow:hidden;padding:9px 9px 11px;color:#fff;min-height:560px;
+.tel-ec{background:#000;border-radius:41px;overflow:hidden;padding:9px 9px 11px;color:#fff;min-height:560px;
  display:flex;flex-direction:column}
 .tel-st{display:flex;justify-content:space-between;align-items:center;padding:5px 10px 9px;font-size:12.5px;font-weight:700}
 .tel-ic{font-size:10.5px;letter-spacing:.5px;opacity:.9}
@@ -535,8 +540,10 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .tel-date{text-align:center;font-size:11px;color:#8E8E93;margin:6px 0 9px}
 .carte{background:#1C1C1E;border-radius:19px;overflow:hidden;margin:0 2px}
 .carte-b{position:relative;height:186px;background:linear-gradient(150deg,#3B1E8C 0%,#6B2AA8 55%,#A0247A 100%);
+ background-blend-mode:normal;
  background-size:cover;background-position:center;padding:13px 14px;display:flex;flex-direction:column;gap:7px}
-.carte-voile{position:absolute;inset:0;background:linear-gradient(150deg,rgba(59,30,140,.86),rgba(160,36,122,.7))}
+.carte-voile{position:absolute;inset:0;background:
+ linear-gradient(180deg,rgba(30,14,70,.82) 0%,rgba(59,30,140,.42) 52%,rgba(160,36,122,.34) 100%)}
 .tel-av{width:34px;height:34px;border-radius:9px;background:#fff;display:flex;align-items:center;
  justify-content:center;overflow:hidden;flex:none}
 .tel-av img{max-width:28px;max-height:28px;width:auto;height:auto;object-fit:contain}
@@ -546,7 +553,7 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .carte-marque img{max-height:20px;max-width:104px;width:auto;object-fit:contain;display:block}
 .carte-marque-t{font-size:13px;font-weight:800;color:#14103A;letter-spacing:-.01em}
 .carte-h{position:relative;z-index:1;font-size:23px;font-weight:800;line-height:1.1;letter-spacing:-.025em;
- color:#fff;text-shadow:0 1px 10px rgba(0,0,0,.28);max-width:15ch}
+ color:#fff;text-shadow:0 2px 14px rgba(0,0,0,.55);max-width:15ch}
 .carte-c{position:relative;padding:13px 15px 12px}
 .carte-t{font-size:15px;font-weight:750;line-height:1.25;color:#fff;padding-right:18px}
 .carte-x{font-size:13px;line-height:1.42;color:#8E8E93;margin-top:5px;padding-right:18px;

@@ -50,7 +50,17 @@ async function ensureVisuels() {
   pret = true;
 }
 
-const estImage = v => /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(String(v || ''));
+const estImage = v => /^data:image\/(jpeg|png|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(String(v || ''));
+
+// Un SVG est affiché dans une balise <img> : les scripts n'y sont pas exécutés. On refuse quand
+// même ceux qui en contiennent — un fichier de logo n'a aucune raison d'embarquer du code.
+function svgSain(dataUri) {
+  if (!/^data:image\/svg\+xml/.test(String(dataUri))) return true;
+  try {
+    const txt = Buffer.from(String(dataUri).split(',')[1] || '', 'base64').toString('utf8').toLowerCase();
+    return !/<script|onload=|onerror=|<foreignobject|javascript:/.test(txt);
+  } catch (_) { return false; }
+}
 
 // Utilisée par le générateur et par l'éditeur : ne rend QUE les visuels validés, avec un score de
 // pertinence. Le secteur du prospect pèse plus que le module : une photo de garage vaut mieux
@@ -132,7 +142,8 @@ export default async function handler(req, res) {
       const ajoutes = [], refuses = [];
       for (const v of lot) {
         const nom = String(v.nom || 'sans nom').slice(0, 80);
-        if (!estImage(v.image)) { refuses.push({ nom, motif: 'image illisible (JPEG, PNG ou WebP attendu)' }); continue; }
+        if (!estImage(v.image)) { refuses.push({ nom, motif: 'image illisible (JPEG, PNG, WebP ou SVG attendu)' }); continue; }
+        if (!svgSain(v.image)) { refuses.push({ nom, motif: 'SVG contenant du code — exporte-le en PNG' }); continue; }
         if (String(v.image).length > MAX_IMAGE) { refuses.push({ nom, motif: 'image trop lourde après compression' }); continue; }
         if (v.vignette && String(v.vignette).length > MAX_VIGNETTE) { refuses.push({ nom, motif: 'vignette trop lourde' }); continue; }
         // Les deux refus qui protègent Sofy

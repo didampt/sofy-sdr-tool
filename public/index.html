@@ -2144,7 +2144,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v356';
+const VERSION='v357';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -5540,15 +5540,37 @@ async function retirerVisuel(id){
 }
 
 // ── Dépôt : compression puis un formulaire par image ──
+// Un logo doit rester net et transparent : un PNG ou un SVG léger est conservé TEL QUEL.
+// Le convertir en JPEG lui collerait un fond blanc et des artefacts sur les contours.
+function estLogoLeger(f){
+ return (/svg/i.test(f.type)||/\.svg$/i.test(f.name)||/png/i.test(f.type)||/\.png$/i.test(f.name))
+        && f.size<=220000;
+}
+function lireTelQuel(f){
+ return new Promise(function(ok,ko){
+  const fr=new FileReader();
+  fr.onload=function(){ok(String(fr.result));};
+  fr.onerror=ko; fr.readAsDataURL(f);
+ });
+}
+
 async function choisirVisuels(inp){
  const fichiers=[].slice.call(inp.files||[]).slice(0,8);
  if(!fichiers.length)return;
  const box=document.getElementById('vis-form');
- box.innerHTML='<p style="color:var(--ink-soft)">⏳ Compression de '+fichiers.length+' image(s)…</p>';
+ box.innerHTML='<p style="color:var(--ink-soft)">⏳ Préparation de '+fichiers.length+' image(s)…</p>';
  VIS_ATTENTE=[];
  for(const f of fichiers){
-  if(!/^image\//.test(f.type)&&!/\.(png|jpe?g|webp|gif|heic|heif)$/i.test(f.name))continue;
+  if(!/^image\//.test(f.type)&&!/\.(png|jpe?g|webp|gif|heic|heif|svg)$/i.test(f.name))continue;
   try{
+   if(estLogoLeger(f)){
+    const data=await lireTelQuel(f);
+    const ko=Math.round(data.length*0.75/1024);
+    VIS_ATTENTE.push({nom:f.name,image:data,vignette:data,largeur:null,hauteur:null,
+     poids_ko:ko,avantKo:Math.round(f.size/1024),type:'client',module:'tous',
+     description:VIS_MODELES.client.d,droits:VIS_MODELES.client.r,secteur:''});
+    continue;
+   }
    const gd=await compresserImage(f,1600,600,false);
    const pt=await compresserImage(f,420,60,false);
    VIS_ATTENTE.push({nom:f.name,image:gd.data,vignette:pt.data,largeur:gd.largeur,hauteur:gd.hauteur,
