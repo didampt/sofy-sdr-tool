@@ -14,7 +14,7 @@
 // promesse de résultat : ce document sort de l'entreprise et engage la parole de Sofy.
 
 import { verifierToken, sql, ensureSchema, loggerConso } from './db.js';
-import { blocsUtilisables } from './kb-sales.js';
+import { blocsUtilisables, amorcer } from './kb-sales.js';
 import { cleRadar } from './radar.js';
 import crypto from 'crypto';
 
@@ -208,12 +208,31 @@ export default async function handler(req, res) {
         }))
       });
     }
+    // Les analyses déjà produites sur une liste : le front les affiche dans la fiche, pour que
+    // le lien ne vive pas dans une fenêtre qui se ferme.
+    if (q.liste_id) {
+      const rows = await sql`SELECT jeton, cle_fiche, module, sdr, ouvertures, destinataire,
+          premiere_ouverture, derniere_ouverture, created_at, expire_le,
+          jsonb_array_length(COALESCE(lecteurs,'[]'::jsonb)) AS lecteurs_distincts
+        FROM prez WHERE liste_id = ${parseInt(q.liste_id, 10) || 0} AND cle_fiche IS NOT NULL
+        ORDER BY created_at DESC`;
+      const parFiche = {};
+      for (const r of rows) {
+        if (parFiche[r.cle_fiche]) continue; // la plus récente gagne
+        parFiche[r.cle_fiche] = {
+          ...r, url: BASE_PUB() + '/p/' + r.jeton,
+          expiree: r.expire_le ? new Date(r.expire_le).getTime() < Date.now() : false,
+          jours_restants: r.expire_le ? Math.ceil((new Date(r.expire_le).getTime() - Date.now()) / 86400000) : null
+        };
+      }
+      return res.status(200).json({ ok: true, par_fiche: parFiche, total: rows.length });
+    }
     if (q.jeton) {
       const [row] = await sql`SELECT * FROM prez WHERE jeton = ${String(q.jeton)}`;
       if (!row) return res.status(404).json({ erreur: 'Présentation introuvable' });
       return res.status(200).json({ ok: true, prez: row, url: BASE_PUB() + '/p/' + row.jeton });
     }
-    return res.status(400).json({ erreur: 'jeton ou mes=1 requis' });
+    return res.status(400).json({ erreur: 'jeton, liste_id ou mes=1 requis' });
   }
 
   if (req.method !== 'POST') return res.status(405).json({ erreur: 'GET ou POST' });
@@ -246,8 +265,21 @@ export default async function handler(req, res) {
       }
     } catch (_) {}
 
-    const blocs = await blocsUtilisables(module);
-    if (!blocs.length) return res.status(400).json({ erreur: 'Base de connaissance vide — lance l\'amorçage (POST /api/kb-sales { seed: true })' });
+    // Base vide au premier usage : on l'amorce nous-mêmes avec le contenu du deck Sofy.
+    // Renvoyer « lance POST /api/kb-sales { seed: true } » à un SDR n'était pas une erreur
+    // d'affichage, c'était une erreur de conception : l'app sait faire, elle le fait.
+    let blocs = await blocsUtilisables(module);
+    let amorcage = null;
+    if (!blocs.length) {
+      try {
+        amorcage = await amorcer(user.nom);
+        blocs = await blocsUtilisables(module);
+      } catch (e) {
+        return res.status(500).json({ erreur: "Base de connaissance vide et l'amorçage a échoué",
+          detail: String((e && e.message) || e).slice(0, 200) });
+      }
+    }
+    if (!blocs.length) return res.status(400).json({ erreur: 'Base de connaissance vide malgré l\'amorçage — préviens un admin' });
 
     const out = await composer({ mes, radar, blocs, module, consigne: b.consigne, sdr: user.nom });
     if (out.erreur) return res.status(502).json(out);
@@ -263,6 +295,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       ok: true, jeton, url: BASE_PUB() + '/p/' + jeton, client: mes.nom, module, jours_validite: jours,
+      amorcage: amorcage && amorcage.ajoutes ? amorcage.ajoutes : undefined,
       planches: (out.doc.planches || []).length,
       contexte_utilise: { radar: !!radar, blocs_kb: blocs.length, cas_clients: blocs.filter(x => x.type === 'cas_client').length },
       doc: out.doc

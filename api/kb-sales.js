@@ -109,6 +109,23 @@ const SEED = [
     source: 'Deck Sofy « Enjeux Visibilité & IA » (19 slides, 08/2026) — référence de style pour toute présentation générée' }
 ];
 
+// Amorçage du contenu du deck Sofy. Idempotent (cle_seed unique) → relançable sans doublon et
+// sans écraser une correction faite à la main. Exporté parce que le générateur l'appelle tout
+// seul quand la base est vide : demander une requête technique à un SDR n'est pas une option.
+export async function amorcer(par) {
+  await ensureKb();
+  let ajoutes = 0;
+  for (const s of SEED) {
+    const r = await sql`INSERT INTO kb_sales
+        (type, module, titre, contenu, source, secteur, territoire, cle_seed, verifie_le, statut, valide_par, valide_le)
+      VALUES (${s.type}, ${s.module}, ${s.titre}, ${s.contenu}, ${s.source}, ${s.secteur || null},
+              ${s.territoire || null}, ${s.cle_seed}, CURRENT_DATE, 'valide', ${par || 'amorçage Sofy'}, NOW())
+      ON CONFLICT (cle_seed) DO NOTHING RETURNING id`;
+    if (r.length) ajoutes++;
+  }
+  return { ajoutes, deja_presents: SEED.length - ajoutes, total: SEED.length };
+}
+
 export default async function handler(req, res) {
   const user = verifierToken(req);
   if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
@@ -146,16 +163,10 @@ export default async function handler(req, res) {
       // Amorçage : injecte le contenu du deck Sofy. Idempotent (cle_seed unique) → relançable
       // sans créer de doublons, et sans écraser une correction faite à la main.
       if (b.seed) {
-        let ajoutes = 0;
-        for (const s of SEED) {
-          const r = await sql`INSERT INTO kb_sales (type, module, titre, contenu, source, cle_seed, verifie_le, statut, valide_par, valide_le)
-            VALUES (${s.type}, ${s.module}, ${s.titre}, ${s.contenu}, ${s.source}, ${s.cle_seed}, CURRENT_DATE, 'valide', ${user.nom}, NOW())
-            ON CONFLICT (cle_seed) DO NOTHING RETURNING id`;
-          if (r.length) ajoutes++;
-        }
+        const r = await amorcer(user.nom);
         return res.status(200).json({
-          ok: true, ajoutes, deja_presents: SEED.length - ajoutes,
-          info: ajoutes ? `${ajoutes} bloc(s) ajouté(s) depuis le deck Sofy.` : 'Tous les blocs du deck étaient déjà là — rien écrasé.'
+          ok: true, ...r,
+          info: r.ajoutes ? `${r.ajoutes} bloc(s) ajouté(s) depuis le deck Sofy.` : 'Tous les blocs du deck étaient déjà là — rien écrasé.'
         });
       }
 
