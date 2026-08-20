@@ -287,6 +287,18 @@ Retours après lecture du premier site généré : *« trop de texte, pas assez 
 
 ## Pièges connus (ne pas se refaire avoir)
 
+### 🚨 20 août 2026 — Une liste refusée à l'enregistrement = SDR qui travaille dans le vide
+Franck génère 30 fiches à 13h18, prend un RDV avec Grokosto, et ne retrouve **ni la liste ni la fiche**. Elle n'a jamais existé en base.
+
+**Trois silences en cascade :**
+1. `POST /api/listes` refuse légitimement une création : **nom déjà pris (409)** ou **garde-fou des 3 listes actives enrichies à moins de 50 % (403, SDR seulement)**.
+2. Le front avalait le refus — `if(sd.ok)state.savedId=sd.id` puis `catch(_){/* sauvegarde non bloquante */}`. Les fiches s'affichaient, la liste n'existait pas.
+3. `persister()` sortait sans rien faire si `savedId` était absent, et `.catch(()=>{})` masquait les échecs de PUT.
+
+**La leçon générale : un refus métier côté serveur doit TOUJOURS remonter à l'écran.** Un `catch` vide sur une sauvegarde est une perte de données différée. Et un garde-fou qui refuse APRÈS une dépense (crédits Pappers) se retourne contre l'utilisateur : le contrôle doit précéder la dépense (`POST { verifier: true }`).
+
+**Ce qui existe maintenant** : contrôle préalable avant génération, persistance avec deux tentatives, bandeau rouge fixe si l'enregistrement échoue, `beforeunload`, indicateur « ✓ enregistré à hh:mm », suffixage automatique des noms en doublon, et enregistrement forcé avant de poser un « RDV pris ». Outil de diagnostic : **Maintenance › 🔎 Où est passée cette fiche ?**
+
 ### ⚠️ 20 août 2026 — La CSP de production interdit `blob:` (images refusées en silence)
 Le compresseur d'image chargeait les fichiers par `URL.createObjectURL()`. La CSP de `vercel.json` autorise `img-src 'self' data: https:` : **pas `blob:`**. Résultat : « Image illisible » sur *tous* les fichiers déposés, alors que le test local passait sans une erreur.
 
