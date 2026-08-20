@@ -86,6 +86,34 @@ const SEED = [
     titre: 'Audit SEO Soview : un score sur 100 par établissement et par pilier',
     contenu: "L'audit note chaque établissement sur 100 et détaille quatre piliers : profil, avis, posts, médias. Il produit une synthèse de groupe (score moyen, meilleur et moins bon établissement) et pointe les lacunes structurelles qui freinent la visibilité — par exemple une note parfaite mais aucune adresse physique renseignée et aucune actualité publiée.",
     source: 'Deck Sofy « Enjeux Visibilité & IA », slide 16 (capture produit Audit SEO)' },
+  // ── Mécanismes produit, relevés sur les captures de l'app (dossier « fichiers pour pitch deck
+  // sales », 19/08). Ces blocs existent parce que la première analyse générée décrivait les
+  // modules par leur nom sans jamais dire COMMENT ils produisent un résultat : illisible pour un
+  // directeur marketing, qui achète un mécanisme, pas un logo.
+  { cle_seed: 'meca-collecte-avis', type: 'fonctionnalite', module: 'soview',
+    titre: 'Comment une note remonte : collecte à chaud par SMS ou RCS',
+    contenu: "L'invitation part **automatiquement après le passage en caisse ou la livraison**, par SMS ou par RCS, avec le nom du client et de l'établissement. Le client tape sur **« Laisser un avis »** et note sans quitter sa messagerie — pas de compte à créer, pas d'application à installer. Trois effets qui se cumulent : le **volume** augmente, la **fraîcheur** aussi (un avis de moins de deux semaines pèse plus lourd), et la note remonte mécaniquement parce qu'on interroge tous les clients satisfaits, pas seulement les mécontents qui écrivent d'eux-mêmes.",
+    source: 'Produit Soview — module « Récolter des avis » (canal SMS/RCS, expéditeur, message personnalisé)' },
+  { cle_seed: 'meca-budy-reponses', type: 'fonctionnalite', module: 'soview',
+    titre: 'Budy répond aux avis à votre place, vous validez',
+    contenu: "L'IA **Budy** lit chaque avis, en fait la synthèse et rédige la réponse dans le ton de l'enseigne. Vous validez d'un clic, ou vous corrigez. C'est ce qui rend tenable l'objectif de **réponse sous 24 à 48 heures** sur un réseau entier — le seul délai qui compte, puisque 63 % des consommateurs attendent une réponse sous 2 à 7 jours. Budy est **incluse**, sans surcoût ni option.",
+    source: 'Produit Soview — écran Avis : résumé IA des avis et réponses suggérées (badge « Répondu sous 24h »)' },
+  { cle_seed: 'meca-audit-analyse', type: 'fonctionnalite', module: 'soview',
+    titre: 'Vous voyez votre position réelle face à vos concurrents, pas une impression',
+    contenu: "**Analyse marché** : pour une recherche et une zone données, Sofy établit votre position (ex : 10ᵉ, en recul de 2 rangs), le niveau de compétitivité du marché, un **verdict explicite** (« vigilance requise ») et ce qui explique l'écart avec les concurrents mieux classés. **Audit SEO** : chaque établissement est noté **sur 100** sur quatre piliers — profil, avis, publications, médias — avec la synthèse du réseau et le nom du point de vente qui décroche. C'est le tableau de bord qui remplace les suppositions.",
+    source: 'Produit Soview — écrans « Analyse marché » et « Audit SEO » (score /100 par établissement)' },
+  { cle_seed: 'meca-soconnect-canaux', type: 'fonctionnalite', module: 'soconnect',
+    titre: 'Toutes les conversations clients dans une seule boîte',
+    contenu: "Instagram, Facebook, WhatsApp, Messenger, Google Business et le téléphone arrivent dans **une seule interface**, avec l'historique du client et le contexte de sa commande. Budy pré-qualifie et propose la réponse. Effet mesuré chez un client : **temps de réponse divisé par deux** (30 min → 10-15 min) sur 150 demandes par jour, et un objectif de call center dépassé de 30 %.",
+    source: 'Produit SoConnect + interview client Marimax publiée sur le blog Sofy' },
+  { cle_seed: 'meca-soreach-rcs', type: 'fonctionnalite', module: 'soreach',
+    titre: 'RCS : le SMS avec votre marque, votre logo et un bouton',
+    contenu: "Le **RCS** affiche le nom vérifié de l'enseigne, son logo, une image et des **boutons cliquables** — là où un SMS classique montre un numéro court anonyme. Le client reconnaît l'expéditeur avant d'ouvrir. Bascule automatique en SMS quand le téléphone ne prend pas le RCS : aucun message perdu. Mesuré chez un client sur campagne SMS : **85,7 % d'ouverture et 47,1 % de clic**.",
+    source: 'Produit SoReach + interview client Groupe Kiosque publiée sur le blog Sofy' },
+  { cle_seed: 'meca-deploiement', type: 'preuve', module: 'tous',
+    titre: 'Ce qui se passe les 90 premiers jours',
+    contenu: "**Semaines 1-2 — état des lieux** : audit de vos fiches, score sur 100 par établissement, divergences NAP relevées, priorisation des points de vente qui pèsent le plus sur la moyenne. **Semaines 3-6 — mise en ordre** : fiches corrigées et diffusées partout depuis une seule saisie, store locator branché, collecte d'avis activée sur les premiers sites. **Semaines 7-12 — régime de croisière** : réponses sous 24-48 h avec Budy, extension au reste du réseau, suivi de la note et de la position concurrentielle. Un **coach Sofy dédié** suit le déploiement, inclus.",
+    source: 'Méthode de déploiement Sofy — à confirmer avec le Customer Success avant tout engagement de délai' },
   // Cas clients — interviews publiées sur le blog Sofy, donc citables publiquement (accord
   // Didier 19/08). Le secteur et le territoire servent au générateur à choisir le cas le plus
   // proche du prospect : un garage guadeloupéen doit lire Marimax, pas un réseau télécom.

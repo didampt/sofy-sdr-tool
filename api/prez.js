@@ -117,50 +117,71 @@ ${parType('charte') || '(aucune)'}
 5. Écris en français, à la deuxième personne du pluriel (« vous »). Ton : direct, factuel, respectueux. Jamais de flatterie, jamais de jargon marketing creux, jamais de point d'exclamation.
 6. Si une mesure manque (pas de fiche Google, pas d'avis négatif), n'invente pas : construis la planche sur ce que tu as, ou signale l'absence comme un constat en soi (« aucune fiche Google trouvée » est un problème à nommer).
 
-════ STRUCTURE — 7 planches ════
-Ce document est lu par un décideur pressé, souvent en grand compte. Il doit pouvoir se PROJETER :
-pour chaque problème que nous avons mesuré chez lui, il veut la solution ET le résultat attendu.
+════ CE QUE CE DOCUMENT DOIT FAIRE ════
+Un directeur marketing va le lire. Il connaît déjà ses problèmes : lui répéter sa note Google ne
+vend rien. Ce qui le décide, c'est de comprendre **le mécanisme** par lequel Sofy change ce
+chiffre, et de voir **quelqu'un qui l'a déjà fait**. Le constat n'est donc qu'une entrée en
+matière : le cœur du document, ce sont les planches « un problème = une solution Sofy ».
 
-CONTRAINTES DE LONGUEUR — impératives, le document doit respirer :
-· "titre" : 65 caractères maximum, une idée
-· "texte" d'introduction de planche : 200 caractères maximum
-· chaque "texte" de point ou de problème : 130 caractères maximum
-· jamais plus de 4 éléments dans un tableau
-Écris court et dense. Un décideur ne lit pas un paragraphe, il balaye.
+Trois interdits qui ont ruiné la première version de ce document :
+· Ne JAMAIS nommer un module sans dire comment il produit le résultat. « SoConnect — messagerie
+  unifiée » ne vend rien ; « toutes les conversations dans une seule boîte, Budy pré-qualifie,
+  réponse en 10-15 min au lieu de 30 » vend.
+· Ne JAMAIS écrire une planche qui dit qu'on n'a rien à montrer. Tu as des cas clients : ils
+  prouvent le MÉCANISME même quand le secteur diffère. Dis-le franchement en une phrase
+  (« ce client n'est pas de votre secteur, mais le levier est le même ») et montre les résultats.
+· Ne JAMAIS présenter un déploiement comme un résultat. « 0 → 3 outils actifs » n'intéresse
+  personne. Ce qui intéresse : la note, le volume d'avis, le délai de réponse, la position.
+
+════ STRUCTURE ════
+CONTRAINTES DE LONGUEUR — impératives :
+· "titre" ≤ 65 caractères · "texte" d'intro ≤ 180 · tout autre texte ≤ 130 · maximum 4 éléments par tableau
 
 Réponds UNIQUEMENT par cet objet JSON, sans texte autour, sans backticks :
 {
  "titre_document": "Analyse Sofy — <Nom du prospect>",
  "planches": [
-  {"n":1,"role":"couverture","eyebrow":"ANALYSE PRÉPARÉE POUR VOUS","titre":"nomme le prospect","texte":"qui l'a préparée et à partir de quoi (≤200 car.)"},
+  {"role":"couverture","eyebrow":"ANALYSE PRÉPARÉE POUR VOUS","titre":"nomme le prospect","texte":"qui l'a préparée, à partir de quoi"},
 
-  {"n":2,"role":"constat","eyebrow":"CE QUE NOUS AVONS MESURÉ","titre":"…","texte":"≤200 car.",
-   "chiffres":[{"valeur":"3,4","unite":"★","legende":"votre note Google (≤60 car.)","source":"mesuré sur vos fiches"}],
+  {"role":"constat","eyebrow":"CE QUE NOUS AVONS MESURÉ","titre":"…","texte":"≤180 car.",
+   "chiffres":[{"valeur":"1,7","unite":"★","legende":"votre note Google","source":"mesuré sur vos 2 fiches"}],
    "citation":{"texte":"extrait du VRAI avis négatif","meta":"Avis Google · <fiche> · <date>"}},
 
-  {"role":"diagnostic","eyebrow":"CE QUE ÇA VOUS COÛTE","titre":"…","texte":"≤200 car.",
-   "problemes":[{"titre":"le problème en 6 mots","texte":"sa conséquence business, ≤130 car.","impact":"un ordre de grandeur SI ET SEULEMENT SI il est calculable depuis ses données, sinon null"}]},
+  {"role":"duel","eyebrow":"PROBLÈME 1 SUR 3","titre":"le problème, formulé côté conséquence business",
+   "probleme":{"constat":"le fait mesuré, ≤120 car.","cout":"ce que ça lui coûte concrètement, ≤130 car."},
+   "solution":{"nom":"la brique Sofy (ex : Soview — collecte d'avis à chaud)",
+     "comment":["l'étape 1 du mécanisme, ≤90 car.","étape 2","étape 3"],
+     "resultat":"le résultat visé, formulé comme un objectif, ≤120 car."},
+   "chiffre_cle":{"valeur":"85,7","unite":" %","legende":"d'ouverture sur les campagnes SMS d'un client Sofy","source":"interview Groupe Kiosque, blog Sofy"}},
 
-  {"role":"solution","eyebrow":"CE QUE SOFY MET EN PLACE","titre":"…","texte":"≤200 car.",
-   "points":[{"titre":"la brique Sofy (ex : NAP unifié, store locator, réponse aux avis, collecte SMS/QR/NFC)","texte":"≤130 car.","repond_a":"le titre exact du problème de la planche diagnostic auquel elle répond"}]},
+  {"role":"trajectoire","eyebrow":"LA TRAJECTOIRE VISÉE","titre":"…","texte":"≤180 car. — dis clairement que c'est un objectif de travail, pas un engagement contractuel",
+   "courbe":{"indicateur":"Note Google moyenne","unite":"★","max":5,
+     "points":[{"quand":"aujourd'hui","valeur":1.7},{"quand":"3 mois","valeur":2.4},{"quand":"6 mois","valeur":3.1},{"quand":"12 mois","valeur":3.8}],
+     "appui":"le cas client ou le chiffre sourcé qui rend cette pente crédible"},
+   "jalons":[{"quand":"Semaines 1-2","texte":"ce qui se passe, ≤110 car."}]},
 
-  {"role":"projection","eyebrow":"LE RÉSULTAT ATTENDU","titre":"…","texte":"≤200 car. — dis clairement que c'est un objectif atteignable, pas un engagement contractuel",
-   "projection":[{"indicateur":"Note Google","actuel":3.4,"cible":4.3,"unite":"★","max":5,"delai":"6 mois","appui":"le cas client ou le chiffre de la base qui rend cet objectif crédible, avec sa source"}]},
+  {"role":"preuve","eyebrow":"ILS L'ONT DÉJÀ FAIT","titre":"…","texte":"pourquoi ce cas éclaire le sien — y compris si le secteur diffère, ≤180 car.",
+   "chiffres":[{"valeur":"3,4","unite":"★ → 4,25★","legende":"note Google du client, en 3 ans","source":"interview Marimax, blog Sofy"}],
+   "citation":{"texte":"verbatim du client","meta":"<Client> · interview publiée sur le blog Sofy"}},
 
-  {"role":"preuve","eyebrow":"ILS L'ONT FAIT AVANT VOUS","titre":"…","texte":"pourquoi ce cas ressemble au sien, ≤200 car.",
-   "chiffres":[{"valeur":"+30","unite":" %","legende":"≤60 car.","source":"…"}],
-   "citation":{"texte":"verbatim du client","meta":"<Client> · interview publiée"}},
-
-  {"role":"cta","eyebrow":"LA SUITE","titre":"…","texte":"≤200 car.","cta":"texte du bouton"}
+  {"role":"cta","eyebrow":"LA SUITE","titre":"…","texte":"ce qu'on fait ensemble au premier rendez-vous, ≤180 car.","cta":"texte du bouton"}
  ]
 }
 
 RÈGLES DE REMPLISSAGE
-· "projection" est la planche qui décide : 2 à 4 indicateurs, avec "actuel" pris dans SES données mesurées et "cible" justifiée par "appui" (un cas client ou un chiffre de la base, avec sa source). Si tu n'as pas de valeur actuelle mesurée pour un indicateur, ne l'invente pas : ne mets pas cet indicateur.
-· "actuel", "cible" et "max" sont des NOMBRES (pas de texte) : ils servent à dessiner un graphique. "unite" est court ("★", " %", " avis", " min").
-· Chaque brique de la planche solution doit répondre à un problème réel de la planche diagnostic via "repond_a" — pas de catalogue de fonctionnalités décorrélé du diagnostic.
-· "impact" n'est renseigné que si l'ordre de grandeur découle de SES chiffres. Sinon null. Jamais d'estimation inventée.
-· Ton : direct, factuel, orienté résultat. Tu montres ce que Sofy change chez LUI, pas ce que Sofy sait faire en général.`;
+· **Produis 2 à 4 planches "duel"**, une par problème réellement mesuré, numérotées dans l'eyebrow
+  (« PROBLÈME 1 SUR 3 »). C'est le cœur du document. Chaque "duel" doit contenir un mécanisme en
+  3 étapes concrètes tirées des blocs FONCTIONNALITÉS de la base — pas une reformulation du nom du module.
+· "chiffre_cle" d'un duel : un chiffre **sourcé de la base** qui étaye la solution (résultat d'un
+  cas client, statistique de marché). Omets-le si tu n'en as pas de pertinent — jamais d'invention.
+· "courbe" : 3 à 4 points, le premier est SA valeur mesurée aujourd'hui. La pente doit être
+  défendable par "appui". Si tu n'as aucune valeur de départ mesurée, remplace la planche
+  trajectoire par une planche "duel" supplémentaire.
+· "jalons" : 3 étapes de déploiement maximum, tirées du bloc des 90 premiers jours.
+· La planche "preuve" cite **toujours** un cas client réel avec ses chiffres. Secteur différent :
+  tu le dis dans "texte" et tu expliques pourquoi le levier se transpose. Jamais de planche vide.
+· Écris en français, à la deuxième personne du pluriel. Direct, concret, orienté mécanisme et
+  résultat. Aucun point d'exclamation, aucune flatterie, aucun superlatif creux.`;
 }
 
 async function composer(ctx) {
@@ -170,7 +191,7 @@ async function composer(ctx) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
-      model: MODELE(), max_tokens: 8000,
+      model: MODELE(), max_tokens: 14000,
       output_config: { effort: 'high' }, // rédaction commerciale : la qualité prime ici
       messages: [{ role: 'user', content: prompt(ctx) }]
     })
