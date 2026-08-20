@@ -47,6 +47,9 @@ async function ensurePrez() {
   await sql`ALTER TABLE prez ADD COLUMN IF NOT EXISTS expire_le TIMESTAMPTZ`;
   await sql`ALTER TABLE prez ADD COLUMN IF NOT EXISTS lecteurs JSONB DEFAULT '[]'::jsonb`;
   await sql`ALTER TABLE prez ADD COLUMN IF NOT EXISTS destinataire TEXT`;
+  // Horodatage de la dernière alerte Slack : sert à ne pas répéter le même signal (retour du
+  // 20/08 — « j'ai reçu plusieurs alertes pour les ouvertures successives du même lien »).
+  await sql`ALTER TABLE prez ADD COLUMN IF NOT EXISTS derniere_alerte TIMESTAMPTZ`;
   await sql`CREATE INDEX IF NOT EXISTS idx_prez_sdr ON prez(sdr, created_at DESC)`;
   prezPrete = true;
 }
@@ -428,7 +431,7 @@ function scorer(e) {
 
 function prompt({ mes, radar, blocs, module, consigne, sdr, visuels }) {
   const parType = t => blocs.filter(b => b.type === t)
-    .map(b => `• ${b.titre}${b.secteur ? ` [secteur : ${b.secteur}]` : ''}${b.territoire ? ` [territoire : ${b.territoire}]` : ''}\n  ${b.contenu}\n  SOURCE : ${b.source || 'interne'}`).join('\n');
+    .map(b => `• ${b.id ? `[#${b.id}] ` : ''}${b.titre}${b.secteur ? ` [secteur : ${b.secteur}]` : ''}${b.territoire ? ` [territoire : ${b.territoire}]` : ''}\n  ${b.contenu}\n  SOURCE : ${b.source || 'interne'}`).join('\n');
   return `Tu rédiges une présentation commerciale personnalisée pour **un prospect précis**, au nom de **Sofy** (éditeur français : Soview = avis Google et visibilité locale · SoConnect = messagerie clients unifiée avec IA Budy · SoReach = campagnes SMS et RCS).
 
 Module mis en avant : **${NOM_MODULE[module] || module}**. Commercial signataire : ${sdr || 'l\'équipe Sofy'}.
@@ -556,13 +559,14 @@ const SCHEMA_CADRE = {
       }
     },
     citation: T, citation_meta: T,
+    preuve_cas_id: N,
     cta_titre: T, cta_texte: T, cta_bouton: T
   },
   required: ['titre_document', 'couv_titre', 'couv_texte', 'constat_titre', 'constat_texte',
     'chiffres', 'bilan_titre', 'bilan_texte', 'marche_titre', 'marche_texte', 'defauts_titre', 'defauts_texte', 'defauts', 'traj_titre', 'traj_texte',
     'courbe_indicateur', 'courbe_unite', 'courbe_max', 'points', 'courbe_appui', 'jalons',
     'courbe2_indicateur', 'courbe2_unite', 'courbe2_max', 'points2',
-    'preuve_titre', 'preuve_texte', 'preuve_chiffres', 'citation', 'citation_meta',
+    'preuve_titre', 'preuve_texte', 'preuve_chiffres', 'citation', 'citation_meta', 'preuve_cas_id',
     'cta_titre', 'cta_texte', 'cta_bouton']
 };
 
@@ -621,6 +625,9 @@ Remplis le cadre du document — tout sauf les duels, qui sont rédigés à part
 · preuve_titre / preuve_texte — pourquoi ce cas client éclaire le sien, secteur différent assumé
 · preuve_chiffres — 2 à 3 résultats de ce client, chacun avec sa source
 · citation — le verbatim du client · citation_meta — qui l'a dit et où c'est publié
+· preuve_cas_id — le NUMÉRO [#n] du cas client dont tu t'es servi, tel qu'il figure dans la base
+  ci-dessus. Il sert au serveur à poser le bon lien « Lire l'interview ». Mets 0 si tu n'as
+  utilisé aucun cas client nommé. N'écris JAMAIS d'adresse web toi-même.
 · cta_titre / cta_texte — ce qu'on fait ensemble au premier rendez-vous · cta_bouton — le libellé
   Ne parle PAS de l'ancienneté de Sofy, du nombre de clients, des références ni des agréments :
   la page les affiche elle-même, à l'identique sur toutes les analyses. Concentre-toi sur ce qui
@@ -632,7 +639,7 @@ Remplis le cadre du document — tout sauf les duels, qui sont rédigés à part
 const plein = v => typeof v === 'string' ? v.trim().length > 0 : !!v;
 const chiffresValides = a => (a || []).filter(x => x && plein(x.valeur));
 
-function assembler(cadre, duelsBruts, mes) {
+function assembler(cadre, duelsBruts, mes, blocs) {
   const c = cadre || {};
   const pl = [];
 
@@ -742,10 +749,16 @@ function assembler(cadre, duelsBruts, mes) {
 
   const pvc = chiffresValides(c.preuve_chiffres);
   if (pvc.length || plein(c.citation)) {
+    // « Lire l'interview » : le lien vient de la BASE, pas de la rédaction. L'IA a seulement
+    // désigné le cas client par son numéro ; c'est le serveur qui va chercher l'URL enregistrée.
+    // Une adresse écrite par un modèle dans un document signé Sofy est indéfendable.
+    const casId = parseInt(c.preuve_cas_id, 10) || 0;
+    const bloc = casId ? (blocs || []).find(b => b.id === casId && b.lien) : null;
     pl.push({
       role: 'preuve', eyebrow: "ILS L'ONT DÉJÀ FAIT",
       titre: c.preuve_titre, texte: c.preuve_texte, chiffres: pvc,
-      citation: plein(c.citation) ? { texte: c.citation, meta: c.citation_meta } : null
+      citation: plein(c.citation) ? { texte: c.citation, meta: c.citation_meta } : null,
+      lien: bloc ? { url: bloc.lien, libelle: /interview|entretien|t.moignage/i.test(bloc.titre || '') ? 'Lire l\'interview' : 'Lire le cas client' } : null
     });
   }
 
@@ -1108,7 +1121,7 @@ export default async function handler(req, res) {
 
     // Le formulaire rempli devient le document ici, côté serveur : c'est ce qui garantit qu'une
     // planche affichée porte vraiment du contenu.
-    out.doc = assembler(out.cadre, out.duels, mes);
+    out.doc = assembler(out.cadre, out.duels, mes, blocs);
     // Un document sans planche « problème → réponse Sofy » ne vend rien : autant le dire au SDR
     // plutôt que de lui laisser envoyer un audit.
     if (!out.doc.planches.some(p => p.role === 'duel')) {

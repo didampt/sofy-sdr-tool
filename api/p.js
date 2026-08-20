@@ -45,6 +45,23 @@ const SOFY_REPERES = [
   { c: '20', t: 'collaborateurs' }
 ];
 
+// Le passage du problème à la réponse, entre les deux cartes du duel : Budy, l'IA Sofy. Ce
+// n'était qu'une pastille « Sofy » — Didier veut l'agent, pas la marque, parce que c'est Budy qui
+// exécute (il rédige les réponses aux avis, il répond dans la messagerie). Un point d'énergie
+// traverse le lien de gauche à droite : le problème entre, la réponse sort.
+const BUDY = `<div class="bd reveal" style="--d:120ms">
+  <svg class="bd-r" viewBox="0 0 64 64" role="img" aria-label="Budy, l'IA de Sofy">
+    <circle cx="32" cy="32" r="30" class="bd-halo"/>
+    <circle cx="32" cy="32" r="24" fill="#14103A"/>
+    <path d="M32 12v4" stroke="#F0428A" stroke-width="2.4" stroke-linecap="round"/>
+    <circle cx="32" cy="10.5" r="2.6" fill="#F0428A" class="bd-ant"/>
+    <rect x="20" y="22" width="24" height="19" rx="7.5" fill="#fff"/>
+    <g class="bd-y"><circle cx="27" cy="30.5" r="2.6" fill="#14103A"/><circle cx="37" cy="30.5" r="2.6" fill="#14103A"/></g>
+    <path d="M27.5 35.6q4.5 3.2 9 0" stroke="#14103A" stroke-width="1.9" stroke-linecap="round" fill="none"/>
+  </svg>
+  <span class="bd-n">Budy · IA Sofy</span>
+</div>`;
+
 function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
   const sombre = i % 2 === 1;
   const chiffres = (p.chiffres || []).map(c => `
@@ -97,7 +114,7 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
         <div class="dl-c">${md(p.probleme.constat)}</div>
         ${p.probleme.cout ? `<div class="dl-cout"><span>Ce que ça coûte</span>${md(p.probleme.cout)}</div>` : ''}
       </div>
-      <div class="dl-fl reveal" style="--d:120ms" aria-hidden="true"><span>Sofy</span></div>
+      ${BUDY}
       <div class="dl-s reveal" style="--d:180ms">
         <div class="dl-lab dl-lab-s">La réponse Sofy</div>
         <div class="dl-n">${md(p.solution.nom)}</div>
@@ -136,6 +153,22 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
     const s1 = geo(p.courbe);
     const s2 = serieOk(p.courbe2) ? geo(p.courbe2) : null;
     const trace = s => s.xy.map((c, k) => (k ? 'L' : 'M') + c[0].toFixed(1) + ' ' + c[1].toFixed(1)).join(' ');
+    // Placement des deux valeurs d'un même instant. Elles sont sur la même verticale : sans
+    // arbitrage elles s'écrivent l'une sur l'autre (bug vu le 20/08 sur « 4,6★ / 140 avis »).
+    // Règle : la première courbe écrit au-dessus, la seconde en dessous ; quand les deux points
+    // se touchent, celle du HAUT prend le dessus et celle du BAS passe dessous.
+    const lab = (k) => {
+      const y1 = s1.xy[Math.min(k, s1.xy.length - 1)][1];
+      if (!s2 || !s2.xy[k]) return { l1: y1 - 20, l2: 0 };
+      const y2 = s2.xy[k][1];
+      let l1 = y1 - 20, l2 = y2 + 27;
+      if (l2 > H - PY + 4) l2 = y2 - 20;                 // il écrirait sur la ligne des dates
+      if (Math.abs(l1 - l2) < 26) {                      // les deux libellés se marchent dessus
+        if (y2 <= y1) { l2 = y2 - 22; l1 = y1 + 31; }     // la seconde est au-dessus : elle monte
+        else { l1 = y1 - 22; l2 = y2 + 31; }              // sinon c'est la première qui monte
+      }
+      return { l1, l2 };
+    };
     const d1 = trace(s1);
     const aire = d1 + ` L${s1.xy[s1.xy.length - 1][0].toFixed(1)} ${H - PY} L${s1.xy[0][0].toFixed(1)} ${H - PY} Z`;
     // La série la plus longue porte les libellés de temps.
@@ -159,24 +192,16 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
         ${s2 ? `<path d="${trace(s2)}" fill="none" stroke="#12A594" stroke-width="3.2"
           stroke-linecap="round" stroke-dasharray="9 7" class="crb-l2"/>` : ''}
         <path d="${d1}" fill="none" stroke="url(#gl)" stroke-width="4.5" stroke-linecap="round" class="crb-l"/>
-        ${s2 ? s2.xy.map((c, k) => {
-          // Le libellé se place sous le point, sauf s'il tomberait sur l'axe des temps ou sur la
-          // première courbe : il passe alors au-dessus. Sans ça, le point de départ (le plus bas
-          // de l'échelle) écrivait par-dessus la date.
-          const y1 = (s1.xy[Math.min(k, s1.xy.length - 1)] || [])[1];
-          const tropBas = c[1] > H - PY - 38;                                  // il écrirait sur la date
-          const proche = y1 != null && Math.abs(y1 - c[1]) < 34;               // les deux points se touchent
-          const dessous = tropBas ? false : (proche ? c[1] >= y1 : true);      // la valeur fuit l'autre courbe
-          return `<g class="crb-pt" style="--d:${820 + k * 190}ms">
-          <circle cx="${c[0].toFixed(1)}" cy="${c[1].toFixed(1)}" r="${k === s2.xy.length - 1 ? 7.5 : 5}"
-            fill="#12A594" stroke="#fff" stroke-width="2.5"/>
-          <text x="${c[0].toFixed(1)}" y="${(c[1] + (dessous ? 27 : -16)).toFixed(1)}" class="crb-v2">${fmt(s2.pts[k].valeur)}${esc(s2.unite)}</text>
-        </g>`; }).join('') : ''}
         ${s1.xy.map((c, k) => `<g class="crb-pt" style="--d:${700 + k * 190}ms">
           <circle cx="${c[0].toFixed(1)}" cy="${c[1].toFixed(1)}" r="${k === s1.xy.length - 1 ? 9 : 6}"
             fill="${k === s1.xy.length - 1 ? '#F0428A' : '#5B4FE9'}" stroke="#fff" stroke-width="2.5"/>
-          <text x="${c[0].toFixed(1)}" y="${(c[1] - 20).toFixed(1)}" class="crb-v">${fmt(s1.pts[k].valeur)}${esc(s1.unite)}</text>
+          <text x="${c[0].toFixed(1)}" y="${lab(k).l1.toFixed(1)}" class="crb-v">${fmt(s1.pts[k].valeur)}${esc(s1.unite)}</text>
         </g>`).join('')}
+        ${s2 ? s2.xy.map((c, k) => `<g class="crb-pt" style="--d:${820 + k * 190}ms">
+          <circle cx="${c[0].toFixed(1)}" cy="${c[1].toFixed(1)}" r="${k === s2.xy.length - 1 ? 7.5 : 5}"
+            fill="#12A594" stroke="#fff" stroke-width="2.5"/>
+          <text x="${c[0].toFixed(1)}" y="${lab(k).l2.toFixed(1)}" class="crb-v2">${fmt(s2.pts[k].valeur)}${esc(s2.unite)}</text>
+        </g>`).join('') : ''}
         ${axe.xy.map((c, k) => `<text x="${c[0].toFixed(1)}" y="${H - PY + 24}" class="crb-x">${esc(axe.pts[k].quand || '')}</text>`).join('')}
       </svg>
       ${p.courbe.appui ? `<div class="crb-s2">${md(p.courbe.appui)}</div>` : ''}
@@ -392,6 +417,13 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
   const cit = p.citation && p.citation.texte ? `
     <blockquote class="cit">${md(p.citation.texte)}
       ${p.citation.meta ? `<cite>${esc(p.citation.meta)}</cite>` : ''}</blockquote>` : '';
+  // Le témoignage complet, quand la base porte son adresse publique. Un verbatim que le prospect
+  // peut aller vérifier lui-même vaut plus que le même verbatim recopié dans une plaquette.
+  const lienCas = (p.lien && /^https?:\/\//i.test(String(p.lien.url || ''))) ? `
+    <a class="itw reveal" style="--d:120ms" href="${esc(p.lien.url)}" target="_blank" rel="noopener noreferrer">
+      <span class="itw-i" aria-hidden="true">▶</span>${esc(p.lien.libelle || 'Lire l\'interview')}
+      <span class="itw-x">témoignage client publié</span>
+    </a>` : '';
   const couv = p.role === 'couverture';
   return `<section class="pl ${sombre ? 'dark' : 'light'}${couv ? ' pl-couv' : ''}" data-s="${i}">
     <div class="wrap${couv && sdr && sdr.photo ? ' wrap-couv' : ''}">
@@ -428,6 +460,7 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
       ${proj ? `<div class="pjs">${proj}</div>` : ''}
       ${points ? `<div class="pts">${points}</div>` : ''}
       ${cit}
+      ${lienCas}
       ${couv && sdr && sdr.photo ? `<div class="portrait-bloc reveal">
         <div class="portrait"><img src="${esc(sdr.photo)}" alt="${esc(sdr.nom || '')}"></div>
         <div class="portrait-n">${esc(sdr.nom || '')}</div>
@@ -452,7 +485,17 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
         </div>
         <div class="fin-d">
           ${(instit && instit.equipe) ? `<figure class="eq"><img src="${esc(instit.equipe)}" alt="L'équipe Sofy" loading="lazy"><img class="eq-l" src="/logo-icon.png" alt=""></figure>` : ''}
-          ${(instit && (instit.clients || []).length) ? `<div class="cli">${instit.clients.slice(0, 12).map(c => `<span class="cli-i"><img src="${esc(c.image)}" alt="${esc(c.description || '')}" loading="lazy"></span>`).join('')}</div>` : ''}
+          ${(instit && (instit.clients || []).length) ? (() => {
+            // Au-delà de six logos, une grille fixe force à couper. Un bandeau qui défile les
+            // montre TOUS et anime la planche. La piste est doublée : quand la première copie
+            // sort à gauche, la seconde est déjà en place — le défilement n'a pas de couture.
+            const cls = instit.clients.slice(0, 24);
+            const un = cls.map(c => `<span class="cli-i"><img src="${esc(c.image)}" alt="${esc(c.description || '')}" loading="lazy"></span>`).join('');
+            if (cls.length <= 6) return `<div class="cli">${un}</div>`;
+            return `<div class="cli-b" aria-label="Ils nous font confiance">
+              <div class="cli-p" style="--n:${cls.length};--dur:${Math.max(22, cls.length * 2.6).toFixed(0)}s">${un}${un}</div>
+            </div>`;
+          })() : ''}
         </div>
       </div>
       <div class="rep">
@@ -528,7 +571,18 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .pl.dark .cit{background:rgba(255,255,255,.055);border:1px solid var(--line-d);border-left:4px solid var(--r)}
 .cit cite{display:block;margin-top:12px;font-style:normal;font-size:12.5px;letter-spacing:.04em}
 .pl.light .cit cite{color:#9990C4} .pl.dark .cit cite{color:rgba(255,255,255,.45)}
+/* Bouton « Lire l'interview » : un lien sortant assumé, pas un bouton d'action déguisé. */
+.itw{display:inline-flex;align-items:center;gap:10px;margin-top:18px;padding:11px 18px;border-radius:11px;
+ text-decoration:none;font-size:14.5px;font-weight:750;background:var(--grad);color:#fff;
+ box-shadow:0 10px 26px rgba(91,79,233,.28);transition:transform .18s ease,box-shadow .18s ease}
+.itw:hover{transform:translateY(-2px);box-shadow:0 14px 32px rgba(91,79,233,.36)}
+.itw:focus-visible{outline:3px solid #F0428A;outline-offset:3px}
+.itw-i{font-size:11px;opacity:.9}
+.itw-x{font-size:11px;font-weight:650;opacity:.82;letter-spacing:.03em;padding-left:10px;
+ border-left:1px solid rgba(255,255,255,.35)}
 .fin{display:grid;gap:28px;margin-top:32px;align-items:center;grid-template-columns:1fr}
+/* Sans min-width:0, une piste de logos de 2 280 px fait déborder toute la page (vu au test). */
+.fin>*{min-width:0}
 @media(min-width:920px){.fin{grid-template-columns:1.05fr .95fr}}
 .eq{margin:0;position:relative;border-radius:16px;overflow:hidden;box-shadow:0 18px 44px rgba(20,16,58,.16)}
 .eq img{width:100%;height:auto;max-height:260px;object-fit:cover;display:block}
@@ -538,6 +592,16 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 /* Grille régulière plutôt qu'un flux : avec neuf logos, le neuvième se retrouvait seul sur une
    ligne — l'effet « oubli » plutôt que « référence ». */
 .cli{display:grid;grid-template-columns:repeat(auto-fit,minmax(74px,1fr));gap:8px;margin-top:14px}
+/* Bandeau de logos qui défile. Les masques latéraux évitent l'effet « logo coupé » aux bords. */
+.cli-b{margin-top:14px;overflow:hidden;position:relative;min-width:0;max-width:100%;
+ mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);
+ -webkit-mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent)}
+.cli-p{display:flex;gap:8px;width:max-content;animation:defile var(--dur,26s) linear infinite}
+.cli-b:hover .cli-p{animation-play-state:paused}
+.cli-p .cli-i{width:96px;flex:none}
+/* Une copie + un écart (gap/2 = 4px) : à -50% pile, la boucle sursauterait de 4 px. */
+@keyframes defile{from{transform:translate3d(0,0,0)}to{transform:translate3d(calc(-50% - 4px),0,0)}}
+@media(prefers-reduced-motion:reduce){.cli-p{animation:none;flex-wrap:wrap;width:100%}}
 .cli-i{height:44px;padding:6px 8px;border-radius:9px;background:#fff;display:flex;
  align-items:center;justify-content:center;border:1px solid var(--line)}
 .pl.dark .cli-i{border-color:rgba(255,255,255,.14)}
@@ -853,11 +917,28 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .pl.dark .dl-r{border-top-color:var(--line-d)}
 .dl-r span{display:block;font-size:10.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;margin-bottom:4px;
  background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
-.dl-fl{display:none}
-@media(min-width:900px){.dl-fl{display:flex;align-items:center;justify-content:center;position:relative}}
-.dl-fl::before{content:'';position:absolute;left:6px;right:6px;height:2px;background:var(--grad);opacity:.42}
-.dl-fl span{position:relative;z-index:1;font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
- padding:4px 9px;border-radius:20px;background:var(--grad);color:#fff}
+/* Budy entre les deux cartes. Caché en colonne unique (le duel s'empile, il n'y a plus d'entre-deux). */
+.bd{display:none}
+@media(min-width:900px){.bd{display:flex;flex-direction:column;align-items:center;justify-content:center;
+ gap:7px;position:relative}}
+.bd::before{content:'';position:absolute;left:-2px;right:-2px;top:calc(50% - 15px);height:2px;
+ background:var(--grad);opacity:.4}
+/* Le point d'énergie : il part du problème et entre dans Budy. */
+.bd::after{content:'';position:absolute;left:0;top:calc(50% - 18px);width:8px;height:8px;border-radius:50%;
+ background:var(--r);box-shadow:0 0 10px rgba(240,66,138,.75);animation:bdflux 2.8s ease-in-out infinite}
+@keyframes bdflux{0%{left:-4px;opacity:0}18%{opacity:1}46%{left:calc(50% - 4px);opacity:.9}
+ 62%{left:calc(50% - 4px);opacity:0}72%{opacity:0}88%{left:calc(100% - 4px);opacity:.85}100%{opacity:0}}
+.bd-r{width:72px;height:72px;position:relative;z-index:1;filter:drop-shadow(0 6px 16px rgba(20,16,58,.28))}
+.bd-halo{fill:none;stroke:#5B4FE9;stroke-width:1.5;animation:bdpuls 3s ease-in-out infinite}
+@keyframes bdpuls{0%,100%{opacity:.1;transform:scale(.9);transform-origin:32px 32px}
+ 50%{opacity:.38;transform:scale(1);transform-origin:32px 32px}}
+.bd-ant{animation:bdant 3s ease-in-out infinite}
+@keyframes bdant{0%,100%{opacity:.45}50%{opacity:1}}
+.bd-y{animation:bdcil 4.6s steps(1,end) infinite;transform-origin:32px 30.5px}
+@keyframes bdcil{0%,95%{transform:scaleY(1)}96%,98%{transform:scaleY(.12)}99%,100%{transform:scaleY(1)}}
+.bd-n{position:relative;z-index:1;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+ padding:3px 8px;border-radius:20px;background:var(--grad);color:#fff;white-space:nowrap}
+@media(prefers-reduced-motion:reduce){.bd::after,.bd-halo,.bd-ant,.bd-y{animation:none}.bd::after{opacity:0}}
 .dl-k{display:flex;align-items:center;gap:18px;margin-top:20px;padding:18px 22px;border-radius:14px;flex-wrap:wrap}
 .pl.light .dl-k{background:#F4F2FD;border:1px solid var(--line)}
 .pl.dark .dl-k{background:rgba(255,255,255,.055);border:1px solid var(--line-d)}
@@ -1065,7 +1146,12 @@ export default async function handler(req, res) {
       try { const [s] = await sql`SELECT nom, email, ringover_numero FROM sdrs WHERE nom = ${row.sdr} LIMIT 1`; sdr = s || null; } catch (__) {}
     }
 
-    const premiere = !interne && !row.ouvertures;
+    // Un aperçu de lien (Slack, Gmail, WhatsApp) charge la page sans cookie et sans humain
+    // derrière : il ne doit ni gonfler le compteur d'ouvertures, ni créer un « nouveau lecteur ».
+    const ua = String(req.headers['user-agent'] || '');
+    const robot = !ua || /bot|crawler|spider|preview|slack|discord|whatsapp|telegram|facebookexternalhit|twitterbot|linkedinbot|embedly|proxy|python-requests|curl|wget|headless/i.test(ua);
+    const compte = !interne && !robot;
+    const premiere = compte && !row.ouvertures;
 
     // Qui lit ? On ne peut pas NOMMER un lecteur sans l'obliger à s'identifier (ce qui tuerait le
     // taux d'ouverture). On peut en revanche les COMPTER : un identifiant aléatoire par appareil,
@@ -1076,10 +1162,10 @@ export default async function handler(req, res) {
     const lecteur = dejaVu || crypto.randomBytes(6).toString('hex');
     // Pas d'identifiant de lecteur posé sur le poste d'un employé : il ne doit jamais entrer
     // dans la liste des lecteurs, même s'il rouvre la page dix fois.
-    if (!dejaVu && !interne) res.setHeader('Set-Cookie', `sl=${lecteur}; Path=/p; Max-Age=7776000; HttpOnly; Secure; SameSite=Lax`);
+    if (!dejaVu && compte) res.setHeader('Set-Cookie', `sl=${lecteur}; Path=/p; Max-Age=7776000; HttpOnly; Secure; SameSite=Lax`);
     const connus = Array.isArray(row.lecteurs) ? row.lecteurs : [];
-    const nouveauLecteur = !interne && !connus.includes(lecteur);
-    if (!interne) try {
+    const nouveauLecteur = compte && !connus.includes(lecteur);
+    if (compte) try {
       await sql`UPDATE prez SET ouvertures = COALESCE(ouvertures,0) + 1, derniere_ouverture = NOW(),
         premiere_ouverture = COALESCE(premiere_ouverture, NOW()),
         lecteurs = CASE WHEN COALESCE(lecteurs,'[]'::jsonb) @> ${JSON.stringify([lecteur])}::jsonb
@@ -1089,7 +1175,29 @@ export default async function handler(req, res) {
 
     // Première ouverture = signal d'achat. C'est plus fort qu'un email ouvert : le prospect a
     // cliqué, il lit une analyse de SA situation. Le SDR doit le savoir tout de suite.
-    if (premiere || (nouveauLecteur && connus.length)) {
+    //
+    // MAIS pas dix fois. Le 20/08, Didier a reçu une rafale d'alertes pour les ouvertures
+    // successives d'un même lien : un aperçu de lien (Slack, Gmail, WhatsApp) arrive sans
+    // cookie, compte donc comme un « nouveau lecteur », et déclenche une alerte de plus.
+    // Trois verrous, du moins coûteux au plus sûr :
+    //   1. les robots et générateurs d'aperçu ne comptent pas comme des lecteurs ;
+    //   2. au-delà du 3ᵉ lecteur, plus d'alerte — le signal est acquis, le répéter lasse ;
+    //   3. une seule alerte « nouveau lecteur » toutes les 4 h par document.
+    let alerteRecente = false;
+    if (!premiere) {
+      try {
+        const [a] = await sql`SELECT (derniere_alerte > NOW() - INTERVAL '4 hours') AS recente FROM prez WHERE jeton = ${jeton}`;
+        alerteRecente = !!(a && a.recente);
+      } catch (_) {
+        // Colonne absente (documents créés avant cette version) : on la crée à la volée, sans
+        // toucher au SCHEMA_VERSION — cf. incident « analyse » du 03/08.
+        try { await sql`ALTER TABLE prez ADD COLUMN IF NOT EXISTS derniere_alerte TIMESTAMPTZ`; } catch (__) {}
+      }
+    }
+    const alerter = !robot && (premiere
+      || (nouveauLecteur && connus.length >= 1 && connus.length < 3 && !alerteRecente));
+    if (alerter) {
+      try { await sql`UPDATE prez SET derniere_alerte = NOW() WHERE jeton = ${jeton}`; } catch (_) {}
       const hook = process.env.SLACK_WEBHOOK_URL;
       if (hook) {
         try {

@@ -307,6 +307,30 @@ export default async function handler(req, res) {
       }
     } catch (_) {}
 
+    // ── Analyses client ouvertes : le signal le plus chaud du tableau ──
+    // Le prospect n'a pas seulement ouvert un email : il a cliqué et lu une analyse de SA
+    // situation. Le signal remonte au SDR QUI L'A PRÉPARÉE, avec l'heure et le nombre de
+    // lecteurs. On ne peut pas NOMMER un lecteur (le lien n'exige aucune identification) :
+    // on compte les appareils distincts et on rappelle à qui le lien a été envoyé.
+    let prezOuvertes = [];
+    try {
+      const rows = await sql`SELECT jeton, client, module, cle_fiche, liste_id, destinataire,
+          ouvertures, profondeur, lecteurs, premiere_ouverture, derniere_ouverture, expire_le
+        FROM prez
+        WHERE sdr = ${sdr} AND COALESCE(ouvertures,0) > 0
+          AND derniere_ouverture > NOW() - INTERVAL '7 days'
+        ORDER BY derniere_ouverture DESC LIMIT 15`;
+      prezOuvertes = rows.map(r => ({
+        jeton: r.jeton, client: r.client, module: r.module,
+        cle: r.cle_fiche, liste_id: r.liste_id, destinataire: r.destinataire,
+        ouvertures: r.ouvertures || 0,
+        lecteurs: Array.isArray(r.lecteurs) ? r.lecteurs.length : 0,
+        profondeur: r.profondeur || 0,
+        premiere: r.premiere_ouverture, derniere: r.derniere_ouverture,
+        expiree: !!(r.expire_le && new Date(r.expire_le) < new Date())
+      }));
+    } catch (_) { /* aucune analyse générée à ce jour : la tuile reste vide */ }
+
     // ── 2. Signaux chauds des dernières 24 h (dernier événement par lead, fiches non re-traitées depuis) ──
     let chauds = [];
     const emails = [...parEmail.keys()];
@@ -401,6 +425,7 @@ export default async function handler(req, res) {
       lookalike_ref: lookalikeRef,
       listes_a_enrichir: listesAEnrichir,
       hot,
+      prez_ouvertes: prezOuvertes,
       par_liste: parListe,
       liste_choisie: listeChoisie,
       reprise

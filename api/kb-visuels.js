@@ -90,7 +90,7 @@ export async function visuelsInstit() {
     WHERE actif AND statut = 'valide' AND type = 'humain'
     ORDER BY (description ILIKE '%équipe%' OR description ILIKE '%equipe%') DESC, id DESC LIMIT 1`;
   const clients = await sql`SELECT image, description FROM kb_visuels
-    WHERE actif AND statut = 'valide' AND type = 'client' ORDER BY id LIMIT 8`;
+    WHERE actif AND statut = 'valide' AND type = 'client' ORDER BY id LIMIT 30`;
   return { equipe: (eq && eq.image) || null, clients };
 }
 

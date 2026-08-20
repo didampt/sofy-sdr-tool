@@ -46,6 +46,10 @@ async function ensureKb() {
   await sql`ALTER TABLE kb_sales ADD COLUMN IF NOT EXISTS valide_par TEXT`;
   await sql`ALTER TABLE kb_sales ADD COLUMN IF NOT EXISTS valide_le TIMESTAMPTZ`;
   await sql`ALTER TABLE kb_sales ADD COLUMN IF NOT EXISTS motif_refus TEXT`;
+  // L'URL publique du témoignage (interview Groupe Kiosque, Marimax…). Elle est SAISIE ICI, jamais
+  // écrite par l'IA : un lien inventé dans un document client est indéfendable. La présentation
+  // affiche alors un bouton « Lire l'interview » qui pointe dessus.
+  await sql`ALTER TABLE kb_sales ADD COLUMN IF NOT EXISTS lien TEXT`;
   await sql`CREATE INDEX IF NOT EXISTS idx_kb_sales_module ON kb_sales(module, type) WHERE actif`;
   kbPrete = true;
 }
@@ -229,11 +233,14 @@ export default async function handler(req, res) {
       }
       // Un admin (ou le CMO) valide directement ce qu'il ajoute ; un SDR/AE propose.
       const statut = admin ? 'valide' : 'propose';
+      const lien = lienSain(b.lien);
+      if (b.lien && !lien) return res.status(400).json({ erreur: 'Le lien doit être une adresse http(s) complète — c\'est elle qui sera cliquée par le prospect.' });
       const [row] = await sql`INSERT INTO kb_sales (type, module, titre, contenu, source, secteur, territoire,
-          verifie_le, statut, propose_par, valide_par, valide_le)
+          verifie_le, statut, propose_par, valide_par, valide_le, lien)
         VALUES (${b.type}, ${MODULES.includes(b.module) ? b.module : 'tous'}, ${b.titre}, ${b.contenu},
                 ${b.source || null}, ${b.secteur || null}, ${b.territoire || null}, CURRENT_DATE,
-                ${statut}, ${user.nom}, ${admin ? user.nom : null}, ${admin ? new Date().toISOString() : null}) RETURNING *`;
+                ${statut}, ${user.nom}, ${admin ? user.nom : null}, ${admin ? new Date().toISOString() : null},
+                ${lien}) RETURNING *`;
       return res.status(200).json({
         ok: true, bloc: row,
         info: admin ? 'Bloc ajouté et validé — utilisable dès la prochaine présentation.'
@@ -275,6 +282,7 @@ export default async function handler(req, res) {
         secteur = COALESCE(${b.secteur || null}, secteur),
         territoire = COALESCE(${b.territoire || null}, territoire),
         actif = COALESCE(${typeof b.actif === 'boolean' ? b.actif : null}, actif),
+        lien = COALESCE(${lienSain(b.lien)}, lien),
         verifie_le = CURRENT_DATE
         WHERE id = ${parseInt(b.id)} RETURNING *`;
       if (!row) return res.status(404).json({ erreur: 'Bloc introuvable' });
@@ -298,9 +306,18 @@ export default async function handler(req, res) {
 
 // Utilisé par le générateur de présentations : ne renvoie que les blocs utilisables
 // (actifs et non périmés) pour un module donné.
+// Une URL de témoignage ne part dans un document client que si elle est en http(s) : un
+// « javascript: » ou un « data: » cliqué par un prospect serait une faille signée Sofy.
+export const lienSain = (u) => {
+  const v = String(u || '').trim();
+  if (!v) return null;
+  try { const x = new URL(v); return /^https?:$/.test(x.protocol) ? x.href.slice(0, 500) : null; }
+  catch (_) { return null; }
+};
+
 export async function blocsUtilisables(module) {
   await ensureKb();
-  const rows = await sql`SELECT type, module, titre, contenu, source, secteur, territoire, verifie_le
+  const rows = await sql`SELECT id, type, module, titre, contenu, source, secteur, territoire, verifie_le, lien
     FROM kb_sales WHERE actif AND statut = 'valide' AND (module = ${module || 'tous'} OR module = 'tous')
       AND verifie_le > CURRENT_DATE - (${PEREMPTION_MOIS} || ' months')::interval
     ORDER BY type, id`;

@@ -2144,7 +2144,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v363';
+const VERSION='v364';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -5217,7 +5217,9 @@ function formBlocKb(id){
    <textarea id="kbf-contenu" class="field" style="width:100%;margin-top:3px;min-height:110px;font-family:inherit">${b?htmlSafe(b.contenu):''}</textarea></label>
   <label style="display:block;margin-top:10px;font-size:12.5px;color:var(--ink-soft)">Source — obligatoire pour un chiffre ou un cas client
    <input id="kbf-source" class="field" style="width:100%;margin-top:3px" placeholder="ex : interview client publiée sur sofy.fr/…" value="${b?htmlSafe(b.source||''):''}"></label>
-  <div style="font-size:12px;color:var(--ink-soft);margin-top:8px;line-height:1.5">Un chiffre sans source ne peut pas entrer : c'est exactement ce que l'IA irait recopier dans un document qui porte le nom de Sofy.</div>
+  <label style="display:block;margin-top:10px;font-size:12.5px;color:var(--ink-soft)">Lien public du t\u00e9moignage (facultatif) \u2014 un bouton \u00ab Lire l'interview \u00bb appara\u00eetra dans la pr\u00e9sentation
+   <input id="kbf-lien" class="field" style="width:100%;margin-top:3px" placeholder="https://sofy.fr/temoignages/groupe-kiosque" value="${b?htmlSafe(b.lien||''):''}"></label>
+  <div style="font-size:12px;color:var(--ink-soft);margin-top:8px;line-height:1.5">Un chiffre sans source ne peut pas entrer : c'est exactement ce que l'IA irait recopier dans un document qui porte le nom de Sofy. Le lien, lui, doit \u00eatre une page <b>publique</b> : c'est le prospect qui cliquera dessus \u2014 jamais un PDF de ton disque.</div>
   <div style="margin-top:14px;display:flex;gap:8px"><button class="btn btn-primary" onclick="enregistrerKb(${b?b.id:'null'})">${b?'Enregistrer':'Ajouter'}</button></div>
  </div>`;
  f.scrollIntoView({behavior:'smooth',block:'nearest'});
@@ -5226,7 +5228,7 @@ function formBlocKb(id){
 async function enregistrerKb(id){
  const v=x=>document.getElementById('kbf-'+x).value.trim();
  const corps={type:v('type'),module:v('mod'),titre:v('titre'),contenu:v('contenu'),
-              source:v('source'),secteur:v('sect'),territoire:v('terr')};
+              source:v('source'),secteur:v('sect'),territoire:v('terr'),lien:v('lien')};
  if(!corps.titre||!corps.contenu){toast('Titre et contenu sont nécessaires');return;}
  if(id)corps.id=id;
  try{
@@ -6363,7 +6365,11 @@ async function completerMesures(i){
  const e=REAL[i], g=e.gmb||{};
  const f=(g.fiches||[])[0]||g.pire_fiche||{};
  const pid=f.place_id||e.place_id;
- const faits=[];
+ const faits=[], erreurs=[];
+ // Un relevé raté ne doit JAMAIS être silencieux : c'est ce qui a fait croire le 20/08 que la
+ // planche « position locale » n'existait pas, alors que le relevé avait échoué sans le dire.
+ const rater=(quoi,d)=>erreurs.push(quoi+' : '+String((d&&(d.erreur||d.info))||'réponse inattendue')
+  +((d&&d.detail)?' ('+String(d.detail).slice(0,90)+')':''));
 
  // 1. Réponses aux avis et délai réel (l'API Google ne les expose pas)
  if(pid&&!g.reponses){
@@ -6374,7 +6380,8 @@ async function completerMesures(i){
    if(d.ok&&d.mesure){e.gmb=Object.assign({},e.gmb||{},{reponses:{taux:d.mesure.taux,repondus:d.mesure.repondus,
      analyses:d.mesure.analyses,delai_median_h:d.mesure.delai_median_h,delai_max_h:d.mesure.delai_max_h}});
     faits.push('réponses aux avis');}
-  }catch(_){}
+   else rater('réponses aux avis',d);
+  }catch(err){rater('réponses aux avis',{erreur:err.message});}
  }
  // 2. Photos, complétude, et POSITION dans les résultats locaux
  if(pid&&!(e.gmb||{}).audit){
@@ -6384,23 +6391,35 @@ async function completerMesures(i){
     body:JSON.stringify({place_id:pid,nom:f.nom||e.nom,requete:req,
      ll:(f.lat&&f.lng)?('@'+f.lat+','+f.lng+',13z'):''})});
    const d=await r.json();
-   if(d.ok&&d.audit){e.gmb=Object.assign({},e.gmb||{},{audit:d.audit});faits.push('audit de fiche');}
-  }catch(_){}
+   if(d.ok&&d.audit){
+    e.gmb=Object.assign({},e.gmb||{},{audit:d.audit});faits.push('audit de fiche');
+    // La position locale est LA donnée de la planche « ce que trouve un client » : si elle
+    // manque alors qu'on l'a demandée, on le dit, sinon la planche disparaît sans explication.
+    if(req&&d.audit.position_locale==null&&!(d.audit.concurrents||[]).length)
+     erreurs.push('position locale : aucun résultat local rendu sur « '+req+' » (coordonnées de la fiche introuvables ?)');
+   }
+   else rater('audit de fiche',d);
+  }catch(err){rater('audit de fiche',{erreur:err.message});}
  }
  // 3. Visibilité dans l'aperçu IA de Google
  if(!(e.gmb||{}).ia_visibilite){
   const req=requeteLocale(e);
-  if(req){
+  if(!req)erreurs.push('aperçu IA : impossible de deviner la requête (activité et ville absentes de la fiche)');
+  else{
    try{
     const r=await api('/api/ai-visibilite',{method:'POST',headers:{'Content-Type':'application/json'},
      body:JSON.stringify({requete:req,domaine:domaineDe(e),nom:enseigneDe(e)||e.nom})});
     const d=await r.json();
     if(d.ok&&d.mesure){e.gmb=Object.assign({},e.gmb||{},{ia_visibilite:d.mesure});faits.push('visibilité IA');}
-   }catch(_){}
+    else rater('aperçu IA',d);
+   }catch(err){rater('aperçu IA',{erreur:err.message});}
   }
  }
- if(faits.length){persister();rerender(i);}
- return faits;
+ // ⚠️ Sauvegarde ATTENDUE, pas différée. /api/prez relit la fiche EN BASE : avec un persister()
+ // de 400 ms non attendu, la rédaction partait sans les relevés qu'on venait de payer — c'est
+ // pour ça que les planches « position locale » et « aperçu IA » manquaient le 20/08.
+ if(faits.length){ try{ await persisterMaintenant(); }catch(_){ erreurs.push('sauvegarde des relevés : échec — la rédaction risque de les ignorer'); } rerender(i); }
+ return {faits,erreurs};
 }
 
 // La requête locale : ce qu'un client tape pour trouver le SERVICE, déduite de l'activité et de
@@ -6445,9 +6464,18 @@ async function genererPrez(i){
  if(e.gmb&&e.gmb.trouve){
   const v0=voileTravail('🔍 Relevés complémentaires',
    'Réponses aux avis, photos, position dans les résultats locaux et citation par l\'IA de Google — environ 0,05 €.');
-  try{ const faits=await completerMesures(i);
-   if(faits.length)toast('✅ Mesuré : '+faits.join(', '));
+  let rel={faits:[],erreurs:[]};
+  try{ rel=await completerMesures(i);
+   if(rel.faits.length)toast('✅ Mesuré : '+rel.faits.join(', '));
   }finally{ v0.fermer(); }
+  // Un relevé raté change le document : sans position locale, la planche « ce que trouve un
+  // client qui vous cherche » n'existe pas. Le SDR doit le savoir AVANT de payer la rédaction.
+  if(rel.erreurs.length){
+   if(!await confirmSofy('Des relevés n\'ont pas abouti',
+    'Ces mesures manqueront au document :\n· '+rel.erreurs.join('\n· ')+
+    '\n\nConséquence : la planche « ce que trouve un client qui vous cherche » (position locale + aperçu IA) ne sera pas créée.\n\nSi c\'est une clé SerpApi épuisée ou absente, corrige-la dans Vercel puis relance : ce sont les pages les plus fortes du document.',
+    'Générer sans ces mesures'))return;
+  }
  }
  // Garde-fou : une analyse existe déjà sur cette fiche. La regénérer coûte un appel complet et
  // crée un SECOND lien — l'ancien continue de vivre et de compter ses ouvertures.
@@ -9048,7 +9076,8 @@ function rendreCockpit(sdrAffiche){
  const urgents=[...(d.hot||[]).map(x=>({...x,_k:'hot',_ts:x.date})),...(d.chauds||[]).map(x=>({...x,_k:'chaud',_ts:x.signal_ts}))].sort((a,b)=>new Date(b._ts||0)-new Date(a._ts||0));
  const promis=[...(d.rappels.retard||[]).map(x=>({...x,_retard:true})),...(d.rappels.aujourdhui||[])];
  const retenter=(d.rappels&&d.rappels.retenter)||[];
- let tuileSel=(CK_TUILE==='auto')?(urgents.length?'hot':(promis.length?'promis':(retenter.length?'retenter':'prospect'))):CK_TUILE;
+ // Une analyse lue passe devant les rappels : le prospect est en train de lire, c'est maintenant.
+ let tuileSel=(CK_TUILE==='auto')?(urgents.length?'hot':((d.prez_ouvertes||[]).length?'prez':(promis.length?'promis':(retenter.length?'retenter':'prospect')))):CK_TUILE;
  const tb=(id,emo,label,n,coul,bg,desc)=>`<div onclick="CK_TUILE='${id}';rendreCockpit(CK&&CK.sdr)" style="cursor:pointer;flex:1;min-width:180px;background:${tuileSel===id?bg:'var(--card)'};border:2px solid ${tuileSel===id?coul:'var(--line)'};border-radius:12px;padding:10px 14px">
   <div style="font-size:11px;font-weight:800;letter-spacing:.04em;color:${coul}">${emo} ${label}</div>
   <div style="font-size:24px;font-weight:800;color:${coul};line-height:1.2">${n}</div>
@@ -9058,6 +9087,7 @@ function rendreCockpit(sdrAffiche){
   ${tb('promis','\u23f0','RAPPELS PROMIS',promis.length,'#B45309','#FFFBEB','tes engagements client')}
   ${tb('retenter','\ud83d\udd01','\u00c0 RETENTER',retenter.length,'#475569','#F1F5F9','injoignables \u00b7 3\u1d49 \u00e9chec \u2192 s\u00e9quence auto')}
   ${tb('prospect','\ud83d\udccb','MA PROSPECTION',d.restants||0,'#2B4BF2','#EFF6FF',((d.par_liste||[]).filter(x=>x.restantes>0).length)+' liste(s) active(s) \u00b7 tri par score')}
+  ${(d.prez_ouvertes||[]).length?tb('prez','\ud83c\udfa8','ANALYSES LUES',(d.prez_ouvertes||[]).reduce((s,x)=>s+(x.ouvertures||0),0),'#7C3AED','#F5F3FF',(d.prez_ouvertes||[]).length+' analyse(s) ouverte(s) \u00b7 7 derniers jours'):''}
  </div>`;
  if(tuileSel==='hot'){
   // Filtre par source (le volume LinkedIn noie les visites sofy.fr / signups, plus chauds)
@@ -9104,6 +9134,31 @@ function rendreCockpit(sdrAffiche){
     ${t.description?`<div style="font-size:12px;color:var(--ink-soft);margin-top:2px">${htmlSafe(t.description)} \u00b7 au 3\u1d49 \u00e9chec la s\u00e9quence email prend le relais \u2708\ufe0f</div>`:''}
    </div>${t.tel?`<span style="font-size:13px;font-weight:700;white-space:nowrap">${htmlSafe(t.tel)}</span>`:''}`,
    'border-left:3px solid #94A3B8;border-radius:0 10px 10px 0;',!!(t.liste_id&&t.cle),true);
+  }
+ }
+ // ── ANALYSES LUES : le prospect a ouvert la page faite pour lui ──
+ // Signal plus fort qu'un email ouvert : il a cliqué et lu SA situation. On affiche l'heure de la
+ // dernière lecture et le nombre d'appareils distincts. On ne peut pas nommer le lecteur — le lien
+ // n'exige aucune identification — donc on rappelle à QUI il a été envoyé, ce qui est vérifiable.
+ if(tuileSel==='prez'){
+  const ps=d.prez_ouvertes||[];
+  if(!ps.length)h+='<p style="font-size:12.5px;color:var(--ink-soft);margin:0 0 6px">Aucune analyse ouverte ces 7 derniers jours.</p>';
+  for(const p of ps){
+   const plural=p.ouvertures>1?'s':'';
+   const lect=p.lecteurs>1?`<span style="font-weight:800;color:#7C3AED"> · ${p.lecteurs} lecteurs distincts</span>`:'';
+   h+=ckRow({liste_id:p.liste_id,cle:p.cle,nom:p.client,tel:null},
+    `<span style="font-size:15px" title="Analyse client ouverte">🎨</span>
+     <div style="flex:1;min-width:200px;line-height:1.4">
+      <div><span style="font-size:13.5px;font-weight:700">${htmlSafe(p.client||'')}</span>
+       <span style="font-size:11.5px;color:var(--ink-soft)"> · ${htmlSafe(nomModule(p.module)||'')}</span>${p.expiree?' <span style="font-size:11px;color:#B91C1C;font-weight:700">· lien expiré</span>':''}</div>
+      <div style="font-size:12px;color:var(--ink-soft)">${p.ouvertures} ouverture${plural}${lect} · dernière ${hFr(p.derniere)} (${depuis(p.derniere)})${p.premiere&&p.ouvertures>1?` · 1<sup>re</sup> le ${hFr(p.premiere)}`:''}</div>
+      ${p.destinataire?`<div style="font-size:11.5px;color:var(--ink-soft)">lien envoyé à ${htmlSafe(p.destinataire)} — le lecteur n'est pas identifiable autrement</div>`:'<div style="font-size:11.5px;color:var(--ink-soft)">aucun destinataire noté à l\'envoi</div>'}
+     </div>
+     <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <a class="act act-copy" style="text-decoration:none" href="/p/${htmlSafe(p.jeton)}?apercu=1" target="_blank" title="Aperçu interne — ta visite n'est pas comptée">👁 Voir</a>
+      <button class="act act-copy" onclick="navigator.clipboard.writeText(location.origin+'/p/${jsArg(p.jeton)}');toast('Lien copié ✓')">📋 Lien</button>
+     </div>`,
+    'border-left:3px solid #7C3AED;border-radius:0 10px 10px 0;',!!(p.liste_id&&p.cle),false);
   }
  }
  // ── MA PROSPECTION : 4e tuile (listes en chips, comme les sources de la tuile HOT) ──
