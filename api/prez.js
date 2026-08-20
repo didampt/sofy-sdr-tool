@@ -94,7 +94,19 @@ function mesures(e) {
         apercu_ia_affiche: !!g.ia_visibilite.apercu_present,
         prospect_cite: !!g.ia_visibilite.cite,
         rang_de_citation: g.ia_visibilite.rang_citation,
-        entreprises_citees_par_lia: g.ia_visibilite.entreprises_citees || null
+        entreprises_citees_par_lia: g.ia_visibilite.entreprises_citees || null,
+        // Qui PAIE pour être devant sur cette requête. Relevé dans le même appel que l'aperçu IA.
+        concurrents_qui_paient: (g.ia_visibilite.annonceurs || []).map(a => ({
+          nom: a.nom, note: a.note, avis: a.avis, google_garanti: !!a.garanti, type: a.type
+        })),
+        nb_annonces: g.ia_visibilite.nb_annonces || 0
+      } : null,
+      // Apple Plans : la moitié du parc mobile français. Le NAP le promettait, on le mesure.
+      apple_plans: g.apple ? {
+        present: !!g.apple.present, position: g.apple.position,
+        note: g.apple.note, avis: g.apple.avis, categorie: g.apple.categorie,
+        site_declare: g.apple.site_declare, telephone_declare: g.apple.telephone_declare,
+        trois_premiers: g.apple.trois_premiers || null, total_resultats: g.apple.total_resultats
       } : null,
       audit_fiche: g.audit ? {
         photos: g.audit.photos_total, photos_publiees_par_lenseigne: g.audit.photos_enseigne,
@@ -603,7 +615,8 @@ Remplis le cadre du document — tout sauf les duels, qui sont rédigés à part
 · chiffres — 2 à 4 chiffres MESURÉS chez lui. "valeur" est une chaîne courte ("1,7"), "unite" est
   courte ("★", " %", " avis"), "legende" ≤60 car., "source" dit où on l'a relevé.
 · marche_titre ≤65 car. / marche_texte ≤180 car. — la planche POSITION LOCALE. La page affiche
-  elle-même le rang, les trois premiers concurrents et la citation par l'IA de Google : commente
+  elle-même le rang, les trois premiers concurrents, les concurrents qui PAIENT (Google Ads),
+  la présence sur Apple Plans et la citation par l'IA de Google : commente
   ce que ça veut dire pour lui, ne recopie pas les chiffres. Si "audit_fiche" et "visibilite_ia"
   sont absents des mesures, laisse ces deux champs vides.
 · bilan_titre ≤65 car. / bilan_texte ≤180 car. — la planche du SCORING. Les trois scores sur 100
@@ -744,8 +757,10 @@ function assembler(cadre, duelsBruts, mes, blocs) {
   // Garde-fou : pas de planche sans matière. Une requête testée qui n'a rendu ni podium, ni
   // position, ni aperçu IA ne donnerait qu'un titre au-dessus du vide — le défaut que Didier a
   // signalé trois fois.
+  const ap0 = (mes.google && mes.google.apple_plans) || null;
   const mkOk = ((au0 && (au0.position_locale != null || (au0.trois_premiers || []).length))
-    || (iv0 && iv0.apercu_ia_affiche));
+    || (iv0 && (iv0.apercu_ia_affiche || (iv0.concurrents_qui_paient || []).length))
+    || (ap0 && ap0.total_resultats));
   if (mkOk && ((au0 && au0.requete_testee) || (iv0 && iv0.requete_testee))) {
     pl.push({
       role: 'marche', eyebrow: 'CE QUE TROUVE UN CLIENT QUI VOUS CHERCHE',
@@ -756,7 +771,11 @@ function assembler(cadre, duelsBruts, mes, blocs) {
         requete: (au0 && au0.requete_testee) || (iv0 && iv0.requete_testee),
         position: au0 ? au0.position_locale : null,
         concurrents: (au0 && au0.trois_premiers) || null,
-        ia: iv0 || null
+        ia: iv0 || null,
+        // Trois façons d'arriver devant le prospect : le référencement, l'achat d'espace, et
+        // l'autre carte (Apple). Les trois sont mesurées, aucune n'est affirmée.
+        ads: (iv0 && (iv0.concurrents_qui_paient || []).length) ? iv0.concurrents_qui_paient.slice(0, 5) : null,
+        apple: ap0 || null
       }
     });
   }

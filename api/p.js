@@ -376,6 +376,17 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
                    <div class="mk-ix">Vos futurs clients posent déjà la question à une IA. La réponse ne vous mentionne pas.</div>`)}
         </div>
       </div>
+      ${(mk.ads && mk.ads.length) ? `<div class="mk-ads reveal" style="--d:200ms">
+        <div class="mk-lab">Ceux qui achètent la première place</div>
+        <div class="mk-ax">Sur cette requête, ${mk.ads.length === 1 ? 'un concurrent paie' : `${mk.ads.length} concurrents paient`} Google pour passer devant les résultats naturels — dont le vôtre.</div>
+        <div class="mk-al">${mk.ads.map(a => `<span class="mk-ai">${md(a.nom || '')}${a.note != null ? ` <b>${esc(String(a.note).replace('.', ','))}★</b>` : ''}${a.google_garanti ? '<i>garanti par Google</i>' : ''}</span>`).join('')}</div>
+      </div>` : ''}
+      ${mk.apple ? `<div class="mk-ap reveal" style="--d:250ms">
+        <div class="mk-lab">Et sur Apple Plans</div>
+        ${mk.apple.present
+          ? `<div class="mk-ax"><b>Présent</b> en ${esc(String(mk.apple.position || '?'))}ᵉ position${mk.apple.note != null ? `, ${esc(String(mk.apple.note).replace('.', ','))}★` : ', sans note affichée'}${mk.apple.avis != null ? ` (${esc(String(mk.apple.avis))} avis)` : ''}. Un acquis à tenir : Apple ne recopie pas Google, sa fiche se met à jour séparément.</div>`
+          : `<div class="mk-ax"><b>Absent</b> des ${esc(String(mk.apple.total_resultats || 0))} résultats rendus par Apple Plans sur cette requête. Un iPhone sur deux téléphones en France : ce client-là ne vous trouve pas, et corriger Google n'y changera rien.</div>`}
+      </div>` : ''}
     </div>` : '';
 
   // Le bilan chiffré : trois jauges, chacune reliée à son module, avec le détail des critères.
@@ -850,6 +861,17 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .mk-cites span{font-size:12px;font-weight:650;padding:4px 9px;border-radius:7px}
 .pl.light .mk-cites span{background:#F4F2FD;border:1px solid var(--line);color:var(--ink-s)}
 .pl.dark .mk-cites span{background:rgba(255,255,255,.07);border:1px solid var(--line-d);color:var(--ink-ds)}
+.mk-ads,.mk-ap{margin-top:14px;padding:16px 20px;border-radius:14px}
+.pl.light .mk-ads,.pl.light .mk-ap{background:#fff;border:1px solid var(--line)}
+.pl.dark .mk-ads,.pl.dark .mk-ap{background:rgba(255,255,255,.05);border:1px solid var(--line-d)}
+.mk-ax{font-size:13.5px;line-height:1.55;margin-top:8px}
+.pl.light .mk-ax{color:var(--ink-s)} .pl.dark .mk-ax{color:var(--ink-ds)}
+.mk-al{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
+.mk-ai{font-size:12.5px;font-weight:650;padding:5px 10px;border-radius:8px;display:inline-flex;align-items:center;gap:6px}
+.pl.light .mk-ai{background:#FFF8E7;border:1px solid #EBD9A8;color:#7A5312}
+.pl.dark .mk-ai{background:rgba(245,196,81,.13);border:1px solid rgba(245,196,81,.32);color:#F7DFA8}
+.mk-ai b{font-variant-numeric:tabular-nums}
+.mk-ai i{font-style:normal;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;opacity:.75}
 .mk-ix{font-size:13px;line-height:1.55;margin-top:11px}
 .pl.light .mk-ix{color:var(--ink-s)} .pl.dark .mk-ix{color:var(--ink-ds)}
 .bl-h{display:grid;gap:14px;margin-top:30px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}

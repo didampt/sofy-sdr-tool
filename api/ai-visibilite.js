@@ -30,10 +30,45 @@ async function ensureIA() {
     sources JSONB,
     entreprises_citees JSONB,
     extrait TEXT,
+    annonceurs JSONB,
+    nb_annonces INTEGER,
     mesure_le TIMESTAMPTZ DEFAULT NOW(),
     mesure_par TEXT
   )`;
+  try { await sql`ALTER TABLE ia_visibilite ADD COLUMN IF NOT EXISTS annonceurs JSONB`; } catch (_) {}
+  try { await sql`ALTER TABLE ia_visibilite ADD COLUMN IF NOT EXISTS nb_annonces INTEGER`; } catch (_) {}
   pret = true;
+}
+
+// Qui PAIE pour être devant, sur la requête du métier du prospect. C'est dans la MÊME réponse que
+// l'aperçu IA (local_ads et ads font partie du moteur `google`) : aucun appel de plus, aucun coût
+// de plus. Et c'est le fait le plus concret qu'on puisse poser sur la table — « trois de vos
+// concurrents achètent votre métier au-dessus de vous » se vérifie en une recherche devant lui.
+function annoncesDe(d) {
+  const out = [];
+  const la = (d.local_ads && Array.isArray(d.local_ads.ads)) ? d.local_ads.ads : [];
+  for (const a of la.slice(0, 6)) {
+    out.push({
+      nom: a.title || null, type: 'local',
+      note: a.rating != null ? a.rating : null,
+      avis: a.rating_count != null ? a.rating_count : null,
+      metier: a.type || null, zone: a.service_area || null,
+      anciennete: a.years_in_business || null,
+      garanti: /guarantee|garanti/i.test(String(a.badge || '')),
+      position: a.position != null ? a.position : null
+    });
+  }
+  // Les annonces texte classiques : moins parlantes qu'une annonce locale, mais elles disent la
+  // même chose — sur cette requête, la première place s'achète.
+  const ta = Array.isArray(d.ads) ? d.ads : [];
+  for (const a of ta.slice(0, 6)) {
+    const nom = a.source || a.displayed_link || a.title || null;
+    if (nom && !out.some(x => String(x.nom || '').toLowerCase() === String(nom).toLowerCase())) {
+      out.push({ nom, type: 'texte', position: a.position != null ? a.position : null,
+        note: null, avis: null, metier: null, zone: null, anciennete: null, garanti: false });
+    }
+  }
+  return out;
 }
 
 const domaineDe = u => {
@@ -71,10 +106,11 @@ export default async function handler(req, res) {
     return { ok: r.ok, status: r.status, d: await r.json().catch(() => ({})) };
   };
 
-  let apercu = null;
+  let apercu = null, annonces = [];
   try {
     const rep = await lire({ engine: 'google', q: requete });
     if (!rep.ok) return res.status(502).json({ erreur: 'SerpApi ' + rep.status, detail: String((rep.d && rep.d.error) || '').slice(0, 200) });
+    annonces = annoncesDe(rep.d);
     apercu = rep.d.ai_overview || null;
     // Google renvoie parfois l'aperçu derrière un jeton : un second appel le déplie.
     if (apercu && apercu.page_token && !apercu.text_blocks) {
@@ -88,12 +124,16 @@ export default async function handler(req, res) {
   if (!apercu) {
     const mesure = {
       cle: cleCache, requete, domaine: dom, nom, apercu_present: false, cite: false,
-      rang_citation: null, sources: null, entreprises_citees: null, extrait: null
+      rang_citation: null, sources: null, entreprises_citees: null, extrait: null,
+      annonceurs: annonces, nb_annonces: annonces.length
     };
     try {
-      await sql`INSERT INTO ia_visibilite (cle, requete, domaine, nom, apercu_present, cite, mesure_le, mesure_par)
-        VALUES (${cleCache}, ${requete}, ${dom}, ${nom}, FALSE, FALSE, NOW(), ${user.nom})
-        ON CONFLICT (cle) DO UPDATE SET apercu_present = FALSE, cite = FALSE, mesure_le = NOW()`;
+      await sql`INSERT INTO ia_visibilite (cle, requete, domaine, nom, apercu_present, cite,
+          annonceurs, nb_annonces, mesure_le, mesure_par)
+        VALUES (${cleCache}, ${requete}, ${dom}, ${nom}, FALSE, FALSE,
+                ${JSON.stringify(annonces)}::jsonb, ${annonces.length}, NOW(), ${user.nom})
+        ON CONFLICT (cle) DO UPDATE SET apercu_present = FALSE, cite = FALSE,
+          annonceurs = EXCLUDED.annonceurs, nb_annonces = EXCLUDED.nb_annonces, mesure_le = NOW()`;
     } catch (_) { }
     return res.status(200).json({
       ok: true, mesure,
@@ -130,18 +170,20 @@ export default async function handler(req, res) {
     apercu_present: true,
     cite: !!trouve,
     rang_citation: trouve ? trouve.rang : null,
-    sources, entreprises_citees: citees.slice(0, 8), extrait: texte || null
+    sources, entreprises_citees: citees.slice(0, 8), extrait: texte || null,
+    annonceurs: annonces, nb_annonces: annonces.length
   };
 
   try {
     await sql`INSERT INTO ia_visibilite (cle, requete, domaine, nom, apercu_present, cite,
-        rang_citation, sources, entreprises_citees, extrait, mesure_le, mesure_par)
+        rang_citation, sources, entreprises_citees, extrait, annonceurs, nb_annonces, mesure_le, mesure_par)
       VALUES (${cleCache}, ${requete}, ${dom}, ${nom}, TRUE, ${mesure.cite}, ${mesure.rang_citation},
               ${JSON.stringify(sources)}::jsonb, ${JSON.stringify(mesure.entreprises_citees)}::jsonb,
-              ${mesure.extrait}, NOW(), ${user.nom})
+              ${mesure.extrait}, ${JSON.stringify(annonces)}::jsonb, ${annonces.length}, NOW(), ${user.nom})
       ON CONFLICT (cle) DO UPDATE SET apercu_present = TRUE, cite = EXCLUDED.cite,
         rang_citation = EXCLUDED.rang_citation, sources = EXCLUDED.sources,
         entreprises_citees = EXCLUDED.entreprises_citees, extrait = EXCLUDED.extrait,
+        annonceurs = EXCLUDED.annonceurs, nb_annonces = EXCLUDED.nb_annonces,
         mesure_le = NOW(), mesure_par = EXCLUDED.mesure_par`;
   } catch (_) { }
 

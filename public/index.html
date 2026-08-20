@@ -2154,7 +2154,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v368';
+const VERSION='v369';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2452,9 +2452,23 @@ async function lancerEnvoiPrez(){
        entreprise:(e.nom?(enseigneDe(e)||e.nom):ENV_CTX.client)||'',email_cle:c.email||null,
        cle_fiche:e.nom?(clesFiche(e)[0]||null):null,liste_id:e.nom?(state.savedId||null):null})});
      const dd=await rr.json();
-     lignes.push(dd.ok
-      ? `<div style="font-size:12.5px;color:#0F7B4F">✅ ${htmlSafe(c.nom)} — envoyé (${htmlSafe(dd.canal||'')})${dd.rcs_echec?`<div style="font-size:11.5px;color:#B45309;font-weight:400">⚠️ le RCS n'est pas parti, c'est le SMS qui a pris le relais : ${htmlSafe(String(dd.rcs_echec).slice(0,160))}</div>`:''}${(dd.rcs_configure===false)?`<div style="font-size:11.5px;color:#B45309;font-weight:400">⚠️ aucun agent RCS configuré (SOFY_API_KEY_V2 / SOFY_RCS_SENDER_ID) — tous les envois partiront en SMS</div>`:''}</div>`
-      : `<div style="font-size:12.5px;color:#B91C1C">❌ ${htmlSafe(c.nom)} — ${htmlSafe(dd.detail||dd.erreur||'refusé')}</div>`);
+     if(dd.ok){
+      // Le canal réellement emprunté, la raison d'un repli, et de quoi VÉRIFIER l'acheminement :
+      // « je n'ai rien reçu » doit pouvoir être tranché, pas discuté (cas du +590 le 21/08).
+      const alertes=[];
+      if(dd.repli_operateur)alertes.push('ce mobile ne gère pas le RCS : Sofy a basculé en SMS (l\'arrivée peut prendre quelques minutes)');
+      if(dd.rcs_echec)alertes.push('le RCS n\'est pas parti, le SMS a pris le relais : '+String(dd.rcs_echec).slice(0,160));
+      if(dd.rcs_configure===false)alertes.push('aucun agent RCS configuré (SOFY_API_KEY_V2 / SOFY_RCS_SENDER_ID) — tout partira en SMS');
+      if(dd.dom&&/sms/i.test(dd.canal||''))alertes.push('numéro d\'outre-mer : le SMS part avec l\'expéditeur 36789 et arrive avec quelques minutes de retard, le temps que l\'opérateur renonce au RCS. Comportement normal (vérifié le 21/08).');
+      const hh=parseInt(String(dd.heure_paris||'').slice(0,2),10);
+      if(/sms/i.test(dd.canal||'')&&(hh<8||hh>=20))alertes.push('envoi à '+dd.heure_paris+' (Paris) : hors fenêtre horaire du SMS marketing, l\'opérateur peut le retenir.');
+      lignes.push(`<div style="font-size:12.5px;color:#0F7B4F">✅ ${htmlSafe(c.nom)} — envoyé par <b>${htmlSafe(dd.canal||'')}</b>
+       ${alertes.map(a=>`<div style="font-size:11.5px;color:#B45309;font-weight:400">⚠️ ${htmlSafe(a)}</div>`).join('')}
+       ${dd.id?`<button class="act act-copy" style="padding:2px 8px;font-size:11px;margin-top:5px;font-weight:400" onclick="verifierAcheminement('${jsArg(dd.id)}',this)">🔎 Vérifier l'acheminement</button>`:''}
+      </div>`);
+     }else{
+      lignes.push(`<div style="font-size:12.5px;color:#B91C1C">❌ ${htmlSafe(c.nom)} — ${htmlSafe(dd.detail||dd.erreur||'refusé')}</div>`);
+     }
     }catch(err){lignes.push(`<div style="font-size:12.5px;color:#B91C1C">❌ ${htmlSafe(c.nom)} — ${htmlSafe(err.message)}</div>`);}
    }else if(c.canal==='email'){
     // 2b. Email : on prépare tout, le SDR clique et son client mail s'ouvre pré-rempli.
@@ -2499,6 +2513,24 @@ async function lancerEnvoiPrez(){
  }catch(err){toast('Envoi : '+err.message);}
  finally{if(btn){btn.disabled=false;btn.textContent='📤 Préparer les envois';}}
 }
+// Ce que l'opérateur a réellement fait du message. Sans ça, un SMS retenu par un code court
+// inadapté (incident DOM du 07/08) ressemble à un envoi réussi.
+async function verifierAcheminement(id,btn){
+ if(btn){btn.disabled=true;btn.textContent='⏳…';}
+ try{
+  const r=await api('/api/rcs-prospect?statut='+encodeURIComponent(decodeURIComponent(id)));
+  const d=await r.json();
+  const txt=d.erreur?('❔ '+d.erreur)
+   :(d.remis?('✅ remis — statut « '+(d.statut||'?')+' »')
+    :(d.rejete?('❌ rejeté par l\'opérateur — statut « '+(d.statut||'?')+' »')
+     :('⏳ en cours — statut « '+(d.statut||'?')+' »')));
+  if(btn){btn.disabled=false;btn.textContent='🔎 Revérifier';
+   const l=document.createElement('div');l.style.cssText='font-size:11.5px;font-weight:700;margin-top:4px';
+   l.textContent=txt;btn.parentNode.appendChild(l);}
+  else toast(txt);
+ }catch(e){if(btn){btn.disabled=false;btn.textContent='🔎 Vérifier l\'acheminement';}toast('Suivi : '+e.message);}
+}
+
 function marquerEnvoye(jeton,n,canal){
  // Trace « envoyé le … par email » : le clic sur le mailto est le seul signal dont on dispose.
  try{api('/api/prez',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -6677,6 +6709,22 @@ async function completerMesures(i){
     if(d.ok&&d.mesure){e.gmb=Object.assign({},e.gmb||{},{ia_visibilite:d.mesure});faits.push('visibilité IA');}
     else rater('aperçu IA',d);
    }catch(err){rater('aperçu IA',{erreur:err.message});}
+  }
+ }
+ // 4. Apple Plans : la moitié du parc mobile français cherche là, et le NAP Sofy le promet
+ //    depuis toujours sans jamais l'avoir mesuré.
+ if(!(e.gmb||{}).apple){
+  const req=requeteLocale(e);
+  const ville=e.ville||((e.gmb||{}).audit||{}).ville||'';
+  if(req&&(f.lat&&f.lng||ville)){
+   try{
+    const r=await api('/api/apple-plans',{method:'POST',headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({requete:req,nom:enseigneDe(e)||e.nom,
+      ll:(f.lat&&f.lng)?(f.lat+','+f.lng):'',lieu:ville})});
+    const d=await r.json();
+    if(d.ok&&d.apple){e.gmb=Object.assign({},e.gmb||{},{apple:d.apple});faits.push('Apple Plans');}
+    else rater('Apple Plans',d);
+   }catch(err){rater('Apple Plans',{erreur:err.message});}
   }
  }
  // ⚠️ Sauvegarde ATTENDUE, pas différée. /api/prez relit la fiche EN BASE : avec un persister()

@@ -75,6 +75,28 @@ export default async function handler(req, res) {
   const entreprise = String(b.entreprise || '').trim();
   const accroche = String(b.accroche || '').trim();
 
+  // ── Suivi d'acheminement d'un message déjà envoyé : ?statut=<id> ──
+  // Sans lui, « je n'ai rien reçu » reste une impression. L'API v2 sait dire si le message a été
+  // remis, rejeté, ou s'il attend. Les deux chemins sont testés (SMS puis RCS) : l'id ne dit pas
+  // de quel canal il vient.
+  if (req.method === 'GET' && req.query && req.query.statut) {
+    const idM = String(req.query.statut).slice(0, 80);
+    const hd = { Authorization: `Bearer ${cleV2()}` };
+    if (!cleV2()) return res.status(500).json({ erreur: 'Aucune clé API v2 (SOFY_API_KEY_V2 / SOFY_API_KEY)' });
+    for (const chemin of ['/v2/sms/', '/v2/rcs/']) {
+      try {
+        const r = await fetch('https://api.sofy.fr' + chemin + encodeURIComponent(idM), { headers: hd });
+        const d = await r.json().catch(() => ({}));
+        if (r.ok && (d.id || d.status)) {
+          return res.status(200).json({ ok: true, via: chemin.replace(/\//g, ''), message: d,
+            statut: d.status || null, remis: /deliver/i.test(String(d.status || '')),
+            rejete: /reject|fail|undeliver/i.test(String(d.status || '')) });
+        }
+      } catch (_) { }
+    }
+    return res.status(404).json({ erreur: 'Message introuvable côté API (id inconnu des canaux SMS et RCS)' });
+  }
+
   // Prévisualisation (le SDR relit et peut corriger avant l'envoi)
   if (req.method === 'GET') {
     if (String(b.mode || '') === 'prez') {
@@ -144,7 +166,8 @@ export default async function handler(req, res) {
           })
         });
         const d = await r.json().catch(() => ({}));
-        if (r.ok && d.id) envoi = { canal: d.isSmsFallback ? 'sms (repli Sofy)' : 'rcs', id: d.id };
+        if (r.ok && d.id) envoi = { canal: d.isSmsFallback ? 'sms (repli Sofy)' : 'rcs', id: d.id,
+          repli_operateur: !!d.isSmsFallback, statut_api: d.status || null };
         else envoi = { erreur: 'RCS ' + r.status + ': ' + JSON.stringify(d).slice(0, 200) };
       } catch (e) { envoi = { erreur: 'RCS injoignable : ' + String((e && e.message) || e).slice(0, 120) }; }
     }
@@ -167,7 +190,10 @@ export default async function handler(req, res) {
     // Dernier filet : l'API v1, éprouvée. La route SMS de la clé v2 est « rejected by provider »
     // toutes destinations depuis le 07/08 — à régler côté produit.
     if (!envoi || envoi.erreur) {
-      const v1 = await envoyerSmsSofy({ to: tel, message: repli, user: user.nom, liste_id: b.liste_id || null, transactionnel: false });
+      // Sans ma mention STOP : db.js ajoute celle qui est légalement due, avec le BON code court
+      // selon le territoire (36789 en DOM, 36229 en métropole). En laisser deux serait fautif.
+      const pourV1 = repli.replace(/\s*STOP pour ne plus etre contacte\.?\s*$/i, '').trim();
+      const v1 = await envoyerSmsSofy({ to: tel, message: pourV1, user: user.nom, liste_id: b.liste_id || null, transactionnel: false });
       if (v1.ok) envoi = { canal: 'sms (v1)', id: v1.id || null, rcs_echec: envoi && envoi.erreur };
       else return res.status(502).json({ erreur: 'Envoi refusé', detail: (envoi && envoi.erreur) || v1.detail });
     }
@@ -194,7 +220,13 @@ export default async function handler(req, res) {
           ${url + ' → ' + tel + (envoi.rcs_echec ? ' · RCS non parti : ' + String(envoi.rcs_echec).slice(0, 180) : '')},
           ${user.nom || 'système'}, NOW())`; } catch (_) {}
     }
+    // Un +590 / +596 / +594 / +262 : le repli SMS y part avec l'expéditeur 36789 et arrive avec
+    // quelques minutes de retard, le temps que l'opérateur renonce au RCS (vérifié le 21/08 sur
+    // un +590 non compatible RCS). On le signale pour que l'attente ne passe pas pour un échec.
+    const estDom = /^\+(590|596|594|262)/.test(tel);
     return res.status(200).json({ ok: true, canal: envoi.canal, id: envoi.id || null, tel, url,
+      repli_operateur: !!envoi.repli_operateur, statut_api: envoi.statut_api || null,
+      dom: estDom, heure_paris: new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' }).format(new Date()),
       repli_sms: repli, segments_sms: diag.segments,
       // Pourquoi le RCS n'est pas parti : sans ça, « envoyé par sms (v1) » ne dit pas si l'agent
       // RCS a refusé, si la clé manque, ou si le mobile ne gère simplement pas le RCS.
