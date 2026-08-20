@@ -50,6 +50,10 @@ async function ensurePrez() {
   // Horodatage de la dernière alerte Slack : sert à ne pas répéter le même signal (retour du
   // 20/08 — « j'ai reçu plusieurs alertes pour les ouvertures successives du même lien »).
   await sql`ALTER TABLE prez ADD COLUMN IF NOT EXISTS derniere_alerte TIMESTAMPTZ`;
+  // Destinataires NOMMÉS : un lien par personne (/p/<jeton>?d=<n>). C'est la seule façon
+  // honnête de répondre à « qui a ouvert ? » — le lien n'oblige personne à s'identifier, donc
+  // on ne peut le savoir que si chacun a reçu SON lien.
+  await sql`ALTER TABLE prez ADD COLUMN IF NOT EXISTS destinataires JSONB DEFAULT '[]'::jsonb`;
   await sql`CREATE INDEX IF NOT EXISTS idx_prez_sdr ON prez(sdr, created_at DESC)`;
   prezPrete = true;
 }
@@ -940,7 +944,7 @@ export default async function handler(req, res) {
     if (q.mes === '1') {
       // L'historique porte le signal : « ouverte 3 fois » vaut mieux qu'un email ouvert
       const rows = await sql`SELECT jeton, client, module, sdr, ouvertures, profondeur, destinataire,
-          liste_id, cle_fiche, premiere_ouverture, derniere_ouverture, created_at, expire_le,
+          destinataires, liste_id, cle_fiche, premiere_ouverture, derniere_ouverture, created_at, expire_le,
           jsonb_array_length(COALESCE(lecteurs,'[]'::jsonb)) AS lecteurs_distincts FROM prez
         WHERE (${['admin', 'superadmin'].includes(user.role)} OR sdr = ${user.nom})
         ORDER BY created_at DESC LIMIT 50`;
@@ -957,7 +961,7 @@ export default async function handler(req, res) {
     // le lien ne vive pas dans une fenêtre qui se ferme.
     if (q.liste_id) {
       const rows = await sql`SELECT jeton, cle_fiche, module, sdr, ouvertures, destinataire,
-          premiere_ouverture, derniere_ouverture, created_at, expire_le,
+          destinataires, premiere_ouverture, derniere_ouverture, created_at, expire_le,
           jsonb_array_length(COALESCE(lecteurs,'[]'::jsonb)) AS lecteurs_distincts
         FROM prez WHERE liste_id = ${parseInt(q.liste_id, 10) || 0} AND cle_fiche IS NOT NULL
         ORDER BY created_at DESC`;
@@ -997,6 +1001,48 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, prez: row, url: BASE_PUB() + '/p/' + row.jeton });
     }
     return res.status(400).json({ erreur: 'jeton, liste_id ou mes=1 requis' });
+  }
+
+  // ── Destinataires : on inscrit les personnes choisies et on rend À CHACUNE son lien ──
+  // POST { action:'destinataires', jeton, contacts:[{nom,email,tel,canal}] }
+  //   → [{ n, nom, email, tel, url }]  (url = /p/<jeton>?d=<n>)
+  // POST { action:'envoye', jeton, n, canal }  → note la date et le canal d'envoi
+  if (req.method === 'POST' && ['destinataires', 'envoye'].includes(String((req.body || {}).action || ''))) {
+    const b3 = req.body || {};
+    const j3 = String(b3.jeton || '').slice(0, 40);
+    const [row3] = await sql`SELECT jeton, sdr, destinataires, expire_le FROM prez WHERE jeton = ${j3}`;
+    if (!row3) return res.status(404).json({ erreur: 'Analyse introuvable' });
+    const admin3 = ['admin', 'superadmin'].includes(user.role);
+    if (!admin3 && row3.sdr !== user.nom) return res.status(403).json({ erreur: 'Cette analyse n\'est pas la tienne.' });
+    let dest = Array.isArray(row3.destinataires) ? row3.destinataires.slice() : [];
+
+    if (b3.action === 'envoye') {
+      const n = parseInt(b3.n, 10);
+      if (!dest[n]) return res.status(400).json({ erreur: 'destinataire inconnu' });
+      dest[n] = { ...dest[n], envoye_le: new Date().toISOString(), canal: String(b3.canal || '').slice(0, 20) };
+      await sql`UPDATE prez SET destinataires = ${JSON.stringify(dest)}::jsonb WHERE jeton = ${j3}`;
+      return res.status(200).json({ ok: true, destinataires: dest });
+    }
+
+    const cts = Array.isArray(b3.contacts) ? b3.contacts.slice(0, 8) : [];
+    if (!cts.length) return res.status(400).json({ erreur: 'Choisis au moins un destinataire' });
+    const cle = x => String((x.email || x.tel || x.nom || '')).toLowerCase().replace(/\s/g, '');
+    const sortie = [];
+    for (const c of cts) {
+      const nom = String(c.nom || '').slice(0, 80);
+      const email = c.email ? String(c.email).toLowerCase().slice(0, 160) : null;
+      const tel = c.tel ? String(c.tel).slice(0, 24) : null;
+      if (!email && !tel) continue;
+      // Un destinataire déjà inscrit garde SON lien : sinon on casserait le suivi de ses lectures.
+      let n = dest.findIndex(d => cle(d) === cle({ email, tel, nom }));
+      if (n < 0) { dest.push({ nom, email, tel, ajoute_le: new Date().toISOString(), ouvertures: 0 }); n = dest.length - 1; }
+      else dest[n] = { ...dest[n], nom: nom || dest[n].nom, email: email || dest[n].email, tel: tel || dest[n].tel };
+      sortie.push({ n, nom, email, tel, url: BASE_PUB() + '/p/' + j3 + '?d=' + n });
+    }
+    if (!sortie.length) return res.status(400).json({ erreur: 'Aucun destinataire exploitable (ni email ni mobile)' });
+    await sql`UPDATE prez SET destinataires = ${JSON.stringify(dest)}::jsonb WHERE jeton = ${j3}`;
+    return res.status(200).json({ ok: true, destinataires: sortie,
+      expiree: !!(row3.expire_le && new Date(row3.expire_le) < new Date()) });
   }
 
   // Publication des modifications : on republie sur le MÊME jeton — le prospect qui a déjà le
@@ -1050,7 +1096,10 @@ export default async function handler(req, res) {
 
   if (req.method !== 'POST') return res.status(405).json({ erreur: 'GET, POST, PUT ou DELETE' });
   const b = req.body || {};
-  const module = ['soview', 'soconnect', 'soreach', 'tous'].includes(b.module) ? b.module : 'tous';
+  // « generique » est le mot du tag d'angle côté fiche ; « tous » celui de la base de
+  // connaissance. Les deux désignent la même chose : couvrir les trois volets.
+  const modBrut = String(b.module || '') === 'generique' ? 'tous' : String(b.module || '');
+  const module = ['soview', 'soconnect', 'soreach', 'tous'].includes(modBrut) ? modBrut : 'tous';
 
   try {
     // ── La fiche du prospect : c'est elle qui rend le document impossible à copier ──

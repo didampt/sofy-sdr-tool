@@ -15,9 +15,11 @@ const cleV2 = () => process.env.SOFY_API_KEY_V2 || '';
 const LIEN_DEMO = process.env.SOFY_LIEN_DEMO || 'https://go.sofy.fr/meetings/mbouly/demo-site-web';
 const VISUEL = process.env.SOFY_RCS_IMAGE_DEMO || 'https://www.sofyscrap.com/rcs-demo.jpg';
 const BASE_PUB = () => process.env.SOFY_BASE_PUBLIQUE || 'https://www.sofyscrap.com';
-// Visuel de la carte « analyse » : à défaut, celui de la démo. Un RCS sans image n'a pas
-// d'intérêt — c'est justement ce qu'on vend.
-const VISUEL_PREZ = process.env.SOFY_RCS_IMAGE_PREZ || VISUEL;
+// Visuel de la carte « analyse » : la création Sofy « Découvrez votre analyse personnalisée »,
+// servie depuis public/ (1000×1000, 157 Ko — assez léger pour s'afficher avant que le prospect
+// referme sa messagerie). Un RCS sans image n'a pas d'intérêt : c'est justement ce qu'on vend.
+const VISUEL_PREZ = process.env.SOFY_RCS_IMAGE_PREZ
+  || (process.env.SOFY_BASE_PUBLIQUE || 'https://www.sofyscrap.com') + '/rcs-prez.jpg';
 
 // ── Mode « analyse » : le lien de la présentation, envoyé par RCS, replié en SMS ────────────────
 // Pourquoi ici et pas dans un fichier neuf : l'envoi RCS, le repli SMS, la mise en E.164, la
@@ -95,7 +97,10 @@ export default async function handler(req, res) {
     if (row.expire_le && new Date(row.expire_le) < new Date()) {
       return res.status(410).json({ erreur: 'Le lien de cette analyse a expiré — régénère-la, sinon le prospect tombera sur une page morte' });
     }
-    const url = BASE_PUB() + '/p/' + jeton;
+    // Lien PERSONNEL du destinataire quand il en a un : c'est ce qui permet de dire ensuite
+    // « Lauriane a ouvert », et pas seulement « quelqu'un a ouvert ».
+    const dn = Number.isInteger(parseInt(b.d, 10)) ? parseInt(b.d, 10) : null;
+    const url = BASE_PUB() + '/p/' + jeton + (dn != null && dn >= 0 ? '?d=' + dn : '');
     const txt = (String(b.texte || '').trim() || textePrez({ prenom, entreprise: entreprise || row.client, sdr: user.nom })).slice(0, 900);
     const stopP = ' Pour ne plus recevoir de message : répondez STOP.';
     // Le repli SMS doit tenir en UN segment ET rester en alphabet GSM : une apostrophe courbe
@@ -140,6 +145,17 @@ export default async function handler(req, res) {
     // Le destinataire est mémorisé sur l'analyse : c'est lui qui rend lisible le signal
     // « quelqu'un lit » dans Ma journée (« lien envoyé à … »).
     try { await sql`UPDATE prez SET destinataire = COALESCE(destinataire, ${tel}) WHERE jeton = ${jeton}`; } catch (_) {}
+    // Trace d'envoi sur le destinataire nommé : la fiche dira « envoyée à Léo le 20/08, par RCS ».
+    if (dn != null && dn >= 0) {
+      try {
+        const [rr] = await sql`SELECT destinataires FROM prez WHERE jeton = ${jeton}`;
+        const ds = Array.isArray(rr && rr.destinataires) ? rr.destinataires.slice() : [];
+        if (ds[dn]) {
+          ds[dn] = { ...ds[dn], envoye_le: new Date().toISOString(), canal: envoi.canal };
+          await sql`UPDATE prez SET destinataires = ${JSON.stringify(ds)}::jsonb WHERE jeton = ${jeton}`;
+        }
+      } catch (_) {}
+    }
     const cleP = String(b.email_cle || b.cle_fiche || '').toLowerCase().trim() || null;
     if (cleP) {
       try { await sql`INSERT INTO activites (fiche_cle, source, type, titre, detail, auteur, ts)

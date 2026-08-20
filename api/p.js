@@ -1153,6 +1153,21 @@ export default async function handler(req, res) {
     const compte = !interne && !robot;
     const premiere = compte && !row.ouvertures;
 
+    // ── Qui lit ? ── Le lien n'oblige personne à s'identifier. Mais si chaque destinataire a reçu
+    // SON lien (/p/<jeton>?d=<n>), l'ouverture est attribuable sans rien demander au prospect.
+    // C'est ce qui transforme « 6 ouvertures, 5 lecteurs » en « Lauriane a lu deux fois ».
+    const dn = parseInt((req.query || {}).d, 10);
+    const dests = Array.isArray(row.destinataires) ? row.destinataires : [];
+    const dest = (Number.isInteger(dn) && dn >= 0 && dests[dn]) ? dests[dn] : null;
+    if (compte && dest) {
+      const maj = dests.slice();
+      maj[dn] = { ...dest, ouvertures: (dest.ouvertures || 0) + 1,
+        premiere_lecture: dest.premiere_lecture || new Date().toISOString(),
+        derniere_lecture: new Date().toISOString() };
+      try { await sql`UPDATE prez SET destinataires = ${JSON.stringify(maj)}::jsonb WHERE jeton = ${jeton}`; } catch (_) {}
+    }
+    const quiLit = dest ? (dest.nom || dest.email || dest.tel) : null;
+
     // Qui lit ? On ne peut pas NOMMER un lecteur sans l'obliger à s'identifier (ce qui tuerait le
     // taux d'ouverture). On peut en revanche les COMPTER : un identifiant aléatoire par appareil,
     // aucune IP, aucune donnée personnelle. Résultat exploitable : « 3 personnes, 7 ouvertures ».
@@ -1205,9 +1220,9 @@ export default async function handler(req, res) {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               text: premiere
-                ? `👀 *${row.client || 'Un prospect'}* vient d'ouvrir son analyse Sofy (${row.module || ''}).\n` +
-                  `Préparée par ${row.sdr || '?'}${row.destinataire ? ` · envoyée à ${row.destinataire}` : ''} · c'est le moment de rappeler.`
-                : `🔥 *${row.client || 'Un prospect'}* : une ${connus.length + 1}ᵉ personne lit l'analyse${row.destinataire ? ` (lien envoyé à ${row.destinataire})` : ''}.\n` +
+                ? `👀 *${row.client || 'Un prospect'}* : ${quiLit ? `*${quiLit}* vient d'ouvrir` : 'quelqu\'un vient d\'ouvrir'} l'analyse Sofy (${row.module || ''}).\n` +
+                  `Préparée par ${row.sdr || '?'}${(!quiLit && row.destinataire) ? ` · envoyée à ${row.destinataire}` : ''} · c'est le moment de rappeler.`
+                : `🔥 *${row.client || 'Un prospect'}* : ${quiLit ? `*${quiLit}* lit l'analyse à son tour` : `une ${connus.length + 1}ᵉ personne lit l'analyse`}${(!quiLit && row.destinataire) ? ` (lien envoyé à ${row.destinataire})` : ''}.\n` +
                   `Le document circule en interne — ${row.sdr || '?'}, appelle maintenant.`,
               unfurl_links: false
             })
@@ -1218,8 +1233,9 @@ export default async function handler(req, res) {
       if (row.cle_fiche) {
         try {
           await sql`INSERT INTO activites (fiche_cle, source, type, titre, detail, auteur, ts)
-            VALUES (${String(row.cle_fiche).toLowerCase()}, 'prez', 'note', '👀 Analyse Sofy ouverte par le prospect',
-              ${'Présentation ' + (row.module || '') + ' — première ouverture'}, 'système', NOW())`;
+            VALUES (${String(row.cle_fiche).toLowerCase()}, 'prez', 'note',
+              ${'👀 Analyse Sofy ouverte' + (quiLit ? ' par ' + quiLit : ' par le prospect')},
+              ${'Présentation ' + (row.module || '') + ' — ' + (premiere ? 'première ouverture' : 'nouveau lecteur')}, 'système', NOW())`;
         } catch (_) {}
       }
     }

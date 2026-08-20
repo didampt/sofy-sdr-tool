@@ -1389,6 +1389,16 @@ Spot-Hit</textarea>
     </div>
   </div>
 </div>
+<div id="env-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:904;align-items:center;justify-content:center" onclick="if(event.target===this)this.style.display='none'">
+  <div style="background:var(--card,#fff);border-radius:14px;padding:22px 24px;max-width:620px;width:94%;max-height:88vh;overflow:auto">
+    <div id="env-titre" style="font-size:18px;font-weight:800;margin-bottom:10px">📤 Envoyer l'analyse</div>
+    <div id="env-corps"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+      <button class="btn" style="background:var(--paper)" onclick="document.getElementById('env-modal').style.display='none'">Fermer</button>
+      <button class="btn btn-primary" id="env-btn" onclick="lancerEnvoiPrez()">📤 Préparer les envois</button>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -2145,7 +2155,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v365';
+const VERSION='v366';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2295,46 +2305,162 @@ async function ouvrirRcsProspectFiche(i){
   if(z)z.value=(dd&&dd.texte)||'';
  }catch(_){ if(z)z.value=''; }
 }
-// 📊 Envoyer L'ANALYSE par RCS, avec bascule SMS. Même tuyau que le RCS de démonstration
-// (E.164, repli SMS, conso, trace) : seule la carte change — titre, bouton, destination.
-async function ouvrirRcsPrez(i){
- const e=REAL[i];
- if(!e||!e._prez||!e._prez.jeton){toast('Génère d\'abord l\'analyse de cette fiche');return;}
- if(e._prez.expiree){toast('Le lien de cette analyse a expiré — régénère-la avant de l\'envoyer');return;}
- const cs=contactsDe(e)||[];
- const c=cs.find(x=>x&&x.enrich&&x.enrich.telephone&&estMobile(x.enrich.telephone))||cs.find(x=>x&&x.enrich&&x.enrich.telephone);
- let tel=(c&&c.enrich&&c.enrich.telephone)||null;
- // Un RCS n'a de sens que sur un MOBILE : le standard de l'enseigne ne le recevra pas.
- if(!tel||!estMobile(tel)){
-  const saisi=prompt('Sur quel MOBILE envoyer l\'analyse ?\n\nLe RCS n\'arrive que sur un mobile ; un standard fixe ne recevra rien.',tel||'');
-  tel=String(saisi||'').trim();
-  if(!tel){return;}
-  if(!estMobile(tel)&&!await confirmSofy('Ce numéro n\'a pas l\'air d\'un mobile',
-    tel+'\n\nLe RCS et le SMS n\'aboutiront probablement pas. Envoyer quand même ?','Envoyer quand même'))return;
+// ═══ 📤 ENVOYER L'ANALYSE ═══════════════════════════════════════════════════════════════════
+// Une seule fenêtre pour les deux canaux, parce que le choix réel du SDR n'est pas « RCS ou
+// email » mais « à qui ». Chaque personne cochée reçoit SON lien (/p/<jeton>?d=n) : c'est ce qui
+// permet de dire ensuite « Lauriane a ouvert deux fois » au lieu de « quelqu'un a ouvert ».
+// L'email part depuis la messagerie du SDR (aucun expéditeur transactionnel n'est configuré) :
+// meilleure délivrabilité, et la réponse du prospect lui arrive directement.
+let ENV_CTX=null;
+function envListeContacts(e){
+ const out=[];
+ for(const c of (contactsDe(e)||[])){
+  if(!c)continue;
+  const nom=((c.prenom||'')+' '+(c.nom||'')).trim();
+  const em=(c.enrich&&c.enrich.email)||null, tl=(c.enrich&&c.enrich.telephone)||null;
+  if(!nom&&!em&&!tl)continue;
+  if(!em&&!tl)continue;
+  out.push({nom:nom||em||tl,fonction:c.fonction||(c.enrich&&c.enrich.fonction)||'',email:em,tel:tl});
  }
- const nomC=c?((c.prenom||'')+' '+(c.nom||'')).trim():'';
- RCS_CTX={mode:'prez',jeton:e._prez.jeton,tel:tel,
-  email_cle:(c&&c.enrich&&c.enrich.email)||null,cle_fiche:clesFiche(e)[0]||null,liste_id:state.savedId||null,
-  entreprise:enseigneDe(e)||e.nom||''};
- const t=document.getElementById('rcs-titre');if(t)t.textContent='📊 Envoyer l\'analyse par RCS';
- const intro=document.getElementById('rcs-intro');
- if(intro)intro.innerHTML='Le prospect re\u00e7oit une <b>rich-card</b> \u2014 visuel, texte et bouton <b>\u00ab \U0001f4ca Voir mon analyse \u00bb</b> qui ouvre sa page priv\u00e9e. Si son mobile ne g\u00e8re pas le RCS, un <b>SMS</b> part automatiquement avec le m\u00eame lien.';
- const dd=document.getElementById('rcs-dest');
- if(dd)dd.textContent='📱 '+tel+(nomC?' \u2014 '+nomC:'')+' \u00b7 '+(enseigneDe(e)||e.nom||'');
- const z=document.getElementById('rcs-texte');if(z)z.value='Chargement\u2026';
- document.getElementById('rcs-modal').style.display='flex';
+ // Le standard de l'enseigne : utile en dernier recours, mais jamais pour du RCS.
+ const std=(e.gmb&&e.gmb.telephone)||(e.ia&&e.ia.telephone)||null;
+ if(std&&!out.some(x=>x.tel===std))out.push({nom:'Standard '+(enseigneDe(e)||e.nom||''),fonction:'accueil',email:null,tel:std,standard:true});
+ return out;
+}
+// opt = {i}                                   → depuis une fiche (contacts de la fiche)
+// opt = {jeton, client, destinataires, i?}     → depuis l'onglet Prez sales (pas de fiche chargée)
+async function ouvrirEnvoiPrez(opt){
+ const o=(typeof opt==='number')?{i:opt}:(opt||{});
+ const e=(o.i!=null&&o.i>=0)?REAL[o.i]:null;
+ const jeton=o.jeton||(e&&e._prez&&e._prez.jeton);
+ if(!jeton){toast('Génère d\'abord l\'analyse de cette fiche');return;}
+ if(e&&e._prez&&e._prez.expiree){toast('Le lien de cette analyse a expiré — régénère-la avant de l\'envoyer');return;}
+ // Trois sources de destinataires : les contacts de la fiche, ceux déjà inscrits sur l'analyse
+ // (utile depuis Prez sales, où la fiche n'est pas chargée), et la saisie libre.
+ const cs=[];
+ const vu=new Set();
+ const cleC=c=>String(c.email||c.tel||c.nom||'').toLowerCase().replace(/\s/g,'');
+ // L'état de lecture des destinataires déjà inscrits, indexé pour être recollé au contact de la
+ // fiche : sans ça, « Léo a ouvert 2 fois » disparaissait dès que la fiche portait aussi Léo.
+ const dejaCo=o.destinataires||(e&&e._prez&&e._prez.destinataires)||[];
+ const parCle=new Map();
+ dejaCo.forEach(d=>{
+  [d.email,d.tel,d.nom].filter(Boolean).forEach(v=>parCle.set(String(v).toLowerCase().replace(/\s/g,''),d));
+ });
+ const ajoute=c=>{const k=cleC(c);
+  if(!k||vu.has(k))return;vu.add(k);
+  const dj=c.deja||parCle.get(k)
+   ||parCle.get(String(c.email||'').toLowerCase().replace(/\s/g,''))
+   ||parCle.get(String(c.tel||'').toLowerCase().replace(/\s/g,''))||null;
+  cs.push(dj?{...c,deja:dj}:c);};
+ if(e)envListeContacts(e).forEach(ajoute);
+ dejaCo.forEach(d=>ajoute({nom:d.nom||d.email||d.tel,fonction:'déjà destinataire',
+  email:d.email||null,tel:d.tel||null,deja:d}));
+ ENV_CTX={i:(o.i!=null?o.i:-1),jeton:jeton,contacts:cs,client:o.client||(e?(enseigneDe(e)||e.nom):'')};
+ document.getElementById('env-titre').textContent='📤 Envoyer l\'analyse'+(ENV_CTX.client?' de '+ENV_CTX.client:'');
+ const z=document.getElementById('env-corps');
+ const ligne=(c,k)=>`<label style="display:flex;gap:10px;align-items:flex-start;padding:9px 11px;border:1px solid var(--line);border-radius:10px;margin-bottom:7px;background:var(--card);cursor:pointer">
+   <input type="checkbox" id="env-c${k}" ${k===0?'checked':''} style="margin-top:3px">
+   <span style="flex:1;line-height:1.45">
+    <span style="font-size:13.5px;font-weight:700">${htmlSafe(c.nom)}</span>${c.fonction?`<span style="font-size:11.5px;color:var(--ink-soft)"> · ${htmlSafe(String(c.fonction).slice(0,40))}</span>`:''}
+    <span style="display:block;font-size:11.5px;color:var(--ink-soft)">${c.email?'✉️ '+htmlSafe(c.email):''}${c.email&&c.tel?' · ':''}${c.tel?'📱 '+htmlSafe(c.tel):''}${c.standard?' — fixe : pas de RCS':''}</span>
+    ${c.deja?`<span style="display:block;font-size:11.5px;color:${(c.deja.ouvertures||0)?'#0F7B4F':'var(--ink-soft)'};font-weight:${(c.deja.ouvertures||0)?'700':'400'}">${(c.deja.ouvertures||0)?'👀 a ouvert '+c.deja.ouvertures+' fois'+(c.deja.derniere_lecture?' · '+tempsRelEngag(c.deja.derniere_lecture):''):(c.deja.envoye_le?'envoyé le '+String(c.deja.envoye_le).slice(0,10)+' — pas encore ouvert':'inscrit, pas encore envoyé')}</span>`:''}
+   </span>
+   <select class="field" id="env-k${k}" style="padding:4px 7px;font-size:11.5px;max-width:135px" onclick="event.stopPropagation()">
+    ${(c.tel&&estMobile(c.tel))?'<option value="rcs">💬 RCS / SMS</option>':''}
+    ${c.email?'<option value="email">✉️ Email</option>':''}
+    ${(c.tel&&!estMobile(c.tel))?'<option value="rcs">📱 SMS (fixe ?)</option>':''}
+    <option value="lien">📋 Lien seul</option>
+   </select>
+  </label>`;
+ z.innerHTML='<div style="font-size:12.5px;color:var(--ink-soft);line-height:1.55;margin-bottom:10px">'
+  +'Coche les personnes à qui envoyer. <b>Chacune reçoit son propre lien</b> : tu sauras qui a ouvert, et combien de fois. '
+  +'Le RCS n\'est proposé que sur un mobile ; l\'email ouvre ta messagerie avec le message déjà écrit.</div>'
+  +(cs.length?cs.map(ligne).join('')
+   :'<div style="font-size:13px;line-height:1.6;margin-bottom:10px">Aucun contact connu pour cette analyse. Ajoute-en un ci-dessous, ou lance <b>👥 Personas</b> depuis la fiche.</div>')
+  +`<details style="margin-top:4px"${cs.length?'':' open'}><summary style="font-size:12.5px;cursor:pointer;color:var(--ink-soft)">➕ Ajouter quelqu'un à la main</summary>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+     <input class="field" id="env-m-nom" placeholder="Prénom Nom" style="flex:1;min-width:130px;font-size:12.5px">
+     <input class="field" id="env-m-mail" placeholder="email@societe.fr" style="flex:1;min-width:150px;font-size:12.5px">
+     <input class="field" id="env-m-tel" placeholder="+33 6 …" style="flex:1;min-width:120px;font-size:12.5px">
+    </div>
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-top:5px">Renseigne au moins un email ou un mobile — cette personne sera ajoutée aux destinataires cochés.</div>
+   </details>`
+  +'<div id="env-res" style="display:none;margin-top:10px"></div>';
+ document.getElementById('env-modal').style.display='flex';
+}
+async function lancerEnvoiPrez(){
+ if(!ENV_CTX)return;
+ const cs=ENV_CTX.contacts, choisis=[];
+ cs.forEach((c,k)=>{const b=document.getElementById('env-c'+k);
+  if(b&&b.checked)choisis.push({...c,canal:(document.getElementById('env-k'+k)||{}).value||'lien'});});
+ // Saisie libre : elle sert quand la fiche n'a pas encore de contact, ou depuis Prez sales.
+ const mv=x=>((document.getElementById('env-m-'+x)||{}).value||'').trim();
+ if(mv('mail')||mv('tel')){
+  const em=mv('mail'), tl=mv('tel');
+  choisis.push({nom:mv('nom')||em||tl,email:em||null,tel:tl||null,
+   canal:(tl&&estMobile(tl))?'rcs':(em?'email':'lien')});
+ }
+ if(!choisis.length){toast('Coche au moins une personne');return;}
+ const btn=document.getElementById('env-btn');if(btn){btn.disabled=true;btn.textContent='⏳…';}
  try{
-  const p=new URLSearchParams({mode:'prez',jeton:e._prez.jeton,prenom:(nomC||'').split(' ')[0]||'',
-   entreprise:enseigneDe(e)||e.nom||''});
-  const r=await api('/api/rcs-prospect?'+p.toString());const d=await r.json();
-  if(z)z.value=(d&&d.texte)||'';
-  const rp=document.getElementById('rcs-repli');
-  if(rp&&d&&d.repli_sms){
-   rp.style.display='';
-   rp.innerHTML='<b>Repli SMS</b> (si le mobile ne g\u00e8re pas le RCS) \u2014 '+htmlSafe(d.alphabet||'')+', '
-    +(d.segments_sms||1)+' segment(s) :<br><span style="font-family:ui-monospace,Menlo,monospace">'+htmlSafe(d.repli_sms)+'</span>';
+  // 1. On inscrit les destinataires : le serveur rend à chacun son lien personnel.
+  const r=await api('/api/prez',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({action:'destinataires',jeton:ENV_CTX.jeton,
+    contacts:choisis.map(c=>({nom:c.nom,email:c.email,tel:c.tel}))})});
+  const d=await r.json();
+  if(d.erreur){toast('Envoi : '+d.erreur);return;}
+  const liens=d.destinataires||[];
+  const z=document.getElementById('env-res');z.style.display='';
+  const lignes=[];
+  const e=(ENV_CTX.i>=0?REAL[ENV_CTX.i]:null)||{};
+  for(let k=0;k<choisis.length;k++){
+   const c=choisis[k], L=liens.find(x=>(c.email&&x.email===String(c.email).toLowerCase())||(c.tel&&x.tel===c.tel))||liens[k];
+   if(!L){lignes.push(`<div style="font-size:12px;color:#B91C1C">${htmlSafe(c.nom)} : lien non attribué</div>`);continue;}
+   if(c.canal==='rcs'){
+    // 2a. RCS avec bascule SMS — le tuyau existant, avec le lien personnel du destinataire.
+    try{
+     const rr=await api('/api/rcs-prospect',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({mode:'prez',jeton:ENV_CTX.jeton,d:L.n,tel:c.tel,prenom:(c.nom||'').split(' ')[0],
+       entreprise:(e.nom?(enseigneDe(e)||e.nom):ENV_CTX.client)||'',email_cle:c.email||null,
+       cle_fiche:e.nom?(clesFiche(e)[0]||null):null,liste_id:e.nom?(state.savedId||null):null})});
+     const dd=await rr.json();
+     lignes.push(dd.ok
+      ? `<div style="font-size:12.5px;color:#0F7B4F">✅ ${htmlSafe(c.nom)} — envoyé (${htmlSafe(dd.canal||'')})</div>`
+      : `<div style="font-size:12.5px;color:#B91C1C">❌ ${htmlSafe(c.nom)} — ${htmlSafe(dd.detail||dd.erreur||'refusé')}</div>`);
+    }catch(err){lignes.push(`<div style="font-size:12.5px;color:#B91C1C">❌ ${htmlSafe(c.nom)} — ${htmlSafe(err.message)}</div>`);}
+   }else if(c.canal==='email'){
+    // 2b. Email : on prépare tout, le SDR clique et son client mail s'ouvre pré-rempli.
+    const obj='Votre analyse de visibilité locale — '+((e.nom?(enseigneDe(e)||e.nom):ENV_CTX.client)||'');
+    const corps='Bonjour '+((c.nom||'').split(' ')[0]||'')+',\n\n'
+     +'J\'ai préparé une analyse de votre visibilité locale : votre fiche Google, vos avis, votre position quand un client cherche votre métier — et ce que nous pouvons y changer.\n\n'
+     +L.url+'\n\n'
+     +'C\'est une page privée, 2 minutes de lecture. Je reste dispo si vous voulez qu\'on en parle.\n\n'
+     +(state.user?state.user.nom:'')+'\nSofy';
+    const href='mailto:'+encodeURIComponent(c.email)+'?subject='+encodeURIComponent(obj)+'&body='+encodeURIComponent(corps);
+    lignes.push(`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:5px 0">
+      <span style="font-size:12.5px">✉️ ${htmlSafe(c.nom)}</span>
+      <a class="act act-call" style="text-decoration:none;padding:3px 10px;font-size:12px" href="${htmlSafe(href)}"
+         onclick="marquerEnvoye('${jsArg(ENV_CTX.jeton)}',${L.n},'email')">Ouvrir le mail →</a>
+      <button class="act act-copy" style="padding:3px 10px;font-size:12px" onclick="navigator.clipboard.writeText(decodeURIComponent('${jsArg(L.url)}'));toast('Lien de ${jsArg(c.nom)} copié ✓')">📋 Son lien</button>
+     </div>`);
+   }else{
+    lignes.push(`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:5px 0">
+      <span style="font-size:12.5px">📋 ${htmlSafe(c.nom)}</span>
+      <button class="act act-copy" style="padding:3px 10px;font-size:12px" onclick="navigator.clipboard.writeText(decodeURIComponent('${jsArg(L.url)}'));toast('Lien de ${jsArg(c.nom)} copié ✓')">Copier son lien</button>
+     </div>`);
+   }
   }
- }catch(_){ if(z)z.value=''; }
+  z.innerHTML='<div style="border-top:1px solid var(--line);padding-top:10px">'+lignes.join('')
+   +'<div style="font-size:11.5px;color:var(--ink-soft);margin-top:8px;line-height:1.5">Chaque lien est nominatif : les ouvertures remontent dans « 🎨 Analyses lues » avec le nom de la personne.</div></div>';
+  try{const ii=ENV_CTX.i;if(ii>=0&&REAL[ii]){REAL[ii]._actLoaded=false;chargerActiviteDB(ii);}}catch(_){}
+ }catch(err){toast('Envoi : '+err.message);}
+ finally{if(btn){btn.disabled=false;btn.textContent='📤 Préparer les envois';}}
+}
+function marquerEnvoye(jeton,n,canal){
+ // Trace « envoyé le … par email » : le clic sur le mailto est le seul signal dont on dispose.
+ try{api('/api/prez',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({action:'envoye',jeton:jeton,n:n,canal:canal})});}catch(_){}
 }
 
 async function envoyerRcsProspect(){
@@ -5995,10 +6121,15 @@ async function chargerMesPrez(){
      ${p.expiree?'':`<a class="act act-call" style="padding:2px 9px;font-size:11.5px;text-decoration:none" href="${htmlSafe(p.url)}?apercu=1" target="_blank" title="Aperçu interne — non compté">👁 Voir</a>
      <button class="act act-copy" style="padding:2px 9px;font-size:11.5px" onclick="navigator.clipboard.writeText(decodeURIComponent('${jsArg(p.url)}'));toast('Lien copié ✓')">📋 Copier</button>`}
      <button class="act act-copy" style="padding:2px 9px;font-size:11.5px" onclick="ouvrirEditeur('${jsArg(p.jeton)}')" title="Corriger les textes et republier sur le même lien">✏️ Modifier</button>
+     ${p.expiree?'':`<button class="act act-call" style="padding:2px 9px;font-size:11.5px" onclick='ouvrirEnvoiPrez(${JSON.stringify({jeton:p.jeton,client:p.client||'',destinataires:p.destinataires||[]}).replace(/'/g,"&#39;").replace(/</g,"\\u003c")})' title="RCS avec bascule SMS, ou email — chaque destinataire reçoit son propre lien">📤 Envoyer</button>`}
      ${p.liste_id?`<button class="act" style="padding:2px 9px;font-size:11.5px" onclick="ficheDepuisPrez(${p.liste_id},'${jsArg(p.cle_fiche||'')}')" title="Rouvrir la fiche du prospect dans sa liste">🚀 Fiche client</button>`:''}
      <button class="act" style="padding:2px 9px;font-size:11.5px" onclick="supprimerPrez('${jsArg(p.jeton)}','${jsArg(p.client||'')}')" title="Supprimer l'analyse — le lien cesse immédiatement de fonctionner">🗑</button>
      <span style="font-size:11.5px;color:var(--ink-soft)">par ${htmlSafe(p.sdr||'?')} · ${htmlSafe(String(p.created_at||'').slice(0,10))}${p.destinataire?' · envoyée à '+htmlSafe(p.destinataire):''}</span>
     </div>
+    ${(p.destinataires||[]).length?`<div style="margin-top:9px;padding-top:8px;border-top:1px dashed var(--line);display:flex;gap:7px;flex-wrap:wrap">
+     ${p.destinataires.map(function(dd){const o=dd.ouvertures||0;
+      return `<span class="badge${o?' b-signal':''}" title="${htmlSafe((dd.email||dd.tel||'')+(dd.envoye_le?' · envoyé le '+String(dd.envoye_le).slice(0,10):''))}">${o?'👀':'✉️'} ${htmlSafe(dd.nom||dd.email||dd.tel||'')}${o?' — '+o+' lecture'+(o>1?'s':''):' — pas encore lu'}</span>`;}).join('')}
+    </div>`:''}
    </div>`;
   }).join('');
  }catch(e){c.innerHTML='<p style="color:var(--danger)">Historique illisible : '+htmlSafe(e.message)+'</p>';}
@@ -6029,7 +6160,7 @@ function prezHtml(e,i){
     <a class="act act-call" style="padding:3px 10px;font-size:12px;text-decoration:none" href="${htmlSafe(p.url)}?apercu=1" target="_blank" title="Ouvrir la page telle que le client la voit. Ta visite n'est pas comptée dans les ouvertures.">👁 Voir</a>
     <button class="act act-copy" style="padding:3px 10px;font-size:12px" onclick="navigator.clipboard.writeText(decodeURIComponent('${jsArg(p.url)}'));toast('Lien copié ✓')">📋 Copier le lien</button>
     <button class="act act-copy" style="padding:3px 10px;font-size:12px" onclick="ouvrirEditeur('${jsArg(p.jeton)}')" title="Relire et corriger avant l'envoi">✏️ Modifier</button>
-    <button class="act act-call" style="padding:3px 10px;font-size:12px" onclick="ouvrirRcsPrez(${i})" title="Rich-card RCS avec bouton « Voir mon analyse » — repli SMS automatique si le mobile ne gère pas le RCS">💬 Envoyer par RCS</button>
+    <button class="act act-call" style="padding:3px 10px;font-size:12px" onclick="ouvrirEnvoiPrez({i:${i}})" title="Choisir les destinataires : RCS avec bascule SMS, ou email. Chacun reçoit son propre lien.">📤 Envoyer</button>
     <button class="act" style="padding:3px 10px;font-size:12px" onclick="supprimerPrez('${jsArg(p.jeton)}','${jsArg(e.nom||'')}')" title="Supprimer — le lien cesse immédiatement de fonctionner">🗑</button>
     <span style="font-size:11.5px;color:var(--ink-soft)">${htmlSafe(quand)}</span>
    </div>`}
@@ -6519,10 +6650,44 @@ function requeteLocale(e){
  return [act,ville].filter(Boolean).join(' ').slice(0,90);
 }
 
+// Le module mis en avant décide de tout le document : les problèmes soulevés, les mécanismes
+// opposés, le cas client choisi. Il était déduit du scoring sans jamais être proposé — le SDR
+// qui sait que son interlocuteur veut du RCS n'avait aucun moyen de le dire.
+function choisirModule(suggere){
+ return new Promise(resolve=>{
+  const mods=[['soview','⭐ Soview','Avis Google, fiches, visibilité locale, position dans les résultats'],
+              ['soconnect','💬 SoConnect','Messagerie clients unifiée (WhatsApp, chat, SMS) avec l\'IA Budy'],
+              ['soreach','📱 SoReach','Campagnes SMS et RCS : messages enrichis, boutons, base de contacts'],
+              ['generique','🎯 Générique','Les trois volets, sans en privilégier un — pour un premier contact']];
+  const m=document.getElementById('env-modal');
+  document.getElementById('env-titre').textContent='🎨 Quel module mettre en avant ?';
+  document.getElementById('env-corps').innerHTML=
+   '<div style="font-size:12.5px;color:var(--ink-soft);line-height:1.55;margin-bottom:10px">'
+   +'Ce choix décide des problèmes soulevés et des réponses Sofy opposées. '
+   +(suggere?'Le scoring de la fiche suggère <b>'+htmlSafe(nomModule(suggere))+'</b>.':'')+'</div>'
+   +mods.map(function(x){const on=(x[0]===suggere);
+    return `<button class="act" id="chm-${x[0]}" style="display:block;width:100%;text-align:left;padding:10px 13px;margin-bottom:7px;font-size:13px;${on?'border-color:#2B4BF2;background:#EFF6FF':''}">
+      <b>${x[1]}</b>${on?' <span style="font-size:11px;color:#2B4BF2">· suggéré</span>':''}
+      <span style="display:block;font-size:11.5px;color:var(--ink-soft);margin-top:2px;font-weight:400">${x[2]}</span></button>`;}).join('');
+  const btn=document.getElementById('env-btn');
+  const ancien=btn.textContent, ancienClick=btn.onclick;
+  btn.style.display='none';
+  m.style.display='flex';
+  const fermer=v=>{m.style.display='none';btn.style.display='';btn.textContent=ancien;btn.onclick=ancienClick;resolve(v);};
+  mods.forEach(function(x){const b=document.getElementById('chm-'+x[0]);if(b)b.onclick=()=>fermer(x[0]);});
+  // Fermer la fenêtre sans choisir = annuler la génération (aucun crédit dépensé).
+  m.onclick=ev=>{if(ev.target===m)fermer(null);};
+ });
+}
+
 async function genererPrez(i){
  const e=REAL[i];if(!e)return;
  if(!state.savedId){toast('Ouvre la fiche depuis une liste enregistrée');return;}
- const mod=e.angle||produitDominant(e)||'tous';
+ const sugg=e.angle||produitDominant(e)||'generique';
+ const mod=await choisirModule(sugg);
+ if(!mod)return;                       // fenêtre fermée = rien n'est lancé, rien n'est facturé
+ e.angle=mod;                          // le choix reste sur la fiche (angle d'appel et séquences)
+ persister();
  const g=e.gmb||{};
  const dispo=[
   (g.trouve&&g.note_moyenne!=null)?`note Google ${String(g.note_moyenne).replace('.',',')}★ sur ${g.nb_fiches||1} fiche(s)`:'aucune fiche Google (constat en soi)',
@@ -6596,7 +6761,7 @@ async function genererPrez(i){
    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
     <a class="btn btn-primary" href="${htmlSafe(d.url)}?apercu=1" target="_blank" style="text-decoration:none" title="Aperçu interne — ta visite n'est pas comptée">👁 Voir la page du client</a>
     <button class="btn" style="background:var(--paper)" onclick="navigator.clipboard.writeText(decodeURIComponent('${jsArg(d.url)}'));toast('Lien copié ✓')">📋 Copier le lien</button>
-    <button class="btn" style="background:var(--paper)" onclick="document.getElementById('info-modal').style.display='none';ouvrirRcsPrez(${i})" title="Rich-card RCS avec bouton « Voir mon analyse », repli SMS automatique">💬 Envoyer par RCS</button>
+    <button class="btn" style="background:var(--paper)" onclick="document.getElementById('info-modal').style.display='none';ouvrirEnvoiPrez({i:${i}})" title="Choisir les destinataires : RCS avec bascule SMS, ou email. Chacun reçoit son propre lien.">📤 Envoyer</button>
    </div>
    <div style="font-size:12px;color:var(--ink-soft);margin-top:12px;line-height:1.5">Relis la page avant de l'envoyer — tes visites ne sont pas comptées, seules celles du prospect le sont. Tu es responsable de ce qui part chez le client. Le lien est valable <strong>${d.jours_validite||15} jours</strong> puis s'éteint. Tu sauras quand il l'ouvre (alerte Slack), et une 2ᵉ alerte part si une <strong>autre personne</strong> le lit — c'est le signe qu'il circule en interne.</div>`;
   document.getElementById('info-modal').style.display='flex';
@@ -8003,7 +8168,7 @@ function produitConcurrent(nom){
  if(R.some(function(x){return n.indexOf(x)>=0;}))return 'soreach';
  return null;
 }
-function nomModule(p){return ({soview:'Soview',soconnect:'SoConnect',soreach:'SoReach SMS/RCS',generique:'Générique'})[p]||p;}
+function nomModule(p){return ({soview:'Soview',soconnect:'SoConnect',soreach:'SoReach SMS/RCS',generique:'Générique',tous:'Générique (les 3 volets)'})[p]||p;}
 function tagsAngleHtml(e,i){
  var dom=(function(){var sg=sigLk(e);var c=concSig(sg);var pc=c?produitConcurrent(c):null;return pc||produitDominant(e);})();
  var actif=e.angle||dom;

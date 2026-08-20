@@ -315,20 +315,31 @@ export default async function handler(req, res) {
     let prezOuvertes = [];
     try {
       const rows = await sql`SELECT jeton, client, module, cle_fiche, liste_id, destinataire,
-          ouvertures, profondeur, lecteurs, premiere_ouverture, derniere_ouverture, expire_le
+          destinataires, ouvertures, profondeur, lecteurs, premiere_ouverture, derniere_ouverture, expire_le
         FROM prez
         WHERE sdr = ${sdr} AND COALESCE(ouvertures,0) > 0
           AND derniere_ouverture > NOW() - INTERVAL '7 days'
         ORDER BY derniere_ouverture DESC LIMIT 15`;
-      prezOuvertes = rows.map(r => ({
-        jeton: r.jeton, client: r.client, module: r.module,
-        cle: r.cle_fiche, liste_id: r.liste_id, destinataire: r.destinataire,
-        ouvertures: r.ouvertures || 0,
-        lecteurs: Array.isArray(r.lecteurs) ? r.lecteurs.length : 0,
-        profondeur: r.profondeur || 0,
-        premiere: r.premiere_ouverture, derniere: r.derniere_ouverture,
-        expiree: !!(r.expire_le && new Date(r.expire_le) < new Date())
-      }));
+      prezOuvertes = rows.map(r => {
+        // La fiche complète derrière l'analyse : sans elle, le dépli affichait « aucun contact
+        // nominatif » alors que la fiche en a trois (bug du 20/08). On retrouve la fiche par son
+        // nom normalisé, comme pour les rappels.
+        const f = parNom.get(normCk(r.cle_fiche)) || parNom.get(normCk(r.client)) || null;
+        return {
+          ...(f || {}),
+          jeton: r.jeton, client: r.client, module: r.module,
+          cle: (f && f.cle) || r.cle_fiche, liste_id: (f && f.liste_id) || r.liste_id,
+          destinataire: r.destinataire,
+          // Les destinataires nommés (un lien par personne) : c'est ce qui permet de dire QUI lit.
+          destinataires: Array.isArray(r.destinataires) ? r.destinataires : [],
+          ouvertures: r.ouvertures || 0,
+          lecteurs: Array.isArray(r.lecteurs) ? r.lecteurs.length : 0,
+          profondeur: r.profondeur || 0,
+          premiere: r.premiere_ouverture, derniere: r.derniere_ouverture,
+          expiree: !!(r.expire_le && new Date(r.expire_le) < new Date()),
+          fiche_retrouvee: !!f
+        };
+      });
     } catch (_) { /* aucune analyse générée à ce jour : la tuile reste vide */ }
 
     // ── 2. Signaux chauds des dernières 24 h (dernier événement par lead, fiches non re-traitées depuis) ──
