@@ -110,6 +110,11 @@ export default async function handler(req, res) {
   const tentatives = [];
   if (coord) tentatives.push({ center: coord });
   if (lieu) tentatives.push({ location: lieu });
+  // Dernier recours : la requête locale finit par la ville (« déménagement Le Lamentin »). On en
+  // extrait les deux derniers mots comme lieu nommé. Mieux vaut une tentative de plus qu'une
+  // mesure perdue — et si Apple ne résout pas non plus celle-là, la réponse dira ce qu'on a tenté.
+  const finRequete = requete.split(/\s+/).slice(-2).join(' ').trim();
+  if (finRequete && finRequete.length >= 3 && !lieu) tentatives.push({ location: finRequete + ', France' });
   let derniereErreur = null;
   for (const geo of tentatives) {
     try {
@@ -136,6 +141,7 @@ export default async function handler(req, res) {
       erreur: 'SerpApi ' + ((derniereErreur && derniereErreur.http) || '?'),
       detail: (derniereErreur && derniereErreur.message) || 'aucune tentative aboutie',
       parametres_envoyes: tentatives.map(t => Object.keys(t)[0] + '=' + Object.values(t)[0]),
+      recu: { ll: ll || null, lieu: lieu || null, coord_validee: coord || null },
       requete
     });
   }

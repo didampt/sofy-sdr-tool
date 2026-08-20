@@ -2154,7 +2154,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v373';
+const VERSION='v374';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -6657,7 +6657,11 @@ async function completerMesures(i){
  // Un relevé raté ne doit JAMAIS être silencieux : c'est ce qui a fait croire le 20/08 que la
  // planche « position locale » n'existait pas, alors que le relevé avait échoué sans le dire.
  const rater=(quoi,d)=>erreurs.push(quoi+' : '+String((d&&(d.erreur||d.info))||'réponse inattendue')
-  +((d&&d.detail)?' ('+String(d.detail).slice(0,90)+')':''));
+  +((d&&d.detail)?' ('+String(d.detail).slice(0,120)+')':'')
+  // Les champs de diagnostic envoyés par l'API (paramètres réellement transmis, valeurs reçues)
+  // doivent apparaître : sans eux, deux causes différentes donnent le même message à l'écran.
+  +((d&&d.parametres_envoyes)?' [envoyé : '+[].concat(d.parametres_envoyes).join(' | ')+']':'')
+  +((d&&d.recu)?' [reçu : '+JSON.stringify(d.recu)+']':''));
  // Sans identifiant de fiche Google, TROIS relevés sur quatre sont impossibles : autant le dire
  // avec le geste qui débloque, plutôt que d'énumérer trois échecs.
  if(!pid){
@@ -6740,7 +6744,23 @@ async function completerMesures(i){
   // Les coordonnées, dans l'ordre de fiabilité : celles relevées par l'audit de fiche (elles
   // existent pour toute fiche auditée), puis celles stockées à l'analyse GMB (absentes des fiches
   // analysées avant août 2026 — c'est ce qui a produit le 400 du 21/08 sur AGS).
-  const lat=(au.lat!=null?au.lat:f.lat), lng=(au.lng!=null?au.lng:f.lng);
+  let lat=(au.lat!=null?au.lat:f.lat), lng=(au.lng!=null?au.lng:f.lng);
+  // Apple ne résout pas toujours un nom de ville, alors qu'il accepte toujours des coordonnées.
+  // Les audits faits avant le 21/08 sont en cache SANS coordonnées (colonne ajoutée après) :
+  // plutôt que de se rabattre sur la ville et risquer un 400, on relance l'audit une fois pour
+  // les obtenir. Un centime, une seule fois par fiche — c'est ce qui a bloqué AGS deux jours.
+  if(pid&&!(Number.isFinite(Number(lat))&&Number.isFinite(Number(lng)))){
+   try{
+    const rr=await api('/api/fiche-audit',{method:'POST',headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({place_id:pid,nom:f.nom||e.nom,requete:req,forcer:true})});
+    const dd=await rr.json();
+    if(dd.ok&&dd.audit){
+     e.gmb=Object.assign({},e.gmb||{},{audit:dd.audit});
+     lat=dd.audit.lat; lng=dd.audit.lng;
+     if(!faits.includes('audit de fiche'))faits.push('coordonnées de la fiche');
+    }
+   }catch(_){}
+  }
   const ll=(Number.isFinite(Number(lat))&&Number.isFinite(Number(lng)))?(Number(lat)+','+Number(lng)):'';
   // Apple attend un lieu nommé façon « Le Lamentin, France », pas un « LE LAMENTIN » seul.
   const lieu=ville?(ville.charAt(0)+ville.slice(1).toLowerCase()+', France'):'';
@@ -6858,19 +6878,28 @@ async function genererPrez(i){
   // Un relevé raté change le document : sans position locale, la planche « ce que trouve un
   // client qui vous cherche » n'existe pas. Le SDR doit le savoir AVANT de payer la rédaction.
   if(rel.erreurs.length){
-   // La conséquence dépend de ce qui manque VRAIMENT : la planche « ce que trouve un client »
-   // existe dès qu'UNE de ses trois sources a répondu (position locale, aperçu IA, Apple Plans).
-   // Annoncer sa disparition à chaque échec partiel était faux, et poussait à renoncer pour rien.
+   // Une fenêtre qui bloque doit changer une DÉCISION. La planche « ce que trouve un client »
+   // existe dès qu'UNE de ses trois sources a répondu (position locale, aperçu IA, Apple Plans) :
+   // dans ce cas il n'y a rien à arbitrer, un simple avertissement suffit (remarque de Didier,
+   // 21/08 — « pourquoi ne pas le retirer si les mesures seront faites ? »).
    const g2=e.gmb||{}, au2=g2.audit||{}, iv2=g2.ia_visibilite||null, ap2=g2.apple||null;
    const plancheOk=(au2.position_locale!=null)||((au2.concurrents||[]).length>0)
      ||(iv2&&(iv2.apercu_present||(iv2.annonceurs||[]).length))||(ap2&&ap2.total_resultats);
-   const suite=plancheOk
-    ? 'La planche « ce que trouve un client qui vous cherche » sera quand même créée — avec ce qui a été relevé. Ces mesures-là y manqueront simplement.'
-    : 'Conséquence : la planche « ce que trouve un client qui vous cherche » ne sera PAS créée, aucune de ses sources n\'a répondu.';
-   if(!await confirmSofy('Des relevés n\'ont pas abouti',
-    'Ces mesures manqueront au document :\n· '+rel.erreurs.join('\n· ')+
-    '\n\n'+suite+'\n\nSi c\'est une clé SerpApi épuisée ou absente, corrige-la dans Vercel puis relance.',
-    plancheOk?'Générer quand même':'Générer sans ces mesures'))return;
+   // Une clé SerpApi absente ou épuisée est un problème réparable qui coûte TOUTES les mesures :
+   // celui-là mérite qu'on s'arrête, même si la planche survit.
+   const cleHs=rel.erreurs.some(x=>/SERPAPI_KEY|401|429|quota|épuis/i.test(x));
+   if(plancheOk&&!cleHs){
+    toast('⚠️ Relevé incomplet : '+rel.erreurs.map(x=>String(x).split(' : ')[0]).join(', ')+' — la planche se fait avec le reste');
+    console.warn('Relevés non aboutis :\n· '+rel.erreurs.join('\n· '));
+   }else{
+    const suite=plancheOk
+     ? 'La planche « ce que trouve un client qui vous cherche » sera quand même créée avec ce qui a été relevé — mais une clé SerpApi absente ou épuisée coûte TOUTES les mesures des prochaines analyses.'
+     : 'Conséquence : la planche « ce que trouve un client qui vous cherche » ne sera PAS créée, aucune de ses sources n\'a répondu.';
+    if(!await confirmSofy('Des relevés n\'ont pas abouti',
+     'Ces mesures manqueront au document :\n· '+rel.erreurs.join('\n· ')+
+     '\n\n'+suite+'\n\nCorrige la clé dans Vercel puis relance si c\'est le cas.',
+     plancheOk?'Générer quand même':'Générer sans ces mesures'))return;
+   }
   }
  }
  // Garde-fou : une analyse existe déjà sur cette fiche. La regénérer coûte un appel complet et
