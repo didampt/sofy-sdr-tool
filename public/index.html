@@ -2132,7 +2132,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v346';
+const VERSION='v347';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -5133,12 +5133,27 @@ async function lancerImportKb(){
 // Aucun utilisateur ne doit redimensionner une capture d'écran à la main pour déposer sa photo.
 // On redimensionne et on réencode ici : le serveur ne voit qu'un fichier déjà au format voulu,
 // et la limite de 4,5 Mo par requête Vercel n'est jamais atteinte.
-function chargerImage(fichier){
- return new Promise(function(ok,ko){
-  const url=URL.createObjectURL(fichier), img=new Image();
-  img.onload=function(){URL.revokeObjectURL(url);ok(img);};
-  img.onerror=function(){URL.revokeObjectURL(url);ko(new Error('Image illisible'));};
-  img.src=url;
+// ⚠️ PAS de URL.createObjectURL ici : la CSP de l'app autorise « img-src 'self' data: https: »
+// et donc PAS « blob: ». Une image chargée depuis une URL blob: échouait silencieusement en
+// production (« Image illisible ») alors que tout passait en local, où le serveur de test
+// n'envoie pas les en-têtes de sécurité de Vercel.
+// createImageBitmap décode le fichier sans passer par une URL — donc sans passer par la CSP.
+// Repli sur une data URL, autorisée par la politique.
+async function chargerImage(fichier){
+ if(typeof createImageBitmap==='function'){
+  try{ return await createImageBitmap(fichier); }catch(_){ /* format non décodable par cette voie */ }
+ }
+ const data=await new Promise(function(ok,ko){
+  const fr=new FileReader();
+  fr.onload=function(){ok(String(fr.result));};
+  fr.onerror=function(){ko(new Error('fichier illisible'));};
+  fr.readAsDataURL(fichier);
+ });
+ return await new Promise(function(ok,ko){
+  const img=new Image();
+  img.onload=function(){ok(img);};
+  img.onerror=function(){ko(new Error('format d\'image non reconnu par le navigateur (HEIC ? convertis-la en JPEG)'));};
+  img.src=data;
  });
 }
 
@@ -5148,6 +5163,7 @@ function chargerImage(fichier){
 async function compresserImage(fichier, maxLargeur, maxKo, carre){
  const img=await chargerImage(fichier);
  const avantKo=Math.round(fichier.size/1024);
+ const fermer=function(){ try{ if(img.close)img.close(); }catch(_){} };
  let l=Math.min(maxLargeur, img.naturalWidth||img.width);
  let h=Math.round((img.naturalHeight||img.height)*l/(img.naturalWidth||img.width));
  const c=document.createElement('canvas'), ctx=c.getContext('2d');
@@ -5168,11 +5184,12 @@ async function compresserImage(fichier, maxLargeur, maxKo, carre){
   for(const q of [0.86,0.76,0.66,0.56,0.46]){
    const data=c.toDataURL('image/jpeg',q);
    const ko=Math.round(data.length*0.75/1024);
-   if(ko<=maxKo)return {data:data,ko:ko,largeur:c.width,hauteur:c.height,avantKo:avantKo};
+   if(ko<=maxKo){fermer();return {data:data,ko:ko,largeur:c.width,hauteur:c.height,avantKo:avantKo};}
   }
   l=Math.round(l*0.8);h=Math.round(h*0.8);
  }
  const data=c.toDataURL('image/jpeg',0.4);
+ fermer();
  return {data:data,ko:Math.round(data.length*0.75/1024),largeur:c.width,hauteur:c.height,avantKo:avantKo};
 }
 
@@ -5189,7 +5206,8 @@ async function envoyerMaPhoto(retirer){
  if(!retirer){
   const inp=document.getElementById('ma-photo-f'),f=inp&&inp.files&&inp.files[0];
   if(!f){toast('Choisis une image');return;}
-  if(!/^image\//.test(f.type)){toast('Ce fichier n\'est pas une image');return;}
+  if(!/^image\//.test(f.type)&&!/\.(png|jpe?g|webp|gif|heic|heif)$/i.test(f.name)){
+   toast('Ce fichier n\'est pas une image');return;}
   toast('⏳ Compression…');
   try{
    const r=await compresserImage(f,640,180,true); // recadrée en 4/5 pour la couverture
@@ -5287,7 +5305,7 @@ async function choisirVisuels(inp){
  box.innerHTML='<p style="color:var(--ink-soft)">⏳ Compression de '+fichiers.length+' image(s)…</p>';
  VIS_ATTENTE=[];
  for(const f of fichiers){
-  if(!/^image\//.test(f.type))continue;
+  if(!/^image\//.test(f.type)&&!/\.(png|jpe?g|webp|gif|heic|heif)$/i.test(f.name))continue;
   try{
    const gd=await compresserImage(f,1600,600,false);
    const pt=await compresserImage(f,420,60,false);
