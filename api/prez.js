@@ -41,6 +41,11 @@ async function ensurePrez() {
     derniere_ouverture TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`;
+  // Durée de vie limitée (décision Didier) : un lien qui traîne finit par montrer des données
+  // périmées à un prospect, et le stockage n'a pas à croître indéfiniment.
+  await sql`ALTER TABLE prez ADD COLUMN IF NOT EXISTS expire_le TIMESTAMPTZ`;
+  await sql`ALTER TABLE prez ADD COLUMN IF NOT EXISTS lecteurs JSONB DEFAULT '[]'::jsonb`;
+  await sql`ALTER TABLE prez ADD COLUMN IF NOT EXISTS destinataire TEXT`;
   await sql`CREATE INDEX IF NOT EXISTS idx_prez_sdr ON prez(sdr, created_at DESC)`;
   prezPrete = true;
 }
@@ -112,23 +117,50 @@ ${parType('charte') || '(aucune)'}
 5. Écris en français, à la deuxième personne du pluriel (« vous »). Ton : direct, factuel, respectueux. Jamais de flatterie, jamais de jargon marketing creux, jamais de point d'exclamation.
 6. Si une mesure manque (pas de fiche Google, pas d'avis négatif), n'invente pas : construis la planche sur ce que tu as, ou signale l'absence comme un constat en soi (« aucune fiche Google trouvée » est un problème à nommer).
 
-════ STRUCTURE — 7 planches, dans cet ordre ════
+════ STRUCTURE — 7 planches ════
+Ce document est lu par un décideur pressé, souvent en grand compte. Il doit pouvoir se PROJETER :
+pour chaque problème que nous avons mesuré chez lui, il veut la solution ET le résultat attendu.
+
+CONTRAINTES DE LONGUEUR — impératives, le document doit respirer :
+· "titre" : 65 caractères maximum, une idée
+· "texte" d'introduction de planche : 200 caractères maximum
+· chaque "texte" de point ou de problème : 130 caractères maximum
+· jamais plus de 4 éléments dans un tableau
+Écris court et dense. Un décideur ne lit pas un paragraphe, il balaye.
+
 Réponds UNIQUEMENT par cet objet JSON, sans texte autour, sans backticks :
 {
  "titre_document": "Analyse Sofy — <Nom du prospect>",
- "sous_titre": "une ligne qui situe l'analyse",
  "planches": [
-  {"n":1,"role":"couverture","eyebrow":"PRÉPARÉ POUR VOUS","titre":"titre de couverture qui nomme le prospect","texte":"une phrase : qui a préparé ce document et pourquoi"},
-  {"n":2,"role":"constat","eyebrow":"CE QUE NOUS AVONS OBSERVÉ","titre":"…","texte":"introduction en une ou deux phrases","chiffres":[{"valeur":"3,4 ★","legende":"votre note Google sur 7 fiches","source":"mesuré sur vos fiches Google"}],"citation":{"texte":"extrait du vrai avis négatif","meta":"Avis Google · <nom de la fiche> · <date>"}},
-  {"n":3,"role":"cout","eyebrow":"CE QUE ÇA VOUS COÛTE","titre":"…","texte":"…","points":[{"titre":"…","texte":"…","source":"la source du bloc utilisé"}]},
-  {"n":4,"role":"solution","eyebrow":"COMMENT ON CORRIGE","titre":"…","texte":"…","points":[{"titre":"…","texte":"…"}]},
-  {"n":5,"role":"preuve","eyebrow":"ILS L'ONT FAIT AVANT VOUS","titre":"…","texte":"pourquoi ce cas ressemble au sien","chiffres":[{"valeur":"+30 %","legende":"…","source":"…"}],"citation":{"texte":"verbatim du client","meta":"<Client> · interview publiée"}},
-  {"n":6,"role":"projection","eyebrow":"VOTRE PROJECTION","titre":"…","texte":"reprend les mêmes indicateurs que la planche 2, corrigés — formulés comme objectif, pas comme promesse","points":[{"titre":"…","texte":"…"}]},
-  {"n":7,"role":"cta","eyebrow":"ON EN PARLE ?","titre":"…","texte":"…","cta":"15 minutes pour en parler"}
+  {"n":1,"role":"couverture","eyebrow":"ANALYSE PRÉPARÉE POUR VOUS","titre":"nomme le prospect","texte":"qui l'a préparée et à partir de quoi (≤200 car.)"},
+
+  {"n":2,"role":"constat","eyebrow":"CE QUE NOUS AVONS MESURÉ","titre":"…","texte":"≤200 car.",
+   "chiffres":[{"valeur":"3,4","unite":"★","legende":"votre note Google (≤60 car.)","source":"mesuré sur vos fiches"}],
+   "citation":{"texte":"extrait du VRAI avis négatif","meta":"Avis Google · <fiche> · <date>"}},
+
+  {"role":"diagnostic","eyebrow":"CE QUE ÇA VOUS COÛTE","titre":"…","texte":"≤200 car.",
+   "problemes":[{"titre":"le problème en 6 mots","texte":"sa conséquence business, ≤130 car.","impact":"un ordre de grandeur SI ET SEULEMENT SI il est calculable depuis ses données, sinon null"}]},
+
+  {"role":"solution","eyebrow":"CE QUE SOFY MET EN PLACE","titre":"…","texte":"≤200 car.",
+   "points":[{"titre":"la brique Sofy (ex : NAP unifié, store locator, réponse aux avis, collecte SMS/QR/NFC)","texte":"≤130 car.","repond_a":"le titre exact du problème de la planche diagnostic auquel elle répond"}]},
+
+  {"role":"projection","eyebrow":"LE RÉSULTAT ATTENDU","titre":"…","texte":"≤200 car. — dis clairement que c'est un objectif atteignable, pas un engagement contractuel",
+   "projection":[{"indicateur":"Note Google","actuel":3.4,"cible":4.3,"unite":"★","max":5,"delai":"6 mois","appui":"le cas client ou le chiffre de la base qui rend cet objectif crédible, avec sa source"}]},
+
+  {"role":"preuve","eyebrow":"ILS L'ONT FAIT AVANT VOUS","titre":"…","texte":"pourquoi ce cas ressemble au sien, ≤200 car.",
+   "chiffres":[{"valeur":"+30","unite":" %","legende":"≤60 car.","source":"…"}],
+   "citation":{"texte":"verbatim du client","meta":"<Client> · interview publiée"}},
+
+  {"role":"cta","eyebrow":"LA SUITE","titre":"…","texte":"≤200 car.","cta":"texte du bouton"}
  ]
 }
 
-Chaque "source" doit être recopiée telle quelle depuis la base ou dire « mesuré sur vos fiches Google » / « votre site » quand la donnée vient du prospect. Une planche sans donnée disponible peut avoir un tableau vide, mais jamais un chiffre sans source.`;
+RÈGLES DE REMPLISSAGE
+· "projection" est la planche qui décide : 2 à 4 indicateurs, avec "actuel" pris dans SES données mesurées et "cible" justifiée par "appui" (un cas client ou un chiffre de la base, avec sa source). Si tu n'as pas de valeur actuelle mesurée pour un indicateur, ne l'invente pas : ne mets pas cet indicateur.
+· "actuel", "cible" et "max" sont des NOMBRES (pas de texte) : ils servent à dessiner un graphique. "unite" est court ("★", " %", " avis", " min").
+· Chaque brique de la planche solution doit répondre à un problème réel de la planche diagnostic via "repond_a" — pas de catalogue de fonctionnalités décorrélé du diagnostic.
+· "impact" n'est renseigné que si l'ordre de grandeur découle de SES chiffres. Sinon null. Jamais d'estimation inventée.
+· Ton : direct, factuel, orienté résultat. Tu montres ce que Sofy change chez LUI, pas ce que Sofy sait faire en général.`;
 }
 
 async function composer(ctx) {
@@ -162,13 +194,18 @@ export default async function handler(req, res) {
     const q = req.query || {};
     if (q.mes === '1') {
       // L'historique porte le signal : « ouverte 3 fois » vaut mieux qu'un email ouvert
-      const rows = await sql`SELECT jeton, client, module, sdr, ouvertures, profondeur,
-          premiere_ouverture, derniere_ouverture, created_at FROM prez
+      const rows = await sql`SELECT jeton, client, module, sdr, ouvertures, profondeur, destinataire,
+          premiere_ouverture, derniere_ouverture, created_at, expire_le,
+          jsonb_array_length(COALESCE(lecteurs,'[]'::jsonb)) AS lecteurs_distincts FROM prez
         WHERE (${['admin', 'superadmin'].includes(user.role)} OR sdr = ${user.nom})
         ORDER BY created_at DESC LIMIT 50`;
       return res.status(200).json({
         ok: true,
-        prez: rows.map(r => ({ ...r, url: BASE_PUB() + '/p/' + r.jeton }))
+        prez: rows.map(r => ({
+          ...r, url: BASE_PUB() + '/p/' + r.jeton,
+          expiree: r.expire_le ? new Date(r.expire_le).getTime() < Date.now() : false,
+          jours_restants: r.expire_le ? Math.ceil((new Date(r.expire_le).getTime() - Date.now()) / 86400000) : null
+        }))
       });
     }
     if (q.jeton) {
@@ -216,13 +253,16 @@ export default async function handler(req, res) {
     if (out.erreur) return res.status(502).json(out);
 
     const jeton = crypto.randomBytes(9).toString('base64url'); // 12 caractères, non devinable
-    await sql`INSERT INTO prez (jeton, client, module, sdr, liste_id, cle_fiche, contenu)
+    const jours = Math.max(1, Math.min(90, parseInt(b.jours_validite || process.env.PREZ_JOURS_VALIDITE || '15', 10) || 15));
+    await sql`INSERT INTO prez (jeton, client, module, sdr, liste_id, cle_fiche, destinataire, contenu, expire_le)
       VALUES (${jeton}, ${mes.nom || ''}, ${module}, ${user.nom}, ${b.liste_id ? parseInt(b.liste_id) : null},
-              ${b.cle_fiche || null}, ${JSON.stringify({ ...out.doc, _mes: mes, _sdr: user.nom, _module: module })}::jsonb)`;
+              ${b.cle_fiche || null}, ${b.destinataire || null},
+              ${JSON.stringify({ ...out.doc, _mes: mes, _sdr: user.nom, _module: module })}::jsonb,
+              NOW() + (${jours} || ' days')::interval)`;
     try { await loggerConso(user, 'ia_claude', 1, b.liste_id || null); } catch (_) {}
 
     return res.status(200).json({
-      ok: true, jeton, url: BASE_PUB() + '/p/' + jeton, client: mes.nom, module,
+      ok: true, jeton, url: BASE_PUB() + '/p/' + jeton, client: mes.nom, module, jours_validite: jours,
       planches: (out.doc.planches || []).length,
       contexte_utilise: { radar: !!radar, blocs_kb: blocs.length, cas_clients: blocs.filter(x => x.type === 'cas_client').length },
       doc: out.doc

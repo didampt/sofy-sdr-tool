@@ -2061,7 +2061,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v332';
+const VERSION='v333';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -5101,6 +5101,46 @@ async function reinitFiche(i){
    l'app les connaît déjà (state.savedId et la fiche courante). Le document se compose à partir
    des VRAIES données du prospect (note Google, pire fiche nommée, avis réel, concurrents) et
    des seuls blocs validés de la base de connaissance. */
+// Voile de travail : la génération dure 30 à 60 s. Sans blocage, le SDR relance ou change de
+// fiche pendant ce temps — et le document arrive sur un autre prospect. Le bouton Stop coupe
+// vraiment la requête (AbortController) : l'onglet ne reste pas prisonnier d'un appel qui traîne.
+function voileTravail(titre, sous){
+ const ctrl = new AbortController();
+ const d = document.createElement('div');
+ d.id = 'voile-travail';
+ d.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(12,10,32,.72);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px';
+ d.innerHTML = `<div style="background:var(--card,#fff);border-radius:16px;padding:30px 34px;max-width:420px;width:100%;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,.3)">
+  <div class="vt-roue" style="width:46px;height:46px;margin:0 auto 18px;border:4px solid var(--line,#E4E0F5);border-top-color:var(--accent,#5B4FE9);border-radius:50%;animation:vtSpin .85s linear infinite"></div>
+  <div style="font-size:17px;font-weight:750;letter-spacing:-.01em">${htmlSafe(titre)}</div>
+  <div style="font-size:13.5px;color:var(--ink-soft);line-height:1.55;margin-top:8px">${htmlSafe(sous||'')}</div>
+  <div id="vt-chrono" style="font-size:12px;color:var(--ink-soft);margin-top:14px;font-variant-numeric:tabular-nums">0 s</div>
+  <button class="btn" id="vt-stop" style="margin-top:16px;background:var(--paper)">⏹ Arrêter la génération</button>
+  <div style="font-size:11.5px;color:var(--ink-soft);margin-top:12px">Ne ferme pas l'onglet et ne lance pas d'autre action : Sofy Scrap travaille.</div>
+ </div>`;
+ if(!document.getElementById('vt-css')){
+  const st=document.createElement('style');st.id='vt-css';
+  st.textContent='@keyframes vtSpin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){.vt-roue{animation-duration:2.4s}}';
+  document.head.appendChild(st);
+ }
+ document.body.appendChild(d);
+ const t0 = Date.now();
+ const chrono = setInterval(function(){
+  const s = Math.round((Date.now()-t0)/1000);
+  const el = document.getElementById('vt-chrono');
+  if(el) el.textContent = s + ' s' + (s>75 ? ' — c\'est plus long que d\'habitude, laisse encore un peu' : '');
+ }, 1000);
+ let arrete = false;
+ d.querySelector('#vt-stop').onclick = function(){ arrete = true; ctrl.abort(); };
+ // Échap arrête aussi
+ const clav = function(ev){ if(ev.key==='Escape'){ arrete = true; ctrl.abort(); } };
+ document.addEventListener('keydown', clav);
+ return {
+  signal: ctrl.signal,
+  get arrete(){ return arrete; },
+  fermer(){ clearInterval(chrono); document.removeEventListener('keydown', clav); d.remove(); }
+ };
+}
+
 async function genererPrez(i){
  const e=REAL[i];if(!e)return;
  if(!state.savedId){toast('Ouvre la fiche depuis une liste enregistrée');return;}
@@ -5116,12 +5156,14 @@ async function genererPrez(i){
  ].filter(Boolean);
  const ok=await confirmSofy('🎨 Générer l\'analyse de '+(enseigneDe(e)||e.nom),
   'Module mis en avant : '+nomModule(mod)+'\n\nCe que le document va citer :\n· '+dispo.join('\n· ')+
-  '\n\n7 planches, page web privée avec suivi d\'ouverture et bouton PDF.\nCoût ≈ 0,15 € · 30 à 60 secondes.',
+  '\n\n7 planches (dont une planche « résultat attendu » chiffrée), page web privée valable 15 jours, suivi des ouvertures et du nombre de lecteurs, bouton PDF.\nCoût ≈ 0,15 € · 30 à 60 secondes pendant lesquelles Sofy Scrap est bloqué.',
   '🎨 Générer l\'analyse');
  if(!ok)return;
- toast('🎨 Composition en cours… (30 à 60 s)');
+ const v=voileTravail('🎨 Composition de l\'analyse',
+  (enseigneDe(e)||e.nom)+' · module '+nomModule(mod)+'\nSofy Scrap lit les mesures, choisit le cas client le plus proche et rédige les 7 planches.');
  try{
   const r=await api('/api/prez',{method:'POST',headers:{'Content-Type':'application/json'},
+   signal:v.signal,
    body:JSON.stringify({liste_id:state.savedId,cle_fiche:e.nom,module:mod})});
   const d=await lireJson(r);
   if(d.erreur){toast('Analyse : '+d.erreur+(d.detail?' — '+String(d.detail).slice(0,80):''));return;}
@@ -5134,10 +5176,13 @@ async function genererPrez(i){
     <a class="btn btn-primary" href="${htmlSafe(d.url)}" target="_blank" style="text-decoration:none">👁 Voir la page du client</a>
     <button class="btn" style="background:var(--paper)" onclick="navigator.clipboard.writeText(decodeURIComponent('${jsArg(d.url)}'));toast('Lien copié ✓')">📋 Copier le lien</button>
    </div>
-   <div style="font-size:12px;color:var(--ink-soft);margin-top:12px;line-height:1.5">Relis la page avant de l'envoyer : tu es responsable de ce qui part chez le client. Tu sauras quand il l'ouvre — alerte Slack à la première ouverture, et le compteur reste visible dans l'historique.</div>`;
+   <div style="font-size:12px;color:var(--ink-soft);margin-top:12px;line-height:1.5">Relis la page avant de l'envoyer : tu es responsable de ce qui part chez le client. Le lien est valable <strong>${d.jours_validite||15} jours</strong> puis s'éteint. Tu sauras quand il l'ouvre (alerte Slack), et une 2ᵉ alerte part si une <strong>autre personne</strong> le lit — c'est le signe qu'il circule en interne.</div>`;
   document.getElementById('info-modal').style.display='flex';
   toast('🎨 Analyse prête — relis-la avant de l\'envoyer');
- }catch(err){toast('Analyse : '+err.message);}
+ }catch(err){
+  if(v.arrete||err.name==='AbortError'){toast('Génération arrêtée — rien n\'a été enregistré');}
+  else toast('Analyse : '+err.message);
+ }finally{ v.fermer(); }
 }
 function ouvrirInfo(i){
  const e=REAL[i];

@@ -10,6 +10,7 @@
 // Publique par jeton non devinable (12 caractères aléatoires), noindex : jamais référencée.
 
 import { sql } from './db.js';
+import crypto from 'crypto';
 
 export const config = { maxDuration: 60 };
 
@@ -22,7 +23,7 @@ function planche(p, i, total) {
   const sombre = i % 2 === 1;
   const chiffres = (p.chiffres || []).map(c => `
     <div class="kpi">
-      <div class="kpi-v">${esc(c.valeur)}</div>
+      <div class="kpi-v" data-n="${esc(String(c.valeur).replace(',', '.'))}">${esc(c.valeur)}${c.unite ? `<span class="kpi-u">${esc(c.unite)}</span>` : ''}</div>
       <div class="kpi-l">${md(c.legende)}</div>
       ${c.source ? `<div class="kpi-s">${esc(c.source)}</div>` : ''}
     </div>`).join('');
@@ -30,8 +31,33 @@ function planche(p, i, total) {
     <div class="pt">
       <span class="pt-n">${k + 1}</span>
       <div><div class="pt-t">${md(x.titre)}</div><div class="pt-x">${md(x.texte)}</div>
+      ${x.repond_a ? `<div class="pt-r">↳ répond à : ${md(x.repond_a)}</div>` : ''}
       ${x.source ? `<div class="pt-s">${esc(x.source)}</div>` : ''}</div>
     </div>`).join('');
+  // Diagnostic : une carte par problème mesuré, avec son impact quand il est calculable
+  const problemes = (p.problemes || []).map((x, k) => `
+    <div class="pb reveal" style="--d:${k * 90}ms">
+      <div class="pb-t">${md(x.titre)}</div>
+      <div class="pb-x">${md(x.texte)}</div>
+      ${x.impact ? `<div class="pb-i">${md(x.impact)}</div>` : ''}
+    </div>`).join('');
+  // Projection : LE graphique. Barre actuelle → barre cible, animée à l'entrée dans l'écran.
+  const proj = (p.projection || []).map((x, k) => {
+    const max = Number(x.max) || Math.max(Number(x.cible) || 0, Number(x.actuel) || 0) * 1.15 || 1;
+    const pa = Math.max(2, Math.min(100, Math.round((Number(x.actuel) || 0) / max * 100)));
+    const pc = Math.max(2, Math.min(100, Math.round((Number(x.cible) || 0) / max * 100)));
+    const fmt = v => String(v).replace('.', ',');
+    return `<div class="pj reveal" style="--d:${k * 110}ms">
+      <div class="pj-h"><span class="pj-n">${md(x.indicateur)}</span>${x.delai ? `<span class="pj-d">objectif ${esc(x.delai)}</span>` : ''}</div>
+      <div class="pj-row"><span class="pj-lab">aujourd'hui</span>
+        <div class="pj-bar"><i class="now" style="--w:${pa}%"></i></div>
+        <span class="pj-v">${fmt(x.actuel)}${esc(x.unite || '')}</span></div>
+      <div class="pj-row"><span class="pj-lab">visé</span>
+        <div class="pj-bar"><i class="goal" style="--w:${pc}%"></i></div>
+        <span class="pj-v goal-v">${fmt(x.cible)}${esc(x.unite || '')}</span></div>
+      ${x.appui ? `<div class="pj-s">${md(x.appui)}</div>` : ''}
+    </div>`;
+  }).join('');
   const cit = p.citation && p.citation.texte ? `
     <blockquote class="cit">${md(p.citation.texte)}
       ${p.citation.meta ? `<cite>${esc(p.citation.meta)}</cite>` : ''}</blockquote>` : '';
@@ -46,6 +72,8 @@ function planche(p, i, total) {
       <div class="rule"></div>
       ${p.texte ? `<p class="pl-x">${md(p.texte)}</p>` : ''}
       ${chiffres ? `<div class="kpis">${chiffres}</div>` : ''}
+      ${problemes ? `<div class="pbs">${problemes}</div>` : ''}
+      ${proj ? `<div class="pjs">${proj}</div>` : ''}
       ${points ? `<div class="pts">${points}</div>` : ''}
       ${cit}
       ${p.role === 'cta' ? `<div class="cta-zone">
@@ -132,8 +160,43 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .tools{position:fixed;right:16px;bottom:16px;display:flex;gap:8px;z-index:9}
 .tools button{font:inherit;font-size:13px;font-weight:650;padding:10px 15px;border-radius:11px;cursor:pointer;
  border:1px solid var(--line);background:#fff;color:var(--ink);box-shadow:0 6px 22px rgba(20,16,58,.16)}
-.reveal{opacity:0;transform:translateY(18px);transition:opacity .7s ease,transform .7s ease}
+.pbs{display:grid;gap:16px;margin-top:34px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+.pb{padding:22px 24px;border-radius:15px;border-left:4px solid var(--r)}
+.pl.light .pb{background:#fff;border:1px solid var(--line);border-left:4px solid var(--r);box-shadow:0 14px 34px rgba(20,16,58,.06)}
+.pl.dark .pb{background:rgba(255,255,255,.055);border:1px solid var(--line-d);border-left:4px solid var(--r)}
+.pb-t{font-size:17px;font-weight:750;letter-spacing:-.01em;line-height:1.25}
+.pb-x{font-size:14.5px;line-height:1.55;margin-top:7px}
+.pl.light .pb-x{color:var(--ink-s)} .pl.dark .pb-x{color:var(--ink-ds)}
+.pb-i{font-size:13px;font-weight:700;margin-top:11px;padding-top:10px;border-top:1px dashed var(--line);color:var(--r)}
+.pl.dark .pb-i{border-top-color:var(--line-d)}
+.pjs{display:flex;flex-direction:column;gap:26px;margin-top:36px;max-width:74ch}
+.pj-h{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:11px}
+.pj-n{font-size:17px;font-weight:750}
+.pj-d{font-size:12px;letter-spacing:.1em;text-transform:uppercase}
+.pl.light .pj-d{color:var(--v)} .pl.dark .pj-d{color:var(--r)}
+.pj-row{display:flex;align-items:center;gap:13px;margin:7px 0}
+.pj-lab{flex:none;width:78px;font-size:12px;text-align:right}
+.pl.light .pj-lab{color:#9990C4} .pl.dark .pj-lab{color:rgba(255,255,255,.45)}
+.pj-bar{flex:1;height:15px;border-radius:8px;overflow:hidden}
+.pl.light .pj-bar{background:#EDEAF9} .pl.dark .pj-bar{background:rgba(255,255,255,.09)}
+.pj-bar i{display:block;height:100%;width:0;border-radius:8px;transition:width 1.15s cubic-bezier(.22,.68,.24,1)}
+.pj-bar i.now{background:#B9B2E0}
+.pl.dark .pj-bar i.now{background:rgba(255,255,255,.32)}
+.pj-bar i.goal{background:var(--grad);transition-delay:.28s}
+.reveal.on .pj-bar i{width:var(--w)}
+.pj-v{flex:none;width:74px;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+.pj-v.goal-v{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;font-size:18px}
+.pj-s{font-size:12px;line-height:1.5;margin-top:9px}
+.pl.light .pj-s{color:#9990C4} .pl.dark .pj-s{color:rgba(255,255,255,.42)}
+.pt-r{font-size:12.5px;margin-top:6px;font-weight:650}
+.pl.light .pt-r{color:var(--v)} .pl.dark .pt-r{color:var(--r)}
+.kpi-u{font-size:.5em;margin-left:2px}
+.reveal{opacity:0;transform:translateY(20px);transition:opacity .75s ease var(--d,0ms),transform .75s cubic-bezier(.22,.68,.24,1) var(--d,0ms)}
 .reveal.on{opacity:1;transform:none}
+.pl-t .w{display:inline-block;opacity:0;transform:translateY(14px);transition:opacity .5s ease,transform .5s ease}
+.on .pl-t .w,.pl-t.on .w{opacity:1;transform:none}
+.rule{transform:scaleX(0);transform-origin:left;transition:transform .8s cubic-bezier(.22,.68,.24,1) .15s}
+.on .rule{transform:scaleX(1)}
 @media (prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}}
 @media print{
  .tools{display:none} html,body{background:#fff}
@@ -150,9 +213,28 @@ ${pl.map((p, i) => planche(p, i, pl.length)).join('')}
 // Révélation au défilement + profondeur de lecture (le SDR voit jusqu'où le client est allé)
 var jeton=${JSON.stringify(meta.jeton)},max=0;
 document.querySelectorAll('.wrap').forEach(function(w){w.classList.add('reveal');});
+// Titres révélés mot à mot : donne du rythme sans tomber dans l'effet gadget
+document.querySelectorAll('.pl-t').forEach(function(t){
+ t.innerHTML=t.innerHTML.replace(/(<strong>)?([^<\s]+)(<\/strong>)?(\s|$)/g,function(m){return '<span class="w">'+m+'</span>';});
+ [].forEach.call(t.querySelectorAll('.w'),function(w,k){w.style.transitionDelay=(90+k*45)+'ms';});
+});
+// Compteurs : le chiffre monte jusqu'à sa valeur quand la planche entre dans l'écran
+function anime(el){
+ var cible=parseFloat(el.dataset.n);if(isNaN(cible)||el.dataset.fait)return;el.dataset.fait='1';
+ var u=el.querySelector('.kpi-u'),suf=u?u.outerHTML:'',dec=(String(el.dataset.n).split('.')[1]||'').length;
+ var t0=null,dur=1100;
+ function pas(ts){
+  if(!t0)t0=ts;var k=Math.min(1,(ts-t0)/dur),e=1-Math.pow(1-k,3);
+  el.innerHTML=(cible*e).toFixed(dec).replace('.',',')+suf;
+  if(k<1)requestAnimationFrame(pas);
+ }
+ requestAnimationFrame(pas);
+}
 var io=new IntersectionObserver(function(es){es.forEach(function(e){
  if(!e.isIntersecting)return;
  e.target.classList.add('on');
+ [].forEach.call(e.target.querySelectorAll('.reveal'),function(r,k){setTimeout(function(){r.classList.add('on');},60+k*70);});
+ [].forEach.call(e.target.querySelectorAll('.kpi-v[data-n]'),function(v){anime(v);});
  var s=parseInt(e.target.closest('.pl').dataset.s||'0',10);
  if(s>max){max=s;clearTimeout(window._t);window._t=setTimeout(function(){
   try{navigator.sendBeacon('/api/p?j='+encodeURIComponent(jeton)+'&s='+max);}catch(_){}
@@ -193,6 +275,8 @@ export default async function handler(req, res) {
   }
   try {
     if (!row) return introuvable();
+    // Durée de vie : au-delà, le lien meurt (données périmées côté prospect, stockage côté Sofy).
+    if (row.expire_le && new Date(row.expire_le).getTime() < Date.now()) return introuvable();
     const doc = row.contenu || {};
 
     // Coordonnées du commercial, lues au rendu pour rester à jour
@@ -200,22 +284,39 @@ export default async function handler(req, res) {
     try { const [s] = await sql`SELECT nom, email, ringover_numero FROM sdrs WHERE nom = ${row.sdr} LIMIT 1`; sdr = s || null; } catch (_) {}
 
     const premiere = !row.ouvertures;
+
+    // Qui lit ? On ne peut pas NOMMER un lecteur sans l'obliger à s'identifier (ce qui tuerait le
+    // taux d'ouverture). On peut en revanche les COMPTER : un identifiant aléatoire par appareil,
+    // aucune IP, aucune donnée personnelle. Résultat exploitable : « 3 personnes, 7 ouvertures ».
+    // Un 2ᵉ lecteur est le meilleur signal du document : le prospect l'a fait circuler en interne.
+    const cookies = String(req.headers.cookie || '');
+    const dejaVu = (cookies.match(/(?:^|;\s*)sl=([A-Za-z0-9]{6,24})/) || [])[1] || null;
+    const lecteur = dejaVu || crypto.randomBytes(6).toString('hex');
+    if (!dejaVu) res.setHeader('Set-Cookie', `sl=${lecteur}; Path=/p; Max-Age=7776000; HttpOnly; Secure; SameSite=Lax`);
+    const connus = Array.isArray(row.lecteurs) ? row.lecteurs : [];
+    const nouveauLecteur = !connus.includes(lecteur);
     try {
       await sql`UPDATE prez SET ouvertures = COALESCE(ouvertures,0) + 1, derniere_ouverture = NOW(),
-        premiere_ouverture = COALESCE(premiere_ouverture, NOW()) WHERE jeton = ${jeton}`;
+        premiere_ouverture = COALESCE(premiere_ouverture, NOW()),
+        lecteurs = CASE WHEN COALESCE(lecteurs,'[]'::jsonb) @> ${JSON.stringify([lecteur])}::jsonb
+                        THEN lecteurs ELSE COALESCE(lecteurs,'[]'::jsonb) || ${JSON.stringify([lecteur])}::jsonb END
+        WHERE jeton = ${jeton}`;
     } catch (_) {}
 
     // Première ouverture = signal d'achat. C'est plus fort qu'un email ouvert : le prospect a
     // cliqué, il lit une analyse de SA situation. Le SDR doit le savoir tout de suite.
-    if (premiere) {
+    if (premiere || (nouveauLecteur && connus.length)) {
       const hook = process.env.SLACK_WEBHOOK_URL;
       if (hook) {
         try {
           await fetch(hook, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              text: `👀 *${row.client || 'Un prospect'}* vient d'ouvrir son analyse Sofy (${row.module || ''}).\n` +
-                    `Préparée par ${row.sdr || '?'} · c'est le moment de rappeler.`,
+              text: premiere
+                ? `👀 *${row.client || 'Un prospect'}* vient d'ouvrir son analyse Sofy (${row.module || ''}).\n` +
+                  `Préparée par ${row.sdr || '?'}${row.destinataire ? ` · envoyée à ${row.destinataire}` : ''} · c'est le moment de rappeler.`
+                : `🔥 *${row.client || 'Un prospect'}* : une ${connus.length + 1}ᵉ personne lit l'analyse${row.destinataire ? ` (lien envoyé à ${row.destinataire})` : ''}.\n` +
+                  `Le document circule en interne — ${row.sdr || '?'}, appelle maintenant.`,
               unfurl_links: false
             })
           });

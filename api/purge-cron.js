@@ -73,6 +73,14 @@ export default async function handler(req, res) {
       try { await sql`VACUUM ANALYZE lemlist_events`; out.vacuum = 'ok'; } catch (_) { out.vacuum = 'ignoré'; }
     } else out.supprimes = 0;
 
+    // Présentations expirées : le lien est déjà mort côté /p (contrôle sur expire_le), on libère
+    // la place 7 jours plus tard pour garder une fenêtre de diagnostic si un prospect réclame.
+    try {
+      const pz = await sql`DELETE FROM prez WHERE expire_le IS NOT NULL
+        AND expire_le < NOW() - INTERVAL '7 days' RETURNING jeton`;
+      out.prez_supprimees = pz.length;
+    } catch (_) { out.prez_supprimees = 0; }
+
     const [apres] = await sql`SELECT COUNT(*)::int AS lignes, pg_total_relation_size('lemlist_events') AS octets FROM lemlist_events`;
     out.apres = { lignes: apres.lignes, taille_mo: mo(apres.octets) };
     return res.status(200).json(out);
