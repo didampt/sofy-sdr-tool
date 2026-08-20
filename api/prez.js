@@ -120,6 +120,9 @@ function mesures(e) {
         taux_de_reponse_pct: g.reponses.taux,
         delai_median_heures: g.reponses.delai_median_h,
         delai_max_heures: g.reponses.delai_max_h,
+        // Le rythme de collecte du prospect, mesuré sur SES avis : c'est lui qui pilote la courbe.
+        rythme_actuel_avis_par_mois: g.reponses.rythme_par_mois != null ? g.reponses.rythme_par_mois : null,
+        fenetre_de_mesure_mois: g.reponses.fenetre_mois != null ? g.reponses.fenetre_mois : null,
         lecture: g.reponses.taux === 0
           ? 'aucun des avis récents n\'a reçu de réponse publique'
           : `${g.reponses.taux} % des avis récents ont une réponse publique`
@@ -682,11 +685,20 @@ const nettoyerNombre = (v) => {
 // en réalité la fraîcheur — la vraie remontée est donc plus rapide que cette courbe, qui est un
 // plancher, pas une promesse.
 //
-// Les deux constantes sont les seuls réglages. Le rythme de collecte vient du seul chiffre
-// MESURÉ que nous possédions (Groupe Kiosque : 436 avis en 6 mois sur 32 points de vente, soit
-// 2,3 avis par mois et par établissement). À remplacer par le rythme réel d'un secteur dès que
-// nous l'aurons — via les variables d'environnement, sans toucher au code.
+// LE RYTHME DE COLLECTE — la question posée par Didier le 21/08.
+// Une constante unique était le mauvais réglage : elle rendait la courbe plate chez un prospect
+// à gros volume d'avis et exagérée chez un petit. Le rythme visé est donc construit sur SES
+// chiffres, dans cet ordre :
+//   1. son rythme ACTUEL, mesuré sur les dates de ses propres avis récents (avis-reponses.js) ;
+//   2. l'effet de la sollicitation : on vise le DOUBLE de ce rythme. Sofy ne crée pas de clients,
+//      il demande l'avis à tous au lieu d'attendre les spontanés — la mécanique est mesurée
+//      (campagne SoReach : 85,7 % d'ouverture, 47,1 % de clic) ;
+//   3. un plancher : le rythme observé chez un client Soview (Groupe Kiosque, 436 avis en 6 mois
+//      sur 32 points de vente = 2,3 avis/mois/établissement). Il évite une courbe morte quand le
+//      prospect ne collecte quasiment rien aujourd'hui.
+// Les deux facteurs sont réglables par variable d'environnement, sans toucher au code.
 const AVIS_MOIS_PAR_FICHE = parseFloat(process.env.PREZ_AVIS_MOIS_PAR_FICHE || '2.3');
+const FACTEUR_SOLLICITATION = parseFloat(process.env.PREZ_FACTEUR_SOLLICITATION || '2');
 const NOTE_AVIS_SOLLICITE = parseFloat(process.env.PREZ_NOTE_AVIS_SOLLICITE || '4.7');
 const JALONS_TRAJ = [[0, "aujourd'hui"], [3, '3 mois'], [6, '6 mois'], [12, '12 mois']];
 
@@ -695,7 +707,13 @@ function trajectoire(mes) {
   const n0 = Number(g.total_avis), a0 = Number(g.note_moyenne);
   if (!isFinite(n0) || !isFinite(a0) || n0 <= 0 || a0 <= 0) return null;
   const fiches = Math.max(1, Number(g.nb_fiches) || 1);
-  const parMois = AVIS_MOIS_PAR_FICHE * fiches;
+  const plancher = AVIS_MOIS_PAR_FICHE * fiches;
+  const actuel = (g.reponses_aux_avis && Number(g.reponses_aux_avis.rythme_actuel_avis_par_mois)) || null;
+  // Le rythme visé. Quand le sien est mesuré, on le DOUBLE et on s'arrête là : mélanger sa mesure
+  // avec un plancher par fiche donnait 73 avis/mois sur un réseau de 32 fiches qui en collecte 12
+  // — un chiffre que personne ne pourrait défendre. Le plancher ne sert donc qu'à combler
+  // l'absence de mesure.
+  const parMois = (actuel && isFinite(actuel)) ? actuel * FACTEUR_SOLLICITATION : plancher;
   const notes = [], volumes = [];
   for (const [m, lib] of JALONS_TRAJ) {
     const nouveaux = Math.round(parMois * m);
@@ -706,10 +724,17 @@ function trajectoire(mes) {
   const finale = notes[notes.length - 1].valeur;
   return {
     notes, volumes, par_mois: Math.round(parMois * 10) / 10,
-    hypothese: `Calcul arithmétique sur vos ${n0} avis actuels (${String(a0).replace('.', ',')}★), `
-      + `avec ${String(Math.round(parMois * 10) / 10).replace('.', ',')} avis sollicités par mois `
-      + `(${fiches > 1 ? `${fiches} fiches × ` : ''}rythme mesuré chez Groupe Kiosque : 436 avis en 6 mois sur 32 points de vente) `
-      + `notés ${String(NOTE_AVIS_SOLLICITE).replace('.', ',')}/5 en moyenne. `
+    hypothese: `Calcul arithmétique sur vos ${n0} avis actuels (${String(a0).replace('.', ',')}★). `
+      + (actuel
+        ? `Vous collectez aujourd'hui ${String(Math.round(actuel * 10) / 10).replace('.', ',')} avis par mois — mesuré sur les dates de vos avis récents. `
+          + `La courbe vise ${String(Math.round(parMois * 10) / 10).replace('.', ',')} par mois : `
+          + (parMois > actuel * FACTEUR_SOLLICITATION - 0.01 && parMois < actuel * FACTEUR_SOLLICITATION + 0.01
+            ? `le double, obtenu en demandant l'avis à tous vos clients au lieu d'attendre les spontanés. `
+            : `le rythme observé chez un client Soview équipé (Groupe Kiosque : 436 avis en 6 mois sur 32 points de vente). `)
+        : `Faute de dates exploitables sur vos avis, la courbe applique le rythme observé chez un client Soview équipé `
+          + `(Groupe Kiosque : 436 avis en 6 mois sur 32 points de vente${fiches > 1 ? `, appliqué à vos ${fiches} fiches` : ''}), `
+          + `soit ${String(Math.round(parMois * 10) / 10).replace('.', ',')} avis par mois. `)
+      + `Nouveaux avis comptés à ${String(NOTE_AVIS_SOLLICITE).replace('.', ',')}/5 en moyenne. `
       + `Google pondère la fraîcheur des avis : cette courbe est donc un plancher, pas une promesse.`,
     resume: `${String(a0).replace('.', ',')}★ → ${String(finale).replace('.', ',')}★ en 12 mois, `
       + `et ${n0} → ${volumes[volumes.length - 1].valeur} avis.`

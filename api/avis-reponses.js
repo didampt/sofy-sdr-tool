@@ -41,10 +41,30 @@ async function ensureCache() {
     delai_median_h INTEGER,
     delai_max_h INTEGER,
     plus_vieux_sans_reponse TEXT,
+    rythme_par_mois NUMERIC,
+    fenetre_mois NUMERIC,
     mesure_le TIMESTAMPTZ DEFAULT NOW(),
     mesure_par TEXT
   )`;
+  try { await sql`ALTER TABLE avis_reponses ADD COLUMN IF NOT EXISTS rythme_par_mois NUMERIC`; } catch (_) {}
+  try { await sql`ALTER TABLE avis_reponses ADD COLUMN IF NOT EXISTS fenetre_mois NUMERIC`; } catch (_) {}
   pret = true;
+}
+
+// À quelle vitesse ce prospect collecte-t-il des avis AUJOURD'HUI ? Les avis récupérés ici sont
+// triés du plus récent au plus ancien : l'écart de dates entre le premier et le dernier de
+// l'échantillon donne son rythme réel, sans un appel de plus. C'est la mesure qui manquait pour
+// que la courbe de trajectoire soit adossée à SES chiffres et non à une constante inventée.
+function rythmeDe(avis) {
+  const dates = avis.map(a => a && a.iso_date).filter(Boolean)
+    .map(d => new Date(d).getTime()).filter(t => isFinite(t)).sort((a, b) => b - a);
+  if (dates.length < 3) return { rythme: null, fenetre: null };
+  const mois = (dates[0] - dates[dates.length - 1]) / (1000 * 3600 * 24 * 30.44);
+  // Une salve d'avis le même jour donnerait un rythme absurde : sous un mois d'écart, la mesure
+  // n'est pas exploitable et on préfère ne rien affirmer.
+  if (!(mois >= 1)) return { rythme: null, fenetre: Math.round(mois * 10) / 10 };
+  const r = (dates.length - 1) / mois;
+  return { rythme: Math.round(Math.min(200, r) * 100) / 100, fenetre: Math.round(mois * 10) / 10 };
 }
 
 const heures = (a, b) => Math.round((new Date(b).getTime() - new Date(a).getTime()) / 3600000);
@@ -152,9 +172,12 @@ export default async function handler(req, res) {
     }
   }
 
+  const ry = rythmeDe(avis);
   const mesure = {
     place_id: placeId,
     nom: b.nom ? String(b.nom).slice(0, 160) : titre,
+    rythme_par_mois: ry.rythme,
+    fenetre_mois: ry.fenetre,
     analyses: avis.length,
     repondus,
     taux: Math.round((repondus / avis.length) * 100),
@@ -165,12 +188,14 @@ export default async function handler(req, res) {
 
   try {
     await sql`INSERT INTO avis_reponses (place_id, nom, analyses, repondus, taux,
-        delai_median_h, delai_max_h, plus_vieux_sans_reponse, mesure_le, mesure_par)
+        delai_median_h, delai_max_h, plus_vieux_sans_reponse, rythme_par_mois, fenetre_mois, mesure_le, mesure_par)
       VALUES (${mesure.place_id}, ${mesure.nom}, ${mesure.analyses}, ${mesure.repondus}, ${mesure.taux},
-              ${mesure.delai_median_h}, ${mesure.delai_max_h}, ${mesure.plus_vieux_sans_reponse}, NOW(), ${user.nom})
+              ${mesure.delai_median_h}, ${mesure.delai_max_h}, ${mesure.plus_vieux_sans_reponse},
+              ${mesure.rythme_par_mois}, ${mesure.fenetre_mois}, NOW(), ${user.nom})
       ON CONFLICT (place_id) DO UPDATE SET nom = EXCLUDED.nom, analyses = EXCLUDED.analyses,
         repondus = EXCLUDED.repondus, taux = EXCLUDED.taux, delai_median_h = EXCLUDED.delai_median_h,
         delai_max_h = EXCLUDED.delai_max_h, plus_vieux_sans_reponse = EXCLUDED.plus_vieux_sans_reponse,
+        rythme_par_mois = EXCLUDED.rythme_par_mois, fenetre_mois = EXCLUDED.fenetre_mois,
         mesure_le = NOW(), mesure_par = EXCLUDED.mesure_par`;
   } catch (_) { }
 
@@ -183,6 +208,9 @@ export default async function handler(req, res) {
     resume: mesure.taux === 0
       ? `Aucun des ${mesure.analyses} avis les plus récents n'a reçu de réponse publique.`
       : `${mesure.repondus} des ${mesure.analyses} avis récents ont une réponse publique (${mesure.taux} %)${lisible ? `, avec un délai médian de ${lisible}` : ''}.`,
+    rythme: mesure.rythme_par_mois != null
+      ? `Rythme actuel de collecte : ${String(mesure.rythme_par_mois).replace('.', ',')} avis par mois (mesuré sur ${mesure.analyses} avis étalés sur ${String(mesure.fenetre_mois).replace('.', ',')} mois).`
+      : null,
     cout_estime_usd: 0.01
   });
 }

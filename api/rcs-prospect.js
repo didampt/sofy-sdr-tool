@@ -115,6 +115,37 @@ export default async function handler(req, res) {
   const tel = e164(b.tel);
   if (!tel) return res.status(400).json({ erreur: 'Numéro invalide' });
 
+  // ── Test de la route SMS de l'API v2 (superadmin) ──
+  // Question de Didier le 21/08 : « l'API v2 gère-t-elle le SMS comme la v1 ? ». Le code portait
+  // la réponse du 07/08 (« rejected by provider ») ; un an de produit plus tard, elle mérite
+  // d'être revérifiée sur pièce plutôt que citée de mémoire. Ce test envoie UN vrai SMS, il est
+  // donc explicite, réservé au superadmin, et rend la réponse brute de l'API + l'id de suivi.
+  if (String(b.action || '') === 'test_sms_v2') {
+    if (user.role !== 'superadmin') return res.status(403).json({ erreur: 'Réservé superadmin' });
+    if (!cleV2()) return res.status(500).json({ erreur: 'Aucune clé API v2 (SOFY_API_KEY_V2 / SOFY_API_KEY)' });
+    const corps = String(b.texte || 'Sofy : test technique de la route SMS v2. Aucune action attendue.').slice(0, 140);
+    const payload = Object.assign({ to: tel, body: corps, isTransactional: true },
+      process.env.SOFY_SMS_FROM ? { from: process.env.SOFY_SMS_FROM } : {});
+    try {
+      const r = await fetch('https://api.sofy.fr/v2/sms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cleV2()}` },
+        body: JSON.stringify(payload)
+      });
+      const d = await r.json().catch(() => ({}));
+      return res.status(200).json({
+        ok: r.ok, http: r.status, reponse: d, tel,
+        expediteur_envoye: process.env.SOFY_SMS_FROM || '(défaut du compte)',
+        suivi: d && d.id ? 'Acheminement : GET /api/rcs-prospect?statut=' + d.id : null,
+        lecture: r.ok && d.id
+          ? 'La route SMS v2 accepte l\'envoi. Vérifie l\'acheminement avec le suivi ci-dessus : le 07/08, elle acceptait puis le provider rejetait.'
+          : 'La route SMS v2 a refusé l\'envoi — la v1 reste le canal SMS de référence.'
+      });
+    } catch (e) {
+      return res.status(502).json({ erreur: 'API v2 injoignable', detail: String((e && e.message) || e).slice(0, 200) });
+    }
+  }
+
   // ══ Envoi de l'ANALYSE par RCS (bascule SMS automatique) ══
   if (String(b.mode || '') === 'prez') {
     const jeton = String(b.jeton || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
