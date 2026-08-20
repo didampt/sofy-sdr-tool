@@ -208,20 +208,34 @@ function scorer(e) {
 
   // ── Relation client (SoConnect) ──
   const r = [];
-  const chat = cherche(/chat|crisp|intercom|zendesk|tawk|hubspot conversations|drift|livechat|messenger/i);
-  const avisOutil = cherche(/avis|review|trustpilot|avis-verifies|reput/i);
-  r.push(crit('Canal de conversation sur le site', chat === null ? 'inconnu' : (chat ? 'ok' : 'faible'),
-    chat ? 35 : 0, 35, chat === null ? 'site non analysé' : (chat ? 'outil de messagerie détecté' : 'aucun outil de messagerie détecté')));
+  const nomsTechnos = technos ? technos.map(t => t.nom).join(', ') : '';
+  const wa = cherche(/whatsapp/i);
+  const msgr = cherche(/messenger/i);
+  const chatWeb = cherche(/crisp|intercom|zendesk|tawk|tidio|livechat|drift/i);
+  const avisOutil = cherche(/avis|review|trustpilot|reput|custeed|garagescore|skeepers/i);
+  const detail = (v, oui, non) => v === null ? 'site non analysé' : (v ? oui : non);
+  // WhatsApp d'abord : c'est le canal que les clients utilisent spontanément, et son absence est
+  // le manque le plus parlant sur un site grand public.
+  r.push(crit('Bouton WhatsApp', wa === null ? 'inconnu' : (wa ? 'ok' : 'faible'), wa ? 20 : 0, 20,
+    detail(wa, 'lien WhatsApp détecté sur le site', 'aucun bouton WhatsApp : le canal préféré de vos clients est absent')));
+  r.push(crit('Chat sur le site', chatWeb === null ? 'inconnu' : (chatWeb ? 'ok' : 'faible'), chatWeb ? 20 : 0, 20,
+    detail(chatWeb, 'outil de chat détecté', 'aucune messagerie web détectée')));
+  r.push(crit('Messenger ou réseaux sociaux', msgr === null ? 'inconnu' : (msgr ? 'ok' : 'moyen'), msgr ? 10 : 0, 10,
+    detail(msgr, 'plugin Messenger détecté', 'aucun canal social branché sur le site')));
   r.push(crit('Outil de collecte ou de réponse aux avis', avisOutil === null ? 'inconnu' : (avisOutil ? 'ok' : 'faible'),
-    avisOutil ? 35 : 0, 35, avisOutil === null ? 'site non analysé' : (avisOutil ? 'outil détecté' : 'aucun outil détecté : la réputation subit')));
-  r.push(crit('Joignabilité téléphonique affichée', g.telephone ? 'ok' : 'faible', g.telephone ? 30 : 0, 30,
-    g.telephone ? 'numéro public' : 'aucun numéro sur la fiche'));
+    avisOutil ? 25 : 0, 25, detail(avisOutil, 'outil détecté : ' + nomsTechnos.slice(0, 60), 'aucun outil détecté : la réputation subit')));
+  r.push(crit('Joignabilité téléphonique affichée', g.telephone ? 'ok' : 'faible', g.telephone ? 25 : 0, 25,
+    g.telephone ? 'numéro public sur la fiche' : 'aucun numéro sur la fiche'));
+  r.push(crit('Délai de première réponse', 'inconnu', 0, 0, 'non mesurable depuis l\'extérieur — à chronométrer ensemble'));
   axes.push({ nom: 'Relation client', module: 'SoConnect', criteres: r });
 
   // ── Communication mobile (SoReach) ──
   const c = [];
-  const sms = cherche(/sms|rcs|twilio|sendinblue|brevo|mailjet|attentive|smsmode|esendex/i);
-  const mkt = cherche(/marketing|klaviyo|mailchimp|salesforce|emarsys|braze|actito|selligent/i);
+  // Brevo, Mailjet et Mailchimp sont détectés par leurs FORMULAIRES email : les compter comme
+  // dispositif mobile donnait 100/100 en communication mobile à un prospect qui n'envoie aucun
+  // SMS — et détruisait l'argument SoReach. Seuls les outils réellement SMS/RCS comptent ici.
+  const sms = cherche(/\bsms\b|\brcs\b|twilio|attentive|smsmode|esendex|smsfactor|octopush|vonage/i);
+  const mkt = cherche(/brevo|sendinblue|mailjet|mailchimp|klaviyo|salesforce|emarsys|braze|actito|selligent|hubspot/i);
   c.push(crit('Dispositif SMS ou RCS identifié', sms === null ? 'inconnu' : (sms ? 'ok' : 'faible'),
     sms ? 50 : 0, 50, sms === null ? 'site non analysé' : (sms ? 'outil détecté' : 'aucun dispositif mobile détecté')));
   c.push(crit('Plateforme de campagnes', mkt === null ? 'inconnu' : (mkt ? 'ok' : 'moyen'),
@@ -612,7 +626,7 @@ function fusionner(stocke, recu) {
 // refusée par l'API, on veut le savoir plutôt que de découvrir un document dégradé.
 async function remplir(apiKey, base, consigne, schema) {
   const corps = {
-    model: MODELE(), max_tokens: 9000,
+    model: MODELE(), max_tokens: 20000,
     output_config: { effort: 'high', format: { type: 'json_schema', schema } },
     messages: [{ role: 'user', content: base + consigne }]
   };
@@ -648,12 +662,17 @@ async function composer(ctx) {
   if (!apiKey) return { erreur: 'CLAUDE_API_KEY manquante' };
   const base = prompt(ctx);
   // En parallèle : les deux moitiés partent des mêmes données, elles ne s'attendent pas.
-  const [cadre, duels] = await Promise.all([
+  let [cadre, duels] = await Promise.all([
     remplir(apiKey, base, CONSIGNE_CADRE, SCHEMA_CADRE),
     remplir(apiKey, base, CONSIGNE_DUELS, SCHEMA_DUELS)
   ]);
   // Le cadre porte la couverture et la conclusion : sans lui, il n'y a pas de document.
   if (cadre.erreur) return cadre;
+  // Les duels sont le cœur du document : un document sans eux n'est qu'un audit. On réessaie
+  // une fois plutôt que de livrer une analyse qui ne propose rien.
+  if (duels.erreur || !((duels.data || {}).duels || []).length) {
+    duels = await remplir(apiKey, base, CONSIGNE_DUELS, SCHEMA_DUELS);
+  }
   const cout = [cadre, duels].filter(x => x && x.usage)
     .reduce((s, x) => s + ((x.usage.input_tokens || 0) * 5 + (x.usage.output_tokens || 0) * 25) / 1e6, 0);
   return {
@@ -853,6 +872,14 @@ export default async function handler(req, res) {
     // Le formulaire rempli devient le document ici, côté serveur : c'est ce qui garantit qu'une
     // planche affichée porte vraiment du contenu.
     out.doc = assembler(out.cadre, out.duels, mes);
+    // Un document sans planche « problème → réponse Sofy » ne vend rien : autant le dire au SDR
+    // plutôt que de lui laisser envoyer un audit.
+    if (!out.doc.planches.some(p => p.role === 'duel')) {
+      return res.status(502).json({
+        erreur: 'Les planches « problème → solution Sofy » n\'ont pas pu être rédigées',
+        detail: (out.duels_erreur || 'la rédaction est revenue vide') + ' — relance : c\'est le cœur du document, mieux vaut ne rien envoyer sans elles.'
+      });
+    }
     // Mémorisés pour l'éditeur : changer un chiffre d'appui se fait en le CHOISISSANT, jamais
     // en le tapant — c'est ce qui garantit qu'un chiffre publié a toujours sa source.
     out.doc._appuis = blocs.filter(x => ['chiffre_marche', 'cas_client', 'preuve'].includes(x.type))

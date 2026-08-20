@@ -252,8 +252,9 @@ function planche(p, i, total, mes, logo, sdr) {
   const cit = p.citation && p.citation.texte ? `
     <blockquote class="cit">${md(p.citation.texte)}
       ${p.citation.meta ? `<cite>${esc(p.citation.meta)}</cite>` : ''}</blockquote>` : '';
-  return `<section class="pl ${sombre ? 'dark' : 'light'}" data-s="${i}">
-    <div class="wrap">
+  const couv = p.role === 'couverture';
+  return `<section class="pl ${sombre ? 'dark' : 'light'}${couv ? ' pl-couv' : ''}" data-s="${i}">
+    <div class="wrap${couv && sdr && sdr.photo ? ' wrap-couv' : ''}">
       <header class="pl-h">
         <span class="logo">sofy</span>
         <span class="pag">${String(i + 1).padStart(2, '0')} / ${String(total).padStart(2, '0')}</span>
@@ -279,6 +280,7 @@ function planche(p, i, total, mes, logo, sdr) {
       ${proj ? `<div class="pjs">${proj}</div>` : ''}
       ${points ? `<div class="pts">${points}</div>` : ''}
       ${cit}
+      ${couv && sdr && sdr.photo ? `<div class="portrait reveal"><img src="${esc(sdr.photo)}" alt="${esc(sdr.nom || '')}"><span class="portrait-l">${esc(sdr.nom || '')}<i>Sofy</i></span></div>` : ''}
       ${p.role === 'couverture' && sdr && (sdr.photo || sdr.nom) ? `<div class="ae reveal">
         ${sdr.photo ? `<img class="ae-p" src="${esc(sdr.photo)}" alt="">`
           : `<span class="ae-i">${esc(String(sdr.nom || '?').trim().charAt(0).toUpperCase())}</span>`}
@@ -435,6 +437,21 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .rcs-x{font-size:14.5px;line-height:1.6;max-width:52ch}
 .pl.light .rcs-x{color:var(--ink-s)} .pl.dark .rcs-x{color:var(--ink-ds)}
 @media print{.tel{box-shadow:none}.gmb-w{box-shadow:none}}
+.wrap-couv{display:grid;gap:clamp(24px,4vw,52px);align-items:center;grid-template-columns:1fr}
+@media(min-width:900px){.wrap-couv{grid-template-columns:1.25fr .75fr}
+ .wrap-couv .pl-h{grid-column:1/-1}
+ .wrap-couv .pl-f{grid-column:1/-1}
+ .wrap-couv .portrait{grid-row:2/span 6;grid-column:2}}
+.portrait{position:relative;border-radius:20px;overflow:hidden;align-self:center;justify-self:center;
+ width:100%;max-width:330px;aspect-ratio:4/5}
+.portrait img{width:100%;height:100%;object-fit:cover;display:block}
+.portrait::after{content:'';position:absolute;inset:0;
+ background:linear-gradient(180deg,rgba(91,79,233,0) 45%,rgba(15,11,41,.72) 100%)}
+.portrait-l{position:absolute;left:16px;right:16px;bottom:14px;z-index:1;color:#fff;
+ font-size:15px;font-weight:750;letter-spacing:-.01em;line-height:1.2}
+.portrait-l i{display:block;font-style:normal;font-size:11px;font-weight:700;letter-spacing:.14em;
+ text-transform:uppercase;opacity:.8;margin-top:3px}
+@media print{.portrait{max-width:210px}.portrait::after{display:none}}
 .couv-h{display:flex;align-items:center;gap:16px;margin-bottom:26px;flex-wrap:wrap}
 .logo-p{max-height:52px;max-width:170px;width:auto;display:block;object-fit:contain}
 .couv-x{display:flex;flex-direction:column;padding-left:16px;border-left:2px solid var(--line)}

@@ -55,22 +55,34 @@ export default async function handler(req, res) {
   const url = 'https://' + site;
   if (!urlSure(url)) return res.status(400).json({ erreur: 'URL refusée' });
 
-  try {
+  // Les boutons de contact (WhatsApp, chat, formulaire) sont rarement sur la page d'accueil :
+  // ils vivent sur « contact » ou « aide ». Ne scanner que la home faisait conclure « aucun outil
+  // de messagerie » sur des sites qui en ont un — un constat faux dans un document client.
+  const CHEMINS = ['', '/contact', '/nous-contacter', '/aide', '/service-client'];
+  const lire = async (u) => {
     const ctl = new AbortController();
-    const to = setTimeout(() => ctl.abort(), 8000);
-    let html = '';
+    const to = setTimeout(() => ctl.abort(), 7000);
     try {
-      const r = await fetch(url, { signal: ctl.signal, redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SofyScrap/1.0)' } });
-      if (r.ok && /text\/html/.test(r.headers.get('content-type') || '')) html = (await r.text()).slice(0, 500000);
-    } finally { clearTimeout(to); }
+      const r = await fetch(u, { signal: ctl.signal, redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SofyScrap/1.0)' } });
+      if (r.ok && /text\/html/.test(r.headers.get('content-type') || '')) return (await r.text()).slice(0, 400000);
+    } catch (_) { } finally { clearTimeout(to); }
+    return '';
+  };
+
+  try {
+    let html = await lire(url);
     if (!html) return res.status(200).json({ ok: true, technos: [], scanne: false });
+    const pagesLues = ['/'];
+    // Pages secondaires en parallèle : le coût est un fetch, le gain est un constat juste.
+    const suites = await Promise.all(CHEMINS.slice(1).map(c => lire(url + c)));
+    suites.forEach((h, k) => { if (h) { html += '\n' + h; pagesLues.push(CHEMINS[k + 1]); } });
 
     const bas = html.toLowerCase();
     const technos = [];
     for (const s of SIGNATURES) {
       if (s.motifs.some(m => bas.includes(m))) technos.push({ id: s.id, nom: s.nom, cat: s.cat, concurrent: s.concurrent });
     }
-    return res.status(200).json({ ok: true, technos, scanne: true });
+    return res.status(200).json({ ok: true, technos, scanne: true, pages_lues: pagesLues });
   } catch (e) {
     return res.status(200).json({ ok: true, technos: [], scanne: false, detail: String(e.message || e).slice(0, 120) });
   }
