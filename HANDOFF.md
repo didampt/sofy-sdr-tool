@@ -1,4 +1,4 @@
-# HANDOFF — Reprise du travail (28 juin 2026)
+# HANDOFF — Reprise du travail (dernière mise à jour : 21 août 2026)
 
 > Passation depuis les sessions Claude.ai (Didier + Claude, ~23 sessions).
 > Workflow : voir `AGENTS.md` (git pull au début, **validation Didier avant chaque commit+push**, push = déploiement Vercel).
@@ -8,9 +8,9 @@
 
 - **Sofy Scrap** = outil SDR interne (listes de prospection, enrichissement, scoring, actions Ringover/Lemlist/HubSpot/Slack/SMS).
 - **Prod : https://www.sofyscrap.com** — ⚠️ l'apex `sofyscrap.com` répond **308** vers www → **tout webhook externe doit viser `www.`** (Ringover et Snitcher corrigés ; Lemlist est enregistré sur `sofy-sdr-tool.vercel.app` et fonctionne — ne pas y toucher).
-- Front = `public/index.html`, **VERSION courante = v263** (en prod, 24/07/2026). Monter `const VERSION='vNNN'` à chaque livraison front.
+- Front = `public/index.html`, **VERSION courante = v374** (en prod, 21/08/2026). Monter `const VERSION='vNNN'` à chaque livraison front.
 - Rôles : Didier=superadmin ; Romain (Head of Sales, à passer superadmin) ; SDRs : Alicia, Franck, Etienne, Sarah. Manon Bouly = coordinatrice AE (ne prospecte pas).
-- IA serveur : **claude-sonnet-4-6 partout** (Opus non utilisable sur la clé).
+- IA serveur : **claude-sonnet-4-6** par défaut ; **`claude-opus-5` pour la rédaction des analyses client** (`MODELE_PREZ`) et `claude-sonnet-5` pour le filtre likers (`MODELE_FILTRE_LIKERS`). ⚠️ Sur Opus 5, le *thinking* est compté dans `max_tokens` : prévoir large (20 000 pour la prez, sinon les planches manquent).
 - Interdit absolu : ne jamais mentionner **Apollo** ni **Vibe Prospecting**.
 - Enrichissement = côté navigateur (l'onglet doit rester ouvert). BDD Neon Postgres via `api/db.js`. Vercel Pro (60 s).
 
@@ -31,6 +31,138 @@
 4. **v207** : fix affichage source Snitcher — helper `estVisiteSite(e)` remplace 6 tests `source==='RB2B'` en dur (les fiches Snitcher affichent bien « visite sofy.fr »).
 5. **v208** : bug « nom de liste tronqué » (Liste Intelligente) corrigé — champ **« Nom de la liste » obligatoire** dans la modale d'estimation IA (`ia-liste-nom`, mémo `window.IA_NOM_LISTE`), nom complet non tronqué (préfixe ✨ conservé).
 6. Message Slack d'annonce équipe (Ringover + Snitcher) rédigé et remis à Didier.
+
+
+---
+
+# 🎨 ANALYSE CLIENT (« Prez sales ») — la brique majeure d'août 2026
+
+Page web privée, personnalisée, générée par l'IA à partir de **mesures réelles** du prospect, envoyée
+par RCS / SMS / email avec **un lien nominatif par destinataire**. C'est le gros du travail des
+19–21 août (v320 → v374). Lire cette section avant de toucher à `api/prez.js` ou `api/p.js`.
+
+## Le principe qui gouverne tout
+
+**Rien n'est affirmé, tout est mesuré — et ce qui n'est pas mesurable est dit comme tel.**
+La valeur du document tient à ça : un prospect peut vérifier chaque chiffre devant nous. Trois
+conséquences dans le code, à ne pas défaire :
+
+1. **Les chiffres ne passent pas par l'IA.** Le scoring (`scorer()`), les défauts de fiche et la
+   trajectoire (`trajectoire()`) sont calculés en JS. L'IA rédige les titres, les textes et les
+   mécanismes ; elle ne produit aucune valeur numérique. Deux analyses du même client donnaient
+   deux prévisions différentes (AGS : 4,2★ puis 4,0★) → corrigé le 21/08 en sortant le calcul.
+2. **Les liens ne sont pas écrits par l'IA.** Le bouton « Lire l'interview » vient de
+   `kb_sales.lien` ; l'IA ne désigne qu'un numéro de bloc `[#n]`. Une URL inventée dans un
+   document signé Sofy est indéfendable.
+3. **Aucun échec silencieux.** Un relevé raté est affiché avec sa conséquence réelle. La fenêtre
+   ne BLOQUE que si le SDR a un choix à faire (aucune source, ou clé SerpApi HS) ; sinon toast.
+
+## Chaîne de génération
+
+```
+fiche (liste enregistrée)
+  └─ completerMesures(i)          public/index.html — relevés SerpApi, AVANT la rédaction
+       ├─ /api/avis-reponses      taux de réponse, délai médian, RYTHME de collecte (dates)
+       ├─ /api/fiche-audit        photos, complétude, position locale, catégorie, ville, lat/lng
+       ├─ /api/ai-visibilite      aperçu IA de Google + concurrents qui PAIENT (même appel)
+       └─ /api/apple-plans        présence / position / note sur Apple Plans
+     ⚠️ await persisterMaintenant() — /api/prez RELIT la fiche en base
+  └─ /api/prez (POST)
+       ├─ mesures(e)              tout ce qu'on sait, en JSON, dans le prompt
+       ├─ scorer(e)               3 axes calculés en JS (jamais délégués)
+       ├─ composer()              2 appels Claude parallèles : SCHEMA_CADRE + SCHEMA_DUELS
+       ├─ trajectoire(mes)        les 2 courbes, calculées
+       └─ assembler(...)          construit les planches, SUPPRIME les vides
+  └─ /p/<jeton>[?d=<n>]           api/p.js — rendu + comptage des ouvertures
+```
+
+## Budget SerpApi — ⚠️ 230 APPELS PAR MOIS
+
+C'est la contrainte dure. Coût par analyse complète, telle que le code est écrit :
+
+| Relevé | Appels | Cache |
+|---|---|---|
+| `avis-reponses` | 2 (3 si repli `data_id`) | 30 j |
+| `fiche-audit` | 2 (+2 si relance pour les coordonnées) | 30 j |
+| `ai-visibilite` | 1 à 2 (annonces incluses, gratuites) | 21 j |
+| `apple-plans` | 1 à 3 (tentatives center → ville) | 30 j |
+| **Total** | **6 à 10** | |
+
+→ **environ 30 analyses par mois**, et une régénération sur le même prospect dans la fenêtre de
+cache ne coûte RIEN. Règle à tenir : une analyse pour un prospect qui compte, pas pour chaque
+appel.
+
+**À faire en priorité : un compteur de consommation SerpApi.** `loggerConso()` journalise
+`soreach` et `google_places`, pas SerpApi — il n'existe donc aucun garde-fou. Au-delà de 230, les
+relevés échoueront un par un et les analyses se dégraderont sans que personne ne le voie. C'est
+exactement la classe de bug qu'on a passé trois jours à éliminer.
+
+## Fichiers
+
+| Fichier | Rôle |
+|---|---|
+| `api/prez.js` | génération, éditeur (`CHAMPS`/`VERROUS`), destinataires nommés, `trajectoire()` |
+| `api/p.js` | rendu de la page publique, comptage, alertes Slack, PDF |
+| `api/kb-sales.js` | base de connaissance (blocs sourcés, `lien` du témoignage) |
+| `api/kb-visuels.js` | bibliothèque d'images (photos SDR, logos clients, ambiance) |
+| `api/rcs-prospect.js` | envoi : rich-card RCS `mode:'prez'` + repli SMS |
+| `api/avis-reponses.js` `api/fiche-audit.js` `api/ai-visibilite.js` `api/apple-plans.js` | les relevés |
+
+## Pièges — chacun a coûté une livraison ratée
+
+1. **`fallback.text` de la rich-card RCS = 129 caractères MAXIMUM.** Au-delà, l'API v2 refuse la
+   carte (400) et tout part en SMS. Ce n'est pas la limite du segment SMS (160) : les deux sont
+   à vérifier séparément.
+2. **`/api/prez` relit la fiche EN BASE.** Toute mesure ajoutée côté navigateur doit être
+   sauvegardée avec `await persisterMaintenant()`, jamais avec `persister()` (différé 400 ms).
+3. **Les moteurs SerpApi n'ont pas les mêmes noms de paramètres.** `google`/`google_maps` = `q` ;
+   `apple_maps` = **`query`** + `center` (« lat,lng », sans `@`) OU `location`, jamais les deux.
+   Un paramètre présent mais VIDE compte pour absent (`URLSearchParams` écrit `center=`).
+4. **`num` est refusé sur la première page de `google_maps_reviews`** — paginer par
+   `next_page_token`.
+5. **L'animation ne doit jamais conditionner la lisibilité.** Couche `.anim` sur `<html>`, retirée
+   en cas d'erreur / après 6 s / si `prefers-reduced-motion`. Une `SyntaxError` dans le script
+   client laissait toutes les planches à `opacity:0` — « pages vides » signalées trois fois.
+6. **Un nombre écrit par un modèle peut arriver en `3,400000000000`** → `nettoyerNombre()`.
+7. **La liste « Hot Leads (auto) » est exclue de la boucle des listes du cockpit.** Toute
+   recherche de fiche par nom doit l'indexer explicitement (sinon « aucun contact nominatif »).
+8. **Un diagnostic non affiché ne sert à rien.** J'ai ajouté deux fois des champs d'erreur côté
+   API que l'écran jetait : deux causes différentes donnaient le même message.
+
+## Réglages (variables Vercel, aucun code à toucher)
+
+| Variable | Défaut | Effet |
+|---|---|---|
+| `PREZ_AVIS_MOIS_PAR_FICHE` | 2.3 | rythme de collecte si celui du prospect n'est pas mesurable (mesuré chez Groupe Kiosque : 436 avis / 6 mois / 32 points de vente) |
+| `PREZ_FACTEUR_SOLLICITATION` | 2 | multiplicateur appliqué au rythme mesuré du prospect |
+| `PREZ_NOTE_AVIS_SOLLICITE` | 4.7 | note moyenne des avis sollicités |
+| `PREZ_JOURS_VALIDITE` | 15 | durée de vie du lien |
+| `SOFY_RCS_IMAGE_PREZ` | `/rcs-prez.jpg` | visuel de la rich-card |
+| `SOFY_SMS_FROM` | `SOFY` | expéditeur SMS (v2 comme v1) |
+| `MODELE_PREZ` | `claude-opus-5` | modèle de rédaction |
+
+## Décisions produit prises avec Didier (ne pas rouvrir sans lui)
+
+- **Chiffres mesurés verrouillés dans l'éditeur** : textes libres, valeurs non modifiables.
+- **Mention STOP retirée des SMS** (21/08) — « nous avons les accords ». Deux constantes :
+  `SMS_AJOUTER_STOP` (`db.js`) et `MENTION_STOP` (`rcs-prospect.js`), à remettre ensemble.
+- **Envoi SMS par l'API v2**, v1 en repli (testé : HTTP 201 avec un expéditeur).
+- **Bing écarté** : ~3 % des recherches en France, l'angle IA est déjà tenu par l'aperçu Google.
+- **Le module se choisit** avant la génération (Soview / SoConnect / SoReach / Générique).
+- **Alertes Slack plafonnées** : 1ʳᵉ ouverture, puis 1 alerte/4 h, jamais au-delà du 3ᵉ lecteur ;
+  les aperçus de lien (Slack, Gmail, WhatsApp) ne comptent pas comme lecteurs.
+
+## Backlog de cette brique
+
+1. **Compteur SerpApi + garde-fou à 230/mois** (le plus urgent, cf. plus haut).
+2. Envoi d'email **serveur** : aujourd'hui `mailto:` pré-rempli depuis la messagerie du SDR
+   (aucun expéditeur transactionnel configuré). Nécessite un fournisseur + une clé.
+3. Rythme de collecte réel par secteur : `PREZ_AVIS_MOIS_PAR_FICHE` s'appuie sur un seul client
+   mesuré (retail). Un rythme de déménageur / garagiste rendrait la courbe plus juste.
+4. Variante « après démo » du document (aujourd'hui pensé pour l'avant-vente).
+5. Exploiter les decks Partoo pour l'objection « on a déjà Partoo ».
+6. Rotation du mot de passe Neon (collé dans une session ancienne, toujours actif) ; supprimer
+   les branches `recuperation-alicia*`.
 
 ## 🐛 BUGS EN COURS (priorité de reprise)
 
