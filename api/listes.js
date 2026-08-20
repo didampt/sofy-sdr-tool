@@ -9,6 +9,11 @@
 import { createHash } from 'crypto';
 import { sql, ensureSchema, verifierToken } from './db.js';
 
+// Nombre de listes actives enrichies à moins de 50 % au-delà duquel on AVERTIT le commercial.
+// On n'empêche plus la création : le blocage tombait après la dépense des crédits et après le
+// travail du SDR (incident Franck du 20/08 — 30 fiches et un RDV perdus).
+const SEUIL_LISTES_MORTES = 5;
+
 function hashCriteres(criteres) {
   // Hash stable : on ne garde que les critères de ciblage (pas le nom de liste ni le SDR)
   const c = criteres || {};
@@ -335,7 +340,7 @@ export default async function handler(req, res) {
       if (verifier) {
         const n = String(nom || '').trim();
         const s2 = String(sdr || user.nom);
-        const out = { ok: true, nom_libre: true, quota_ok: true };
+        const out = { ok: true, nom_libre: true };
         if (n) {
           const dej = await sql`SELECT nom FROM listes WHERE LOWER(TRIM(nom)) = ${n.toLowerCase()} AND archivee = FALSE LIMIT 1`;
           if (dej.length) {
@@ -353,11 +358,10 @@ export default async function handler(req, res) {
           const actives = await sql`SELECT nom, stats, total FROM listes
             WHERE archivee = FALSE AND (statut IS NULL OR statut = 'active') AND sdr = ${s2}`;
           const mortes = actives.filter(l => (l.total || 0) > 0 && l.stats && (l.stats.pct_complete || 0) < 50);
-          if (mortes.length >= 3) {
-            out.quota_ok = false; out.ok = false;
-            out.code = 'listes_non_enrichies';
-            out.listes_mortes = mortes.slice(0, 5).map(l => ({ nom: l.nom, pct: (l.stats.pct_complete || 0) }));
-            out.erreur = `Tu as déjà ${mortes.length} listes actives enrichies à moins de 50 %. Enrichis-les (🚀) ou archive-les avant d'en créer une nouvelle.`;
+          if (mortes.length >= SEUIL_LISTES_MORTES) {
+            // Avertissement, pas blocage : la création reste possible.
+            out.avertissement = `Tu as déjà ${mortes.length} listes actives enrichies à moins de 50 %.`;
+            out.listes_mortes = mortes.slice(0, 6).map(l => ({ nom: l.nom, pct: (l.stats.pct_complete || 0) }));
           }
         }
         return res.status(200).json(out);
@@ -371,19 +375,22 @@ export default async function handler(req, res) {
       if (memeNom.length) {
         return res.status(409).json({ erreur: 'Une liste active porte déjà ce nom. Choisis un nom différent (ou archive l\'ancienne).' });
       }
-      // Garde-fou anti-listes mortes : un SDR ne crée pas de nouvelle liste s'il a déjà 3 listes
-      // actives enrichies à moins de 50 % (stats.pct_complete). Admin/superadmin passent outre.
+      // Listes peu enrichies : on AVERTIT, on ne bloque plus (décision Didier du 20/08).
+      // Un refus d'enregistrement au moment où le SDR a déjà dépensé ses crédits — et travaillé —
+      // coûte plus cher que les listes mortes qu'il visait à éviter : incident Franck, 30 fiches
+      // et un RDV perdus. L'avertissement est renvoyé avec la liste créée.
+      let avertissementListes = null;
       if (!['admin', 'superadmin'].includes(user.role)) {
         try {
           const actives = await sql`SELECT nom, stats, total FROM listes
             WHERE archivee = FALSE AND (statut IS NULL OR statut = 'active') AND sdr = ${sdr}`;
           const mortes = actives.filter(l => (l.total || 0) > 0 && l.stats && (l.stats.pct_complete || 0) < 50);
-          if (mortes.length >= 3) {
-            const detail = mortes.slice(0, 4).map(l => `« ${l.nom} » (${l.stats.pct_complete || 0} % enrichie)`).join(', ');
-            return res.status(403).json({
-              code: 'listes_non_enrichies',
-              erreur: `Tu as déjà ${mortes.length} listes actives enrichies à moins de 50 % : ${detail}. Enrichis-les (🚀) ou archive-les avant d'en créer une nouvelle.`
-            });
+          if (mortes.length >= SEUIL_LISTES_MORTES) {
+            avertissementListes = {
+              nb: mortes.length,
+              listes: mortes.slice(0, 6).map(l => ({ nom: l.nom, pct: (l.stats.pct_complete || 0) })),
+              texte: `${mortes.length} de tes listes actives sont enrichies à moins de 50 %. Enrichis-les (🚀) ou archive-les : une liste non enrichie ne produit pas de rendez-vous.`
+            };
           }
         } catch (_) {}
       }
@@ -398,7 +405,10 @@ export default async function handler(req, res) {
                   WHERE sdr = ${user.nom} AND liste_id IS NULL AND api = 'pappers'
                     AND created_at > NOW() - INTERVAL '10 minutes'`;
       } catch (_) {}
-      return res.status(200).json({ ok: true, id: rows[0].id, created_at: rows[0].created_at });
+      return res.status(200).json({
+        ok: true, id: rows[0].id, created_at: rows[0].created_at,
+        avertissement: avertissementListes || undefined
+      });
     }
 
     // ── Mise à jour des entreprises (analyses GMB, enrichissements futurs) ──

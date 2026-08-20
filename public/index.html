@@ -2144,7 +2144,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v355';
+const VERSION='v356';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -3706,6 +3706,14 @@ async function peutCreerListe(){
   const r=await api('/api/listes',{method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({verifier:true,nom:state.listeNom||'',sdr:state.sdr||(state.user&&state.user.nom)||''})});
   const d=await r.json();
+  // Listes peu enrichies : on avertit, on ne bloque pas. Le SDR décide en connaissance de cause.
+  if(d.avertissement){
+   const continuer=await confirmSofy('Tes listes en cours ne sont pas enrichies',
+    d.avertissement+'\n\n'+(d.listes_mortes||[]).map(function(l){return '· « '+l.nom+' » — '+l.pct+' % enrichie';}).join('\n')
+    +'\n\nUne liste non enrichie ne produit pas de rendez-vous. Tu peux créer celle-ci quand même, ou aller enrichir les précédentes d\'abord.',
+    'Créer quand même');
+   if(!continuer){ nav('history',null); chargerHistorique(); return false; }
+  }
   if(d.ok)return true;
   if(!d.nom_libre&&d.nom_propose){
    const ok=await confirmSofy('Ce nom de liste est déjà pris',
@@ -3715,13 +3723,6 @@ async function peutCreerListe(){
    state.listeNom=d.nom_propose;
    const champ=document.getElementById('f-nom-liste'); if(champ)champ.value=d.nom_propose;
    return await peutCreerListe();
-  }
-  if(!d.quota_ok){
-   await confirmSofy('Impossible de créer une nouvelle liste',
-    (d.erreur||'')+'\n\n'+(d.listes_mortes||[]).map(function(l){return '· « '+l.nom+' » — '+l.pct+' % enrichie';}).join('\n')
-    +'\n\nAucun crédit n\'a été dépensé : la vérification a lieu AVANT la génération.',
-    'J\'ai compris');
-   return false;
   }
   toast(d.erreur||'Création impossible');
   return false;
