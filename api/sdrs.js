@@ -31,6 +31,20 @@ export default async function handler(req, res) {
   // Photo de profil : elle apparaît sur les analyses client, pour mettre un visage sur le
   // document (demande Didier : « ajouter un visuel de l'AE pour donner plus d'humain »).
   // Chacun gère la sienne — c'est la seule action ici qui n'exige pas d'être admin.
+  // Poste et présentation : ils s'affichent sous le portrait, sur la couverture des analyses.
+  // « Votre interlocuteur chez Sofy » est un pis-aller ; « Responsable comptes clés, 8 ans dans
+  // le retail » donne une raison de répondre.
+  if (req.method === 'PUT' && ((req.body || {}).mon_poste !== undefined || (req.body || {}).ma_bio !== undefined)) {
+    const b = req.body || {};
+    try { await sql`ALTER TABLE sdrs ADD COLUMN IF NOT EXISTS poste TEXT`; } catch (_) {}
+    try { await sql`ALTER TABLE sdrs ADD COLUMN IF NOT EXISTS bio TEXT`; } catch (_) {}
+    await sql`UPDATE sdrs SET
+      poste = COALESCE(${b.mon_poste !== undefined ? (String(b.mon_poste).slice(0, 80) || null) : null}, poste),
+      bio = COALESCE(${b.ma_bio !== undefined ? (String(b.ma_bio).slice(0, 220) || null) : null}, bio)
+      WHERE nom = ${user.nom}`;
+    return res.status(200).json({ ok: true, info: 'Enregistré — visible sur tes prochaines analyses.' });
+  }
+
   if (req.method === 'PUT' && (req.body || {}).ma_photo !== undefined) {
     const ph = (req.body || {}).ma_photo;
     if (ph && !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(String(ph))) {
@@ -45,9 +59,14 @@ export default async function handler(req, res) {
   }
   if (req.method === 'GET' && (req.query || {}).ma_photo === '1') {
     try {
-      const [r] = await sql`SELECT photo FROM sdrs WHERE nom = ${user.nom}`;
-      return res.status(200).json({ ok: true, photo: (r && r.photo) || null });
-    } catch (_) { return res.status(200).json({ ok: true, photo: null }); }
+      const [r] = await sql`SELECT photo, poste, bio FROM sdrs WHERE nom = ${user.nom}`;
+      return res.status(200).json({ ok: true, photo: (r && r.photo) || null, poste: (r && r.poste) || '', bio: (r && r.bio) || '' });
+    } catch (_) {
+      try {
+        const [r] = await sql`SELECT photo FROM sdrs WHERE nom = ${user.nom}`;
+        return res.status(200).json({ ok: true, photo: (r && r.photo) || null, poste: '', bio: '' });
+      } catch (__) { return res.status(200).json({ ok: true, photo: null, poste: '', bio: '' }); }
+    }
   }
 
   if (req.method !== 'GET' && !['superadmin', 'admin'].includes(user.role)) {

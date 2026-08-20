@@ -1075,9 +1075,18 @@ Spot-Hit</textarea>
             <div style="font-size:12.5px;color:var(--ink-soft);line-height:1.55;margin-bottom:9px">Elle apparaît sur la couverture, à côté de ton nom et de tes coordonnées. Un document signé par une personne obtient plus de réponses qu'un document anonyme.</div>
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
               <img id="ma-photo" alt="" style="display:none;width:52px;height:52px;border-radius:50%;object-fit:cover;border:1px solid var(--line)">
-              <input type="file" id="ma-photo-f" accept=".png,.jpg,.jpeg,.webp" style="font-size:12.5px" onchange="envoyerMaPhoto()">
+              <input type="file" id="ma-photo-f" accept="image/*" style="font-size:12.5px" onchange="envoyerMaPhoto()">
               <button class="btn" style="background:var(--paper);font-size:12.5px;padding:5px 11px" onclick="envoyerMaPhoto(true)">Retirer</button>
             </div>
+            <div style="display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin-top:10px">
+              <label style="font-size:12px;color:var(--ink-soft)">Ton poste — affiché sous ta photo
+                <input class="field" id="mon-poste" style="width:100%;margin-top:3px" maxlength="80" placeholder="Responsable comptes clés">
+              </label>
+              <label style="font-size:12px;color:var(--ink-soft)">Une phrase de présentation (facultatif)
+                <input class="field" id="ma-bio" style="width:100%;margin-top:3px" maxlength="220" placeholder="8 ans auprès des réseaux de points de vente.">
+              </label>
+            </div>
+            <button class="btn" style="background:var(--paper);font-size:12.5px;padding:5px 11px;margin-top:8px" onclick="enregistrerMonProfil()">Enregistrer poste et présentation</button>
           </div>
           <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line);font-size:13px;color:var(--ink-soft);line-height:1.6">
             Le document suit toujours la même logique : <strong>ce qu'on a mesuré</strong> → <strong>ce que ça coûte</strong> → <strong>la brique Sofy qui y répond</strong> → <strong>le résultat visé, chiffré</strong> → un cas client comparable → la prise de rendez-vous. Chaque lien vit 15 jours et compte ses lecteurs.
@@ -2132,7 +2141,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v348';
+const VERSION='v349';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -5199,8 +5208,19 @@ async function chargerMaPhoto(){
   const img=document.getElementById('ma-photo');
   if(img&&d.photo){img.src=d.photo;img.style.display='';}
   else if(img){img.style.display='none';}
+  const ip=document.getElementById('mon-poste'),ib=document.getElementById('ma-bio');
+  if(ip)ip.value=d.poste||''; if(ib)ib.value=d.bio||'';
  }catch(_){}
 }
+async function enregistrerMonProfil(){
+ try{
+  const r=await api('/api/sdrs',{method:'PUT',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({mon_poste:document.getElementById('mon-poste').value.trim(),
+                        ma_bio:document.getElementById('ma-bio').value.trim()})});
+  const d=await r.json(); toast(d.erreur||d.info||'Enregistré');
+ }catch(e){toast('Profil : '+e.message);}
+}
+
 async function envoyerMaPhoto(retirer){
  let data=null;
  if(!retirer){

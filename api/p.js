@@ -37,7 +37,7 @@ function planche(p, i, total, mes, logo, sdr, images) {
   const sombre = i % 2 === 1;
   const chiffres = (p.chiffres || []).map(c => `
     <div class="kpi">
-      <div class="kpi-v" data-n="${esc(String(c.valeur).replace(',', '.'))}">${esc(c.valeur)}${c.unite ? `<span class="kpi-u">${esc(c.unite)}</span>` : ''}</div>
+      <div class="kpi-v${String(c.valeur).length > 18 ? ' long' : (String(c.valeur).length > 9 ? ' moyen' : '')}" data-n="${esc(String(c.valeur).replace(',', '.'))}">${esc(c.valeur)}${c.unite ? `<span class="kpi-u">${esc(c.unite)}</span>` : ''}</div>
       <div class="kpi-l">${md(c.legende)}</div>
       ${c.source ? `<div class="kpi-s">${esc(c.source)}</div>` : ''}
     </div>`).join('');
@@ -106,7 +106,7 @@ function planche(p, i, total, mes, logo, sdr, images) {
     const vals = pts.map(x => num(x.valeur));
     const haut = num(p.courbe.max) || Math.max(...vals) * 1.18;
     const bas = Math.min(...vals) * 0.82;
-    const W = 760, H = 260, PX = 54, PY = 34;
+    const W = 980, H = 380, PX = 66, PY = 46;
     const xy = pts.map((x, k) => [
       PX + k * ((W - PX * 2) / (pts.length - 1)),
       H - PY - ((num(x.valeur) - bas) / (haut - bas || 1)) * (H - PY * 2)
@@ -127,11 +127,11 @@ function planche(p, i, total, mes, logo, sdr, images) {
         </defs>
         ${[0, 1, 2, 3].map(k => `<line x1="${PX}" y1="${PY + k * ((H - PY * 2) / 3)}" x2="${W - PX}" y2="${PY + k * ((H - PY * 2) / 3)}" class="crb-g"/>`).join('')}
         <path d="${aire}" fill="url(#ga)" class="crb-a"/>
-        <path d="${d}" fill="none" stroke="url(#gl)" stroke-width="3.5" stroke-linecap="round" class="crb-l"/>
+        <path d="${d}" fill="none" stroke="url(#gl)" stroke-width="4.5" stroke-linecap="round" class="crb-l"/>
         ${xy.map((c, k) => `<g class="crb-pt" style="--d:${700 + k * 190}ms">
-          <circle cx="${c[0].toFixed(1)}" cy="${c[1].toFixed(1)}" r="${k === xy.length - 1 ? 7 : 5}"
+          <circle cx="${c[0].toFixed(1)}" cy="${c[1].toFixed(1)}" r="${k === xy.length - 1 ? 9 : 6}"
             fill="${k === xy.length - 1 ? '#F0428A' : '#5B4FE9'}" stroke="#fff" stroke-width="2.5"/>
-          <text x="${c[0].toFixed(1)}" y="${(c[1] - 16).toFixed(1)}" class="crb-v">${fmt(pts[k].valeur)}${esc(p.courbe.unite || '')}</text>
+          <text x="${c[0].toFixed(1)}" y="${(c[1] - 20).toFixed(1)}" class="crb-v">${fmt(pts[k].valeur)}${esc(p.courbe.unite || '')}</text>
           <text x="${c[0].toFixed(1)}" y="${H - PY + 22}" class="crb-x">${esc(pts[k].quand || '')}</text>
         </g>`).join('')}
       </svg>
@@ -202,6 +202,7 @@ function planche(p, i, total, mes, logo, sdr, images) {
         <div class="tel-e">
           <div class="tel-t">Messages</div>
           <div class="bul">
+            ${vis && /produit|ambiance/.test(String(vis.type || 'produit')) ? `<img class="bul-img" src="${esc(vis.image)}" alt="">` : ''}
             <div class="bul-e">${esc(r.expediteur || mes.nom || '')} <span>vérifié ✓</span></div>
             ${r.titre ? `<div class="bul-ti">${md(r.titre)}</div>` : ''}
             ${r.texte ? `<div class="bul-x">${md(r.texte)}</div>` : ''}
@@ -259,12 +260,16 @@ function planche(p, i, total, mes, logo, sdr, images) {
   return `<section class="pl ${sombre ? 'dark' : 'light'}${couv ? ' pl-couv' : ''}" data-s="${i}">
     <div class="wrap${couv && sdr && sdr.photo ? ' wrap-couv' : ''}">
       <header class="pl-h">
-        <span class="logo">sofy</span>
+        <img class="logo" src="/logo-full.png" alt="Sofy" width="96" height="30">
         <span class="pag">${String(i + 1).padStart(2, '0')} / ${String(total).padStart(2, '0')}</span>
       </header>
       ${p.role === 'couverture' ? `<div class="couv-h">
         ${logo ? `<img class="logo-p" src="${esc(logo)}" alt="">` : ''}
-        <div class="couv-x"><span class="couv-s">Analyse Sofy</span><span class="couv-p">préparée pour ${esc(p.titre || '')}</span></div>
+        <div class="couv-x">
+          <span class="couv-s">Analyse Sofy</span>
+          <span class="couv-p">préparée pour ${esc(p.titre || '')}</span>
+          <span class="couv-w">sofy.fr</span>
+        </div>
       </div>` : ''}
       ${p.eyebrow ? `<div class="eyebrow">${esc(p.eyebrow)}</div>` : ''}
       <h2 class="pl-t">${md(p.titre)}</h2>
@@ -283,12 +288,17 @@ function planche(p, i, total, mes, logo, sdr, images) {
       ${proj ? `<div class="pjs">${proj}</div>` : ''}
       ${points ? `<div class="pts">${points}</div>` : ''}
       ${cit}
-      ${couv && sdr && sdr.photo ? `<div class="portrait reveal"><img src="${esc(sdr.photo)}" alt="${esc(sdr.nom || '')}"><span class="portrait-l">${esc(sdr.nom || '')}<i>Sofy</i></span></div>` : ''}
+      ${couv && sdr && sdr.photo ? `<div class="portrait-bloc reveal">
+        <div class="portrait"><img src="${esc(sdr.photo)}" alt="${esc(sdr.nom || '')}"></div>
+        <div class="portrait-n">${esc(sdr.nom || '')}</div>
+        <div class="portrait-r">${esc(sdr.poste || 'Votre interlocuteur chez Sofy')}</div>
+        ${sdr.bio ? `<div class="portrait-b">${md(sdr.bio)}</div>` : ''}
+      </div>` : ''}
       ${p.role === 'couverture' && sdr && (sdr.photo || sdr.nom) ? `<div class="ae reveal">
         ${sdr.photo ? `<img class="ae-p" src="${esc(sdr.photo)}" alt="">`
           : `<span class="ae-i">${esc(String(sdr.nom || '?').trim().charAt(0).toUpperCase())}</span>`}
         <div><div class="ae-n">${esc(sdr.nom || '')}</div>
-          <div class="ae-r">Votre interlocuteur chez Sofy</div>
+          <div class="ae-r">${esc(sdr.poste || 'Votre interlocuteur chez Sofy')}</div>
           ${sdr.email ? `<a class="ae-c" href="mailto:${esc(sdr.email)}">${esc(sdr.email)}</a>` : ''}
           ${sdr.ringover_numero ? `<a class="ae-c" href="tel:${esc(String(sdr.ringover_numero).replace(/\s/g, ''))}">${esc(sdr.ringover_numero)}</a>` : ''}
         </div>
@@ -444,17 +454,26 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 @media(min-width:900px){.wrap-couv{grid-template-columns:1.25fr .75fr}
  .wrap-couv .pl-h{grid-column:1/-1}
  .wrap-couv .pl-f{grid-column:1/-1}
- .wrap-couv .portrait{grid-row:2/span 6;grid-column:2}}
-.portrait{position:relative;border-radius:20px;overflow:hidden;align-self:center;justify-self:center;
- width:100%;max-width:330px;aspect-ratio:4/5}
+ .wrap-couv .portrait-bloc{grid-row:2/span 6;grid-column:2}}
 .portrait img{width:100%;height:100%;object-fit:cover;display:block}
-.portrait::after{content:'';position:absolute;inset:0;
- background:linear-gradient(180deg,rgba(91,79,233,0) 45%,rgba(15,11,41,.72) 100%)}
-.portrait-l{position:absolute;left:16px;right:16px;bottom:14px;z-index:1;color:#fff;
- font-size:15px;font-weight:750;letter-spacing:-.01em;line-height:1.2}
-.portrait-l i{display:block;font-style:normal;font-size:11px;font-weight:700;letter-spacing:.14em;
- text-transform:uppercase;opacity:.8;margin-top:3px}
-@media print{.portrait{max-width:210px}.portrait::after{display:none}}
+@media print{.portrait-bloc{max-width:220px}}
+.couv-s{font-size:27px}
+.couv-p{font-size:14.5px;margin-top:1px}
+.couv-w{font-size:12px;letter-spacing:.1em;text-transform:uppercase;margin-top:5px;opacity:.75}
+.pl.light .couv-w{color:var(--v)} .pl.dark .couv-w{color:var(--r)}
+.couv-h{gap:20px}
+.logo{height:30px;width:auto;display:block}
+.pl.dark .logo{filter:brightness(0) invert(1);opacity:.95}
+.pl-couv .pl-t{font-size:clamp(40px,7.4vw,86px)}
+.portrait-bloc{display:flex;flex-direction:column;align-items:center;text-align:center;
+ justify-self:center;align-self:center;width:100%;max-width:340px}
+.portrait{position:relative;border-radius:20px;overflow:hidden;width:100%;aspect-ratio:4/5}
+.portrait-n{font-size:19px;font-weight:800;letter-spacing:-.02em;margin-top:14px}
+.portrait-r{font-size:13.5px;line-height:1.4;margin-top:3px}
+.pl.light .portrait-r{color:var(--ink-s)} .pl.dark .portrait-r{color:var(--ink-ds)}
+.portrait-b{font-size:12.5px;line-height:1.5;margin-top:8px;max-width:34ch}
+.pl.light .portrait-b{color:#9990C4} .pl.dark .portrait-b{color:rgba(255,255,255,.5)}
+.bul-img{width:100%;height:118px;object-fit:cover;display:block;border-radius:11px;margin-bottom:10px}
 .couv-h{display:flex;align-items:center;gap:16px;margin-bottom:26px;flex-wrap:wrap}
 .logo-p{max-height:52px;max-width:170px;width:auto;display:block;object-fit:contain}
 .couv-x{display:flex;flex-direction:column;padding-left:16px;border-left:2px solid var(--line)}
@@ -552,7 +571,7 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .dl-kl{font-size:14.5px;line-height:1.45;max-width:46ch}
 .dl-kl span{display:block;font-size:11.5px;margin-top:4px}
 .pl.light .dl-kl span{color:#9990C4} .pl.dark .dl-kl span{color:rgba(255,255,255,.45)}
-.crb{margin-top:34px;max-width:820px}
+.crb{margin-top:34px;max-width:1000px}
 .crb-i{font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
 .pl.light .crb-i{color:var(--v)} .pl.dark .crb-i{color:var(--r)}
 .crb-s{width:100%;height:auto;margin-top:8px;overflow:visible}
@@ -564,9 +583,9 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .reveal.on .crb-a{opacity:1}
 .anim .crb-pt{opacity:0;transition:opacity .45s ease var(--d)}
 .reveal.on .crb-pt{opacity:1}
-.crb-v{font-size:16px;font-weight:800;text-anchor:middle;font-variant-numeric:tabular-nums;fill:var(--ink)}
+.crb-v{font-size:20px;font-weight:800;text-anchor:middle;font-variant-numeric:tabular-nums;fill:var(--ink)}
 .pl.dark .crb-v{fill:var(--ink-d)}
-.crb-x{font-size:12px;text-anchor:middle;fill:#9990C4}
+.crb-x{font-size:14px;text-anchor:middle;fill:#9990C4}
 .pl.dark .crb-x{fill:rgba(255,255,255,.45)}
 .crb-s2{font-size:12.5px;line-height:1.5;margin-top:10px}
 .pl.light .crb-s2{color:#9990C4} .pl.dark .crb-s2{color:rgba(255,255,255,.45)}
@@ -610,6 +629,10 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .pt-r{font-size:12.5px;margin-top:6px;font-weight:650}
 .pl.light .pt-r{color:var(--v)} .pl.dark .pt-r{color:var(--r)}
 .kpi-u{font-size:.5em;margin-left:2px}
+/* Une « valeur » longue (l'IA y met parfois une phrase) : on descend la taille au lieu de la
+   couper. Un chiffre tronqué en «  d'établissem » est pire qu'un texte plus petit. */
+.kpi-v.long{font-size:clamp(19px,2vw,25px);letter-spacing:-.015em;line-height:1.22}
+.kpi-v.moyen{font-size:clamp(24px,2.8vw,34px);line-height:1.14}
 .apercu{position:fixed;left:14px;bottom:14px;z-index:50;background:#14103A;color:#fff;font-size:12.5px;
  padding:8px 13px;border-radius:9px;max-width:min(360px,86vw);line-height:1.45;box-shadow:0 8px 24px rgba(0,0,0,.28)}
 @media print{.apercu{display:none}}
@@ -731,7 +754,7 @@ export default async function handler(req, res) {
 
     // Coordonnées du commercial, lues au rendu pour rester à jour
     let sdr = null;
-    try { const [s] = await sql`SELECT nom, email, ringover_numero, photo FROM sdrs WHERE nom = ${row.sdr} LIMIT 1`; sdr = s || null; }
+    try { const [s] = await sql`SELECT nom, email, ringover_numero, photo, poste, bio FROM sdrs WHERE nom = ${row.sdr} LIMIT 1`; sdr = s || null; }
     catch (_) {
       // La colonne photo n'existe pas encore (aucun commercial ne l'a renseignée) : on continue.
       try { const [s] = await sql`SELECT nom, email, ringover_numero FROM sdrs WHERE nom = ${row.sdr} LIMIT 1`; sdr = s || null; } catch (__) {}
