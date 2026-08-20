@@ -2144,7 +2144,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v362';
+const VERSION='v363';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -6356,6 +6356,63 @@ function voileTravail(titre, sous){
  };
 }
 
+// Réponse à « le SDR devra-t-il refaire cette manipulation chaque fois ? » : non. Avant de
+// rédiger, on complète les mesures manquantes tout seul. Chaque relevé coûte 1 à 2 centimes ;
+// les oublier coûte un document générique — le mauvais arbitrage.
+async function completerMesures(i){
+ const e=REAL[i], g=e.gmb||{};
+ const f=(g.fiches||[])[0]||g.pire_fiche||{};
+ const pid=f.place_id||e.place_id;
+ const faits=[];
+
+ // 1. Réponses aux avis et délai réel (l'API Google ne les expose pas)
+ if(pid&&!g.reponses){
+  try{
+   const r=await api('/api/avis-reponses',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({place_id:pid,nom:f.nom||e.nom})});
+   const d=await r.json();
+   if(d.ok&&d.mesure){e.gmb=Object.assign({},e.gmb||{},{reponses:{taux:d.mesure.taux,repondus:d.mesure.repondus,
+     analyses:d.mesure.analyses,delai_median_h:d.mesure.delai_median_h,delai_max_h:d.mesure.delai_max_h}});
+    faits.push('réponses aux avis');}
+  }catch(_){}
+ }
+ // 2. Photos, complétude, et POSITION dans les résultats locaux
+ if(pid&&!(e.gmb||{}).audit){
+  const req=requeteLocale(e);
+  try{
+   const r=await api('/api/fiche-audit',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({place_id:pid,nom:f.nom||e.nom,requete:req,
+     ll:(f.lat&&f.lng)?('@'+f.lat+','+f.lng+',13z'):''})});
+   const d=await r.json();
+   if(d.ok&&d.audit){e.gmb=Object.assign({},e.gmb||{},{audit:d.audit});faits.push('audit de fiche');}
+  }catch(_){}
+ }
+ // 3. Visibilité dans l'aperçu IA de Google
+ if(!(e.gmb||{}).ia_visibilite){
+  const req=requeteLocale(e);
+  if(req){
+   try{
+    const r=await api('/api/ai-visibilite',{method:'POST',headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({requete:req,domaine:domaineDe(e),nom:enseigneDe(e)||e.nom})});
+    const d=await r.json();
+    if(d.ok&&d.mesure){e.gmb=Object.assign({},e.gmb||{},{ia_visibilite:d.mesure});faits.push('visibilité IA');}
+   }catch(_){}
+  }
+ }
+ if(faits.length){persister();rerender(i);}
+ return faits;
+}
+
+// La requête locale : ce qu'un client tape pour trouver le SERVICE, déduite de l'activité et de
+// la ville. C'est elle qui sert à la position locale ET à l'aperçu IA.
+function requeteLocale(e){
+ const act=String(e.activite||e.secteur_rb2b||'').split(/[,;(]/)[0]
+  .replace(/\b(autres?|divers|activités?|services? (de|d'))\b/gi,'').trim();
+ const ville=e.ville||'';
+ if(!act&&!ville)return '';
+ return [act,ville].filter(Boolean).join(' ').slice(0,90);
+}
+
 async function genererPrez(i){
  const e=REAL[i];if(!e)return;
  if(!state.savedId){toast('Ouvre la fiche depuis une liste enregistrée');return;}
@@ -6382,6 +6439,15 @@ async function genererPrez(i){
    '\n\nLe scoring des trois axes (visibilité, relation client, communication) s\'appuie précisément là-dessus.\n\nComplète d\'abord la fiche : ↻ Analyser pour la fiche Google et les technos, 📰 Chercher le contexte pour la presse.',
    'Générer quand même');
   if(!ok2)return;
+ }
+ // Les relevés SerpApi (réponses aux avis, photos, position locale, aperçu IA) se lancent seuls :
+ // le SDR n'a pas à enchaîner trois boutons avant de rédiger.
+ if(e.gmb&&e.gmb.trouve){
+  const v0=voileTravail('🔍 Relevés complémentaires',
+   'Réponses aux avis, photos, position dans les résultats locaux et citation par l\'IA de Google — environ 0,05 €.');
+  try{ const faits=await completerMesures(i);
+   if(faits.length)toast('✅ Mesuré : '+faits.join(', '));
+  }finally{ v0.fermer(); }
  }
  // Garde-fou : une analyse existe déjà sur cette fiche. La regénérer coûte un appel complet et
  // crée un SECOND lien — l'ancien continue de vivre et de compter ses ouvertures.

@@ -100,7 +100,10 @@ export default async function handler(req, res) {
     const ad = parseAdresse(chosen);
     const note = (typeof chosen.rating === 'number') ? chosen.rating : null;
     const avis = chosen.user_ratings_total || 0;
-    const fiche = { nom: chosen.name, note, nb_avis: avis, adresse: chosen.formatted_address || '', place_id: chosenId, match: 'lien Maps (CID vérifié)', lien: `https://www.google.com/maps/place/?q=place_id:${chosenId}` };
+    const fiche = { nom: chosen.name, note, nb_avis: avis, adresse: chosen.formatted_address || '', place_id: chosenId,
+      lat: ((chosen.geometry || {}).location || {}).lat != null ? ((chosen.geometry || {}).location || {}).lat : (lat ? +lat : null),
+      lng: ((chosen.geometry || {}).location || {}).lng != null ? ((chosen.geometry || {}).location || {}).lng : (lng ? +lng : null),
+      match: 'lien Maps (CID vérifié)', lien: `https://www.google.com/maps/place/?q=place_id:${chosenId}` };
     let avisNeg = null;
     const negs = (chosen.reviews || []).filter(x => x.rating <= 3 && (x.text || '').length > 20).sort((a, b) => (b.time || 0) - (a.time || 0));
     if (negs.length) { const a = negs[0]; avisNeg = { texte: a.text.length > 220 ? a.text.slice(0, 220) + '…' : a.text, note: a.rating, date: a.relative_time_description || '', lien: `https://search.google.com/local/reviews?placeid=${chosenId}` }; }

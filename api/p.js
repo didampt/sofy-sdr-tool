@@ -110,25 +110,41 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
       <div class="dl-kl">${md(p.chiffre_cle.legende)}${p.chiffre_cle.source ? `<span>${esc(p.chiffre_cle.source)}</span>` : ''}</div>
     </div>` : ''}` : '';
 
-  // Trajectoire : une courbe qui se dessine, pas deux barres. C'est ce que le prospect regarde
-  // pour se projeter — d'où le tracé animé et les valeurs posées sur chaque point.
+  // Trajectoire : deux courbes plutôt qu'une. La note ne monte pas seule — c'est le volume d'avis
+  // qui la porte. Les deux ensemble se lisent comme une cause et son effet, chacune sur sa propre
+  // échelle (axe gauche pour la première, axe droit pour la seconde).
   let courbe = '';
-  if (p.courbe && Array.isArray(p.courbe.points) && p.courbe.points.length > 1
-      && p.courbe.points.filter(x => x && num(x.valeur) != null).length > 1) {
-    const pts = p.courbe.points.filter(x => x && num(x.valeur) != null);
-    const vals = pts.map(x => num(x.valeur));
-    const haut = num(p.courbe.max) || Math.max(...vals) * 1.18;
-    const bas = Math.min(...vals) * 0.82;
-    const W = 980, H = 380, PX = 66, PY = 46;
-    const xy = pts.map((x, k) => [
-      PX + k * ((W - PX * 2) / (pts.length - 1)),
-      H - PY - ((num(x.valeur) - bas) / (haut - bas || 1)) * (H - PY * 2)
-    ]);
-    const d = xy.map((c, k) => (k ? 'L' : 'M') + c[0].toFixed(1) + ' ' + c[1].toFixed(1)).join(' ');
-    const aire = d + ` L${xy[xy.length - 1][0].toFixed(1)} ${H - PY} L${xy[0][0].toFixed(1)} ${H - PY} Z`;
+  const serieOk = c => c && Array.isArray(c.points)
+    && c.points.filter(x => x && num(x.valeur) != null).length > 1;
+  if (serieOk(p.courbe)) {
+    const W = 980, H = 380, PX = 66, PY = 52;
     const fmt = v => String(v).replace('.', ',');
+    // Géométrie d'une série : son échelle est la sienne, la grille et l'axe des temps sont communs.
+    const geo = (c) => {
+      const pts = c.points.filter(x => x && num(x.valeur) != null);
+      const vals = pts.map(x => num(x.valeur));
+      const haut = num(c.max) || Math.max(...vals) * 1.18;
+      const bas = Math.min(...vals) * 0.82;
+      return {
+        pts, unite: c.unite || '', indicateur: c.indicateur || '',
+        xy: pts.map((x, k) => [
+          PX + k * ((W - PX * 2) / (pts.length - 1)),
+          H - PY - ((num(x.valeur) - bas) / (haut - bas || 1)) * (H - PY * 2)
+        ])
+      };
+    };
+    const s1 = geo(p.courbe);
+    const s2 = serieOk(p.courbe2) ? geo(p.courbe2) : null;
+    const trace = s => s.xy.map((c, k) => (k ? 'L' : 'M') + c[0].toFixed(1) + ' ' + c[1].toFixed(1)).join(' ');
+    const d1 = trace(s1);
+    const aire = d1 + ` L${s1.xy[s1.xy.length - 1][0].toFixed(1)} ${H - PY} L${s1.xy[0][0].toFixed(1)} ${H - PY} Z`;
+    // La série la plus longue porte les libellés de temps.
+    const axe = s2 && s2.pts.length > s1.pts.length ? s2 : s1;
     courbe = `<div class="crb reveal">
-      <div class="crb-h"><span class="crb-i">${md(p.courbe.indicateur || '')}</span></div>
+      <div class="crb-h">
+        <span class="crb-i"><i class="crb-d1"></i>${md(s1.indicateur)}</span>
+        ${s2 ? `<span class="crb-i"><i class="crb-d2"></i>${md(s2.indicateur)}</span>` : ''}
+      </div>
       <svg viewBox="0 0 ${W} ${H}" class="crb-s" role="img" aria-label="Trajectoire visée">
         <defs>
           <linearGradient id="gl" x1="0" y1="0" x2="1" y2="0">
@@ -140,13 +156,28 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
         </defs>
         ${[0, 1, 2, 3].map(k => `<line x1="${PX}" y1="${PY + k * ((H - PY * 2) / 3)}" x2="${W - PX}" y2="${PY + k * ((H - PY * 2) / 3)}" class="crb-g"/>`).join('')}
         <path d="${aire}" fill="url(#ga)" class="crb-a"/>
-        <path d="${d}" fill="none" stroke="url(#gl)" stroke-width="4.5" stroke-linecap="round" class="crb-l"/>
-        ${xy.map((c, k) => `<g class="crb-pt" style="--d:${700 + k * 190}ms">
-          <circle cx="${c[0].toFixed(1)}" cy="${c[1].toFixed(1)}" r="${k === xy.length - 1 ? 9 : 6}"
-            fill="${k === xy.length - 1 ? '#F0428A' : '#5B4FE9'}" stroke="#fff" stroke-width="2.5"/>
-          <text x="${c[0].toFixed(1)}" y="${(c[1] - 20).toFixed(1)}" class="crb-v">${fmt(pts[k].valeur)}${esc(p.courbe.unite || '')}</text>
-          <text x="${c[0].toFixed(1)}" y="${H - PY + 22}" class="crb-x">${esc(pts[k].quand || '')}</text>
+        ${s2 ? `<path d="${trace(s2)}" fill="none" stroke="#12A594" stroke-width="3.2"
+          stroke-linecap="round" stroke-dasharray="9 7" class="crb-l2"/>` : ''}
+        <path d="${d1}" fill="none" stroke="url(#gl)" stroke-width="4.5" stroke-linecap="round" class="crb-l"/>
+        ${s2 ? s2.xy.map((c, k) => {
+          // Le libellé se place sous le point, sauf s'il tomberait sur l'axe des temps ou sur la
+          // première courbe : il passe alors au-dessus. Sans ça, le point de départ (le plus bas
+          // de l'échelle) écrivait par-dessus la date.
+          const y1 = (s1.xy[Math.min(k, s1.xy.length - 1)] || [])[1];
+          const tropBas = c[1] > H - PY - 38;                                  // il écrirait sur la date
+          const proche = y1 != null && Math.abs(y1 - c[1]) < 34;               // les deux points se touchent
+          const dessous = tropBas ? false : (proche ? c[1] >= y1 : true);      // la valeur fuit l'autre courbe
+          return `<g class="crb-pt" style="--d:${820 + k * 190}ms">
+          <circle cx="${c[0].toFixed(1)}" cy="${c[1].toFixed(1)}" r="${k === s2.xy.length - 1 ? 7.5 : 5}"
+            fill="#12A594" stroke="#fff" stroke-width="2.5"/>
+          <text x="${c[0].toFixed(1)}" y="${(c[1] + (dessous ? 27 : -16)).toFixed(1)}" class="crb-v2">${fmt(s2.pts[k].valeur)}${esc(s2.unite)}</text>
+        </g>`; }).join('') : ''}
+        ${s1.xy.map((c, k) => `<g class="crb-pt" style="--d:${700 + k * 190}ms">
+          <circle cx="${c[0].toFixed(1)}" cy="${c[1].toFixed(1)}" r="${k === s1.xy.length - 1 ? 9 : 6}"
+            fill="${k === s1.xy.length - 1 ? '#F0428A' : '#5B4FE9'}" stroke="#fff" stroke-width="2.5"/>
+          <text x="${c[0].toFixed(1)}" y="${(c[1] - 20).toFixed(1)}" class="crb-v">${fmt(s1.pts[k].valeur)}${esc(s1.unite)}</text>
         </g>`).join('')}
+        ${axe.xy.map((c, k) => `<text x="${c[0].toFixed(1)}" y="${H - PY + 24}" class="crb-x">${esc(axe.pts[k].quand || '')}</text>`).join('')}
       </svg>
       ${p.courbe.appui ? `<div class="crb-s2">${md(p.courbe.appui)}</div>` : ''}
     </div>`;
@@ -287,6 +318,40 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
       </div>
     </div>` : '';
 
+  // La planche « position locale » : le podium réel, et ce que dit l'IA de Google.
+  const mk = p.marche;
+  const marche = mk ? `
+    <div class="mk">
+      <div class="mk-q reveal">Requête testée : <b>« ${esc(mk.requete || '')} »</b></div>
+      <div class="mk-duo">
+        <div class="mk-pod reveal">
+          <div class="mk-lab">Le podium local</div>
+          ${(mk.concurrents || []).map((c, k) => `<div class="mk-l">
+            <span class="mk-r r${k + 1}">${k + 1}</span>
+            <span class="mk-n">${md(c.nom || '')}</span>
+            ${c.note != null ? `<span class="mk-no">${esc(String(c.note).replace('.', ','))}<i>★</i></span>` : ''}
+            ${c.avis != null ? `<span class="mk-av">${esc(String(c.avis))} avis</span>` : ''}
+          </div>`).join('')}
+          ${mk.position
+            ? (mk.position > 3 ? `<div class="mk-l mk-moi"><span class="mk-r moi">${mk.position}</span>
+                 <span class="mk-n">${esc(mes.nom || 'Vous')}</span><span class="mk-vous">votre place</span></div>` : '')
+            : `<div class="mk-abs">${esc(mes.nom || 'Vous')} — <b>absent des résultats locaux</b></div>`}
+        </div>
+        <div class="mk-ia reveal" style="--d:140ms">
+          <div class="mk-lab">Ce que répond l'IA de Google</div>
+          ${!mk.ia || !mk.ia.apercu_ia_affiche
+            ? `<div class="mk-ix">Google n'affiche pas encore d'aperçu IA sur cette requête. C'est une fenêtre : les enseignes qui structurent leurs données maintenant seront celles qu'il citera demain.</div>`
+            : (mk.ia.prospect_cite
+                ? `<div class="mk-ok">Vous êtes cité, en source n°${esc(String(mk.ia.rang_de_citation || 1))}.</div>
+                   <div class="mk-ix">C'est un acquis à défendre : la citation suit la fraîcheur des données et des avis.</div>`
+                : `<div class="mk-non">L'IA ne vous cite pas.</div>
+                   ${(mk.ia.entreprises_citees_par_lia || []).length
+                      ? `<div class="mk-cites">${mk.ia.entreprises_citees_par_lia.slice(0, 5).map(x => `<span>${esc(x)}</span>`).join('')}</div>` : ''}
+                   <div class="mk-ix">Vos futurs clients posent déjà la question à une IA. La réponse ne vous mentionne pas.</div>`)}
+        </div>
+      </div>
+    </div>` : '';
+
   // Le bilan chiffré : trois jauges, chacune reliée à son module, avec le détail des critères.
   // Les scores viennent du serveur — l'IA ne les touche pas.
   const sc = p.scoring;
@@ -347,6 +412,7 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
       <div class="rule"></div>
       ${p.texte ? `<p class="pl-x">${md(p.texte)}</p>` : ''}
       ${bilan}
+      ${marche}
       ${ficheG}
       ${chiffres ? `<div class="kpis">${chiffres}</div>` : ''}
       ${avisReel}
@@ -685,6 +751,42 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .pl.light .ae-r{color:#9990C4} .pl.dark .ae-r{color:rgba(255,255,255,.48)}
 .ae-c{display:block;font-size:13px;margin-top:3px;text-decoration:none}
 .pl.light .ae-c{color:var(--v)} .pl.dark .ae-c{color:#B9B2E0}
+.mk{margin-top:28px}
+.mk-q{font-size:14px;margin-bottom:16px}
+.pl.light .mk-q{color:var(--ink-s)} .pl.dark .mk-q{color:var(--ink-ds)}
+.mk-duo{display:grid;gap:16px;grid-template-columns:1fr}
+@media(min-width:900px){.mk-duo{grid-template-columns:1.05fr .95fr}}
+.mk-pod,.mk-ia{padding:20px 22px;border-radius:15px}
+.pl.light .mk-pod,.pl.light .mk-ia{background:#fff;border:1px solid var(--line);box-shadow:0 14px 34px rgba(20,16,58,.06)}
+.pl.dark .mk-pod,.pl.dark .mk-ia{background:rgba(255,255,255,.055);border:1px solid var(--line-d)}
+.mk-lab{font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;margin-bottom:13px}
+.pl.light .mk-lab{color:var(--v)} .pl.dark .mk-lab{color:var(--r)}
+.mk-l{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
+.mk-l:first-of-type{border-top:0}
+.pl.dark .mk-l{border-top-color:var(--line-d)}
+.mk-r{flex:none;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+ font-size:12px;font-weight:800;background:var(--line);color:var(--ink)}
+.mk-r.r1{background:linear-gradient(135deg,#F5C451,#E0A253);color:#4A2F05}
+.mk-r.r2{background:#D8D4E8;color:#3F3A5C} .mk-r.r3{background:#E7C9AE;color:#5A3A22}
+.mk-r.moi{background:var(--r);color:#fff}
+.mk-n{flex:1;font-size:14.5px;font-weight:650;line-height:1.3}
+.mk-no{font-size:14px;font-weight:750;font-variant-numeric:tabular-nums}
+.mk-no i{font-style:normal;font-size:.8em;color:#F5C451;margin-left:1px}
+.mk-av{font-size:12px}
+.pl.light .mk-av{color:#9990C4} .pl.dark .mk-av{color:rgba(255,255,255,.45)}
+.mk-moi{border-top:1px dashed var(--r);margin-top:4px}
+.mk-vous{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--r)}
+.mk-abs{margin-top:12px;padding:11px 13px;border-radius:10px;font-size:13.5px;line-height:1.45}
+.pl.light .mk-abs{background:#FFF4F6;border:1px solid #F7C9D8;color:#9F1239}
+.pl.dark .mk-abs{background:rgba(240,66,138,.12);border:1px solid rgba(240,66,138,.3);color:#FBCFE8}
+.mk-ok{font-size:17px;font-weight:750;color:#0F9D6E}
+.mk-non{font-size:19px;font-weight:800;letter-spacing:-.02em;color:var(--r)}
+.mk-cites{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px}
+.mk-cites span{font-size:12px;font-weight:650;padding:4px 9px;border-radius:7px}
+.pl.light .mk-cites span{background:#F4F2FD;border:1px solid var(--line);color:var(--ink-s)}
+.pl.dark .mk-cites span{background:rgba(255,255,255,.07);border:1px solid var(--line-d);color:var(--ink-ds)}
+.mk-ix{font-size:13px;line-height:1.55;margin-top:11px}
+.pl.light .mk-ix{color:var(--ink-s)} .pl.dark .mk-ix{color:var(--ink-ds)}
 .bl-h{display:grid;gap:14px;margin-top:30px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
 .bl-k{padding:15px 17px;border-radius:12px}
 .pl.light .bl-k{background:#fff;border:1px solid var(--line)}
@@ -765,8 +867,18 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .dl-kl span{display:block;font-size:11.5px;margin-top:4px}
 .pl.light .dl-kl span{color:#9990C4} .pl.dark .dl-kl span{color:rgba(255,255,255,.45)}
 .crb{margin-top:34px;max-width:1000px}
-.crb-i{font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+.crb-h{display:flex;flex-wrap:wrap;gap:8px 22px;align-items:center}
+.crb-i{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
 .pl.light .crb-i{color:var(--v)} .pl.dark .crb-i{color:var(--r)}
+.crb-i i{flex:none;width:16px;height:4px;border-radius:2px}
+.crb-d1{background:linear-gradient(90deg,#5B4FE9,#F0428A)}
+.crb-d2{background:repeating-linear-gradient(90deg,#12A594 0 6px,transparent 6px 10px)}
+/* La seconde courbe est en pointillés : on anime son opacité, pas son tracé — sinon le
+   stroke-dasharray de l'animation écraserait le pointillé. */
+.anim .crb-l2{opacity:0;transition:opacity 1s ease .9s}
+.reveal.on .crb-l2{opacity:1}
+.crb-v2{font-size:16px;font-weight:800;text-anchor:middle;font-variant-numeric:tabular-nums;fill:#0E8074}
+.pl.dark .crb-v2{fill:#5FE3D2}
 .crb-s{width:100%;height:auto;margin-top:8px;overflow:visible}
 .crb-g{stroke:var(--line);stroke-width:1}
 .pl.dark .crb-g{stroke:rgba(255,255,255,.11)}

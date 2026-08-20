@@ -82,6 +82,13 @@ function mesures(e) {
         ? Math.round((g.concurrents.note_moyenne - g.note_moyenne) * 10) / 10 : null,
       // Relevé dédié (l'API Google n'expose pas les réponses du propriétaire) : c'est l'argument
       // Soview le plus direct, il doit arriver jusqu'à la rédaction.
+      visibilite_ia: g.ia_visibilite ? {
+        requete_testee: g.ia_visibilite.requete,
+        apercu_ia_affiche: !!g.ia_visibilite.apercu_present,
+        prospect_cite: !!g.ia_visibilite.cite,
+        rang_de_citation: g.ia_visibilite.rang_citation,
+        entreprises_citees_par_lia: g.ia_visibilite.entreprises_citees || null
+      } : null,
       audit_fiche: g.audit ? {
         photos: g.audit.photos_total, photos_publiees_par_lenseigne: g.audit.photos_enseigne,
         description: !!g.audit.description_presente, horaires: !!g.audit.horaires_presents,
@@ -125,6 +132,11 @@ function mesures(e) {
       if (sansAdresse) d.push(`${sansAdresse} de vos fiches n'ont pas d'adresse exploitable : Google ne peut pas les rattacher à une zone, elles ne sortent pas sur « près de moi ».`);
       const noms = new Set(fs.map(f => String(f.nom || '').toLowerCase().replace(/[^a-z0-9]/g, '')));
       if (noms.size === fs.length && fs.length > 2) d.push('Vos fiches portent des libellés tous différents : pour Google et pour les assistants IA, ce sont autant d\'entreprises distinctes plutôt qu\'un réseau.');
+    }
+    if (g.ia_visibilite && g.ia_visibilite.apercu_present && !g.ia_visibilite.cite) {
+      const iv = g.ia_visibilite;
+      const autres = (iv.entreprises_citees || []).slice(0, 3).join(', ');
+      d.push(`Sur « ${iv.requete} », l'aperçu IA de Google ne vous cite pas${autres ? ` — il renvoie vers ${autres}` : ''}. Vos futurs clients posent déjà la question à une IA, et la réponse ne vous mentionne pas.`);
     }
     if (g.audit) {
       const a2 = g.audit;
@@ -380,11 +392,23 @@ function scorer(e) {
   // SMS — et détruisait l'argument SoReach. Seuls les outils réellement SMS/RCS comptent ici.
   const sms = cherche(/\bsms\b|\brcs\b|twilio|attentive|smsmode|esendex|smsfactor|octopush|vonage/i);
   const mkt = cherche(/brevo|sendinblue|mailjet|mailchimp|klaviyo|salesforce|emarsys|braze|actito|selligent|hubspot/i);
-  c.push(crit('Dispositif SMS ou RCS identifié', sms === null ? 'inconnu' : (sms ? 'ok' : 'faible'),
-    sms ? 50 : 0, 50, sms === null ? 'site non analysé' : (sms ? 'outil détecté' : 'aucun dispositif mobile détecté')));
-  c.push(crit('Plateforme de campagnes', mkt === null ? 'inconnu' : (mkt ? 'ok' : 'moyen'),
-    mkt ? 30 : 10, 30, mkt === null ? 'site non analysé' : (mkt ? 'plateforme détectée' : 'aucune plateforme détectée')));
-  c.push(crit('Expéditeur de marque vérifié', 'inconnu', 0, 0, 'le RCS affiche votre nom et votre logo — à vérifier ensemble'));
+  const nomsMkt = technos ? technos.filter(t => /marketing|sms|rcs/i.test(String(t.cat))).map(t => t.nom).join(', ') : '';
+  c.push(crit('Outil d\'envoi SMS ou RCS sur le site', sms === null ? 'inconnu' : (sms ? 'ok' : 'faible'),
+    sms ? 45 : 0, 45,
+    sms === null ? 'site non analysé'
+      : (sms ? 'balise d\'un outil SMS/RCS trouvée sur vos pages'
+             : 'aucune balise d\'outil SMS ou RCS sur vos pages — nous ne voyons donc pas de dispositif mobile en place')));
+  c.push(crit('Plateforme de communication client', mkt === null ? 'inconnu' : (mkt ? 'ok' : 'faible'),
+    mkt ? 35 : 0, 35,
+    mkt === null ? 'site non analysé'
+      : (mkt ? `${nomsMkt.slice(0, 60)} détecté${/,/.test(nomsMkt) ? 's' : ''} : le budget relation client existe déjà`
+             : 'aucune plateforme détectée : les envois, s\'il y en a, ne passent par aucun outil visible')));
+  // Ce qui n'est PAS mesurable depuis l'extérieur, dit franchement : un agent RCS de marque
+  // n'est pas déclaré publiquement, et un historique de campagnes ne se lit pas sur un site.
+  c.push(crit('Campagnes déjà envoyées', 'inconnu', 0, 0,
+    'invisible depuis l\'extérieur — seul votre historique d\'envois le dit'));
+  c.push(crit('Agent RCS de marque déclaré', 'inconnu', 0, 0,
+    'les agents RCS ne figurent dans aucun annuaire public — à vérifier avec vos opérateurs'));
   axes.push({ nom: 'Communication mobile', module: 'SoReach', criteres: c });
 
   axes.forEach(a => {
@@ -505,7 +529,7 @@ const SCHEMA_CADRE = {
         required: ['valeur', 'unite', 'legende', 'source']
       }
     },
-    bilan_titre: T, bilan_texte: T,
+    bilan_titre: T, bilan_texte: T, marche_titre: T, marche_texte: T,
     defauts_titre: T, defauts_texte: T, defauts: { type: 'array', items: T },
     traj_titre: T, traj_texte: T, courbe_indicateur: T, courbe_unite: T, courbe_max: N,
     points: {
@@ -513,6 +537,11 @@ const SCHEMA_CADRE = {
       items: { type: 'object', properties: { quand: T, valeur: N }, required: ['quand', 'valeur'] }
     },
     courbe_appui: T,
+    courbe2_indicateur: T, courbe2_unite: T, courbe2_max: N,
+    points2: {
+      type: 'array',
+      items: { type: 'object', properties: { quand: T, valeur: N }, required: ['quand', 'valeur'] }
+    },
     jalons: {
       type: 'array',
       items: { type: 'object', properties: { quand: T, texte: T }, required: ['quand', 'texte'] }
@@ -530,8 +559,9 @@ const SCHEMA_CADRE = {
     cta_titre: T, cta_texte: T, cta_bouton: T
   },
   required: ['titre_document', 'couv_titre', 'couv_texte', 'constat_titre', 'constat_texte',
-    'chiffres', 'bilan_titre', 'bilan_texte', 'defauts_titre', 'defauts_texte', 'defauts', 'traj_titre', 'traj_texte',
+    'chiffres', 'bilan_titre', 'bilan_texte', 'marche_titre', 'marche_texte', 'defauts_titre', 'defauts_texte', 'defauts', 'traj_titre', 'traj_texte',
     'courbe_indicateur', 'courbe_unite', 'courbe_max', 'points', 'courbe_appui', 'jalons',
+    'courbe2_indicateur', 'courbe2_unite', 'courbe2_max', 'points2',
     'preuve_titre', 'preuve_texte', 'preuve_chiffres', 'citation', 'citation_meta',
     'cta_titre', 'cta_texte', 'cta_bouton']
 };
@@ -564,6 +594,10 @@ Remplis le cadre du document — tout sauf les duels, qui sont rédigés à part
 · constat_titre ≤65 car. · constat_texte ≤180 car.
 · chiffres — 2 à 4 chiffres MESURÉS chez lui. "valeur" est une chaîne courte ("1,7"), "unite" est
   courte ("★", " %", " avis"), "legende" ≤60 car., "source" dit où on l'a relevé.
+· marche_titre ≤65 car. / marche_texte ≤180 car. — la planche POSITION LOCALE. La page affiche
+  elle-même le rang, les trois premiers concurrents et la citation par l'IA de Google : commente
+  ce que ça veut dire pour lui, ne recopie pas les chiffres. Si "audit_fiche" et "visibilite_ia"
+  sont absents des mesures, laisse ces deux champs vides.
 · bilan_titre ≤65 car. / bilan_texte ≤180 car. — la planche du SCORING. Les trois scores sur 100
   et leur détail sont affichés par la page, tu n'as pas à les écrire : commente ce qu'ils
   révèlent (l'axe le plus faible, ce que ça dit du réseau) et dis franchement que les critères
@@ -578,6 +612,10 @@ Remplis le cadre du document — tout sauf les duels, qui sont rédigés à part
 · points — 3 ou 4 points. "valeur" est un NOMBRE (1.7, jamais "1,7"). Le premier point est SA
   valeur mesurée aujourd'hui ("quand": "aujourd'hui"), puis "3 mois", "6 mois", "12 mois".
   Si tu n'as AUCUNE valeur de départ mesurée, mets points: [].
+· courbe2_* et points2 — une SECONDE courbe, sur un autre indicateur que la première : si la
+  première suit la note, la seconde suit le VOLUME d'avis (ou l'inverse). Les deux se lisent
+  ensemble : le volume explique la note. Mêmes règles — valeurs numériques, premier point mesuré,
+  points2: [] si tu n'as pas de départ mesuré pour ce second indicateur.
 · courbe_appui — le cas client ou le chiffre sourcé qui rend cette pente défendable
 · jalons — 3 étapes de déploiement, tirées du bloc des 90 premiers jours
 · preuve_titre / preuve_texte — pourquoi ce cas client éclaire le sien, secteur différent assumé
@@ -625,6 +663,30 @@ function assembler(cadre, duelsBruts, mes) {
     });
   }
 
+  // Planche « position sur le marché local » : construite par le serveur à partir des relevés.
+  // C'est l'Analyse marché de Soview, mesurée — Didier la juge l'argument le plus fort.
+  const au0 = (mes.google && mes.google.audit_fiche) || null;
+  const iv0 = (mes.google && mes.google.visibilite_ia) || null;
+  // Garde-fou : pas de planche sans matière. Une requête testée qui n'a rendu ni podium, ni
+  // position, ni aperçu IA ne donnerait qu'un titre au-dessus du vide — le défaut que Didier a
+  // signalé trois fois.
+  const mkOk = ((au0 && (au0.position_locale != null || (au0.trois_premiers || []).length))
+    || (iv0 && iv0.apercu_ia_affiche));
+  if (mkOk && ((au0 && au0.requete_testee) || (iv0 && iv0.requete_testee))) {
+    pl.push({
+      role: 'marche', eyebrow: 'CE QUE TROUVE UN CLIENT QUI VOUS CHERCHE',
+      titre: plein(c.marche_titre) ? c.marche_titre : 'Votre position quand on cherche le service',
+      texte: plein(c.marche_texte) ? c.marche_texte
+        : 'Relevé sur la requête qu\'un client tape pour trouver votre métier, sans connaître votre nom.',
+      marche: {
+        requete: (au0 && au0.requete_testee) || (iv0 && iv0.requete_testee),
+        position: au0 ? au0.position_locale : null,
+        concurrents: (au0 && au0.trois_premiers) || null,
+        ia: iv0 || null
+      }
+    });
+  }
+
   const df = (c.defauts || []).filter(plein);
   if (df.length) {
     pl.push({
@@ -667,6 +729,13 @@ function assembler(cadre, duelsBruts, mes) {
         indicateur: c.courbe_indicateur, unite: c.courbe_unite,
         max: c.courbe_max, points: pts, appui: c.courbe_appui
       } : null,
+      // Deux courbes valent mieux qu'une : le volume d'avis explique la note (retour Didier —
+      // les deux versions générées l'intéressaient, autant les montrer ensemble).
+      courbe2: (() => {
+        const p2 = (c.points2 || []).filter(x => x && typeof x.valeur === 'number' && isFinite(x.valeur));
+        return p2.length > 1 ? { indicateur: c.courbe2_indicateur, unite: c.courbe2_unite,
+          max: c.courbe2_max, points: p2 } : null;
+      })(),
       jalons: jal
     });
   }
@@ -700,6 +769,7 @@ function assembler(cadre, duelsBruts, mes) {
 const CHAMPS = {
   couverture:  [['titre', 65], ['texte', 200]],
   bilan:       [['titre', 65], ['texte', 200]],
+  marche:      [['titre', 65], ['texte', 200]],
   constat:     [['titre', 65], ['texte', 200], ['chiffres[].legende', 60]],
   defauts:     [['titre', 65], ['texte', 200], ['defauts[]', 190], ['visuel_id', 0]],
   duel:        [['titre', 65], ['probleme.constat', 120], ['probleme.cout', 130],
@@ -717,7 +787,8 @@ const VERROUS = {
   constat: ['les valeurs et sources des chiffres — elles viennent du relevé'],
   bilan: ['les trois scores et leurs critères — ils sont calculés, pas rédigés'],
   duel: ['la valeur du chiffre d\'appui et sa source — elles viennent de la base de connaissance'],
-  trajectoire: ['le point de départ de la courbe — c\'est la valeur mesurée aujourd\'hui'],
+  trajectoire: ['les deux courbes : leur point de départ est la valeur mesurée aujourd\'hui'],
+  marche: ['le podium, la position et la citation par l\'IA — relevés sur la requête testée'],
   preuve: ['les résultats du cas client et le verbatim — ils viennent de la base']
 };
 

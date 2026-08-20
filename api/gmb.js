@@ -248,6 +248,10 @@ export default async function handler(req, res) {
       nb_avis: c.r.user_ratings_total,
       adresse: c.r.formatted_address || '',
       place_id: c.r.place_id,
+      // Les coordonnées : sans elles, impossible de demander « qui sort en premier ICI » (la
+      // position locale se mesure depuis un point, pas depuis une ville).
+      lat: ((c.r.geometry || {}).location || {}).lat != null ? ((c.r.geometry || {}).location || {}).lat : null,
+      lng: ((c.r.geometry || {}).location || {}).lng != null ? ((c.r.geometry || {}).location || {}).lng : null,
       match: [c.matchNom?'nom':null, c.matchAdresse==='exacte'?'adresse exacte':null, c.matchSite?'site web':null].filter(Boolean).join(' + ') || 'zone',
       lien: `https://www.google.com/maps/place/?q=place_id:${c.r.place_id}`
     }));

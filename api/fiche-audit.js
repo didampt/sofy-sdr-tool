@@ -104,7 +104,11 @@ export default async function handler(req, res) {
 
   // ── 2. La position locale : ce que voit un client qui cherche le SERVICE, pas l'enseigne ──
   const requete = String(b.requete || '').trim();
-  const ll = String(b.ll || '').trim();
+  // Les fiches analysées avant août 2026 n'ont pas de coordonnées stockées : SerpApi vient de nous
+  // rendre celles de la fiche, on s'en sert plutôt que de renoncer à la position locale.
+  const gps = fiche.gps_coordinates || {};
+  const ll = String(b.ll || '').trim()
+    || ((gps.latitude != null && gps.longitude != null) ? `@${gps.latitude},${gps.longitude},13z` : '');
   if (requete && ll) {
     try {
       const loc = await lire({ engine: 'google_maps', type: 'search', q: requete, ll });
