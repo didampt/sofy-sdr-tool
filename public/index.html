@@ -1381,7 +1381,6 @@ Spot-Hit</textarea>
     <div id="rcs-intro" style="font-size:12.5px;color:var(--ink-soft);line-height:1.55;margin-bottom:10px">Le prospect reçoit une <b>rich-card Sofy</b> — visuel, texte et bouton « 📅 Réserver ma démo » : le message <i>est</i> la démonstration du produit. Repli SMS automatique si son mobile ne gère pas le RCS.</div>
     <div id="rcs-dest" style="font-size:13px;font-weight:700;margin-bottom:8px"></div>
     <textarea class="field" id="rcs-texte" rows="5" style="width:100%;font-size:12.5px" placeholder="Texte du message…"></textarea>
-    <div id="rcs-repli" style="display:none;margin-top:8px;padding:9px 11px;border-radius:9px;background:var(--paper);border:1px solid var(--line);font-size:11.5px;line-height:1.5;color:var(--ink-soft)"></div>
     <div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px">La mention « répondez STOP » est ajoutée automatiquement (prospection B2B). Coût ≈ 1 crédit SoReach.</div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
       <button class="btn" style="background:var(--paper)" onclick="document.getElementById('rcs-modal').style.display='none'">Annuler</button>
@@ -2155,7 +2154,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v367';
+const VERSION='v368';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2388,9 +2387,34 @@ async function ouvrirEnvoiPrez(opt){
     </div>
     <div style="font-size:11.5px;color:var(--ink-soft);margin-top:5px">Renseigne au moins un email ou un mobile — cette personne sera ajoutée aux destinataires cochés.</div>
    </details>`
+  +'<div id="env-rcs" style="display:none;margin-top:12px;padding-top:10px;border-top:1px solid var(--line)"></div>'
   +'<div id="env-res" style="display:none;margin-top:10px"></div>';
  document.getElementById('env-modal').style.display='flex';
+ // Le texte de la rich-card et son repli SMS, relus AVANT l'envoi : c'est cet écran qui aurait
+ // montré que le repli dépassait 129 caractères (bug du 20/08, RCS refusé en silence).
+ if(cs.some(c=>c.tel))apercuRcsPrez(jeton,ENV_CTX.client);
 }
+async function apercuRcsPrez(jeton,client){
+ const z=document.getElementById('env-rcs');if(!z)return;
+ z.style.display='';z.innerHTML='<div style="font-size:12px;color:var(--ink-soft)">Chargement du message RCS\u2026</div>';
+ try{
+  const p=new URLSearchParams({mode:'prez',jeton:jeton,entreprise:client||''});
+  const r=await api('/api/rcs-prospect?'+p.toString());const d=await r.json();
+  if(d.erreur){z.innerHTML='<div style="font-size:12px;color:#B91C1C">Aper\u00e7u RCS : '+htmlSafe(d.erreur)+'</div>';return;}
+  const trop=(d.repli_longueur&&d.repli_max&&d.repli_longueur>d.repli_max);
+  z.innerHTML='<div style="font-size:11.5px;font-weight:800;letter-spacing:.04em;color:var(--ink-soft);margin-bottom:6px">MESSAGE RCS \u2014 relis avant d\'envoyer</div>'
+   +'<textarea class="field" id="env-rcs-texte" rows="4" style="width:100%;font-size:12.5px">'+htmlSafe(d.texte||'')+'</textarea>'
+   +'<div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;line-height:1.5">Bouton : <b>'+htmlSafe(d.bouton||'')+'</b> \u2192 le lien nominatif de chaque destinataire.</div>'
+   +'<div style="margin-top:7px;padding:8px 10px;border-radius:9px;background:var(--paper);border:1px solid var(--line);font-size:11.5px;line-height:1.5;color:var(--ink-soft)">'
+   +'<b>Repli SMS</b> (si le mobile ne g\u00e8re pas le RCS) \u2014 '+htmlSafe(d.alphabet||'')+', '+(d.segments_sms||1)+' segment(s), '
+   +'<b'+(trop?' style="color:#B91C1C"':'')+'>'+(d.repli_longueur||'?')+'/'+(d.repli_max||129)+' caract\u00e8res</b>'
+   +(trop?' \u2014 au-del\u00e0, l\'API refuse la rich-card et tout partirait en SMS':'')+' :<br>'
+   +'<span style="font-family:ui-monospace,Menlo,monospace">'+htmlSafe(d.repli_sms||'')+'</span>'
+   +((d.rcs_configure===false)?'<br><b style="color:#B45309">\u26a0\ufe0f Aucun agent RCS configur\u00e9 (SOFY_API_KEY_V2 / SOFY_RCS_SENDER_ID) \u2014 l\'envoi partira en SMS.</b>':'')
+   +'</div>';
+ }catch(err){z.innerHTML='<div style="font-size:12px;color:#B91C1C">Aper\u00e7u RCS : '+htmlSafe(err.message)+'</div>';}
+}
+
 async function lancerEnvoiPrez(){
  if(!ENV_CTX)return;
  const cs=ENV_CTX.contacts, choisis=[];
@@ -2424,6 +2448,7 @@ async function lancerEnvoiPrez(){
     try{
      const rr=await api('/api/rcs-prospect',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({mode:'prez',jeton:ENV_CTX.jeton,d:L.n,tel:c.tel,prenom:(c.nom||'').split(' ')[0],
+       texte:((document.getElementById('env-rcs-texte')||{}).value||'').trim()||undefined,
        entreprise:(e.nom?(enseigneDe(e)||e.nom):ENV_CTX.client)||'',email_cle:c.email||null,
        cle_fiche:e.nom?(clesFiche(e)[0]||null):null,liste_id:e.nom?(state.savedId||null):null})});
      const dd=await rr.json();

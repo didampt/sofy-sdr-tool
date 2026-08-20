@@ -9,7 +9,10 @@
 import { verifierToken, sql, ensureSchema, envoyerSmsSofy, loggerConso } from './db.js';
 import { gsmifier, analyserSms } from './sms-gsm.js';
 
-const cleV2 = () => process.env.SOFY_API_KEY_V2 || '';
+// ⚠️ L'API v2 (RCS) attend un jeton Bearer sofy_live_…. rcs-rdv-cron.js accepte les DEUX noms de
+// variable depuis le 06/08 ; ici il n'y avait que SOFY_API_KEY_V2 — si Vercel ne porte que
+// SOFY_API_KEY, le bloc RCS était sauté en silence et tout partait en SMS v1 (bug du 20/08).
+const cleV2 = () => process.env.SOFY_API_KEY_V2 || process.env.SOFY_API_KEY || '';
 // Réservation de démo côté PROSPECT (parcours « site web », adapté au mobile).
 // ⚠️ Ne pas utiliser demo-sdr : c'est le calendrier interne réservé aux SDR.
 const LIEN_DEMO = process.env.SOFY_LIEN_DEMO || 'https://go.sofy.fr/meetings/mbouly/demo-site-web';
@@ -18,6 +21,9 @@ const BASE_PUB = () => process.env.SOFY_BASE_PUBLIQUE || 'https://www.sofyscrap.
 // Visuel de la carte « analyse » : la création Sofy « Découvrez votre analyse personnalisée »,
 // servie depuis public/ (1000×1000, 157 Ko — assez léger pour s'afficher avant que le prospect
 // referme sa messagerie). Un RCS sans image n'a pas d'intérêt : c'est justement ce qu'on vend.
+// ⚠️ fallback.text est plafonné à 129 caractères par l'API v2 : au-delà, la rich-card est
+// refusée (400) et l'envoi retombe en SMS. Limite constatée au test du 06/08.
+const MAX_FALLBACK = 129;
 const VISUEL_PREZ = process.env.SOFY_RCS_IMAGE_PREZ
   || (process.env.SOFY_BASE_PUBLIQUE || 'https://www.sofyscrap.com') + '/rcs-prez.jpg';
 
@@ -103,15 +109,23 @@ export default async function handler(req, res) {
     const url = BASE_PUB() + '/p/' + jeton + (dn != null && dn >= 0 ? '?d=' + dn : '');
     const txt = (String(b.texte || '').trim() || textePrez({ prenom, entreprise: entreprise || row.client, sdr: user.nom })).slice(0, 900);
     const stopP = ' Pour ne plus recevoir de message : répondez STOP.';
-    // Le repli SMS doit tenir en UN segment ET rester en alphabet GSM : une apostrophe courbe
-    // ou un ★ fait basculer le message entier en UCS-2 (70 caractères au lieu de 160).
-    const brut = `Sofy : votre analyse de visibilite locale est prete. ${url} Repondez STOP pour ne plus etre contacte.`;
-    const repli = gsmifier(brut).slice(0, 160);
+    // Le repli SMS a DEUX contraintes, et j'en avais oublié une le 20/08 :
+    //  · alphabet GSM — une apostrophe courbe ou un ★ fait basculer tout le message en UCS-2 ;
+    //  · 129 CARACTÈRES MAXIMUM — au-delà, l'API v2 refuse la rich-card avec un 400 (limite
+    //    documentée dans rcs-rdv-cron.js depuis le test du 06/08). Mon repli faisait 135
+    //    caractères : le RCS était donc rejeté à chaque envoi, et le SMS v1 prenait le relais.
+    const queue = ' STOP pour ne plus etre contacte.';
+    let repli = gsmifier(`Sofy : votre analyse est prete. ${url}${queue}`);
+    if (repli.length > MAX_FALLBACK) repli = gsmifier(`Sofy : votre analyse. ${url}`).slice(0, MAX_FALLBACK);
     const diag = analyserSms(repli);
 
     if (b.apercu) {
       return res.status(200).json({ ok: true, apercu: true, texte: txt, url, visuel: VISUEL_PREZ,
-        bouton: '📊 Voir mon analyse', repli_sms: repli, segments_sms: diag.segments, alphabet: diag.alphabet });
+        bouton: '📊 Voir mon analyse', repli_sms: repli, segments_sms: diag.segments, alphabet: diag.alphabet,
+        // La longueur est affichée à l'écran : au-delà de 129, l'API v2 refuse la rich-card et
+        // tout partirait en SMS. Le bug du 20/08 aurait été visible avant l'envoi.
+        repli_longueur: repli.length, repli_max: MAX_FALLBACK,
+        rcs_configure: !!(cleV2() && process.env.SOFY_RCS_SENDER_ID) });
     }
 
     let envoi = null;
@@ -134,7 +148,24 @@ export default async function handler(req, res) {
         else envoi = { erreur: 'RCS ' + r.status + ': ' + JSON.stringify(d).slice(0, 200) };
       } catch (e) { envoi = { erreur: 'RCS injoignable : ' + String((e && e.message) || e).slice(0, 120) }; }
     }
-    // Second filet : si l'agent RCS n'a pas répondu, le SMS v1 part quand même avec le lien.
+    // Quand la rich-card passe, c'est l'API v2 qui gère elle-même la bascule SMS : on n'a rien à
+    // faire. Les étages ci-dessous ne servent QUE si la rich-card a été refusée — et l'erreur
+    // remonte jusqu'à l'écran, pour qu'un refus ne ressemble plus à un envoi normal.
+    if ((!envoi || envoi.erreur) && cleV2()) {
+      // SMS de l'API v2, avec le lien complet (pas de limite 129 ici).
+      try {
+        const rs = await fetch('https://api.sofy.fr/v2/sms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cleV2()}` },
+          body: JSON.stringify(Object.assign({ to: tel, body: repli, isTransactional: false },
+            process.env.SOFY_SMS_FROM ? { from: process.env.SOFY_SMS_FROM } : {}))
+        });
+        const ds = await rs.json().catch(() => ({}));
+        if (rs.ok && ds.id) envoi = { canal: 'sms (v2)', id: ds.id, rcs_echec: envoi && envoi.erreur };
+      } catch (_) { }
+    }
+    // Dernier filet : l'API v1, éprouvée. La route SMS de la clé v2 est « rejected by provider »
+    // toutes destinations depuis le 07/08 — à régler côté produit.
     if (!envoi || envoi.erreur) {
       const v1 = await envoyerSmsSofy({ to: tel, message: repli, user: user.nom, liste_id: b.liste_id || null, transactionnel: false });
       if (v1.ok) envoi = { canal: 'sms (v1)', id: v1.id || null, rcs_echec: envoi && envoi.erreur };
