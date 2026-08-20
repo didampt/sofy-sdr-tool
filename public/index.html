@@ -2154,7 +2154,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v370';
+const VERSION='v371';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -9507,13 +9507,19 @@ function rendreCockpit(sdrAffiche){
   for(const p of ps){
    const plural=p.ouvertures>1?'s':'';
    const lect=p.lecteurs>1?`<span style="font-weight:800;color:#7C3AED"> · ${p.lecteurs} lecteurs distincts</span>`:'';
-   h+=ckRow({liste_id:p.liste_id,cle:p.cle,nom:p.client,tel:null},
+   // ⚠️ On passe la LIGNE COMPLÈTE (contacts, accroche, clés d'historique, téléphone…) : la
+   // reconstruire à quatre champs jetait tout ce que le serveur envoie, et le dépli affichait
+   // « aucun contact nominatif » sur des fiches qui en portent trois (bug du 20-21/08).
+   h+=ckRow(Object.assign({},p,{nom:p.client||p.nom}),
     `<span style="font-size:15px" title="Analyse client ouverte">🎨</span>
      <div style="flex:1;min-width:200px;line-height:1.4">
       <div><span style="font-size:13.5px;font-weight:700">${htmlSafe(p.client||'')}</span>
        <span style="font-size:11.5px;color:var(--ink-soft)"> · ${htmlSafe(nomModule(p.module)||'')}</span>${p.expiree?' <span style="font-size:11px;color:#B91C1C;font-weight:700">· lien expiré</span>':''}</div>
       <div style="font-size:12px;color:var(--ink-soft)">${p.ouvertures} ouverture${plural}${lect} · dernière ${hFr(p.derniere)} (${depuis(p.derniere)})${p.premiere&&p.ouvertures>1?` · 1<sup>re</sup> le ${hFr(p.premiere)}`:''}</div>
-      ${p.destinataire?`<div style="font-size:11.5px;color:var(--ink-soft)">lien envoyé à ${htmlSafe(p.destinataire)} — le lecteur n'est pas identifiable autrement</div>`:'<div style="font-size:11.5px;color:var(--ink-soft)">aucun destinataire noté à l\'envoi</div>'}
+      ${(p.destinataires||[]).length
+        ? `<div style="font-size:11.5px;color:var(--ink-soft)">${p.destinataires.map(function(dd){const o=dd.ouvertures||0;
+            return (o?'<b style="color:#7C3AED">👀 '+htmlSafe(dd.nom||dd.email||dd.tel||'')+' — '+o+' lecture'+(o>1?'s':'')+'</b>':'✉️ '+htmlSafe(dd.nom||dd.email||dd.tel||'')+' — pas encore lu');}).join(' · ')}</div>`
+        : (p.destinataire?`<div style="font-size:11.5px;color:var(--ink-soft)">lien envoyé à ${htmlSafe(p.destinataire)} — sans lien nominatif, le lecteur n'est pas identifiable</div>`:'<div style="font-size:11.5px;color:var(--ink-soft)">aucun destinataire noté à l\'envoi — utilise 📤 Envoyer pour donner à chacun son lien</div>')}
      </div>
      <div style="display:flex;gap:6px;flex-wrap:wrap">
       <a class="act act-copy" style="text-decoration:none" href="/p/${htmlSafe(p.jeton)}?apercu=1" target="_blank" title="Aperçu interne — ta visite n'est pas comptée">👁 Voir</a>

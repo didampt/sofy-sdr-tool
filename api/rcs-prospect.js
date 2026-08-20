@@ -124,8 +124,8 @@ export default async function handler(req, res) {
     if (user.role !== 'superadmin') return res.status(403).json({ erreur: 'Réservé superadmin' });
     if (!cleV2()) return res.status(500).json({ erreur: 'Aucune clé API v2 (SOFY_API_KEY_V2 / SOFY_API_KEY)' });
     const corps = String(b.texte || 'Sofy : test technique de la route SMS v2. Aucune action attendue.').slice(0, 140);
-    const payload = Object.assign({ to: tel, body: corps, isTransactional: true },
-      process.env.SOFY_SMS_FROM ? { from: process.env.SOFY_SMS_FROM } : {});
+    const payload = { to: tel, body: corps, isTransactional: true,
+      from: process.env.SOFY_SMS_FROM || 'SOFY' };
     try {
       const r = await fetch('https://api.sofy.fr/v2/sms', {
         method: 'POST',
@@ -135,7 +135,7 @@ export default async function handler(req, res) {
       const d = await r.json().catch(() => ({}));
       return res.status(200).json({
         ok: r.ok, http: r.status, reponse: d, tel,
-        expediteur_envoye: process.env.SOFY_SMS_FROM || '(défaut du compte)',
+        expediteur_envoye: process.env.SOFY_SMS_FROM || 'SOFY (défaut du code)',
         suivi: d && d.id ? 'Acheminement : GET /api/rcs-prospect?statut=' + d.id : null,
         lecture: r.ok && d.id
           ? 'La route SMS v2 accepte l\'envoi. Vérifie l\'acheminement avec le suivi ci-dessus : le 07/08, elle acceptait puis le provider rejetait.'
@@ -211,15 +211,19 @@ export default async function handler(req, res) {
         const rs = await fetch('https://api.sofy.fr/v2/sms', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cleV2()}` },
-          body: JSON.stringify(Object.assign({ to: tel, body: repli, isTransactional: false },
-            process.env.SOFY_SMS_FROM ? { from: process.env.SOFY_SMS_FROM } : {}))
+          // Expéditeur : « SOFY » par défaut, comme la route v1 (db.js envoie from:'Sofy').
+          // Sans lui, le compte prend son expéditeur par défaut — un code court DOM refusé vers
+          // la métropole (incident du 07/08). Surchargeable par SOFY_SMS_FROM.
+          body: JSON.stringify({ to: tel, body: repli, isTransactional: false,
+            from: process.env.SOFY_SMS_FROM || 'SOFY' })
         });
         const ds = await rs.json().catch(() => ({}));
         if (rs.ok && ds.id) envoi = { canal: 'sms (v2)', id: ds.id, rcs_echec: envoi && envoi.erreur };
       } catch (_) { }
     }
-    // Dernier filet : l'API v1, éprouvée. La route SMS de la clé v2 est « rejected by provider »
-    // toutes destinations depuis le 07/08 — à régler côté produit.
+    // Dernier filet : l'API v1. La route SMS v2 ci-dessus fonctionne depuis qu'elle porte un
+    // expéditeur (testée le 21/08 : HTTP 201, SMS reçu) ; la v1 ne sert donc plus qu'en cas de
+    // refus, et parce qu'elle ajoute seule la mention STOP au bon code court par territoire.
     if (!envoi || envoi.erreur) {
       // Sans ma mention STOP : db.js ajoute celle qui est légalement due, avec le BON code court
       // selon le territoire (36789 en DOM, 36229 en métropole). En laisser deux serait fautif.

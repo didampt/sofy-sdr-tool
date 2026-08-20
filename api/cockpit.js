@@ -267,6 +267,23 @@ export default async function handler(req, res) {
     try {
       const [hl] = await sql`SELECT id, entreprises FROM listes WHERE criteres->>'auto' = 'hotleads' LIMIT 1`;
       if (hl) {
+        // ⚠️ La liste Hot Leads est EXCLUE de la boucle des listes ci-dessus (criteres.auto =
+        // 'hotleads'). Ses fiches n'entraient donc pas dans parNom / parEmail, et tout ce qui
+        // cherche une fiche par son nom — les rappels, et depuis le 20/08 la tuile « Analyses
+        // lues » — repartait les mains vides : « aucun contact nominatif » sur Neveu Nettoyage,
+        // alors que la fiche complète en portait trois. On l'indexe ici, une fois pour toutes.
+        for (const e of (Array.isArray(hl.entreprises) ? hl.entreprises : [])) {
+          const { info: infoH } = infoFiche(e, hl.id, 'Hot Leads');
+          for (const c of (e.contacts || [])) {
+            if (c && c.enrich && c.enrich.email) {
+              const k = String(c.enrich.email).toLowerCase();
+              if (!parEmail.has(k)) parEmail.set(k, infoH);
+            }
+          }
+          const kN = normCk(e.nom), kE = normCk(e.enseigne_ia || e.enseigne || '');
+          if (kN && !parNom.has(kN)) parNom.set(kN, infoH);
+          if (kE && !parNom.has(kE)) parNom.set(kE, infoH);
+        }
         for (const e of (Array.isArray(hl.entreprises) ? hl.entreprises : [])) {
           const statutH = e.statut_appel || (e.tags_sdr || [])[0] || null;
           if (statutH) continue; // traité → sort de la tuile pour tout le monde
