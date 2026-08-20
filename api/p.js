@@ -259,9 +259,6 @@ function page(doc, meta, sdr, apercu) {
   return `<!doctype html><html lang="fr"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow"><title>${esc(doc.titre_document || 'Analyse Sofy')}</title>
-<noscript><style>.reveal{opacity:1!important;transform:none!important}.pl-t .w{opacity:1!important;transform:none!important}
-.rule{transform:none!important}.crb-l{stroke-dashoffset:0!important}.crb-a,.crb-pt{opacity:1!important}
-.pj-bar i{width:var(--w)!important}</style></noscript>
 <style>
 :root{
  --nuit:#0F0B29; --nuit2:#1A1040; --clair:#FFFFFF; --clair2:#F4F2FD;
@@ -285,6 +282,8 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .pl.light .eyebrow{color:var(--v)} .pl.dark .eyebrow{color:var(--r)}
 .pl-t{font-size:clamp(30px,5.4vw,62px);font-weight:800;line-height:1.04;letter-spacing:-.03em;margin:0;text-wrap:balance;max-width:19ch}
 .rule{height:5px;width:92px;border-radius:3px;background:var(--grad);margin:22px 0 26px}
+.anim .rule{transform:scaleX(0);transform-origin:left;transition:transform .8s cubic-bezier(.22,.68,.24,1) .15s}
+.anim .on .rule,.anim .wrap.on .rule{transform:scaleX(1)}
 .pl-x{font-size:clamp(16px,1.5vw,20px);line-height:1.6;max-width:62ch;margin:0}
 .pl.light .pl-x{color:var(--ink-s)} .pl.dark .pl-x{color:var(--ink-ds)}
 .kpis{display:grid;gap:18px;margin-top:38px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
@@ -427,11 +426,11 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .crb-s{width:100%;height:auto;margin-top:8px;overflow:visible}
 .crb-g{stroke:var(--line);stroke-width:1}
 .pl.dark .crb-g{stroke:rgba(255,255,255,.11)}
-.crb-l{stroke-dasharray:1400;stroke-dashoffset:1400;transition:stroke-dashoffset 1.8s cubic-bezier(.4,.05,.2,1) .25s}
+.anim .crb-l{stroke-dasharray:1400;stroke-dashoffset:1400;transition:stroke-dashoffset 1.8s cubic-bezier(.4,.05,.2,1) .25s}
 .reveal.on .crb-l{stroke-dashoffset:0}
-.crb-a{opacity:0;transition:opacity .9s ease 1.1s}
+.anim .crb-a{opacity:0;transition:opacity .9s ease 1.1s}
 .reveal.on .crb-a{opacity:1}
-.crb-pt{opacity:0;transition:opacity .45s ease var(--d)}
+.anim .crb-pt{opacity:0;transition:opacity .45s ease var(--d)}
 .reveal.on .crb-pt{opacity:1}
 .crb-v{font-size:16px;font-weight:800;text-anchor:middle;font-variant-numeric:tabular-nums;fill:var(--ink)}
 .pl.dark .crb-v{fill:var(--ink-d)}
@@ -466,7 +465,8 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .pl.light .pj-lab{color:#9990C4} .pl.dark .pj-lab{color:rgba(255,255,255,.45)}
 .pj-bar{flex:1;height:15px;border-radius:8px;overflow:hidden}
 .pl.light .pj-bar{background:#EDEAF9} .pl.dark .pj-bar{background:rgba(255,255,255,.09)}
-.pj-bar i{display:block;height:100%;width:0;border-radius:8px;transition:width 1.15s cubic-bezier(.22,.68,.24,1)}
+.pj-bar i{display:block;height:100%;width:var(--w);border-radius:8px}
+.anim .pj-bar i{width:0;transition:width 1.15s cubic-bezier(.22,.68,.24,1)}
 .pj-bar i.now{background:#B9B2E0}
 .pl.dark .pj-bar i.now{background:rgba(255,255,255,.32)}
 .pj-bar i.goal{background:var(--grad);transition-delay:.28s}
@@ -481,10 +481,8 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .apercu{position:fixed;left:14px;bottom:14px;z-index:50;background:#14103A;color:#fff;font-size:12.5px;
  padding:8px 13px;border-radius:9px;max-width:min(360px,86vw);line-height:1.45;box-shadow:0 8px 24px rgba(0,0,0,.28)}
 @media print{.apercu{display:none}}
-.reveal{opacity:0;transform:translateY(20px);transition:opacity .75s ease var(--d,0ms),transform .75s cubic-bezier(.22,.68,.24,1) var(--d,0ms)}
-.reveal.on{opacity:1;transform:none}
-.pl-t .w{display:inline-block;opacity:0;transform:translateY(14px);transition:opacity .5s ease,transform .5s ease}
-.on .pl-t .w,.pl-t.on .w{opacity:1;transform:none}
+.anim .reveal{opacity:0;transform:translateY(20px);transition:opacity .75s ease var(--d,0ms),transform .75s cubic-bezier(.22,.68,.24,1) var(--d,0ms)}
+.anim .reveal.on,.reveal.on{opacity:1;transform:none}
 .rule{transform:scaleX(0);transform-origin:left;transition:transform .8s cubic-bezier(.22,.68,.24,1) .15s}
 .on .rule{transform:scaleX(1)}
 @media (prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}}
@@ -501,16 +499,31 @@ ${pl.map((p, i) => planche(p, i, pl.length, doc._mes || {}, doc._logo || null)).
 ${apercu ? `<div class="apercu">👁 Aperçu interne — cette visite n'est pas comptée dans les ouvertures du prospect.</div>` : ''}
 <div class="tools"><button onclick="window.print()">⬇️ Télécharger en PDF</button></div>
 <script>
+// L'animation est une COUCHE, pas une condition d'affichage. Sans la classe « anim », la page
+// est intégralement lisible : c'est ce qui garantit qu'un incident JavaScript ne peut plus
+// produire un document blanc chez un prospect (incident du 20/08 : une expression régulière
+// invalide tuait le script, et toutes les planches restaient à opacity 0).
+(function(){
+ var h=document.documentElement;
+ h.classList.add('anim');
+ // Trace de diagnostic : quand la couche tombe et pourquoi. Consultable dans la console par
+ // window.__anim — c'est ce qui manquait pour comprendre l'incident des planches invisibles.
+ window.__anim={pose:Date.now(),cause:null};
+ var rendreVisible=function(quoi){return function(){
+  if(!window.__anim.cause){window.__anim.cause=quoi;window.__anim.retire=Date.now()-window.__anim.pose;}
+  h.classList.remove('anim');
+ };};
+ // Une erreur DE SCRIPT montre tout ; une image qui ne charge pas ne doit rien déclencher.
+ window.addEventListener('error', function(e){ if(e && e.message) rendreVisible('erreur script : '+e.message)(); });
+ setTimeout(rendreVisible('délai de sécurité'), 6000);
+ if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)rendreVisible('mouvement réduit')();
+})();
 // Révélation au défilement + profondeur de lecture (le SDR voit jusqu'où le client est allé)
 var jeton=${JSON.stringify(meta.jeton)},max=0,apercu=${apercu ? 'true' : 'false'};
 document.querySelectorAll('.wrap').forEach(function(w){w.classList.add('reveal');});
-// Titres révélés mot à mot : donne du rythme sans tomber dans l'effet gadget
-document.querySelectorAll('.pl-t').forEach(function(t){
- t.innerHTML=t.innerHTML.replace(/(<strong>)?([^<\s]+)(<\/strong>)?(\s|$)/g,function(m){return '<span class="w">'+m+'</span>';});
- [].forEach.call(t.querySelectorAll('.w'),function(w,k){w.style.transitionDelay=(90+k*45)+'ms';});
-});
 // Compteurs : le chiffre monte jusqu'à sa valeur quand la planche entre dans l'écran
 function anime(el){
+ if(!document.documentElement.classList.contains('anim'))return; // sans animation, la valeur écrite reste
  var cible=parseFloat(el.dataset.n);if(isNaN(cible)||el.dataset.fait)return;el.dataset.fait='1';
  var u=el.querySelector('.kpi-u'),suf=u?u.outerHTML:'',dec=(String(el.dataset.n).split('.')[1]||'').length;
  var t0=null,dur=1100;
