@@ -204,230 +204,228 @@ TROIS INTERDITS — ils ont ruiné les trois versions précédentes de ce docume
 · Ne JAMAIS présenter un déploiement comme un résultat. « 3 outils actifs » n'intéresse personne.
   Ce qui intéresse : la note, le volume d'avis, le délai de réponse, la position concurrentielle.
 
-════ LE FORMULAIRE À REMPLIR ════
+════ CE QU'ON TE DEMANDE ════
 Tu ne composes pas la mise en page : tu remplis un formulaire, et le serveur construit le
 document. **Tous les champs sont obligatoires.** Quand un champ ne s'applique pas, mets une
 chaîne vide "" ou un tableau vide [] — jamais du remplissage.
-
-· titre_document — "Analyse Sofy — <nom du prospect>"
-· couverture.titre — le nom du prospect. couverture.texte — qui l'a préparée et à partir de quoi.
-· constat.titre — l'accroche du constat (≤65 car.). constat.texte — ≤180 car.
-  constat.chiffres — 2 à 4 chiffres MESURÉS chez lui. "valeur" est une chaîne courte ("1,7"),
-  "unite" est courte ("★", " %", " avis"), "legende" ≤60 car., "source" dit où on l'a relevé.
-· defauts.titre / defauts.texte / defauts.liste — 2 à 4 défauts RELEVÉS sur sa fiche. Reprends les
-  éléments de "defauts_fiche" ci-dessus, un par entrée de liste, ≤190 car. chacun. Si
-  "defauts_fiche" est absent des mesures, mets liste: [].
-· duels — **2 à 4 entrées, c'est le cœur du document.** Chaque entrée :
-  · titre — le problème formulé côté conséquence business (≤65 car.)
-  · probleme.constat — le fait mesuré (≤120 car.) · probleme.cout — ce que ça lui coûte (≤130 car.)
-  · solution.nom — la brique Sofy + ce qu'elle fait (ex : "Soview — collecte d'avis à chaud")
-  · solution.comment — **exactement 3 étapes** du mécanisme, ≤90 car. chacune, tirées des blocs
-    FONCTIONNALITÉS ci-dessus. C'est la partie qui vend : sois concret et technique.
-  · solution.resultat — le résultat visé (≤120 car.), formulé comme un objectif
-  · chiffre_cle — un chiffre SOURCÉ de la base qui étaye la solution (résultat d'un cas client ou
-    statistique de marché). Si tu n'en as pas de pertinent, mets valeur: "".
-  · maquette_rcs — UNIQUEMENT sur le duel qui parle de SMS/RCS, sinon tous les champs vides.
-    C'est un exemple de message écrit pour SON métier, avec son bouton (pour un site de ventes
-    événementielles : annonce d'une vente en avant-première, bouton "Avant-première").
-· trajectoire.titre / .texte (dis que c'est un objectif de travail, pas un engagement)
-  · trajectoire.courbe.indicateur — ce qu'on suit (ex : "Note Google moyenne")
-  · trajectoire.courbe.unite — "★", " %", " avis"… · .max — le maximum de l'échelle (NOMBRE)
-  · trajectoire.courbe.points — 3 ou 4 points. "valeur" est un NOMBRE (1.7, pas "1,7"). Le premier
-    point est SA valeur mesurée aujourd'hui. "quand" : "aujourd'hui", "3 mois", "6 mois", "12 mois".
-  · trajectoire.courbe.appui — le cas client ou le chiffre sourcé qui rend cette pente défendable.
-  · trajectoire.jalons — 3 étapes de déploiement (le bloc des 90 premiers jours).
-  Si tu n'as AUCUNE valeur de départ mesurée, mets points: [] — le serveur retirera la planche.
-· preuve.titre / .texte (pourquoi ce cas éclaire le sien, secteur différent assumé)
-  · preuve.chiffres — 2 à 3 résultats du cas client, avec leur source
-  · preuve.citation.texte — le verbatim du client · preuve.citation.meta — qui et où
-· cta.titre / cta.texte — ce qu'on fait ensemble au premier rendez-vous · cta.bouton — libellé`;
+`;
 }
 
-// Le schéma est ce qui garantit la forme. Les trois documents précédents sont sortis avec des
-// planches réduites à un titre : le modèle abandonnait les structures imbriquées en cours de
-// route. Ici il ne peut plus — l'API refuse une sortie qui ne colle pas au schéma.
-const S_TXT = { type: 'string' };
-const S_CHIFFRES = {
-  type: 'array', items: {
-    type: 'object',
-    properties: { valeur: S_TXT, unite: S_TXT, legende: S_TXT, source: S_TXT },
-    required: ['valeur', 'unite', 'legende', 'source'], additionalProperties: false
-  }
-};
-const SCHEMA = {
+// ── Deux formulaires courts plutôt qu'un gros ────────────────────────────────────────────────
+// Un seul schéma couvrant tout le document faisait tomber l'API en 400 : « the compiled grammar
+// is too large ». Les deux moitiés sont indépendantes (elles partent des mêmes données), donc
+// elles se remplissent en parallèle : deux grammaires modestes, et pas une seconde de plus.
+const T = { type: 'string' };
+const N = { type: 'number' };
+
+// Moitié 1 — le cœur : un problème mesuré, la brique Sofy en face, le résultat visé.
+const SCHEMA_DUELS = {
   type: 'object',
   properties: {
-    titre_document: S_TXT,
-    couverture: {
-      type: 'object', properties: { titre: S_TXT, texte: S_TXT },
-      required: ['titre', 'texte'], additionalProperties: false
-    },
-    constat: {
-      type: 'object', properties: { titre: S_TXT, texte: S_TXT, chiffres: S_CHIFFRES },
-      required: ['titre', 'texte', 'chiffres'], additionalProperties: false
-    },
-    defauts: {
-      type: 'object',
-      properties: { titre: S_TXT, texte: S_TXT, liste: { type: 'array', items: S_TXT } },
-      required: ['titre', 'texte', 'liste'], additionalProperties: false
-    },
     duels: {
-      type: 'array', items: {
+      type: 'array',
+      items: {
         type: 'object',
         properties: {
-          titre: S_TXT,
-          probleme: {
-            type: 'object', properties: { constat: S_TXT, cout: S_TXT },
-            required: ['constat', 'cout'], additionalProperties: false
-          },
-          solution: {
-            type: 'object',
-            properties: { nom: S_TXT, comment: { type: 'array', items: S_TXT }, resultat: S_TXT },
-            required: ['nom', 'comment', 'resultat'], additionalProperties: false
-          },
-          chiffre_cle: {
-            type: 'object', properties: { valeur: S_TXT, unite: S_TXT, legende: S_TXT, source: S_TXT },
-            required: ['valeur', 'unite', 'legende', 'source'], additionalProperties: false
-          },
-          maquette_rcs: {
-            type: 'object', properties: { expediteur: S_TXT, titre: S_TXT, texte: S_TXT, bouton: S_TXT },
-            required: ['expediteur', 'titre', 'texte', 'bouton'], additionalProperties: false
-          }
+          titre: T, probleme: T, cout: T,
+          solution: T, etapes: { type: 'array', items: T }, resultat: T,
+          chiffre: T, chiffre_unite: T, chiffre_legende: T, chiffre_source: T,
+          rcs_titre: T, rcs_texte: T, rcs_bouton: T
         },
-        required: ['titre', 'probleme', 'solution', 'chiffre_cle', 'maquette_rcs'],
-        additionalProperties: false
+        required: ['titre', 'probleme', 'cout', 'solution', 'etapes', 'resultat',
+          'chiffre', 'chiffre_unite', 'chiffre_legende', 'chiffre_source',
+          'rcs_titre', 'rcs_texte', 'rcs_bouton']
       }
-    },
-    trajectoire: {
-      type: 'object',
-      properties: {
-        titre: S_TXT, texte: S_TXT,
-        courbe: {
-          type: 'object',
-          properties: {
-            indicateur: S_TXT, unite: S_TXT, max: { type: 'number' },
-            points: {
-              type: 'array', items: {
-                type: 'object', properties: { quand: S_TXT, valeur: { type: 'number' } },
-                required: ['quand', 'valeur'], additionalProperties: false
-              }
-            },
-            appui: S_TXT
-          },
-          required: ['indicateur', 'unite', 'max', 'points', 'appui'], additionalProperties: false
-        },
-        jalons: {
-          type: 'array', items: {
-            type: 'object', properties: { quand: S_TXT, texte: S_TXT },
-            required: ['quand', 'texte'], additionalProperties: false
-          }
-        }
-      },
-      required: ['titre', 'texte', 'courbe', 'jalons'], additionalProperties: false
-    },
-    preuve: {
-      type: 'object',
-      properties: {
-        titre: S_TXT, texte: S_TXT, chiffres: S_CHIFFRES,
-        citation: {
-          type: 'object', properties: { texte: S_TXT, meta: S_TXT },
-          required: ['texte', 'meta'], additionalProperties: false
-        }
-      },
-      required: ['titre', 'texte', 'chiffres', 'citation'], additionalProperties: false
-    },
-    cta: {
-      type: 'object', properties: { titre: S_TXT, texte: S_TXT, bouton: S_TXT },
-      required: ['titre', 'texte', 'bouton'], additionalProperties: false
     }
   },
-  required: ['titre_document', 'couverture', 'constat', 'defauts', 'duels', 'trajectoire', 'preuve', 'cta'],
-  additionalProperties: false
+  required: ['duels']
 };
+
+// Moitié 2 — le décor : constat, défauts, trajectoire, preuve, conclusion.
+const SCHEMA_CADRE = {
+  type: 'object',
+  properties: {
+    titre_document: T, couv_titre: T, couv_texte: T,
+    constat_titre: T, constat_texte: T,
+    chiffres: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { valeur: T, unite: T, legende: T, source: T },
+        required: ['valeur', 'unite', 'legende', 'source']
+      }
+    },
+    defauts_titre: T, defauts_texte: T, defauts: { type: 'array', items: T },
+    traj_titre: T, traj_texte: T, courbe_indicateur: T, courbe_unite: T, courbe_max: N,
+    points: {
+      type: 'array',
+      items: { type: 'object', properties: { quand: T, valeur: N }, required: ['quand', 'valeur'] }
+    },
+    courbe_appui: T,
+    jalons: {
+      type: 'array',
+      items: { type: 'object', properties: { quand: T, texte: T }, required: ['quand', 'texte'] }
+    },
+    preuve_titre: T, preuve_texte: T,
+    preuve_chiffres: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { valeur: T, unite: T, legende: T, source: T },
+        required: ['valeur', 'unite', 'legende', 'source']
+      }
+    },
+    citation: T, citation_meta: T,
+    cta_titre: T, cta_texte: T, cta_bouton: T
+  },
+  required: ['titre_document', 'couv_titre', 'couv_texte', 'constat_titre', 'constat_texte',
+    'chiffres', 'defauts_titre', 'defauts_texte', 'defauts', 'traj_titre', 'traj_texte',
+    'courbe_indicateur', 'courbe_unite', 'courbe_max', 'points', 'courbe_appui', 'jalons',
+    'preuve_titre', 'preuve_texte', 'preuve_chiffres', 'citation', 'citation_meta',
+    'cta_titre', 'cta_texte', 'cta_bouton']
+};
+
+const CONSIGNE_DUELS = `
+Remplis "duels" avec **2 à 4 entrées**. C'est le cœur du document : un problème mesuré chez lui,
+en face la brique Sofy qui y répond, et le résultat qu'il peut en attendre.
+
+Pour chaque duel :
+· titre — le problème formulé côté conséquence business, ≤65 caractères
+· probleme — le fait mesuré chez lui, ≤120 car. · cout — ce que ça lui coûte concrètement, ≤130 car.
+· solution — la brique Sofy ET ce qu'elle fait (ex : "Soview — collecte d'avis à chaud par SMS")
+· etapes — **exactement 3 étapes** du mécanisme, ≤90 car. chacune, tirées des blocs
+  FONCTIONNALITÉS ci-dessus. C'est la partie qui vend : sois concret et technique. Interdit de
+  reformuler le nom du module ; on veut le mécanisme.
+· resultat — le résultat visé, ≤120 car., formulé comme un objectif et non comme une promesse
+· chiffre / chiffre_unite / chiffre_legende / chiffre_source — un chiffre SOURCÉ de la base qui
+  étaye cette solution (résultat d'un cas client, statistique de marché). Si tu n'en as pas de
+  pertinent pour CE duel, mets les quatre champs à "".
+· rcs_titre / rcs_texte / rcs_bouton — UNIQUEMENT sur le duel qui parle de SMS ou de RCS, sinon
+  les trois à "". C'est un exemple de message écrit pour SON métier, avec son bouton : pour un
+  site de ventes événementielles, l'annonce d'une vente en avant-première, bouton "Avant-première".
+  rcs_titre ≤42 car., rcs_texte ≤150 car., rcs_bouton ≤22 car.`;
+
+const CONSIGNE_CADRE = `
+Remplis le cadre du document — tout sauf les duels, qui sont rédigés à part.
+
+· titre_document — "Analyse Sofy — <nom du prospect>"
+· couv_titre — le nom du prospect · couv_texte — qui l'a préparée et à partir de quoi
+· constat_titre ≤65 car. · constat_texte ≤180 car.
+· chiffres — 2 à 4 chiffres MESURÉS chez lui. "valeur" est une chaîne courte ("1,7"), "unite" est
+  courte ("★", " %", " avis"), "legende" ≤60 car., "source" dit où on l'a relevé.
+· defauts_titre / defauts_texte / defauts — 2 à 4 défauts RELEVÉS sur sa fiche. Reprends les
+  éléments de "defauts_fiche" des mesures, un par entrée, ≤190 car. chacun. Si "defauts_fiche"
+  est absent des mesures, mets defauts: [].
+· traj_titre / traj_texte — la trajectoire visée. Dis dans traj_texte que c'est un objectif de
+  travail et non un engagement contractuel.
+· courbe_indicateur — ce qu'on suit (ex : "Note Google moyenne") · courbe_unite ("★", " %")
+· courbe_max — le maximum de l'échelle, un NOMBRE (5 pour une note sur 5)
+· points — 3 ou 4 points. "valeur" est un NOMBRE (1.7, jamais "1,7"). Le premier point est SA
+  valeur mesurée aujourd'hui ("quand": "aujourd'hui"), puis "3 mois", "6 mois", "12 mois".
+  Si tu n'as AUCUNE valeur de départ mesurée, mets points: [].
+· courbe_appui — le cas client ou le chiffre sourcé qui rend cette pente défendable
+· jalons — 3 étapes de déploiement, tirées du bloc des 90 premiers jours
+· preuve_titre / preuve_texte — pourquoi ce cas client éclaire le sien, secteur différent assumé
+· preuve_chiffres — 2 à 3 résultats de ce client, chacun avec sa source
+· citation — le verbatim du client · citation_meta — qui l'a dit et où c'est publié
+· cta_titre / cta_texte — ce qu'on fait ensemble au premier rendez-vous · cta_bouton — le libellé`;
 
 // Le formulaire rempli devient un document. C'est le SERVEUR qui décide de la mise en page et
 // qui écarte ce qui est vide — une planche sans contenu ne peut plus atteindre le prospect,
 // quoi que le modèle ait renvoyé.
 const plein = v => typeof v === 'string' ? v.trim().length > 0 : !!v;
+const chiffresValides = a => (a || []).filter(x => x && plein(x.valeur));
 
-function assembler(f, mes) {
+function assembler(cadre, duelsBruts, mes) {
+  const c = cadre || {};
   const pl = [];
-  const nb = (f.duels || []).filter(d => d && plein(d.titre) && d.probleme && d.solution
-    && plein(d.probleme.constat) && plein(d.solution.nom)).length;
 
   pl.push({
     role: 'couverture', eyebrow: 'ANALYSE PRÉPARÉE POUR VOUS',
-    titre: (f.couverture && f.couverture.titre) || mes.nom || '',
-    texte: (f.couverture && f.couverture.texte) || ''
+    titre: plein(c.couv_titre) ? c.couv_titre : (mes.nom || ''),
+    texte: c.couv_texte || ''
   });
 
-  const c = f.constat || {};
-  if (plein(c.titre) || (c.chiffres || []).length) {
+  const ch = chiffresValides(c.chiffres);
+  if (ch.length || plein(c.constat_titre)) {
     pl.push({
-      role: 'constat', eyebrow: 'CE QUE NOUS AVONS MESURÉ', titre: c.titre, texte: c.texte,
-      chiffres: (c.chiffres || []).filter(x => plein(x.valeur)),
+      role: 'constat', eyebrow: 'CE QUE NOUS AVONS MESURÉ',
+      titre: c.constat_titre, texte: c.constat_texte, chiffres: ch,
       fiche_google: true, avis_reel: true
     });
   }
 
-  const d = f.defauts || {};
-  const liste = (d.liste || []).filter(plein);
-  if (liste.length) {
-    pl.push({ role: 'defauts', eyebrow: "CE QUE VOIT UN CLIENT AVANT D'ACHETER", titre: d.titre, texte: d.texte, defauts: liste });
+  const df = (c.defauts || []).filter(plein);
+  if (df.length) {
+    pl.push({
+      role: 'defauts', eyebrow: "CE QUE VOIT UN CLIENT AVANT D'ACHETER",
+      titre: c.defauts_titre, texte: c.defauts_texte, defauts: df
+    });
   }
 
-  (f.duels || []).forEach((x, k) => {
-    if (!x || !x.probleme || !x.solution || !plein(x.probleme.constat) || !plein(x.solution.nom)) return;
-    const rcs = x.maquette_rcs || {};
+  const duels = (duelsBruts || []).filter(d => d && plein(d.probleme) && plein(d.solution));
+  duels.forEach((d, k) => {
     pl.push({
-      role: 'duel', eyebrow: `PROBLÈME ${k + 1} SUR ${nb}`, titre: x.titre,
-      probleme: { constat: x.probleme.constat, cout: plein(x.probleme.cout) ? x.probleme.cout : null },
+      role: 'duel', eyebrow: `PROBLÈME ${k + 1} SUR ${duels.length}`,
+      titre: plein(d.titre) ? d.titre : d.probleme,
+      probleme: { constat: d.probleme, cout: plein(d.cout) ? d.cout : null },
       solution: {
-        nom: x.solution.nom,
-        comment: (x.solution.comment || []).filter(plein),
-        resultat: plein(x.solution.resultat) ? x.solution.resultat : null
+        nom: d.solution,
+        comment: (d.etapes || []).filter(plein),
+        resultat: plein(d.resultat) ? d.resultat : null
       },
-      chiffre_cle: plein((x.chiffre_cle || {}).valeur) ? x.chiffre_cle : null,
-      maquette_rcs: (plein(rcs.titre) || plein(rcs.texte)) ? rcs : null
+      chiffre_cle: plein(d.chiffre)
+        ? { valeur: d.chiffre, unite: d.chiffre_unite, legende: d.chiffre_legende, source: d.chiffre_source }
+        : null,
+      maquette_rcs: (plein(d.rcs_titre) || plein(d.rcs_texte))
+        ? { expediteur: mes.nom || '', titre: d.rcs_titre, texte: d.rcs_texte, bouton: d.rcs_bouton }
+        : null
     });
   });
 
-  const t = f.trajectoire || {};
-  const cb = t.courbe || {};
-  const pts = (cb.points || []).filter(x => x && typeof x.valeur === 'number' && isFinite(x.valeur));
-  const jal = (t.jalons || []).filter(x => x && plein(x.quand) && plein(x.texte));
+  const pts = (c.points || []).filter(x => x && typeof x.valeur === 'number' && isFinite(x.valeur));
+  const jal = (c.jalons || []).filter(x => x && plein(x.quand) && plein(x.texte));
   if (pts.length > 1 || jal.length) {
     pl.push({
-      role: 'trajectoire', eyebrow: 'LA TRAJECTOIRE VISÉE', titre: t.titre, texte: t.texte,
-      courbe: pts.length > 1 ? { ...cb, points: pts } : null,
+      role: 'trajectoire', eyebrow: 'LA TRAJECTOIRE VISÉE',
+      titre: c.traj_titre, texte: c.traj_texte,
+      courbe: pts.length > 1 ? {
+        indicateur: c.courbe_indicateur, unite: c.courbe_unite,
+        max: c.courbe_max, points: pts, appui: c.courbe_appui
+      } : null,
       jalons: jal
     });
   }
 
-  const pv = f.preuve || {};
-  const pvc = (pv.chiffres || []).filter(x => plein(x.valeur));
-  if (pvc.length || plein((pv.citation || {}).texte)) {
+  const pvc = chiffresValides(c.preuve_chiffres);
+  if (pvc.length || plein(c.citation)) {
     pl.push({
-      role: 'preuve', eyebrow: "ILS L'ONT DÉJÀ FAIT", titre: pv.titre, texte: pv.texte,
-      chiffres: pvc, citation: plein((pv.citation || {}).texte) ? pv.citation : null
+      role: 'preuve', eyebrow: "ILS L'ONT DÉJÀ FAIT",
+      titre: c.preuve_titre, texte: c.preuve_texte, chiffres: pvc,
+      citation: plein(c.citation) ? { texte: c.citation, meta: c.citation_meta } : null
     });
   }
 
-  const ct = f.cta || {};
-  pl.push({ role: 'cta', eyebrow: 'LA SUITE', titre: ct.titre, texte: ct.texte, cta: ct.bouton || 'Réserver 30 minutes' });
+  pl.push({
+    role: 'cta', eyebrow: 'LA SUITE', titre: c.cta_titre, texte: c.cta_texte,
+    cta: plein(c.cta_bouton) ? c.cta_bouton : 'Réserver 30 minutes'
+  });
 
-  return { titre_document: f.titre_document || `Analyse Sofy — ${mes.nom || ''}`, planches: pl };
+  return {
+    titre_document: plein(c.titre_document) ? c.titre_document : `Analyse Sofy — ${mes.nom || ''}`,
+    planches: pl
+  };
 }
 
-async function composer(ctx) {
-  const apiKey = process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return { erreur: 'CLAUDE_API_KEY manquante' };
+// Un appel = un formulaire court. Le mode utilisé est remonté : si la sortie contrainte est
+// refusée par l'API, on veut le savoir plutôt que de découvrir un document dégradé.
+async function remplir(apiKey, base, consigne, schema) {
   const corps = {
-    model: MODELE(), max_tokens: 16000,
-    output_config: { effort: 'high', format: { type: 'json_schema', schema: SCHEMA } },
-    messages: [{ role: 'user', content: prompt(ctx) }]
+    model: MODELE(), max_tokens: 9000,
+    output_config: { effort: 'high', format: { type: 'json_schema', schema } },
+    messages: [{ role: 'user', content: base + consigne }]
   };
-  const appeler = async (c) => {
+  const envoyer = async (c) => {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
@@ -435,24 +433,44 @@ async function composer(ctx) {
     });
     return { r, d: await r.json().catch(() => ({})) };
   };
-  let { r, d } = await appeler(corps);
-  // Repli si le compte ou le modèle n'expose pas encore la sortie contrainte : on repasse en
-  // texte libre, avec le même prompt (il décrit déjà la forme attendue mot pour mot).
-  if (!r.ok && /output_config|json_schema|format/i.test(JSON.stringify(d.error || ''))) {
+  let mode = 'schema';
+  let { r, d } = await envoyer(corps);
+  if (!r.ok && /grammar|output_config|json_schema|format/i.test(JSON.stringify(d.error || ''))) {
+    mode = 'libre';
     const libre = { ...corps, output_config: { effort: 'high' } };
-    ({ r, d } = await appeler(libre));
+    ({ r, d } = await envoyer({
+      ...libre,
+      messages: [{ role: 'user', content: base + consigne + '\n\nRéponds UNIQUEMENT par un objet JSON conforme aux champs décrits, sans texte autour et sans backticks.' }]
+    }));
   }
   if (!r.ok) return { erreur: 'API Claude ' + r.status, detail: (d.error && d.error.message) || JSON.stringify(d).slice(0, 200) };
-
+  if (d.stop_reason === 'max_tokens') return { erreur: 'Rédaction interrompue (trop longue) — relance' };
   const txt = (d.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').replace(/```(?:json)?/g, '').trim();
   const a = txt.indexOf('{'), b2 = txt.lastIndexOf('}');
-  if (a < 0 || b2 <= a) return { erreur: 'Réponse IA non exploitable', detail: txt.slice(0, 200) };
-  let f;
-  try { f = JSON.parse(txt.slice(a, b2 + 1)); }
-  catch (e) { return { erreur: 'JSON invalide dans la réponse IA', detail: txt.slice(0, 200) }; }
-  // Sortie tronquée : le document serait amputé sans qu'on le sache. Mieux vaut le dire.
-  if (d.stop_reason === 'max_tokens') return { erreur: 'Rédaction interrompue (trop longue) — relance', detail: 'stop_reason max_tokens' };
-  return { ok: true, formulaire: f, usage: d.usage || null };
+  if (a < 0 || b2 <= a) return { erreur: 'Réponse IA non exploitable', detail: txt.slice(0, 160) };
+  try { return { ok: true, mode, data: JSON.parse(txt.slice(a, b2 + 1)), usage: d.usage || null }; }
+  catch (_) { return { erreur: 'JSON invalide dans la réponse IA', detail: txt.slice(0, 160) }; }
+}
+
+async function composer(ctx) {
+  const apiKey = process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return { erreur: 'CLAUDE_API_KEY manquante' };
+  const base = prompt(ctx);
+  // En parallèle : les deux moitiés partent des mêmes données, elles ne s'attendent pas.
+  const [cadre, duels] = await Promise.all([
+    remplir(apiKey, base, CONSIGNE_CADRE, SCHEMA_CADRE),
+    remplir(apiKey, base, CONSIGNE_DUELS, SCHEMA_DUELS)
+  ]);
+  // Le cadre porte la couverture et la conclusion : sans lui, il n'y a pas de document.
+  if (cadre.erreur) return cadre;
+  const cout = [cadre, duels].filter(x => x && x.usage)
+    .reduce((s, x) => s + ((x.usage.input_tokens || 0) * 5 + (x.usage.output_tokens || 0) * 25) / 1e6, 0);
+  return {
+    ok: true, cadre: cadre.data, duels: (duels.ok && duels.data.duels) || [],
+    mode: [cadre.mode, duels.ok ? duels.mode : 'échec'].join('+'),
+    duels_erreur: duels.erreur || null,
+    cout_eur: Math.round(cout * 100) / 100
+  };
 }
 
 export default async function handler(req, res) {
@@ -466,7 +484,7 @@ export default async function handler(req, res) {
     if (q.mes === '1') {
       // L'historique porte le signal : « ouverte 3 fois » vaut mieux qu'un email ouvert
       const rows = await sql`SELECT jeton, client, module, sdr, ouvertures, profondeur, destinataire,
-          premiere_ouverture, derniere_ouverture, created_at, expire_le,
+          liste_id, cle_fiche, premiere_ouverture, derniere_ouverture, created_at, expire_le,
           jsonb_array_length(COALESCE(lecteurs,'[]'::jsonb)) AS lecteurs_distincts FROM prez
         WHERE (${['admin', 'superadmin'].includes(user.role)} OR sdr = ${user.nom})
         ORDER BY created_at DESC LIMIT 50`;
@@ -506,7 +524,21 @@ export default async function handler(req, res) {
     return res.status(400).json({ erreur: 'jeton, liste_id ou mes=1 requis' });
   }
 
-  if (req.method !== 'POST') return res.status(405).json({ erreur: 'GET ou POST' });
+  // Suppression manuelle : un document parti chez le mauvais interlocuteur, ou une version
+  // qu'on ne veut plus voir ouverte. Le lien doit mourir immédiatement, pas dans 15 jours.
+  if (req.method === 'DELETE') {
+    const j = String((req.query || {}).jeton || '');
+    if (!j) return res.status(400).json({ erreur: 'jeton requis' });
+    const [row] = await sql`SELECT sdr, client FROM prez WHERE jeton = ${j}`;
+    if (!row) return res.status(404).json({ erreur: 'Analyse introuvable' });
+    if (!['admin', 'superadmin'].includes(user.role) && row.sdr !== user.nom) {
+      return res.status(403).json({ erreur: 'Tu ne peux supprimer que tes propres analyses.' });
+    }
+    await sql`DELETE FROM prez WHERE jeton = ${j}`;
+    return res.status(200).json({ ok: true, info: `Analyse ${row.client || ''} supprimée — le lien ne s'ouvre plus.` });
+  }
+
+  if (req.method !== 'POST') return res.status(405).json({ erreur: 'GET, POST ou DELETE' });
   const b = req.body || {};
   const module = ['soview', 'soconnect', 'soreach', 'tous'].includes(b.module) ? b.module : 'tous';
 
@@ -576,7 +608,7 @@ export default async function handler(req, res) {
 
     // Le formulaire rempli devient le document ici, côté serveur : c'est ce qui garantit qu'une
     // planche affichée porte vraiment du contenu.
-    out.doc = assembler(out.formulaire, mes);
+    out.doc = assembler(out.cadre, out.duels, mes);
     const duels = out.doc.planches.filter(p => p.role === 'duel').length;
     if (logo) out.doc._logo = logo;
 
@@ -605,7 +637,8 @@ export default async function handler(req, res) {
       ok: true, jeton, url: BASE_PUB() + '/p/' + jeton, client: mes.nom, module, jours_validite: jours,
       amorcage: amorcage && amorcage.ajoutes ? amorcage.ajoutes : undefined,
       planches: (out.doc.planches || []).length,
-      duels: duels,
+      duels, mode_sortie: out.mode, cout_eur: out.cout_eur,
+      duels_erreur: out.duels_erreur || undefined,
       logo_prospect: !!logo,
       contexte_utilise: { radar: !!radar, blocs_kb: blocs.length, cas_clients: blocs.filter(x => x.type === 'cas_client').length },
       doc: out.doc

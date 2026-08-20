@@ -20,6 +20,17 @@ export const config = { maxDuration: 300 };
 const MODELE = () => process.env.MODELE_KB || 'claude-opus-5';
 // 4,5 Mo est la limite du corps de requête Vercel ; le base64 pèse ~1,37× le fichier.
 const MAX_B64 = 3_000_000;
+// Réseaux sociaux : l'outil web_fetch reçoit un « url_not_allowed » et l'appel coûte quand même.
+// Autant le dire tout de suite et proposer la voie qui marche, plutôt que facturer un refus.
+const MURS = [
+  { re: /(^|\.)linkedin\.com$/i, nom: 'LinkedIn' },
+  { re: /(^|\.)facebook\.com$/i, nom: 'Facebook' },
+  { re: /(^|\.)instagram\.com$/i, nom: 'Instagram' },
+  { re: /(^|\.)(x|twitter)\.com$/i, nom: 'X' },
+  { re: /(^|\.)tiktok\.com$/i, nom: 'TikTok' },
+  { re: /(^|\.)threads\.(net|com)$/i, nom: 'Threads' }
+];
+
 const TYPES_FICHIER = {
   'application/pdf': 'document',
   'image/png': 'image', 'image/jpeg': 'image', 'image/webp': 'image', 'image/gif': 'image'
@@ -76,6 +87,16 @@ export default async function handler(req, res) {
   if (b.url) {
     const u = String(b.url).trim();
     if (!/^https?:\/\//i.test(u)) return res.status(400).json({ erreur: 'URL invalide (elle doit commencer par http)' });
+    let hote = '';
+    try { hote = new URL(u).hostname; } catch (_) {}
+    const mur = MURS.find(m => m.re.test(hote));
+    if (mur) {
+      return res.status(422).json({
+        erreur: `${mur.nom} bloque la lecture automatique`,
+        detail: `Aucune requête n'a été lancée — ça t'évite de payer une lecture qui échoue. Ouvre le post, sélectionne son texte, et colle-le dans l'onglet « 📝 Texte collé » en indiquant l'auteur et la date comme source (ex. « Post LinkedIn de Sarah El Moubarak, 08/2026 »). Une capture d'écran passe aussi par « 📎 PDF ou image ».`,
+        alternative: 'texte'
+      });
+    }
     origine = `la page web ${u}`;
     // Claude va chercher la page lui-même : pas de limite de taille de notre côté, et la source
     // reste rafraîchissable — il suffit de relancer l'ingestion sur la même URL.
