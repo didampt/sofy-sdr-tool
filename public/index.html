@@ -1324,6 +1324,7 @@ Spot-Hit</textarea>
         </div>
         <div class="save-bar" style="justify-content:flex-start;margin-top:10px">
           <button class="btn" style="background:var(--paper)" id="btn-diag-enrich" onclick="diagEnrich()">📊 Rendement de l'enrichissement</button>
+          <button class="btn" style="background:var(--paper)" onclick="ouEstLaFiche()" title="Retrouver une entreprise dans toutes les listes, tous les statuts, tous les SDR">🔎 Où est passée cette fiche ?</button>
           <span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">Taux de réussite et coût par email trouvé de chaque étage du waterfall (Dropcontact → FullEnrich → Kaspr → Lemlist). Lecture seule, gratuit.</span>
         </div>
         <div class="save-bar" style="justify-content:flex-start;margin-top:10px">
@@ -2141,7 +2142,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v351';
+const VERSION='v352';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -7994,6 +7995,38 @@ async function migrerStats(){
 // 📊 Rendement du waterfall d'enrichissement (superadmin) : tentatives (table consommations)
 // croisées avec les succès réels (chaque email porte sa provenance) → taux et coût par donnée.
 // Évite de passer par la console : les endpoints exigent le Bearer, donc une URL seule renvoie 401.
+// « Où est passée cette fiche ? » — la question revient à chaque incident. Plutôt que de
+// fouiller la base à la main, on interroge toutes les listes, tous les statuts, tous les SDR.
+async function ouEstLaFiche(){
+ const q=prompt('Nom de l\'entreprise à retrouver (3 caractères minimum) :');
+ if(!q||q.trim().length<3)return;
+ toast('🔎 Recherche dans toutes les listes…');
+ try{
+  const r=await api('/api/listes?ou='+encodeURIComponent(q.trim()));
+  const d=await r.json();
+  if(d.erreur){toast(d.erreur);return;}
+  const li=(d.occurrences||[]).map(function(o){
+   return `<div style="padding:10px 0;border-top:1px solid var(--line)">
+    <b>${htmlSafe(o.fiche_nom||'')}</b>${o.ville?' · '+htmlSafe(o.ville):''}
+    ${o.statut_appel?`<span class="badge b-gmb">${htmlSafe(o.statut_appel)}</span>`:''}
+    ${o.rdv_le?`<span class="badge b-signal">RDV pris</span>`:''}
+    <div style="font-size:12.5px;color:var(--ink-soft);margin-top:3px">
+     Liste « ${htmlSafe(o.liste)} » · ${htmlSafe(o.sdr||'?')} · <b>${htmlSafe(o.statut)}</b>
+     ${o.traite_par?' · traitée par '+htmlSafe(o.traite_par):''}
+     <br>👉 ${htmlSafe(o.ou_chercher)}
+     <button class="act act-call" style="padding:2px 9px;font-size:11.5px;margin-left:6px" onclick="document.getElementById('info-modal').style.display='none';nav('results',null);ouvrirListe(${o.id},'${jsArg(o.fiche_nom||'')}')">Ouvrir la fiche</button>
+    </div></div>`;
+  }).join('');
+  document.getElementById('info-titre').textContent='🔎 Où est « '+q.trim()+' » ?';
+  document.getElementById('info-corps').innerHTML=
+   `<div style="background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:12px 14px;font-size:13.5px;line-height:1.6;margin-bottom:10px">${htmlSafe(d.diagnostic||'')}</div>`
+   +(li||'<p style="color:var(--ink-soft)">Aucune fiche portant ce nom dans les listes actuelles.</p>')
+   +((d.traces||[]).length?`<h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-soft);margin:16px 0 6px">Traces d'activité</h3>`
+     +d.traces.map(t=>`<div style="font-size:12.5px;color:var(--ink-soft)">· ${htmlSafe(String(t.ts).slice(0,10))} — ${htmlSafe(t.titre||t.type)} ${t.auteur?'('+htmlSafe(t.auteur)+')':''}</div>`).join(''):'');
+  document.getElementById('info-modal').style.display='flex';
+ }catch(e){toast('Recherche : '+e.message);}
+}
+
 async function diagEnrich(){
  const btn=document.getElementById('btn-diag-enrich');
  const libelle='📊 Rendement de l\'enrichissement';

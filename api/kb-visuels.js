@@ -70,6 +70,20 @@ export async function visuelsUtilisables({ module, secteur } = {}) {
   }).sort((a, b) => b.score - a.score);
 }
 
+// La trame institutionnelle de la dernière planche : une photo d'équipe et les logos clients.
+// Identique pour toutes les analyses — d'où l'intérêt de la lire ici plutôt que de la faire
+// rédiger : aucun jeton dépensé, une seule version en circulation, et un logo se change en
+// remplaçant un visuel dans la bibliothèque.
+export async function visuelsInstit() {
+  await ensureVisuels();
+  const [eq] = await sql`SELECT image FROM kb_visuels
+    WHERE actif AND statut = 'valide' AND type = 'humain'
+    ORDER BY (description ILIKE '%équipe%' OR description ILIKE '%equipe%') DESC, id DESC LIMIT 1`;
+  const clients = await sql`SELECT image, description FROM kb_visuels
+    WHERE actif AND statut = 'valide' AND type = 'client' ORDER BY id LIMIT 8`;
+  return { equipe: (eq && eq.image) || null, clients };
+}
+
 // Les images pleines des visuels réellement posés dans un document.
 export async function imagesDe(ids) {
   await ensureVisuels();

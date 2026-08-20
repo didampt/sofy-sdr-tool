@@ -217,6 +217,56 @@ export default async function handler(req, res) {
       // ville, contacts, emails, téléphones) — plus jamais entreprises::text : le JSON contient les
       // synthèses/emails IA, « instant » matchait « en un instant » dans une liste sans rapport.
       const avecRecherche = recherche !== '' || clientQ !== '';
+      // ── « Où est cette fiche ? » ─────────────────────────────────────────────────────────
+      // Question posée en clientèle : « Franck a pris un RDV avec Grokosto, elle n'apparaît
+      // plus ». Sans réponse outillée, on devine. Cette recherche balaie TOUTES les listes,
+      // TOUS les statuts, TOUS les SDR, et dit exactement où se trouve la fiche et dans quel
+      // état — ou confirme qu'elle n'existe nulle part.
+      if ((req.query || {}).ou) {
+        if (!['admin', 'superadmin'].includes(user.role)) {
+          return res.status(403).json({ erreur: 'Réservé aux admins' });
+        }
+        const terme = String(req.query.ou).trim().slice(0, 80);
+        if (terme.length < 3) return res.status(400).json({ erreur: 'Donne au moins 3 caractères' });
+        const t = '%' + terme + '%';
+        const trouvees = await sql`
+          SELECT l.id, l.nom AS liste, l.sdr, COALESCE(l.statut, CASE WHEN l.archivee THEN 'archivee' ELSE 'active' END) AS statut,
+                 l.created_at, l.total,
+                 fe->>'nom' AS fiche_nom, fe->>'enseigne' AS enseigne, fe->>'ville' AS ville,
+                 fe->>'statut_appel' AS statut_appel, fe->>'traite_par' AS traite_par,
+                 fe->>'traite_le' AS traite_le, fe->>'rdv_le' AS rdv_le,
+                 fe->'tags_sdr' AS tags
+          FROM listes l, jsonb_array_elements(l.entreprises) AS fe
+          WHERE fe->>'nom' ILIKE ${t} OR fe->>'enseigne' ILIKE ${t} OR fe->>'enseigne_ia' ILIKE ${t}
+          ORDER BY l.created_at DESC LIMIT 40`;
+        // Les rendez-vous journalisés portent le nom de l'entreprise : ils prouvent que la fiche
+        // a existé, même si elle a été retirée d'une liste depuis.
+        let traces = [];
+        try {
+          traces = await sql`SELECT fiche_cle, source, type, titre, auteur, ts FROM activites
+            WHERE fiche_cle ILIKE ${t} OR titre ILIKE ${t} OR detail ILIKE ${t}
+            ORDER BY ts DESC LIMIT 15`;
+        } catch (_) {}
+        return res.status(200).json({
+          ok: true, terme,
+          occurrences: trouvees.map(r => ({
+            ...r,
+            visible_par_defaut: r.statut === 'active',
+            ou_chercher: r.statut === 'active' ? 'Historique › En cours'
+              : (r.statut === 'nurturing' ? 'Historique › Nurturing' : 'Historique › Archivées')
+          })),
+          total: trouvees.length,
+          traces,
+          diagnostic: trouvees.length
+            ? (trouvees.some(r => r.statut === 'active')
+                ? 'La fiche est dans une liste EN COURS : elle doit être visible. Si elle ne l\'est pas, vérifie le filtre de recherche ouvert dans la liste.'
+                : 'La fiche existe, mais sa liste n\'est PAS en cours : elle est masquée par le filtre de statut de l\'Historique. Clique sur l\'onglet indiqué, ou réactive la liste.')
+            : (traces.length
+                ? 'Aucune fiche dans les listes actuelles, MAIS des traces d\'activité existent : la fiche a été retirée d\'une liste (bouton Exclure) après avoir été travaillée.'
+                : 'Rien trouvé — ni fiche ni trace. Vérifie l\'orthographe : la recherche porte sur le nom, l\'enseigne et l\'enseigne détectée par l\'IA.')
+        });
+      }
+
       const rows = avecRecherche
         ? await sql`SELECT id, nom, sdr, createur, archivee, statut, statut_depuis, stats, total, credits_estimes, criteres, created_at, veille, veille_fin, sequences_auto FROM listes
         WHERE (${toutVoir} OR sdr = ${moi} OR criteres->>'auto' = 'hotleads')

@@ -10,7 +10,7 @@
 // Publique par jeton non devinable (12 caractères aléatoires), noindex : jamais référencée.
 
 import { sql } from './db.js';
-import { imagesDe } from './kb-visuels.js';
+import { imagesDe, visuelsInstit } from './kb-visuels.js';
 import crypto from 'crypto';
 
 export const config = { maxDuration: 60 };
@@ -33,7 +33,18 @@ const etoiles = n => {
   return [1, 2, 3, 4, 5].map(k => `<span class="et${v >= k ? ' on' : (v > k - 1 ? ' mi' : '')}">★</span>`).join('');
 };
 
-function planche(p, i, total, mes, logo, sdr, images, photoSite) {
+// Bandeau institutionnel de la dernière planche. Ces éléments ne dépendent PAS du prospect :
+// les faire rédiger à chaque analyse coûterait des jetons pour un résultat identique, et
+// exposerait une mention réglementée (ARCEP) à une reformulation approximative. Ils sont donc
+// écrits ici une fois pour toutes ; seul le texte du rendez-vous reste personnalisé.
+// Pour modifier une mention : cette constante est le seul endroit à toucher.
+const SOFY_REPERES = [
+  { c: '2012', t: 'année de création' },
+  { c: '5 000+', t: 'entreprises accompagnées' },
+  { c: 'ARCEP', t: 'agrégateur agréé' }
+];
+
+function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
   const sombre = i % 2 === 1;
   const chiffres = (p.chiffres || []).map(c => `
     <div class="kpi">
@@ -335,16 +346,28 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite) {
           ${sdr.ringover_numero ? `<a class="ae-c" href="tel:${esc(String(sdr.ringover_numero).replace(/\s/g, ''))}">${esc(sdr.ringover_numero)}</a>` : ''}
         </div>
       </div>` : ''}
-      ${p.role === 'cta' ? `<div class="cta-zone">
-        <a class="btn-demo" href="${esc(LIEN_DEMO())}" target="_blank" rel="noopener">📅 ${esc(p.cta || 'Réserver 15 minutes')}</a>
-        <div class="sdr-card" id="sdr-card"></div>
+      ${p.role === 'cta' ? `<div class="fin">
+        <div class="fin-g">
+          <div class="cta-zone">
+            <a class="btn-demo" href="${esc(LIEN_DEMO())}" target="_blank" rel="noopener">📅 ${esc(p.cta || 'Réserver 15 minutes')}</a>
+            <div class="sdr-card" id="sdr-card"></div>
+          </div>
+        </div>
+        <div class="fin-d">
+          ${(instit && instit.equipe) ? `<figure class="eq"><img src="${esc(instit.equipe)}" alt="L'équipe Sofy" loading="lazy"><img class="eq-l" src="/logo-icon.png" alt=""></figure>` : ''}
+          ${(instit && (instit.clients || []).length) ? `<div class="cli">${instit.clients.slice(0, 8).map(c => `<span class="cli-i"><img src="${esc(c.image)}" alt="${esc(c.description || '')}" loading="lazy"></span>`).join('')}</div>` : ''}
+        </div>
+      </div>
+      <div class="rep">
+        ${SOFY_REPERES.map(r => `<div class="rep-i"><b>${esc(r.c)}</b><span>${esc(r.t)}</span></div>`).join('')}
+        <div class="rep-x">Sofy accompagne les réseaux à points de vente depuis 2012 : visibilité locale, messagerie clients et campagnes mobiles, avec un interlocuteur dédié.</div>
       </div>` : ''}
       <footer class="pl-f"><span>sofy.fr</span><span>${esc(p.eyebrow || '')}</span></footer>
     </div>
   </section>`;
 }
 
-function page(doc, meta, sdr, apercu, images) {
+function page(doc, meta, sdr, apercu, images, instit) {
   const pl = Array.isArray(doc.planches) ? doc.planches : [];
   const contact = sdr ? [
     sdr.nom ? `<div class="sdr-n">${esc(sdr.nom)}</div>` : '',
@@ -408,14 +431,40 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .pl.dark .cit{background:rgba(255,255,255,.055);border:1px solid var(--line-d);border-left:4px solid var(--r)}
 .cit cite{display:block;margin-top:12px;font-style:normal;font-size:12.5px;letter-spacing:.04em}
 .pl.light .cit cite{color:#9990C4} .pl.dark .cit cite{color:rgba(255,255,255,.45)}
+.fin{display:grid;gap:28px;margin-top:32px;align-items:center;grid-template-columns:1fr}
+@media(min-width:920px){.fin{grid-template-columns:1.05fr .95fr}}
+.eq{margin:0;position:relative;border-radius:16px;overflow:hidden;box-shadow:0 18px 44px rgba(20,16,58,.16)}
+.eq img{width:100%;height:auto;max-height:260px;object-fit:cover;display:block}
+.eq-l{position:absolute!important;top:12px;right:12px;width:38px!important;height:38px!important;
+ max-height:38px!important;opacity:.92;filter:drop-shadow(0 2px 6px rgba(0,0,0,.3))}
+.cli{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px;align-items:center}
+.cli-i{flex:none;height:42px;padding:6px 10px;border-radius:9px;background:#fff;display:flex;
+ align-items:center;justify-content:center;border:1px solid var(--line)}
+.pl.dark .cli-i{border-color:rgba(255,255,255,.14)}
+.cli-i img{max-height:28px;max-width:88px;width:auto;object-fit:contain;display:block}
+.rep{display:flex;flex-wrap:wrap;gap:14px 30px;align-items:flex-start;margin-top:30px;padding-top:20px;
+ border-top:1px solid var(--line)}
+.pl.dark .rep{border-top-color:var(--line-d)}
+.rep-i{display:flex;flex-direction:column}
+.rep-i b{font-size:25px;font-weight:800;letter-spacing:-.03em;line-height:1;
+ background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.rep-i span{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;margin-top:4px}
+.pl.light .rep-i span{color:#9990C4} .pl.dark .rep-i span{color:rgba(255,255,255,.48)}
+.rep-x{flex:1;min-width:240px;font-size:12.5px;line-height:1.55;max-width:56ch}
+.pl.light .rep-x{color:var(--ink-s)} .pl.dark .rep-x{color:var(--ink-ds)}
+@media print{.eq{box-shadow:none}}
 .cta-zone{display:flex;gap:22px;flex-wrap:wrap;align-items:center;margin-top:38px}
 .btn-demo{display:inline-block;padding:17px 30px;border-radius:13px;background:var(--grad);color:#fff;
  text-decoration:none;font-weight:750;font-size:17px;box-shadow:0 12px 32px rgba(91,79,233,.38)}
 .sdr-card{font-size:14.5px;line-height:1.65}
 .sdr-n{font-weight:800;font-size:17px}
 .sdr-r{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--r);margin-bottom:6px}
-.sdr-card a{display:block;color:#fff;text-decoration:none;border-bottom:1px solid rgba(255,255,255,.3);width:fit-content}
-.sdr-x{margin-top:8px;color:var(--ink-ds);font-size:13px}
+.sdr-card a{display:block;text-decoration:none;width:fit-content;border-bottom:1px solid}
+.pl.light .sdr-card a{color:var(--v);border-bottom-color:rgba(91,79,233,.35)}
+.pl.dark .sdr-card a{color:#fff;border-bottom-color:rgba(255,255,255,.3)}
+.sdr-x{margin-top:8px;font-size:13px}
+.pl.light .sdr-x{color:var(--ink-s)} .pl.dark .sdr-x{color:var(--ink-ds)}
+.pl.light .sdr-n{color:var(--ink)} .pl.dark .sdr-n{color:var(--ink-d)}
 .pl-f{display:flex;justify-content:space-between;font-size:12px;margin-top:clamp(28px,5vw,60px);letter-spacing:.05em}
 .pl.light .pl-f{color:#B9B2E0} .pl.dark .pl-f{color:rgba(255,255,255,.34)}
 .tools{position:fixed;right:16px;bottom:16px;display:flex;gap:8px;z-index:9}
@@ -722,7 +771,7 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
  .reveal{opacity:1!important;transform:none!important}
 }
 </style></head><body>
-${pl.map((p, i) => planche(p, i, pl.length, doc._mes || {}, doc._logo || null, sdr, images, doc._photo || null)).join('')}
+${pl.map((p, i) => planche(p, i, pl.length, doc._mes || {}, doc._logo || null, sdr, images, doc._photo || null, instit)).join('')}
 ${apercu ? `<div class="apercu">👁 Aperçu interne — cette visite n'est pas comptée dans les ouvertures du prospect.</div>` : ''}
 <div class="tools"><button onclick="window.print()">⬇️ Télécharger en PDF</button></div>
 <script>
@@ -890,10 +939,15 @@ export default async function handler(req, res) {
       if (ids.length) images = await imagesDe(ids);
     } catch (_) {}
 
+    // La trame institutionnelle : photo d'équipe et logos clients pris dans la bibliothèque.
+    // Elle est identique pour toutes les analyses, donc lue ici et jamais rédigée par l'IA.
+    let instit = null;
+    try { instit = await visuelsInstit(); } catch (_) {}
+
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
-    return res.status(200).send(page(doc, { jeton }, sdr, interne, images));
+    return res.status(200).send(page(doc, { jeton }, sdr, interne, images, instit));
   } catch (e) {
     return res.status(500).send('Analyse momentanément indisponible.');
   }

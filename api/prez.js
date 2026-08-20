@@ -504,7 +504,10 @@ Remplis le cadre du document — tout sauf les duels, qui sont rédigés à part
 · preuve_titre / preuve_texte — pourquoi ce cas client éclaire le sien, secteur différent assumé
 · preuve_chiffres — 2 à 3 résultats de ce client, chacun avec sa source
 · citation — le verbatim du client · citation_meta — qui l'a dit et où c'est publié
-· cta_titre / cta_texte — ce qu'on fait ensemble au premier rendez-vous · cta_bouton — le libellé`;
+· cta_titre / cta_texte — ce qu'on fait ensemble au premier rendez-vous · cta_bouton — le libellé
+  Ne parle PAS de l'ancienneté de Sofy, du nombre de clients, des références ni des agréments :
+  la page les affiche elle-même, à l'identique sur toutes les analyses. Concentre-toi sur ce qui
+  se passe concrètement au rendez-vous, avec SES données.`;
 
 // Le formulaire rempli devient un document. C'est le SERVEUR qui décide de la mise en page et
 // qui écarte ce qui est vide — une planche sans contenu ne peut plus atteindre le prospect,
