@@ -331,7 +331,37 @@ export default async function handler(req, res) {
 
     // ── Sauvegarde ──
     if (req.method === 'POST') {
-      const { nom, sdr, criteres, entreprises, credits_estimes } = req.body || {};
+      const { nom, sdr, criteres, entreprises, credits_estimes, verifier } = req.body || {};
+      if (verifier) {
+        const n = String(nom || '').trim();
+        const s2 = String(sdr || user.nom);
+        const out = { ok: true, nom_libre: true, quota_ok: true };
+        if (n) {
+          const dej = await sql`SELECT nom FROM listes WHERE LOWER(TRIM(nom)) = ${n.toLowerCase()} AND archivee = FALSE LIMIT 1`;
+          if (dej.length) {
+            out.nom_libre = false; out.ok = false;
+            // On propose un nom libre plutôt que de renvoyer le SDR à sa saisie.
+            for (let k = 2; k <= 9; k++) {
+              const essai = `${n} (${k})`;
+              const c = await sql`SELECT 1 FROM listes WHERE LOWER(TRIM(nom)) = ${essai.toLowerCase()} AND archivee = FALSE LIMIT 1`;
+              if (!c.length) { out.nom_propose = essai; break; }
+            }
+            out.erreur = 'Une liste active porte déjà ce nom.';
+          }
+        }
+        if (!['admin', 'superadmin'].includes(user.role)) {
+          const actives = await sql`SELECT nom, stats, total FROM listes
+            WHERE archivee = FALSE AND (statut IS NULL OR statut = 'active') AND sdr = ${s2}`;
+          const mortes = actives.filter(l => (l.total || 0) > 0 && l.stats && (l.stats.pct_complete || 0) < 50);
+          if (mortes.length >= 3) {
+            out.quota_ok = false; out.ok = false;
+            out.code = 'listes_non_enrichies';
+            out.listes_mortes = mortes.slice(0, 5).map(l => ({ nom: l.nom, pct: (l.stats.pct_complete || 0) }));
+            out.erreur = `Tu as déjà ${mortes.length} listes actives enrichies à moins de 50 %. Enrichis-les (🚀) ou archive-les avant d'en créer une nouvelle.`;
+          }
+        }
+        return res.status(200).json(out);
+      }
       if (!nom || !sdr || !criteres || !Array.isArray(entreprises)) {
         return res.status(400).json({ erreur: 'nom, sdr, criteres et entreprises requis' });
       }

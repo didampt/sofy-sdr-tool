@@ -807,6 +807,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
         <div>
           <h1 id="res-title">Aucune liste générée</h1>
           <p class="sub" style="margin:0" id="res-sub">Lance une nouvelle liste pour voir les fiches d'appel ici.</p>
+          <span id="etat-sauvegarde" style="font-size:12px;color:var(--ink-soft)" title="État de l'enregistrement en base"></span>
         </div>
         <div class="kpis" id="kpis" style="display:none">
           <div class="kpi"><b id="k-total">0</b><span>contacts</span></div>
@@ -2142,7 +2143,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v352';
+const VERSION='v354';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -3695,7 +3696,42 @@ async function demanderCredits(d){
  if(btn){btn.disabled=false;btn.textContent='💳 Demander des crédits';}
  document.getElementById('estim-modal').style.display='none';
 }
+// Vérifie que la liste POURRA être enregistrée, avant de dépenser des crédits Pappers.
+// Sans ce contrôle, un refus serveur (nom déjà pris, quota de listes peu enrichies) arrivait
+// APRÈS la génération : le SDR voyait ses fiches, travaillait, et tout partait dans le vide.
+async function peutCreerListe(){
+ try{
+  const r=await api('/api/listes',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({verifier:true,nom:state.listeNom||'',sdr:state.sdr||(state.user&&state.user.nom)||''})});
+  const d=await r.json();
+  if(d.ok)return true;
+  if(!d.nom_libre&&d.nom_propose){
+   const ok=await confirmSofy('Ce nom de liste est déjà pris',
+    '« '+(state.listeNom||'')+' » existe déjà parmi tes listes actives.\n\nJe peux l\'appeler « '+d.nom_propose+' » et continuer.',
+    'Utiliser « '+d.nom_propose+' »');
+   if(!ok)return false;
+   state.listeNom=d.nom_propose;
+   const champ=document.getElementById('f-nom-liste'); if(champ)champ.value=d.nom_propose;
+   return await peutCreerListe();
+  }
+  if(!d.quota_ok){
+   await confirmSofy('Impossible de créer une nouvelle liste',
+    (d.erreur||'')+'\n\n'+(d.listes_mortes||[]).map(function(l){return '· « '+l.nom+' » — '+l.pct+' % enrichie';}).join('\n')
+    +'\n\nAucun crédit n\'a été dépensé : la vérification a lieu AVANT la génération.',
+    'J\'ai compris');
+   return false;
+  }
+  toast(d.erreur||'Création impossible');
+  return false;
+ }catch(e){
+  // Si la vérification elle-même échoue, on ne bloque pas le SDR : on l'avertit.
+  toast('⚠️ Vérification impossible ('+e.message+') — si l\'enregistrement échoue, tu seras alerté');
+  return true;
+ }
+}
+
 async function launch(crit,skipCheck){
+ // #0 Garde-fou : la liste pourra-t-elle être ENREGISTRÉE ? On vérifie avant de payer Pappers.
  // #1 Garde-fou : nom de liste obligatoire (sauf liste auto Hot Leads qui passe crit explicite)
  if(!crit&&!(state.listeNom&&state.listeNom.trim())){
   toast('⚠️ Donne un nom à ta liste avant de la générer');
@@ -3747,6 +3783,12 @@ async function launch(crit,skipCheck){
  p.set('nb',Math.min(parseInt(c.size)||25,500)); // pagination Pappers gérée côté serveur (5 pages max)
  p.set('detail','25'); // fiches détaillées (dirigeants, CA, établissements) — plafonné pour maîtriser les crédits
 
+ // Dernier contrôle avant la dépense : la liste pourra-t-elle être enregistrée ?
+ if(!crit&&!await peutCreerListe()){
+  document.getElementById('loader').classList.remove('on');
+  const wf=document.getElementById('wiz-foot'); if(wf)wf.style.display='flex';
+  return;
+ }
  try{
   const r=await api('/api/liste?'+p.toString());
   const data=await r.json();
@@ -3760,14 +3802,20 @@ async function launch(crit,skipCheck){
   }
   REAL=data.entreprises||[];
   if(data.doublons_inter_listes>0)setTimeout(()=>toast(`♻️ ${data.doublons_inter_listes} entreprise(s) écartée(s) — déjà extraite(s) dans : ${(data.listes_doublons||[]).join(', ')}`),800);
-  // Sauvegarde automatique en base
-  state.savedId=null;
-  try{
-   const save=await api('/api/listes',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({nom:state.listeNom||'Liste sans nom',sdr:state.sdr||'?',criteres:c,entreprises:REAL,credits_estimes:data.credits_estimes||0})});
-   const sd=await save.json();
-   if(sd.ok)state.savedId=sd.id;
-  }catch(_){/* sauvegarde non bloquante */}
+  // Sauvegarde automatique en base. Un échec ICI signifie que tout le travail à venir (statuts,
+  // RDV, fiches ajoutées) partirait dans le vide : on le dit, et on réessaie.
+  state.savedId=null; state.criteres=c;
+  for(let essai=0;essai<2 && !state.savedId;essai++){
+   try{
+    const save=await api('/api/listes',{method:'POST',headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({nom:state.listeNom||'Liste sans nom',sdr:state.sdr||'?',criteres:c,entreprises:REAL,credits_estimes:data.credits_estimes||0})});
+    const sd=await save.json();
+    if(sd&&sd.ok&&sd.id)state.savedId=sd.id;
+    else if(essai)toast('⚠️ '+((sd&&sd.erreur)||'Enregistrement refusé')+' — préviens Didier avant de travailler cette liste');
+   }catch(e){ if(essai)toast('⚠️ Liste NON enregistrée ('+e.message+') — ton travail ne serait pas sauvegardé'); }
+   if(!state.savedId&&!essai)await new Promise(function(ok){setTimeout(ok,1200);});
+  }
+  if(!state.savedId){ PERSIST_ETAT='echec'; persistBandeau(); }
   showRealResults(data.total,c);
  }catch(err){
   document.getElementById('loader').classList.remove('on');
@@ -3856,7 +3904,7 @@ function showRealResults(total,c){
  chargerEngagement();
 }
 
-function setStatutAppel(i,statut){
+async function setStatutAppel(i,statut){
  const e=REAL[i];
  const moi=state.user?state.user.nom:'?';
  if(!statut){
@@ -3872,6 +3920,17 @@ function setStatutAppel(i,statut){
   if(statut==='RDV pris'&&!e.rdv_le)e.rdv_le=e.traite_le; // date de PRISE du RDV figée (jamais écrasée)
  }
  rerender(i);persister();majTraites();
+ // Un RDV posé sur une liste non enregistrée serait perdu à la fermeture de l'onglet : on
+ // s'assure de l'enregistrement AVANT de laisser le SDR continuer (incident Grokosto du 20/08).
+ if(statut==='RDV pris'||statut==='Intéressé – RDV à prendre'){
+  const id=await assurerListeEnregistree();
+  if(!id){
+   PERSIST_ETAT='echec'; persistBandeau();
+   await confirmSofy('⚠️ Ce RDV n\'est pas enregistré',
+    'La liste n\'a pas pu être sauvegardée en base : si tu fermes cet onglet, le RDV et le statut seront perdus.\n\nGarde l\'onglet ouvert, vérifie ta connexion, puis clique « Réessayer maintenant » dans le bandeau rouge en haut. Préviens Didier si ça persiste.',
+    'J\'ai compris');
+  }
+ }
  if(!statut)return;
  // Rappel demandé = promesse faite au client → modale OBLIGATOIRE (fermée sans date = rappel demain 9 h)
  if(statut.indexOf('Rappel demandé')===0){ouvrirRappel(i,true);return;}
@@ -4033,14 +4092,105 @@ function sauverNote(i,val){
  persister();
  toast('📝 Note enregistrée');
 }
-function persister(supprimees){
- if(state.savedId){
-  const payload={id:state.savedId,entreprises:REAL};
-  if(Array.isArray(supprimees)&&supprimees.length)payload.supprimees=supprimees;
-  api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify(payload,(k,v)=>(k==='_busy'||k==='_open'||k==='_prog'||k==='_act'||k==='_actLoaded'||k==='_actLoading'||k==='_actf')?undefined:v)}).catch(()=>{});
+// ── Persistance de la liste : plus jamais silencieuse ─────────────────────
+// Incident du 20/08 : Franck ajoute une société, prend un RDV, et rien n'est enregistré. Cause :
+// persister() sortait sans rien faire quand state.savedId était absent (liste dont la sauvegarde
+// initiale avait échoué, « sauvegarde non bloquante »), et l'échec d'un PUT était avalé par un
+// .catch(()=>{}). Le SDR travaillait dans le vide sans le savoir.
+//
+// Désormais : on enregistre la liste si elle ne l'est pas, on réessaie en cas d'échec, et si
+// l'enregistrement reste impossible on le dit — en gros, en haut de l'écran, jusqu'à résolution.
+let PERSIST_ETAT = 'ok';       // ok | encours | echec
+let PERSIST_FILE = false;      // une sauvegarde est déjà programmée
+let PERSIST_SUPPR = [];        // clés supprimées à transmettre
+let PERSIST_DERNIER = null;    // horodatage du dernier enregistrement réussi
+
+function persistBandeau(){
+ let b=document.getElementById('persist-alerte');
+ if(PERSIST_ETAT!=='echec'){ if(b)b.remove(); return; }
+ if(!b){
+  b=document.createElement('div');
+  b.id='persist-alerte';
+  b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9998;background:#B91C1C;color:#fff;'
+   +'padding:10px 16px;font-size:14px;font-weight:600;display:flex;gap:12px;align-items:center;'
+   +'justify-content:center;flex-wrap:wrap;box-shadow:0 2px 12px rgba(0,0,0,.25)';
+  document.body.appendChild(b);
  }
+ b.innerHTML='⚠️ Tes modifications ne sont PAS enregistrées — ne ferme pas cet onglet.'
+  +'<button class="btn" style="background:#fff;color:#B91C1C;padding:4px 12px;font-size:13px" onclick="persister()">Réessayer maintenant</button>';
 }
+
+// Enregistre la liste si elle n'existe pas encore en base. Renvoie l'id, ou null.
+async function assurerListeEnregistree(){
+ if(state.savedId)return state.savedId;
+ if(!REAL.length)return null;
+ let nom=state.listeNom||('Liste du '+new Date().toLocaleDateString('fr-FR'));
+ // Un nom déjà pris ne doit JAMAIS coûter le travail du SDR : on suffixe et on enregistre.
+ for(let essai=0;essai<4;essai++){
+  try{
+   const r=await api('/api/listes',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({nom:nom,sdr:state.sdr||(state.user&&state.user.nom)||'?',
+     criteres:state.criteres||{},entreprises:REAL})});
+   const d=await r.json();
+   if(d&&d.ok&&d.id){
+    state.savedId=d.id; state.listeNom=nom;
+    toast('💾 Liste « '+nom+' » enregistrée — ton travail est sauvegardé');
+    return d.id;
+   }
+   if(r.status===409){ nom=(state.listeNom||'Liste')+' ('+(essai+2)+')'; continue; }
+   if(d&&d.erreur)toast('Enregistrement refusé : '+d.erreur);
+   return null;
+  }catch(_){ await new Promise(function(ok){setTimeout(ok,900);}); }
+ }
+ return null;
+}
+
+function persister(supprimees){
+ if(Array.isArray(supprimees)&&supprimees.length)PERSIST_SUPPR=PERSIST_SUPPR.concat(supprimees);
+ if(PERSIST_FILE)return;                 // une sauvegarde est déjà en route : elle prendra l'état final
+ PERSIST_FILE=true;
+ setTimeout(function(){ PERSIST_FILE=false; persisterMaintenant(); }, 400);
+}
+
+async function persisterMaintenant(){
+ if(!REAL.length)return;
+ PERSIST_ETAT='encours';
+ const id=await assurerListeEnregistree();
+ if(!id){ PERSIST_ETAT='echec'; persistBandeau(); return; }
+ const supp=PERSIST_SUPPR.slice(); PERSIST_SUPPR=[];
+ const payload={id:id,entreprises:REAL};
+ if(supp.length)payload.supprimees=supp;
+ const corps=JSON.stringify(payload,(k,v)=>(k==='_busy'||k==='_open'||k==='_prog'||k==='_act'||k==='_actLoaded'||k==='_actLoading'||k==='_actf')?undefined:v);
+ // Deux tentatives : un incident réseau passager ne doit pas coûter le travail de la journée.
+ for(let essai=0;essai<2;essai++){
+  try{
+   const r=await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:corps});
+   if(r.ok){
+    PERSIST_ETAT='ok'; PERSIST_DERNIER=new Date(); persistBandeau(); majEtatSauvegarde();
+    return;
+   }
+  }catch(_){}
+  await new Promise(function(ok){setTimeout(ok,1200);});
+ }
+ // Échec confirmé : on remet les clés supprimées dans la file et on alerte.
+ PERSIST_SUPPR = supp.concat(PERSIST_SUPPR);
+ PERSIST_ETAT='echec'; persistBandeau();
+}
+
+function majEtatSauvegarde(){
+ const el=document.getElementById('etat-sauvegarde');
+ if(!el)return;
+ if(PERSIST_ETAT==='echec'){el.textContent='⚠️ non enregistré';el.style.color='var(--danger)';return;}
+ if(!PERSIST_DERNIER){el.textContent='';return;}
+ el.textContent='✓ enregistré à '+PERSIST_DERNIER.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+ el.style.color='var(--ink-soft)';
+}
+
+// Fermeture d'onglet avec du travail non enregistré : on prévient.
+window.addEventListener('beforeunload',function(ev){
+ if(PERSIST_ETAT==='echec'||PERSIST_SUPPR.length){ ev.preventDefault(); ev.returnValue=''; return ''; }
+});
+
 
 /* Structure multi-contacts : chaque entreprise porte contacts[] (prête pour la Wave 2 LinkedIn) */
 function contactsDe(e){
