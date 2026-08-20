@@ -267,7 +267,23 @@ function scorer(e) {
       ecart <= 0.3 ? 15 : (ecart <= 0.8 ? 8 : 3), 15,
       ecart ? String(ecart).replace('.', ',') + ' point d\'écart entre vos fiches' : 'notes alignées'));
   }
-  v.push(crit('Réponses aux avis', 'inconnu', 0, 0, 'non mesurable depuis l\'extérieur — à regarder ensemble'));
+  // Réponses aux avis : mesuré quand le relevé SerpApi a été lancé sur la fiche (l'API Google
+  // n'expose pas les réponses du propriétaire). Sinon le critère reste franchement « non mesuré ».
+  const rep = g.reponses || null;
+  if (rep && typeof rep.taux === 'number') {
+    const t = rep.taux;
+    v.push(crit('Réponses aux avis', t >= 80 ? 'ok' : (t >= 40 ? 'moyen' : 'faible'),
+      Math.round(t / 100 * 20), 20,
+      `${rep.repondus}/${rep.analyses} avis récents ont une réponse publique (${t} %)`));
+    if (rep.delai_median_h != null) {
+      const h = rep.delai_median_h;
+      v.push(crit('Délai de réponse', h <= 48 ? 'ok' : (h <= 168 ? 'moyen' : 'faible'),
+        h <= 48 ? 15 : (h <= 168 ? 8 : 3), 15,
+        h < 48 ? `${h} h en médiane` : `${Math.round(h / 24)} jours en médiane — 63 % des clients l'attendent sous 2 à 7 jours`));
+    }
+  } else {
+    v.push(crit('Réponses aux avis', 'inconnu', 0, 0, 'non mesuré — l\'API Google ne l\'expose pas, un relevé dédié est nécessaire'));
+  }
   v.push(crit('Fraîcheur et photos', 'inconnu', 0, 0, 'à auditer fiche par fiche au premier rendez-vous'));
   axes.push({ nom: 'Visibilité locale', module: 'Soview', criteres: v });
 

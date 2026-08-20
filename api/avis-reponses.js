@@ -1,0 +1,151 @@
+// /api/avis-reponses.js — ⭐ Taux de réponse aux avis et délai réel, via SerpApi.
+//
+// POURQUOI CE FICHIER EXISTE. L'API Google Places (Details) renvoie jusqu'à 5 avis avec leur note
+// et leur texte, mais **jamais la réponse du propriétaire** : le champ n'existe pas dans son
+// modèle de données. Le taux de réponse et le délai de première réponse — les deux critères qui
+// vendent Soview — étaient donc marqués « non mesurable depuis l'extérieur » dans le scoring.
+//
+// SerpApi lit la page Google Maps et expose, pour chaque avis, un objet `response` avec
+// `response.snippet` (le texte de la réponse) et `response.iso_date`. On peut donc calculer :
+//   · le taux de réponse sur les avis RÉCENTS (la pratique actuelle, pas une moyenne historique) ;
+//   · le délai médian entre l'avis et sa réponse ;
+//   · le plus ancien avis resté sans réponse.
+//
+// POST { place_id, nom? }   → mesure et renvoie le bilan
+// Variable d'environnement requise : SERPAPI_KEY (à créer dans Vercel, jamais dans le code).
+//
+// Coût : environ 0,01 $ par fiche analysée. La mesure est donc faite À LA DEMANDE, jamais en
+// masse, et le résultat est réutilisé pendant 30 jours.
+
+import { verifierToken, sql } from './db.js';
+
+export const config = { maxDuration: 60 };
+
+const NB_AVIS = 20;          // un échantillon de 20 avis récents suffit à juger la pratique
+const CACHE_JOURS = 30;
+
+let pret = false;
+async function ensureCache() {
+  if (pret || !sql) return;
+  // Table paresseuse (aucun bump de SCHEMA_VERSION — cf. incident « analyse » du 03/08)
+  await sql`CREATE TABLE IF NOT EXISTS avis_reponses (
+    place_id TEXT PRIMARY KEY,
+    nom TEXT,
+    analyses INTEGER,
+    repondus INTEGER,
+    taux INTEGER,
+    delai_median_h INTEGER,
+    delai_max_h INTEGER,
+    plus_vieux_sans_reponse TEXT,
+    mesure_le TIMESTAMPTZ DEFAULT NOW(),
+    mesure_par TEXT
+  )`;
+  pret = true;
+}
+
+const heures = (a, b) => Math.round((new Date(b).getTime() - new Date(a).getTime()) / 3600000);
+const median = arr => {
+  if (!arr.length) return null;
+  const t = arr.slice().sort((x, y) => x - y);
+  const m = Math.floor(t.length / 2);
+  return t.length % 2 ? t[m] : Math.round((t[m - 1] + t[m]) / 2);
+};
+
+export default async function handler(req, res) {
+  const user = verifierToken(req);
+  if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
+  if (req.method !== 'POST') return res.status(405).json({ erreur: 'POST uniquement' });
+  await ensureCache();
+
+  const cle = process.env.SERPAPI_KEY;
+  if (!cle) {
+    return res.status(500).json({
+      erreur: 'SERPAPI_KEY absente',
+      detail: 'Ajoute la variable SERPAPI_KEY dans Vercel (Settings › Environment Variables) puis redéploie. Sans elle, le taux de réponse aux avis reste non mesurable — l\'API Google ne l\'expose pas.'
+    });
+  }
+
+  const b = req.body || {};
+  const placeId = String(b.place_id || '').trim();
+  if (!placeId) return res.status(400).json({ erreur: 'place_id requis (il est dans la fiche Google du prospect)' });
+
+  // Réutilisation : une pratique de réponse aux avis ne change pas d'un jour à l'autre.
+  if (!b.forcer) {
+    try {
+      const [c] = await sql`SELECT * FROM avis_reponses WHERE place_id = ${placeId}
+        AND mesure_le > NOW() - (${CACHE_JOURS} || ' days')::interval`;
+      if (c) return res.status(200).json({ ok: true, cache: true, mesure: c });
+    } catch (_) { }
+  }
+
+  let data;
+  try {
+    const u = `https://serpapi.com/search.json?engine=google_maps_reviews&place_id=${encodeURIComponent(placeId)}`
+      + `&sort_by=newestFirst&num=${NB_AVIS}&hl=fr&api_key=${encodeURIComponent(cle)}`;
+    const r = await fetch(u, { signal: AbortSignal.timeout(25000) });
+    data = await r.json().catch(() => ({}));
+    if (!r.ok || data.error) {
+      return res.status(502).json({ erreur: 'SerpApi', detail: String(data.error || r.status).slice(0, 200) });
+    }
+  } catch (e) {
+    return res.status(502).json({ erreur: 'SerpApi injoignable', detail: String((e && e.message) || e).slice(0, 160) });
+  }
+
+  const avis = Array.isArray(data.reviews) ? data.reviews : [];
+  if (!avis.length) {
+    return res.status(200).json({
+      ok: true, vide: true,
+      info: 'Aucun avis récupéré pour cette fiche : elle est peut-être sans avis, ou son identifiant a changé.'
+    });
+  }
+
+  const delais = [];
+  let repondus = 0, plusVieuxSans = null;
+  for (const a of avis) {
+    const rep = a.response || null;
+    if (rep) {
+      repondus++;
+      if (a.iso_date && rep.iso_date) {
+        const h = heures(a.iso_date, rep.iso_date);
+        if (h >= 0 && h < 24 * 365) delais.push(h);   // au-delà d'un an, la donnée n'a plus de sens
+      }
+    } else if (a.iso_date) {
+      // Le plus ANCIEN avis sans réponse : c'est celui qui traîne en public depuis le plus longtemps.
+      if (!plusVieuxSans || new Date(a.iso_date) < new Date(plusVieuxSans)) plusVieuxSans = a.iso_date;
+    }
+  }
+
+  const mesure = {
+    place_id: placeId,
+    nom: b.nom ? String(b.nom).slice(0, 160) : ((data.place_info && data.place_info.title) || null),
+    analyses: avis.length,
+    repondus,
+    taux: Math.round((repondus / avis.length) * 100),
+    delai_median_h: median(delais),
+    delai_max_h: delais.length ? Math.max(...delais) : null,
+    plus_vieux_sans_reponse: plusVieuxSans
+  };
+
+  try {
+    await sql`INSERT INTO avis_reponses (place_id, nom, analyses, repondus, taux,
+        delai_median_h, delai_max_h, plus_vieux_sans_reponse, mesure_le, mesure_par)
+      VALUES (${mesure.place_id}, ${mesure.nom}, ${mesure.analyses}, ${mesure.repondus}, ${mesure.taux},
+              ${mesure.delai_median_h}, ${mesure.delai_max_h}, ${mesure.plus_vieux_sans_reponse}, NOW(), ${user.nom})
+      ON CONFLICT (place_id) DO UPDATE SET nom = EXCLUDED.nom, analyses = EXCLUDED.analyses,
+        repondus = EXCLUDED.repondus, taux = EXCLUDED.taux, delai_median_h = EXCLUDED.delai_median_h,
+        delai_max_h = EXCLUDED.delai_max_h, plus_vieux_sans_reponse = EXCLUDED.plus_vieux_sans_reponse,
+        mesure_le = NOW(), mesure_par = EXCLUDED.mesure_par`;
+  } catch (_) { }
+
+  // Une phrase prête à lire, formulée sur le seul échantillon mesuré — jamais généralisée.
+  const d = mesure.delai_median_h;
+  const lisible = d == null ? null
+    : (d < 48 ? `${d} h` : `${Math.round(d / 24)} jours`);
+  return res.status(200).json({
+    ok: true, cache: false, mesure,
+    resume: mesure.taux === 0
+      ? `Aucun des ${mesure.analyses} avis les plus récents n'a reçu de réponse publique.`
+      : `${mesure.repondus} des ${mesure.analyses} avis récents ont une réponse publique (${mesure.taux} %)${lisible ? `, avec un délai médian de ${lisible}` : ''}.`,
+    cout_estime_usd: 0.01
+  });
+}

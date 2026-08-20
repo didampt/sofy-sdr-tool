@@ -2144,7 +2144,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v358';
+const VERSION='v359';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -6452,7 +6452,11 @@ function ouvrirInfo(i){
    +(manquantes?`<div style="background:#FEF6E7;border:1px solid #E9C88B;border-radius:9px;padding:10px 12px;margin-top:8px;font-size:12.5px;line-height:1.5;color:#7A4E12">
       <b>${manquantes} établissement(s) sans fiche rattachée.</b> Un réseau national n'a pas toutes ses fiches dans la ville du siège. Ouvre la fiche manquante dans Google Maps, copie son lien, et ajoute-la : elle entrera dans la note du réseau et dans le scoring.
       <div style="margin-top:8px"><button class="act act-call" style="padding:3px 10px;font-size:12px" onclick="ajouterFicheGmb(${i})">➕ Ajouter une fiche par son lien Maps</button></div></div>`
-    :`<div style="margin-top:8px"><button class="act act-copy" style="padding:3px 10px;font-size:12px" onclick="ajouterFicheGmb(${i})">➕ Ajouter une fiche</button></div>`))
+    :`<div style="margin-top:8px"><button class="act act-copy" style="padding:3px 10px;font-size:12px" onclick="ajouterFicheGmb(${i})">➕ Ajouter une fiche</button></div>`)
+   +`<div style="margin-top:8px">
+      <button class="act act-call" style="padding:3px 10px;font-size:12px" onclick="mesurerReponsesAvis(${i})" title="Taux de réponse aux avis et délai réel — l'API Google ne les expose pas (≈ 0,01 $)">⭐ Mesurer les réponses aux avis</button>
+      ${(e.gmb.reponses)?`<span class="badge ${e.gmb.reponses.taux>=40?'b-gmb':'b-signal'}" style="margin-left:6px">${e.gmb.reponses.repondus}/${e.gmb.reponses.analyses} répondus · ${e.gmb.reponses.taux} %${e.gmb.reponses.delai_median_h!=null?' · '+(e.gmb.reponses.delai_median_h<48?e.gmb.reponses.delai_median_h+' h':Math.round(e.gmb.reponses.delai_median_h/24)+' j')+' en médiane':''}</span>`:''}
+     </div>`)
  }
  const cs=contactsDe(e).filter(c=>c.nom);
  if(cs.length){
@@ -6960,6 +6964,28 @@ async function ajouterFicheGmb(i){
    ? '↻ Fiche déjà présente, mise à jour : '+(nf.nom||'')
    : '✅ '+(nf.nom||'Fiche')+' ajoutée — '+e.gmb.nb_fiches+' fiche(s), note du réseau '+String(e.gmb.note_moyenne).replace('.',',')+'★');
  }catch(err){toast('Fiche : '+err.message);}
+}
+
+// Taux de réponse aux avis et délai réel : l'API Google ne les expose pas, on passe par un
+// relevé dédié (SerpApi). Mesure à la demande, réutilisée 30 jours, ~0,01 $ la fiche.
+async function mesurerReponsesAvis(i){
+ const e=REAL[i], g=e.gmb||{};
+ const f=(g.fiches||[])[0]||g.pire_fiche||{};
+ const pid=f.place_id||e.place_id;
+ if(!pid){toast('Aucun identifiant de fiche Google — relance l\'analyse GMB');return;}
+ toast('⭐ Lecture des réponses aux avis…');
+ try{
+  const r=await api('/api/avis-reponses',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({place_id:pid,nom:f.nom||e.nom})});
+  const d=await r.json();
+  if(d.erreur){toast(d.erreur+(d.detail?' — '+d.detail:''));return;}
+  if(d.vide){toast(d.info||'Aucun avis récupéré');return;}
+  const m=d.mesure||{};
+  e.gmb=Object.assign({},g,{reponses:{taux:m.taux,repondus:m.repondus,analyses:m.analyses,
+   delai_median_h:m.delai_median_h,delai_max_h:m.delai_max_h,mesure_le:new Date().toISOString()}});
+  persister();rerender(i);
+  toast((d.cache?'↻ ':'⭐ ')+(d.resume||(m.taux+' % de réponses')));
+ }catch(err){toast('Réponses aux avis : '+err.message);}
 }
 
 /* ───────── ANALYSE GMB ───────── */
