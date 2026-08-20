@@ -2132,7 +2132,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v347';
+const VERSION='v348';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -5227,6 +5227,16 @@ async function envoyerMaPhoto(retirer){
 // Les images entrent par lots, compressées dans le navigateur. Deux champs sont obligatoires :
 // la description (c'est elle qui permet à l'IA de poser l'image au bon endroit) et les droits.
 const VIS_TYPES={humain:'👥 Humain',ambiance:'🏪 Ambiance',produit:'🖥 Produit',client:'🏆 Client'};
+// Ce que l'IA a besoin de lire pour poser l'image au bon endroit. On propose le modèle rempli :
+// « didier » ne permet pas de choisir, « Portrait de Didier Ampiot, conseiller Sofy » oui — mais
+// c'est à nous de le montrer, pas à l'utilisateur de le devimer.
+const VIS_MODELES={
+ humain:{d:"Portrait d'un conseiller Sofy, souriant, bureau clair en arrière-plan",r:"Photo interne Sofy — accord de la personne"},
+ ambiance:{d:"Comptoir d'un magasin, un vendeur sert un client",r:"Banque d'images sous licence Sofy"},
+ produit:{d:"Écran Soview : réponse à un avis Google rédigée par Budy",r:"Capture produit Sofy"},
+ client:{d:"Portrait du dirigeant interviewé sur le blog Sofy",r:"Accord du client — interview publiée"}
+};
+const VIS_MIN_D=12, VIS_MIN_R=6;
 let VIS=[], VIS_ATTENTE=[];
 
 async function chargerVisuels(){
@@ -5310,7 +5320,8 @@ async function choisirVisuels(inp){
    const gd=await compresserImage(f,1600,600,false);
    const pt=await compresserImage(f,420,60,false);
    VIS_ATTENTE.push({nom:f.name,image:gd.data,vignette:pt.data,largeur:gd.largeur,hauteur:gd.hauteur,
-    poids_ko:gd.ko,avantKo:gd.avantKo,type:'ambiance',module:'tous',description:'',droits:'',secteur:''});
+    poids_ko:gd.ko,avantKo:gd.avantKo,type:'ambiance',module:'tous',
+    description:VIS_MODELES.ambiance.d,droits:VIS_MODELES.ambiance.r,secteur:''});
   }catch(e){}
  }
  rendreDepot();
@@ -5319,32 +5330,71 @@ async function choisirVisuels(inp){
 function rendreDepot(){
  const box=document.getElementById('vis-form');
  if(!VIS_ATTENTE.length){box.innerHTML='<p style="color:var(--danger)">Aucune image lisible.</p>';return;}
+ const incomplets=VIS_ATTENTE.filter(visIncomplet).length;
  box.innerHTML=`<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px">
   <div style="font-size:15px;font-weight:750;margin-bottom:4px">${VIS_ATTENTE.length} image(s) prête(s)</div>
-  <div style="font-size:12.5px;color:var(--ink-soft);line-height:1.55;margin-bottom:14px">La <b>description</b> et les <b>droits</b> sont obligatoires : la première permet à l'IA de poser l'image au bon endroit, les seconds évitent qu'une photo sans accord ou sans licence partent chez un client.</div>
-  <div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(290px,1fr))">
-   ${VIS_ATTENTE.map(function(v,k){return `<div style="background:var(--paper);border:1px solid var(--line);border-radius:11px;padding:12px">
-     <img src="${htmlSafe(v.vignette)}" alt="" style="width:100%;height:110px;object-fit:cover;border-radius:8px;display:block">
-     <div style="font-size:11.5px;color:var(--ink-soft);margin:7px 0 9px">${htmlSafe(v.nom)} · ${v.avantKo} Ko → <b>${v.poids_ko} Ko</b> (${v.largeur}×${v.hauteur})</div>
-     <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">
-      ${Object.keys(VIS_TYPES).map(t=>`<button class="act${v.type===t?' act-call':''}" style="padding:2px 8px;font-size:11px" onclick="visType(${k},'${t}')">${VIS_TYPES[t]}</button>`).join('')}
-     </div>
-     <input class="field" style="width:100%;margin-bottom:6px" placeholder="Ce que montre l'image *" value="${htmlSafe(v.description)}" oninput="VIS_ATTENTE[${k}].description=this.value">
-     <input class="field" style="width:100%;margin-bottom:6px" placeholder="Droits : accord, licence *" value="${htmlSafe(v.droits)}" oninput="VIS_ATTENTE[${k}].droits=this.value">
-     <input class="field" style="width:100%" placeholder="Secteur ciblé (ex : garage, retail)" value="${htmlSafe(v.secteur)}" oninput="VIS_ATTENTE[${k}].secteur=this.value">
-   </div>`}).join('')}
+  <div style="font-size:12.5px;color:var(--ink-soft);line-height:1.55;margin-bottom:14px">Un modèle est pré-rempli selon le type choisi : <b>ajuste-le</b>, ne le laisse pas tel quel. La description est ce que l'IA lit pour placer l'image ; les droits évitent qu'une photo sans accord parte chez un client.</div>
+  <div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))">
+   ${VIS_ATTENTE.map(function(v,k){
+     const md=v.description.trim().length, mr=v.droits.trim().length;
+     const chDesc=md>=VIS_MIN_D, chDr=mr>=VIS_MIN_R;
+     return `<div style="background:var(--paper);border:1px solid ${visIncomplet(v)?'#E9C88B':'var(--line)'};border-radius:11px;padding:12px">
+      <img src="${htmlSafe(v.vignette)}" alt="" style="width:100%;height:110px;object-fit:cover;border-radius:8px;display:block">
+      <div style="font-size:11.5px;color:var(--ink-soft);margin:7px 0 9px">${htmlSafe(v.nom)} · ${v.avantKo} Ko → <b>${v.poids_ko} Ko</b> (${v.largeur}×${v.hauteur})</div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:9px">
+       ${Object.keys(VIS_TYPES).map(t=>`<button class="act${v.type===t?' act-call':''}" style="padding:2px 8px;font-size:11px" onclick="visType(${k},'${t}')">${VIS_TYPES[t]}</button>`).join('')}
+      </div>
+      <label style="display:block;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:3px">Ce que montre l'image</label>
+      <textarea class="field" style="width:100%;min-height:52px;font-family:inherit;border-color:${chDesc?'var(--line)':'#E9C88B'}"
+        oninput="VIS_ATTENTE[${k}].description=this.value;visMaj(${k})">${htmlSafe(v.description)}</textarea>
+      <div id="vis-d-${k}" style="font-size:11px;margin:2px 0 8px;color:${chDesc?'var(--ink-soft)':'#B45309'}">${chDesc?md+' caractères ✓':'Décris la scène en une phrase — '+md+'/'+VIS_MIN_D+' caractères'}</div>
+      <label style="display:block;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:3px">Droits d'utilisation</label>
+      <input class="field" style="width:100%;border-color:${chDr?'var(--line)':'#E9C88B'}" value="${htmlSafe(v.droits)}"
+        oninput="VIS_ATTENTE[${k}].droits=this.value;visMaj(${k})">
+      <div id="vis-r-${k}" style="font-size:11px;margin:2px 0 8px;color:${chDr?'var(--ink-soft)':'#B45309'}">${chDr?'✓':'Accord de la personne, ou licence de la banque d\'images'}</div>
+      <label style="display:block;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:3px">Secteur ciblé — facultatif</label>
+      <input class="field" style="width:100%" placeholder="garage, retail, hôtellerie…" value="${htmlSafe(v.secteur)}" oninput="VIS_ATTENTE[${k}].secteur=this.value">
+    </div>`}).join('')}
   </div>
-  <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+  <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
    <button class="btn btn-primary" onclick="envoyerVisuels()">Ajouter ${VIS_ATTENTE.length} visuel(s)</button>
-   <button class="btn" style="background:var(--paper)" onclick="VIS_ATTENTE=[];document.getElementById('vis-form').innerHTML=''">Annuler</button>
+   <button class="btn" style="background:var(--paper)" onclick="VIS_ATTENTE=[];document.getElementById('vis-form').innerHTML='';document.getElementById('vis-f').value=''">Annuler</button>
+   <span id="vis-reste" style="font-size:12.5px;color:${incomplets?'#B45309':'var(--ink-soft)'}">${incomplets?incomplets+' image(s) à compléter avant l\'envoi':'Tout est renseigné'}</span>
   </div>
  </div>`;
 }
-function visType(k,t){VIS_ATTENTE[k].type=t;rendreDepot();}
+function visIncomplet(v){return v.description.trim().length<VIS_MIN_D||v.droits.trim().length<VIS_MIN_R;}
+// Retour immédiat sous le champ, sans reconstruire le formulaire (on ne perd pas le curseur).
+function visMaj(k){
+ const v=VIS_ATTENTE[k], md=v.description.trim().length, mr=v.droits.trim().length;
+ const ed=document.getElementById('vis-d-'+k), er=document.getElementById('vis-r-'+k);
+ if(ed){const ok=md>=VIS_MIN_D;ed.textContent=ok?md+' caractères ✓':'Décris la scène en une phrase — '+md+'/'+VIS_MIN_D+' caractères';ed.style.color=ok?'var(--ink-soft)':'#B45309';}
+ if(er){const ok=mr>=VIS_MIN_R;er.textContent=ok?'✓':'Accord de la personne, ou licence de la banque d\'images';er.style.color=ok?'var(--ink-soft)':'#B45309';}
+ const n=VIS_ATTENTE.filter(visIncomplet).length, r=document.getElementById('vis-reste');
+ if(r){r.textContent=n?n+' image(s) à compléter avant l\'envoi':'Tout est renseigné';r.style.color=n?'#B45309':'var(--ink-soft)';}
+}
+function visType(k,t){
+ const v=VIS_ATTENTE[k], m=VIS_MODELES[t]||{d:'',r:''};
+ const etaitModele=Object.keys(VIS_MODELES).some(x=>VIS_MODELES[x].d===v.description);
+ const etaitModeleR=Object.keys(VIS_MODELES).some(x=>VIS_MODELES[x].r===v.droits);
+ v.type=t;
+ if(!v.description.trim()||etaitModele)v.description=m.d;
+ if(!v.droits.trim()||etaitModeleR)v.droits=m.r;
+ rendreDepot();
+}
 
 async function envoyerVisuels(){
- const sans=VIS_ATTENTE.filter(v=>v.description.trim().length<15||v.droits.trim().length<5);
- if(sans.length){toast(sans.length+' image(s) sans description (15 caractères) ou sans droits');return;}
+ const sans=VIS_ATTENTE.filter(visIncomplet);
+ if(sans.length){
+  const d=sans.map(function(v){
+   const q=[];
+   if(v.description.trim().length<VIS_MIN_D)q.push('description trop courte');
+   if(v.droits.trim().length<VIS_MIN_R)q.push('droits manquants');
+   return v.nom.slice(0,28)+' : '+q.join(' et ');
+  }).join(' · ');
+  toast('À compléter — '+d);
+  return;
+ }
  const v=voileTravail('🖼 Envoi des visuels','Compression déjà faite — il ne reste que le transfert.');
  try{
   const r=await api('/api/kb-visuels',{method:'POST',headers:{'Content-Type':'application/json'},

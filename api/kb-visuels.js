@@ -122,10 +122,10 @@ export default async function handler(req, res) {
         if (String(v.image).length > MAX_IMAGE) { refuses.push({ nom, motif: 'image trop lourde après compression' }); continue; }
         if (v.vignette && String(v.vignette).length > MAX_VIGNETTE) { refuses.push({ nom, motif: 'vignette trop lourde' }); continue; }
         // Les deux refus qui protègent Sofy
-        if (String(v.description || '').trim().length < 15) {
+        if (String(v.description || '').trim().length < 12) {
           refuses.push({ nom, motif: 'décris ce que montre l\'image — c\'est ce texte qui permet de la poser au bon endroit' }); continue;
         }
-        if (String(v.droits || '').trim().length < 5) {
+        if (String(v.droits || '').trim().length < 6) {
           refuses.push({ nom, motif: 'précise les droits (accord des personnes, licence de la banque d\'images)' }); continue;
         }
         const [row] = await sql`INSERT INTO kb_visuels
