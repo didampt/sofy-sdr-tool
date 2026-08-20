@@ -79,7 +79,19 @@ function mesures(e) {
       avis_negatif: g.avis_negatif ? { note: g.avis_negatif.note, date: g.avis_negatif.date, texte: g.avis_negatif.texte } : null,
       concurrents: g.concurrents ? { note_moyenne: g.concurrents.note_moyenne, secteur: g.concurrents.secteur, zone: g.concurrents.zone, nb_analyses: g.concurrents.nb_analyses } : null,
       ecart_concurrents: (g.concurrents && typeof g.note_moyenne === 'number')
-        ? Math.round((g.concurrents.note_moyenne - g.note_moyenne) * 10) / 10 : null
+        ? Math.round((g.concurrents.note_moyenne - g.note_moyenne) * 10) / 10 : null,
+      // Relevé dédié (l'API Google n'expose pas les réponses du propriétaire) : c'est l'argument
+      // Soview le plus direct, il doit arriver jusqu'à la rédaction.
+      reponses_aux_avis: g.reponses ? {
+        avis_analyses: g.reponses.analyses,
+        avis_avec_reponse: g.reponses.repondus,
+        taux_de_reponse_pct: g.reponses.taux,
+        delai_median_heures: g.reponses.delai_median_h,
+        delai_max_heures: g.reponses.delai_max_h,
+        lecture: g.reponses.taux === 0
+          ? 'aucun des avis récents n\'a reçu de réponse publique'
+          : `${g.reponses.taux} % des avis récents ont une réponse publique`
+      } : null
     };
   } else m.google = { aucune_fiche_trouvee: true };
   if (e.technos_fait) {
@@ -107,6 +119,17 @@ function mesures(e) {
       if (sansAdresse) d.push(`${sansAdresse} de vos fiches n'ont pas d'adresse exploitable : Google ne peut pas les rattacher à une zone, elles ne sortent pas sur « près de moi ».`);
       const noms = new Set(fs.map(f => String(f.nom || '').toLowerCase().replace(/[^a-z0-9]/g, '')));
       if (noms.size === fs.length && fs.length > 2) d.push('Vos fiches portent des libellés tous différents : pour Google et pour les assistants IA, ce sont autant d\'entreprises distinctes plutôt qu\'un réseau.');
+    }
+    if (g.reponses && typeof g.reponses.taux === 'number') {
+      const r = g.reponses;
+      if (r.taux === 0) {
+        d.push(`Aucun des ${r.analyses} avis les plus récents n'a reçu de réponse publique : chaque client mécontent reste seul à s'exprimer sur votre fiche.`);
+      } else if (r.taux < 50) {
+        d.push(`${r.repondus} des ${r.analyses} avis récents seulement ont une réponse (${r.taux} %) : plus d'un client sur deux écrit sans obtenir de réponse.`);
+      }
+      if (r.delai_median_h != null && r.delai_median_h > 168) {
+        d.push(`Le délai médian de réponse est de ${Math.round(r.delai_median_h / 24)} jours, quand 63 % des consommateurs l'attendent sous 2 à 7 jours.`);
+      }
     }
     const faibles = fs.filter(f => typeof f.note === 'number' && f.note < 3);
     if (faibles.length) d.push(`${faibles.length} fiche(s) sous 3★ tirent la moyenne du réseau vers le bas — dont ${faibles[0].nom} à ${String(faibles[0].note).replace('.', ',')}★.`);

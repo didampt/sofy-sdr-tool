@@ -78,15 +78,40 @@ export default async function handler(req, res) {
     } catch (_) { }
   }
 
-  let data;
-  try {
-    const u = `https://serpapi.com/search.json?engine=google_maps_reviews&place_id=${encodeURIComponent(placeId)}`
-      + `&sort_by=newestFirst&num=${NB_AVIS}&hl=fr&api_key=${encodeURIComponent(cle)}`;
+  // SerpApi accepte place_id OU data_id, mais le place_id de l'API Places n'est pas toujours
+  // reconnu tel quel. Repli : on récupère le data_id de la fiche puis on relance. Un appel de
+  // plus, seulement quand c'est nécessaire.
+  const lire = async (params) => {
+    const u = 'https://serpapi.com/search.json?' + new URLSearchParams(
+      { ...params, hl: 'fr', api_key: cle }).toString();
     const r = await fetch(u, { signal: AbortSignal.timeout(25000) });
-    data = await r.json().catch(() => ({}));
-    if (!r.ok || data.error) {
-      return res.status(502).json({ erreur: 'SerpApi', detail: String(data.error || r.status).slice(0, 200) });
+    const d = await r.json().catch(() => ({}));
+    return { ok: r.ok, status: r.status, d };
+  };
+
+  let data, via = 'place_id';
+  try {
+    let rep = await lire({ engine: 'google_maps_reviews', place_id: placeId, sort_by: 'newestFirst', num: String(NB_AVIS) });
+    const rate = rep.d && (rep.d.error || '');
+    const sansAvis = !rep.ok || rate || !Array.isArray(rep.d.reviews);
+    if (sansAvis) {
+      // Étape de repli : la fiche par son place_id, pour en extraire le data_id.
+      const pl = await lire({ engine: 'google_maps', type: 'place', place_id: placeId });
+      const did = pl.d && ((pl.d.place_results && pl.d.place_results.data_id) || (pl.d.search_metadata || {}).data_id);
+      if (did) {
+        via = 'data_id';
+        rep = await lire({ engine: 'google_maps_reviews', data_id: did, sort_by: 'newestFirst', num: String(NB_AVIS) });
+      }
+      if (!rep.ok || (rep.d && rep.d.error) || !Array.isArray(rep.d.reviews)) {
+        return res.status(502).json({
+          erreur: 'SerpApi n\'a pas rendu les avis',
+          detail: String((rep.d && rep.d.error) || rate || ('HTTP ' + rep.status)).slice(0, 220),
+          piste: did ? 'Le data_id a été trouvé mais les avis restent inaccessibles — la fiche est peut-être sans avis.'
+                     : 'Impossible de retrouver l\'identifiant Maps de cette fiche. Relance l\'analyse GMB, ou rattache la fiche par son lien Maps.'
+        });
+      }
     }
+    data = rep.d;
   } catch (e) {
     return res.status(502).json({ erreur: 'SerpApi injoignable', detail: String((e && e.message) || e).slice(0, 160) });
   }
@@ -142,7 +167,7 @@ export default async function handler(req, res) {
   const lisible = d == null ? null
     : (d < 48 ? `${d} h` : `${Math.round(d / 24)} jours`);
   return res.status(200).json({
-    ok: true, cache: false, mesure,
+    ok: true, cache: false, mesure, via,
     resume: mesure.taux === 0
       ? `Aucun des ${mesure.analyses} avis les plus récents n'a reçu de réponse publique.`
       : `${mesure.repondus} des ${mesure.analyses} avis récents ont une réponse publique (${mesure.taux} %)${lisible ? `, avec un délai médian de ${lisible}` : ''}.`,
