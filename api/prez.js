@@ -123,6 +123,70 @@ function mesures(e) {
 // l'inline en data URI — le document doit rester autonome et ne jamais dépendre d'un serveur
 // tiers qui pourrait tomber ou tracer le lecteur.
 const MAX_LOGO = 90_000;
+const MAX_PHOTO = 320_000;
+
+// Récupère la première image exploitable parmi une liste de pistes, en data URI.
+async function premiereImage(pistes, maxOctets) {
+  for (const url of pistes) {
+    if (!url) continue;
+    try {
+      const r = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(6000),
+        headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36', 'Accept-Language': 'fr-FR,fr;q=0.9' } });
+      if (!r.ok) continue;
+      const ct = String(r.headers.get('content-type') || '').split(';')[0].trim();
+      if (!/^image\/(png|jpeg|webp|svg\+xml|x-icon|vnd\.microsoft\.icon|gif|avif)$/.test(ct)) continue;
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (!buf.length || buf.length > maxOctets) continue;
+      // Une image de 2 Ko en bannière est une icône déguisée : on la refuse pour la photo.
+      if (maxOctets === MAX_PHOTO && buf.length < 12000) continue;
+      return `data:${ct};base64,${buf.toString('base64')}`;
+    } catch (_) { }
+  }
+  return null;
+}
+
+// Le logo ET une photo d'ambiance, en une seule lecture de la page d'accueil.
+async function marqueDe(site) {
+  if (!site) return { logo: null, photo: null };
+  let base;
+  try { base = new URL(/^https?:\/\//i.test(site) ? site : 'https://' + site); } catch (_) { return { logo: null, photo: null }; }
+  const abs = u => { try { return new URL(u, base).href; } catch (_) { return null; } };
+  let html = '';
+  try {
+    const r = await fetch(base.href, { redirect: 'follow', signal: AbortSignal.timeout(8000),
+      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36', 'Accept-Language': 'fr-FR,fr;q=0.9' } });
+    if (r.ok) html = (await r.text()).slice(0, 400000);
+  } catch (_) { }
+  const meta = (prop) => {
+    const re = new RegExp('<meta[^>]+(?:property|name)=["\']' + prop + '["\'][^>]+content=["\']([^"\']+)', 'i');
+    const m = html.match(re); return m ? abs(m[1]) : null;
+  };
+  const lien = (rel) => {
+    const re = new RegExp('<link[^>]+rel=["\'][^"\']*' + rel + '[^"\']*["\'][^>]+href=["\']([^"\']+)', 'i');
+    const m = html.match(re); return m ? abs(m[1]) : null;
+  };
+  // Repli quand le site ne déclare pas d'og:image : les images de la page, en écartant celles
+  // qui sont manifestement des icônes, des pixels de tracking ou des logos.
+  const imagesPage = () => {
+    const out = [];
+    const re = /<img\b[^>]*?(?:data-src|data-original|srcset|src)=["']([^"']+)/gi;
+    let m;
+    while ((m = re.exec(html)) && out.length < 14) {
+      let u = m[1].split(/[?\s,]/)[0];
+      if (!/\.(jpe?g|png|webp|avif)$/i.test(u)) continue;
+      if (/(sprite|icon|favicon|logo|pixel|placeholder|blank|1x1|avatar|flag|badge)/i.test(u)) continue;
+      const a = abs(u); if (a && !out.includes(a)) out.push(a);
+    }
+    return out;
+  };
+
+  const [logo, photo] = await Promise.all([
+    premiereImage([meta('og:logo'), lien('apple-touch-icon'), lien('icon'), abs('/favicon.ico')], MAX_LOGO),
+    premiereImage([meta('og:image'), meta('twitter:image'), meta('og:image:secure_url'), ...imagesPage()], MAX_PHOTO)
+  ]);
+  return { logo, photo };
+}
+
 async function logoDe(site) {
   if (!site) return null;
   let base;
@@ -879,10 +943,11 @@ export default async function handler(req, res) {
     // Le logo se récupère pendant que Claude rédige : deux attentes en une.
     const visuels = await visuelsUtilisables({ module, secteur: mes.activite || mes.secteur_rb2b || '' })
       .catch(() => []);
-    const [out, logo] = await Promise.all([
+    const [out, marque] = await Promise.all([
       composer({ mes, radar, blocs, module, consigne: b.consigne, sdr: user.nom, visuels }),
-      logoDe(mes.site_web).catch(() => null)
+      marqueDe(mes.site_web).catch(() => ({ logo: null, photo: null }))
     ]);
+    const logo = marque.logo;
     if (out.erreur) return res.status(502).json(out);
 
     // Le formulaire rempli devient le document ici, côté serveur : c'est ce qui garantit qu'une
@@ -902,6 +967,7 @@ export default async function handler(req, res) {
       .slice(0, 40).map(x => ({ titre: x.titre, source: x.source || 'interne' }));
     const duels = out.doc.planches.filter(p => p.role === 'duel').length;
     if (logo) out.doc._logo = logo;
+    if (marque.photo) out.doc._photo = marque.photo;
 
     const jeton = crypto.randomBytes(9).toString('base64url'); // 12 caractères, non devinable
     const jours = Math.max(1, Math.min(90, parseInt(b.jours_validite || process.env.PREZ_JOURS_VALIDITE || '15', 10) || 15));
@@ -930,6 +996,7 @@ export default async function handler(req, res) {
       planches: (out.doc.planches || []).length,
       duels, mode_sortie: out.mode, cout_eur: out.cout_eur,
       visuels_proposes: visuels.length,
+      photo_prospect: !!marque.photo,
       visuels_utilises: out.doc.planches.filter(p => p.visuel_id).length,
       duels_erreur: out.duels_erreur || undefined,
       logo_prospect: !!logo,

@@ -33,7 +33,7 @@ const etoiles = n => {
   return [1, 2, 3, 4, 5].map(k => `<span class="et${v >= k ? ' on' : (v > k - 1 ? ' mi' : '')}">★</span>`).join('');
 };
 
-function planche(p, i, total, mes, logo, sdr, images) {
+function planche(p, i, total, mes, logo, sdr, images, photoSite) {
   const sombre = i % 2 === 1;
   const chiffres = (p.chiffres || []).map(c => `
     <div class="kpi">
@@ -202,7 +202,9 @@ function planche(p, i, total, mes, logo, sdr, images) {
   // bouton d'action et la barre de saisie. Le prospect ne regarde pas une illustration : il voit
   // ce que ses clients auront réellement sous les yeux.
   const r = p.maquette_rcs || {};
-  const banniere = vis ? vis.image : null;
+  // Ordre voulu : un visuel choisi pour cette planche, sinon une photo trouvée sur le site du
+  // prospect (son propre univers, dans la maquette de son propre message), sinon le dégradé seul.
+  const banniere = vis ? vis.image : (photoSite || null);
   const expediteur = r.expediteur || mes.nom || 'Sofy';
   const rcs = (r.titre || r.texte) ? `<div class="rcs reveal">
       <div class="tel">
@@ -501,8 +503,10 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .carte-x{font-size:13px;line-height:1.42;color:#8E8E93;margin-top:5px;padding-right:18px;
  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .carte-fl{position:absolute;right:13px;top:50%;transform:translateY(-50%);color:#8E8E93;font-size:19px}
-.carte-btn{margin:0 11px 11px;text-align:center;font-size:14.5px;font-weight:750;color:#fff;
- background:var(--grad);border-radius:12px;padding:11px 12px}
+.carte-btn{margin:0 11px 11px;text-align:center;font-size:14.5px;font-weight:650;color:#fff;
+ background:#2C2C2E;border:.5px solid #3A3A3C;border-radius:13px;padding:11px 12px;
+ display:flex;align-items:center;justify-content:center;gap:7px}
+.carte-btn::after{content:'›';font-size:17px;font-weight:400;color:#8E8E93;line-height:1}
 .tel-saisie{display:flex;align-items:center;gap:8px;margin-top:auto;padding:10px 4px 2px}
 .tel-plus{flex:none;width:29px;height:29px;border-radius:50%;background:#1C1C1E;color:#8E8E93;
  display:flex;align-items:center;justify-content:center;font-size:17px}
@@ -718,7 +722,7 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
  .reveal{opacity:1!important;transform:none!important}
 }
 </style></head><body>
-${pl.map((p, i) => planche(p, i, pl.length, doc._mes || {}, doc._logo || null, sdr, images)).join('')}
+${pl.map((p, i) => planche(p, i, pl.length, doc._mes || {}, doc._logo || null, sdr, images, doc._photo || null)).join('')}
 ${apercu ? `<div class="apercu">👁 Aperçu interne — cette visite n'est pas comptée dans les ouvertures du prospect.</div>` : ''}
 <div class="tools"><button onclick="window.print()">⬇️ Télécharger en PDF</button></div>
 <script>
