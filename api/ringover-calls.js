@@ -33,10 +33,62 @@ async function pageCalls(offset, key) {
 export default async function handler(req, res) {
   const user = verifierToken(req);
   if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
-  if (req.method !== 'POST') return res.status(405).json({ erreur: 'POST uniquement' });
-
   const key = process.env.RINGOVER_API_KEY;
   if (!key) return res.status(500).json({ erreur: 'RINGOVER_API_KEY manquante dans Vercel' });
+
+  // ── RÉCUPÉRATION D'UN TRAVAIL PERDU ────────────────────────────────────────────────────────
+  // Incident Franck du 20/08 : liste jamais enregistrée, 30 fiches et un RDV disparus avec
+  // l'onglet. Les appels, eux, sont chez Ringover : ils ne dépendent pas de Sofy Scrap. Cette
+  // vue liste les appels d'une journée pour reconstituer ce qui a été travaillé — numéro,
+  // heure, durée, note et enregistrement compris.
+  // GET ?journee=2026-08-20[&sdr=Franck]
+  if (req.method === 'GET' && (req.query || {}).journee) {
+    if (!['admin', 'superadmin'].includes(user.role)) {
+      return res.status(403).json({ erreur: 'Réservé aux admins' });
+    }
+    const j = String(req.query.journee).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(j)) return res.status(400).json({ erreur: 'Format attendu : AAAA-MM-JJ' });
+    const qui = String((req.query || {}).sdr || '').toLowerCase().trim();
+    const debut = new Date(j + 'T00:00:00Z').getTime();
+    const fin = debut + 86400000;
+    const appels = [];
+    for (let p2 = 0; p2 < MAX_PAGES; p2++) {
+      const { status, data } = await pageCalls(p2 * LIMIT, key);
+      if (status !== 200 || !data) break;
+      const lot = data.call_list || data.calls || [];
+      if (!lot.length) break;
+      let plusVieuxQueLaJournee = false;
+      for (const c of lot) {
+        const t = new Date(c.start_time || c.date || 0).getTime();
+        if (!t) continue;
+        if (t < debut) { plusVieuxQueLaJournee = true; continue; }
+        if (t >= fin) continue;
+        const agent = [c.user && c.user.firstname, c.user && c.user.lastname].filter(Boolean).join(' ');
+        if (qui && !String(agent).toLowerCase().includes(qui) && !String((c.user || {}).email || '').toLowerCase().includes(qui)) continue;
+        appels.push({
+          heure: new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+          numero: c.to_number || c.from_number || '',
+          contact: (c.contact && (c.contact.concat_name || c.contact.company)) || null,
+          sens: c.direction === 'in' ? 'entrant' : 'sortant',
+          repondu: !!c.is_answered,
+          duree_s: c.incall_duration || 0,
+          agent: agent || (c.user || {}).email || '',
+          note: c.notes || (c.note && c.note.content) || null,
+          enregistrement: c.record || null
+        });
+      }
+      if (plusVieuxQueLaJournee) break;   // les pages suivantes sont encore plus anciennes
+    }
+    appels.sort((a, b) => a.heure.localeCompare(b.heure));
+    return res.status(200).json({
+      ok: true, journee: j, sdr: qui || 'tous', total: appels.length, appels,
+      info: appels.length
+        ? 'Ces appels viennent de Ringover : ils survivent à la perte d\'une liste. Le numéro et la note permettent de reconstituer la fiche.'
+        : 'Aucun appel trouvé pour ce jour. Ringover ne conserve que les appels passés depuis un poste connecté.'
+    });
+  }
+
+  if (req.method !== 'POST') return res.status(405).json({ erreur: 'POST ou GET ?journee=' });
 
   const numeros = Array.isArray(req.body?.numeros) ? req.body.numeros : [];
   if (!numeros.length) return res.status(400).json({ erreur: 'numeros requis (tableau)' });

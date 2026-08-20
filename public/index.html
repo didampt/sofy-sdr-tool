@@ -1326,6 +1326,7 @@ Spot-Hit</textarea>
         <div class="save-bar" style="justify-content:flex-start;margin-top:10px">
           <button class="btn" style="background:var(--paper)" id="btn-diag-enrich" onclick="diagEnrich()">📊 Rendement de l'enrichissement</button>
           <button class="btn" style="background:var(--paper)" onclick="ouEstLaFiche()" title="Retrouver une entreprise dans toutes les listes, tous les statuts, tous les SDR">🔎 Où est passée cette fiche ?</button>
+          <button class="btn" style="background:var(--paper)" onclick="appelsDuJour()" title="Reconstituer une journée de travail à partir des appels Ringover — survit à la perte d'une liste">📞 Reconstituer une journée</button>
           <span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">Taux de réussite et coût par email trouvé de chaque étage du waterfall (Dropcontact → FullEnrich → Kaspr → Lemlist). Lecture seule, gratuit.</span>
         </div>
         <div class="save-bar" style="justify-content:flex-start;margin-top:10px">
@@ -2143,7 +2144,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v354';
+const VERSION='v355';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2209,6 +2210,7 @@ function demarrerApp(u){
  if(!['superadmin','admin'].includes(u.role)){['params','stats','appels'].forEach(v=>{const b=document.querySelector(`[data-view="${v}"]`);if(b)b.style.display='none';});}
  chargerSdrChips();
  chargerStatut();
+ setTimeout(proposerBrouillon, 1200);   // après le chargement, on propose un travail non enregistré
  chargerSignupBadge();
  // Vue par défaut : Ma journée (la file du SDR) + état du menu mémorisé
  try{if(localStorage.getItem('sb_min')==='1')document.querySelector('.app').classList.add('sb-min');}catch(_){}
@@ -4092,6 +4094,62 @@ function sauverNote(i,val){
  persister();
  toast('📝 Note enregistrée');
 }
+// ── Brouillon local : la ceinture qui manquait ─────────────────────────────
+// Le RDV de Franck a disparu avec son onglet parce que le travail n'existait QUE dans la mémoire
+// de la page. Désormais chaque modification est aussi écrite sur son poste. Si l'enregistrement
+// serveur échoue — refus, réseau, onglet fermé — le travail est retrouvé à la prochaine ouverture
+// et proposé à la restauration. Le navigateur devient le filet de dernier recours.
+const BROUILLON_CLE = 'sofy_brouillon_liste';
+
+function ecrireBrouillon(){
+ if(!REAL.length)return;
+ try{
+  const léger=REAL.map(function(e){
+   const c={};
+   // On garde ce qui a de la valeur humaine (le travail du SDR), pas les gros objets techniques.
+   ['nom','enseigne','enseigne_ia','ville','code_postal','site_web','telephone_google','naf',
+    'statut_appel','tags_sdr','traite_par','traite_le','rdv_le','notes_sdr','contacts','maps_url'
+   ].forEach(function(k){ if(e[k]!==undefined)c[k]=e[k]; });
+   return c;
+  });
+  localStorage.setItem(BROUILLON_CLE, JSON.stringify({
+   ts:Date.now(), listeNom:state.listeNom||'', savedId:state.savedId||null,
+   sdr:(state.user&&state.user.nom)||'', fiches:léger
+  }));
+ }catch(_){ /* quota localStorage : on n'empêche pas le travail pour autant */ }
+}
+
+function effacerBrouillon(){ try{ localStorage.removeItem(BROUILLON_CLE); }catch(_){} }
+
+// Au démarrage : si un brouillon NON enregistré traîne, on le propose. C'est exactement le cas
+// qui a coûté un RDV.
+async function proposerBrouillon(){
+ let b=null;
+ try{ b=JSON.parse(localStorage.getItem(BROUILLON_CLE)||'null'); }catch(_){}
+ if(!b||!b.fiches||!b.fiches.length)return;
+ // Un brouillon de plus de 7 jours n'est plus une urgence : on l'écarte pour ne pas parasiter.
+ if(Date.now()-b.ts > 7*86400000){ effacerBrouillon(); return; }
+ const quand=new Date(b.ts);
+ const travaillees=b.fiches.filter(function(f){return f.statut_appel||f.rdv_le||(f.tags_sdr||[]).length;});
+ const rdv=b.fiches.filter(function(f){return f.rdv_le||f.statut_appel==='RDV pris';});
+ const ok=await confirmSofy('⚠️ Un travail non enregistré a été retrouvé',
+  'Liste « '+(b.listeNom||'sans nom')+' » — '+b.fiches.length+' fiche(s), interrompue le '
+  +quand.toLocaleDateString('fr-FR')+' à '+quand.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})+'.\n'
+  +(travaillees.length?travaillees.length+' fiche(s) travaillée(s)':'aucune fiche travaillée')
+  +(rdv.length?', dont '+rdv.length+' RDV pris':'')+'.\n\n'
+  +'Ce travail n\'a jamais atteint la base : il n\'existe que sur ce poste. Je peux l\'enregistrer maintenant.',
+  'Récupérer et enregistrer');
+ if(!ok)return;
+ REAL=b.fiches; state.listeNom=b.listeNom||('Récupération du '+quand.toLocaleDateString('fr-FR'));
+ state.savedId=b.savedId||null;
+ nav('results',null);
+ const z=document.getElementById('fiches');
+ if(z)z.innerHTML=REAL.map(function(x,k){return ficheReal(x,k);}).join('');
+ const id=await assurerListeEnregistree();
+ if(id){ await persisterMaintenant(); effacerBrouillon(); toast('✅ Travail récupéré et enregistré'); }
+ else { PERSIST_ETAT='echec'; persistBandeau(); toast('⚠️ Enregistrement encore impossible — garde cet onglet ouvert'); }
+}
+
 // ── Persistance de la liste : plus jamais silencieuse ─────────────────────
 // Incident du 20/08 : Franck ajoute une société, prend un RDV, et rien n'est enregistré. Cause :
 // persister() sortait sans rien faire quand state.savedId était absent (liste dont la sauvegarde
@@ -4147,6 +4205,7 @@ async function assurerListeEnregistree(){
 
 function persister(supprimees){
  if(Array.isArray(supprimees)&&supprimees.length)PERSIST_SUPPR=PERSIST_SUPPR.concat(supprimees);
+ ecrireBrouillon();                       // filet local AVANT toute tentative réseau
  if(PERSIST_FILE)return;                 // une sauvegarde est déjà en route : elle prendra l'état final
  PERSIST_FILE=true;
  setTimeout(function(){ PERSIST_FILE=false; persisterMaintenant(); }, 400);
@@ -4167,6 +4226,7 @@ async function persisterMaintenant(){
    const r=await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:corps});
    if(r.ok){
     PERSIST_ETAT='ok'; PERSIST_DERNIER=new Date(); persistBandeau(); majEtatSauvegarde();
+    effacerBrouillon();                   // le serveur a confirmé : le filet local n'a plus d'objet
     return;
    }
   }catch(_){}
@@ -8147,6 +8207,32 @@ async function migrerStats(){
 // Évite de passer par la console : les endpoints exigent le Bearer, donc une URL seule renvoie 401.
 // « Où est passée cette fiche ? » — la question revient à chaque incident. Plutôt que de
 // fouiller la base à la main, on interroge toutes les listes, tous les statuts, tous les SDR.
+// Retrouver le travail d'une journée quand une liste a été perdue : les appels Ringover
+// survivent à Sofy Scrap, ils permettent de reconstituer qui a été appelé et quand.
+async function appelsDuJour(){
+ const j=prompt('Journée à reconstituer (AAAA-MM-JJ) :',new Date().toISOString().slice(0,10));
+ if(!j)return;
+ const qui=prompt('Filtrer sur un commercial (laisse vide pour tous) :','')||'';
+ toast('📞 Lecture des appels Ringover…');
+ try{
+  const r=await api('/api/ringover-calls?journee='+encodeURIComponent(j.trim())+(qui.trim()?'&sdr='+encodeURIComponent(qui.trim()):''));
+  const d=await r.json();
+  if(d.erreur){toast(d.erreur);return;}
+  document.getElementById('info-titre').textContent='📞 Appels du '+d.journee+' ('+d.total+')';
+  document.getElementById('info-corps').innerHTML=
+   `<div style="background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:11px 13px;font-size:13px;line-height:1.55;margin-bottom:10px">${htmlSafe(d.info||'')}</div>`
+   +((d.appels||[]).map(function(a){
+     return `<div style="padding:9px 0;border-top:1px solid var(--line);font-size:13.5px">
+      <b>${htmlSafe(a.heure)}</b> · ${htmlSafe(a.numero)} ${a.contact?'· '+htmlSafe(a.contact):''}
+      <span class="badge">${htmlSafe(a.sens)}</span>
+      ${a.repondu?`<span class="badge b-gmb">répondu ${Math.round(a.duree_s/60)} min</span>`:'<span class="badge">sans réponse</span>'}
+      <div style="font-size:12px;color:var(--ink-soft)">${htmlSafe(a.agent||'')}${a.note?' — note : '+htmlSafe(a.note):''}</div>
+      ${a.enregistrement?`<audio controls preload="none" style="width:100%;max-width:320px;margin-top:5px" src="/api/ringover-record?url=${encodeURIComponent(a.enregistrement)}"></audio>`:''}
+     </div>`;}).join('')||'<p style="color:var(--ink-soft)">Aucun appel ce jour-là.</p>');
+  document.getElementById('info-modal').style.display='flex';
+ }catch(e){toast('Appels : '+e.message);}
+}
+
 async function ouEstLaFiche(){
  const q=prompt('Nom de l\'entreprise à retrouver (3 caractères minimum) :');
  if(!q||q.trim().length<3)return;
