@@ -88,6 +88,7 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
   // droite le mécanisme Sofy en trois étapes et le résultat visé. Format repris du deck Partoo,
   // qui met systématiquement une solution en face d'un problème plutôt qu'un catalogue.
   const vis = p.visuel_id && images && images[p.visuel_id] ? images[p.visuel_id] : null;
+  const sc0 = (mes && mes.scoring) || null;
   const duel = (p.probleme && p.solution) ? `
     ${vis ? `<figure class="ill reveal"><img src="${esc(vis.image)}" alt="${esc(vis.description || '')}" loading="lazy"></figure>` : ''}
     <div class="duel">
@@ -199,6 +200,32 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
       <div class="av-t">${md(av.texte)}</div>
       ${(g.fiches || [])[0] || g.pire_fiche ? `<div class="av-f">sur la fiche ${esc(((g.pire_fiche || {}).nom) || (g.fiches || [])[0].nom)}</div>` : ''}
     </div>` : '';
+
+  // Cascade des fiches : jusqu'à quatre, la plus faible devant (c'est elle qui porte le sujet).
+  const fichesCascade = (() => {
+    const fs = (g.fiches || []).filter(f => f && f.nom);
+    if (!fs.length) return '';
+    const tri = fs.slice().sort((a, b) => (a.note || 9) - (b.note || 9)).slice(0, 4);
+    const reste = fs.length - tri.length;
+    return `<div class="casc reveal">
+      ${tri.map((f, k) => `<div class="casc-f" style="--i:${k};--d:${k * 110}ms">
+        <div class="casc-bar"><span></span><span></span><span></span><i>google.com/maps</i></div>
+        <div class="casc-b">
+          <div class="casc-n">${esc(f.nom)}</div>
+          <div class="casc-r">
+            ${f.note != null ? `<b>${esc(String(f.note).replace('.', ','))}</b><span class="ets sm">${etoiles(f.note)}</span>` : ''}
+            ${f.nb_avis != null ? `<span class="casc-a">${esc(String(f.nb_avis))} avis</span>` : ''}
+          </div>
+          ${f.adresse ? `<div class="casc-i">📍 ${esc(String(f.adresse).slice(0, 52))}</div>` : ''}
+          ${k === 0 ? `${g.telephone ? '' : '<div class="casc-i casc-x">📞 aucun numéro</div>'}
+            ${g.site_declare ? '' : '<div class="casc-i casc-x">🌐 aucun site web déclaré</div>'}` : ''}
+        </div>
+      </div>`).join('')}
+      ${reste > 0 ? `<div class="casc-p">+ ${reste} autre${reste > 1 ? 's' : ''} fiche${reste > 1 ? 's' : ''}</div>` : ''}
+      ${(sc0 && sc0.etablissements && fs.length < sc0.etablissements)
+        ? `<div class="casc-m">${sc0.etablissements - fs.length} établissement(s) déclaré(s) sans fiche rattachée</div>` : ''}
+    </div>`;
+  })();
 
   // Les défauts relevés sur la fiche : liste sèche, chaque ligne est un fait opposable.
   const defauts = (p.defauts || []).length ? `<div class="dfs">
@@ -323,7 +350,10 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
       ${ficheG}
       ${chiffres ? `<div class="kpis">${chiffres}</div>` : ''}
       ${avisReel}
-      ${defauts}
+      ${(defauts && (fichesCascade || vis)) ? `<div class="df-duo">
+        <div>${defauts}</div>
+        <div>${vis ? `<figure class="ill ill-h reveal"><img src="${esc(vis.image)}" alt="${esc(vis.description || '')}" loading="lazy"></figure>` : fichesCascade}</div>
+      </div>` : (defauts || '')}
       ${problemes ? `<div class="pbs">${problemes}</div>` : ''}
       ${duel}
       ${rcs}
@@ -510,6 +540,41 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .av-f{font-size:12px;margin-top:11px;padding-top:10px;border-top:1px solid var(--line)}
 .pl.dark .av-f{border-top-color:var(--line-d);color:rgba(255,255,255,.45)}
 .pl.light .av-f{color:#9990C4}
+.df-duo{display:grid;gap:26px;margin-top:30px;align-items:start;grid-template-columns:1fr}
+@media(min-width:980px){.df-duo{grid-template-columns:1.02fr .98fr}}
+.df-duo .dfs{margin-top:0}
+.casc{position:relative;display:flex;flex-direction:column;gap:10px}
+.casc-f{position:relative;z-index:calc(10 - var(--i));border-radius:12px;overflow:hidden;background:#fff;
+ border:1px solid #DADCE0;box-shadow:0 3px 8px rgba(20,16,58,.1),0 16px 36px rgba(20,16,58,.16)}
+/* La cascade (chevauchement décalé) n'a de sens qu'en grand écran : en étroit, les fiches se
+   masquaient les unes les autres. */
+@media(min-width:980px){
+ .casc{display:block;padding-left:10px}
+ .casc-f{margin-top:calc(var(--i) * -14px);margin-left:calc(var(--i) * 18px);
+  transform:scale(calc(1 - var(--i) * .03));transform-origin:top left}
+ .casc-p{margin-left:68px}
+}
+.anim .casc-f{opacity:0;transform:translateY(14px) scale(calc(1 - var(--i) * .03));
+ transition:opacity .6s ease var(--d),transform .6s cubic-bezier(.22,.68,.24,1) var(--d)}
+.anim .reveal.on .casc-f{opacity:1;transform:translateY(0) scale(calc(1 - var(--i) * .03))}
+.casc-bar{display:flex;align-items:center;gap:5px;padding:7px 11px;background:#F1F3F4;border-bottom:1px solid #DADCE0}
+.casc-bar span{width:7px;height:7px;border-radius:50%;background:#DADCE0;display:block}
+.casc-bar i{margin-left:6px;font-style:normal;font-size:10.5px;color:#5F6368;font-family:ui-monospace,Menlo,monospace}
+.casc-b{padding:12px 14px 13px;color:#202124}
+.casc-n{font-size:15.5px;font-weight:650;letter-spacing:-.01em;line-height:1.25}
+.casc-r{display:flex;align-items:center;gap:7px;margin-top:5px;flex-wrap:wrap}
+.casc-r b{font-size:14px;font-weight:700;color:#D93025}
+.casc-a{font-size:12.5px;color:#1A73E8}
+.casc-i{font-size:12.5px;color:#3C4043;margin-top:6px;line-height:1.35}
+.casc-i.casc-x{color:#D93025;font-weight:600}
+.casc-p{margin-top:4px;font-size:12.5px;font-weight:600}
+.pl.light .casc-p{color:var(--ink-s)} .pl.dark .casc-p{color:var(--ink-ds)}
+.casc-m{margin-top:8px;font-size:12.5px;line-height:1.5;padding:9px 12px;border-radius:9px}
+.pl.light .casc-m{background:#FFF4F6;border:1px solid #F7C9D8;color:#9F1239}
+.pl.dark .casc-m{background:rgba(240,66,138,.12);border:1px solid rgba(240,66,138,.3);color:#FBCFE8}
+.ill-h{max-height:none;aspect-ratio:4/3}
+.ill-h img{max-height:none;height:100%}
+@media print{.casc-f{box-shadow:none;margin-left:0;margin-top:8px;transform:none}}
 .dfs{display:flex;flex-direction:column;gap:10px;margin-top:30px;max-width:76ch}
 .df{display:flex;gap:12px;align-items:flex-start;padding:14px 17px;border-radius:11px;font-size:14.5px;line-height:1.5}
 .pl.light .df{background:#FFF4F6;border:1px solid #F7C9D8}

@@ -550,7 +550,10 @@ function assembler(cadre, duelsBruts, mes) {
   if (df.length) {
     pl.push({
       role: 'defauts', eyebrow: "CE QUE VOIT UN CLIENT AVANT D'ACHETER",
-      titre: c.defauts_titre, texte: c.defauts_texte, defauts: df
+      titre: c.defauts_titre, texte: c.defauts_texte, defauts: df,
+      // Par défaut : la cascade de ses fiches Google (la preuve). Le commercial peut y substituer
+      // une image de la bibliothèque depuis l'éditeur.
+      visuel_id: null
     });
   }
 
@@ -619,7 +622,7 @@ const CHAMPS = {
   couverture:  [['titre', 65], ['texte', 200]],
   bilan:       [['titre', 65], ['texte', 200]],
   constat:     [['titre', 65], ['texte', 200], ['chiffres[].legende', 60]],
-  defauts:     [['titre', 65], ['texte', 200], ['defauts[]', 190]],
+  defauts:     [['titre', 65], ['texte', 200], ['defauts[]', 190], ['visuel_id', 0]],
   duel:        [['titre', 65], ['probleme.constat', 120], ['probleme.cout', 130],
                 ['solution.nom', 90], ['solution.comment[]', 90], ['solution.resultat', 120],
                 ['chiffre_cle.legende', 80], ['visuel_id', 0],
