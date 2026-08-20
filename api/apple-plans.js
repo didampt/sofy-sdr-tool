@@ -81,29 +81,63 @@ export default async function handler(req, res) {
     } catch (_) { }
   }
 
-  // `center` OU `location` est obligatoire côté Apple Maps : sans repère géographique, la requête
-  // est refusée. On envoie ce qu'on a, en préférant les coordonnées.
-  if (!ll && !lieu) {
+  // ⚠️ `center` OU `location` est obligatoire, et les deux ne peuvent PAS partir ensemble.
+  // Le 400 du 21/08 (« Missing query `center` or `location` parameter ») venait d'un paramètre
+  // ENVOYÉ MAIS VIDE : URLSearchParams écrit « center= », que l'API compte pour absent. On
+  // valide donc les coordonnées comme deux vrais nombres avant de les utiliser, et on ne met
+  // dans la requête que ce qui a une valeur.
+  const coord = (() => {
+    const m = String(ll).replace(/^@/, '').split(',');
+    if (m.length < 2) return null;
+    const la = Number(m[0]), lo = Number(m[1]);
+    if (!isFinite(la) || !isFinite(lo) || (la === 0 && lo === 0)) return null;
+    if (Math.abs(la) > 90 || Math.abs(lo) > 180) return null;
+    return la + ',' + lo;
+  })();
+  if (!coord && !lieu) {
     return res.status(400).json({
       erreur: 'Apple Plans exige un repère géographique',
-      detail: 'Transmets ll (latitude,longitude de la fiche) ou lieu (ville) — sans lui, l\'API refuse la recherche.'
+      detail: 'Ni coordonnées exploitables (ll = « latitude,longitude ») ni ville (lieu). Lance « 🔍 Audit de fiche » : '
+        + 'il relève et conserve désormais les coordonnées de la fiche Google, qui servent ici.',
+      recu: { ll: ll || null, lieu: lieu || null }
     });
   }
 
-  let lieux = [];
-  try {
-    // ⚠️ Le moteur apple_maps attend `query`, PAS `q` (400 « Missing query parameter » le 21/08).
-    // Et `center` (« lat,lng », sans @) ET `location` ne peuvent pas être envoyés ensemble.
-    const p = { engine: 'apple_maps', query: requete, api_key: cle };
-    if (ll) p.center = ll.replace(/^@/, ''); else p.location = lieu;
-    const u = 'https://serpapi.com/search.json?' + new URLSearchParams(p).toString();
-    const r = await fetch(u, { signal: AbortSignal.timeout(30000) });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) return res.status(502).json({ erreur: 'SerpApi ' + r.status, detail: String((d && d.error) || '').slice(0, 200) });
-    lieux = Array.isArray(d.local_results) ? d.local_results
-      : (Array.isArray(d.place_results) ? d.place_results : []);
-  } catch (e) {
-    return res.status(502).json({ erreur: 'SerpApi injoignable', detail: String((e && e.message) || e).slice(0, 160) });
+  let lieux = [], envoye = null;
+  // Deux tentatives au plus : les coordonnées d'abord (précises), la ville ensuite. Un « location »
+  // qu'Apple ne reconnaît pas ne doit pas coûter la mesure quand on a des coordonnées, et
+  // réciproquement.
+  const tentatives = [];
+  if (coord) tentatives.push({ center: coord });
+  if (lieu) tentatives.push({ location: lieu });
+  let derniereErreur = null;
+  for (const geo of tentatives) {
+    try {
+      const p = { engine: 'apple_maps', query: requete, ...geo, api_key: cle };
+      const u = 'https://serpapi.com/search.json?' + new URLSearchParams(p).toString();
+      const r = await fetch(u, { signal: AbortSignal.timeout(30000) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || (d && d.error)) {
+        derniereErreur = { http: r.status, message: String((d && d.error) || 'HTTP ' + r.status).slice(0, 200), envoye: geo };
+        continue;
+      }
+      lieux = Array.isArray(d.local_results) ? d.local_results
+        : (Array.isArray(d.place_results) ? d.place_results : []);
+      envoye = geo;
+      break;
+    } catch (e) {
+      derniereErreur = { http: 0, message: String((e && e.message) || e).slice(0, 160), envoye: geo };
+    }
+  }
+  if (!envoye) {
+    // Le paramètre réellement transmis part dans la réponse : un 400 de plus doit être
+    // diagnosticable du premier coup, sans nouvelle passe de devinettes.
+    return res.status(502).json({
+      erreur: 'SerpApi ' + ((derniereErreur && derniereErreur.http) || '?'),
+      detail: (derniereErreur && derniereErreur.message) || 'aucune tentative aboutie',
+      parametres_envoyes: tentatives.map(t => Object.keys(t)[0] + '=' + Object.values(t)[0]),
+      requete
+    });
   }
 
   const moi = nom ? lieux.findIndex(x => memeEnseigne(x.title || x.name, nom)) : -1;
@@ -124,7 +158,8 @@ export default async function handler(req, res) {
       note: x.rating != null ? x.rating : null,
       avis: x.reviews != null ? x.reviews : null
     })),
-    total_resultats: lieux.length
+    total_resultats: lieux.length,
+    repere: Object.keys(envoye)[0] + ' = ' + Object.values(envoye)[0]
   };
 
   try {

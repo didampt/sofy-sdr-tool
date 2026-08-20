@@ -2154,7 +2154,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v372';
+const VERSION='v373';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -6162,21 +6162,35 @@ async function supprimerPrez(jeton,client){
  try{
   const r=await api('/api/prez?jeton='+encodeURIComponent(j),{method:'DELETE'});
   const d=await r.json();
-  if(d.erreur){toast(d.erreur);return;}
-  toast(d.info||'Analyse supprimée');
-  // La fiche qui la portait ne doit plus l'afficher
-  REAL.forEach(function(e,i){
-   let bouge=false;
-   if(e._prezToutes&&e._prezToutes.length){
-    const reste=e._prezToutes.filter(x=>x&&x.jeton!==j);
-    if(reste.length!==e._prezToutes.length){e._prezToutes=reste;bouge=true;
-     if(e._prez&&e._prez.jeton===j)e._prez=reste[0]||null;
-     if(!e._prez)delete e._prez;}
-   }else if(e._prez&&e._prez.jeton===j){delete e._prez;bouge=true;}
-   if(bouge)rerender(i);
-  });
+  // « Analyse introuvable » (404) veut dire qu'elle N'EXISTE PLUS : supprimée depuis l'onglet
+  // Prez sales, par un collègue, ou purgée à l'expiration. Abandonner ici laissait sa carte sur
+  // la fiche pour toujours, sans moyen de s'en débarrasser (constat Didier, 21/08). Un 404 est
+  // donc traité comme une réussite : le but était que l'analyse disparaisse, elle a disparu.
+  const dejaPartie=(r.status===404)||/introuvable/i.test(String(d.erreur||''));
+  if(d.erreur&&!dejaPartie){toast(d.erreur);return;}
+  toast(dejaPartie?'Analyse déjà supprimée — la fiche est nettoyée':(d.info||'Analyse supprimée'));
+  oublierPrez(j);
   chargerMesPrez();
+  // Et on redemande la vérité au serveur : la mémoire du navigateur n'est pas l'autorité.
+  try{ await chargerPrezListe(); }catch(_){}
  }catch(e){toast('Suppression : '+e.message);}
+}
+
+// Retire une analyse de toutes les fiches en mémoire, quelle que soit la structure qui la porte.
+function oublierPrez(j){
+ REAL.forEach(function(e,i){
+  let bouge=false;
+  if(Array.isArray(e._prezToutes)){
+   const reste=e._prezToutes.filter(x=>x&&x.jeton!==j);
+   if(reste.length!==e._prezToutes.length){e._prezToutes=reste;bouge=true;}
+  }
+  if(e._prez&&e._prez.jeton===j){
+   const remplacant=(e._prezToutes||[])[0]||null;
+   if(remplacant)e._prez=remplacant; else delete e._prez;
+   bouge=true;
+  }
+  if(bouge)rerender(i);
+ });
 }
 
 // ── Mes présentations ─────────────────────────────────────────────────────
@@ -6268,8 +6282,14 @@ async function chargerPrezListe(){
   REAL.forEach(function(e,i){
    const p=d.par_fiche[e.nom];
    const tt=(d.toutes_par_fiche||{})[e.nom]||null;
+   // Le serveur est l'autorité, dans les DEUX sens : il ajoute ce qu'il connaît et il retire ce
+   // qu'il ne connaît plus. Sans ce second sens, une analyse supprimée ailleurs (autre onglet,
+   // autre SDR, purge à l'expiration) gardait sa carte sur la fiche.
+   if(!p&&(e._prez||e._prezToutes)){delete e._prez;delete e._prezToutes;touchees++;rerender(i);return;}
    if(p&&!e._prez){e._prez=p;e._prezToutes=tt;touchees++;rerender(i);}
-   else if(tt&&!e._prezToutes){e._prezToutes=tt;rerender(i);}
+   else if(tt&&JSON.stringify(tt.map(x=>x.jeton))!==JSON.stringify((e._prezToutes||[]).map(x=>x.jeton))){
+    e._prezToutes=tt;e._prez=p;rerender(i);
+   }
   });
   if(touchees)majKpisReal();
  }catch(_){}
@@ -6715,12 +6735,19 @@ async function completerMesures(i){
  //    depuis toujours sans jamais l'avoir mesuré.
  if(!(e.gmb||{}).apple){
   const req=requeteLocale(e);
-  const ville=e.ville||((e.gmb||{}).audit||{}).ville||'';
-  if(req&&(f.lat&&f.lng||ville)){
+  const au=(e.gmb||{}).audit||{};
+  const ville=e.ville||au.ville||'';
+  // Les coordonnées, dans l'ordre de fiabilité : celles relevées par l'audit de fiche (elles
+  // existent pour toute fiche auditée), puis celles stockées à l'analyse GMB (absentes des fiches
+  // analysées avant août 2026 — c'est ce qui a produit le 400 du 21/08 sur AGS).
+  const lat=(au.lat!=null?au.lat:f.lat), lng=(au.lng!=null?au.lng:f.lng);
+  const ll=(Number.isFinite(Number(lat))&&Number.isFinite(Number(lng)))?(Number(lat)+','+Number(lng)):'';
+  // Apple attend un lieu nommé façon « Le Lamentin, France », pas un « LE LAMENTIN » seul.
+  const lieu=ville?(ville.charAt(0)+ville.slice(1).toLowerCase()+', France'):'';
+  if(req&&(ll||lieu)){
    try{
     const r=await api('/api/apple-plans',{method:'POST',headers:{'Content-Type':'application/json'},
-     body:JSON.stringify({requete:req,nom:enseigneDe(e)||e.nom,
-      ll:(f.lat&&f.lng)?(f.lat+','+f.lng):'',lieu:ville})});
+     body:JSON.stringify({requete:req,nom:enseigneDe(e)||e.nom,ll:ll,lieu:lieu})});
     const d=await r.json();
     if(d.ok&&d.apple){e.gmb=Object.assign({},e.gmb||{},{apple:d.apple});faits.push('Apple Plans');}
     else rater('Apple Plans',d);
@@ -6831,10 +6858,19 @@ async function genererPrez(i){
   // Un relevé raté change le document : sans position locale, la planche « ce que trouve un
   // client qui vous cherche » n'existe pas. Le SDR doit le savoir AVANT de payer la rédaction.
   if(rel.erreurs.length){
+   // La conséquence dépend de ce qui manque VRAIMENT : la planche « ce que trouve un client »
+   // existe dès qu'UNE de ses trois sources a répondu (position locale, aperçu IA, Apple Plans).
+   // Annoncer sa disparition à chaque échec partiel était faux, et poussait à renoncer pour rien.
+   const g2=e.gmb||{}, au2=g2.audit||{}, iv2=g2.ia_visibilite||null, ap2=g2.apple||null;
+   const plancheOk=(au2.position_locale!=null)||((au2.concurrents||[]).length>0)
+     ||(iv2&&(iv2.apercu_present||(iv2.annonceurs||[]).length))||(ap2&&ap2.total_resultats);
+   const suite=plancheOk
+    ? 'La planche « ce que trouve un client qui vous cherche » sera quand même créée — avec ce qui a été relevé. Ces mesures-là y manqueront simplement.'
+    : 'Conséquence : la planche « ce que trouve un client qui vous cherche » ne sera PAS créée, aucune de ses sources n\'a répondu.';
    if(!await confirmSofy('Des relevés n\'ont pas abouti',
     'Ces mesures manqueront au document :\n· '+rel.erreurs.join('\n· ')+
-    '\n\nConséquence : la planche « ce que trouve un client qui vous cherche » (position locale + aperçu IA) ne sera pas créée.\n\nSi c\'est une clé SerpApi épuisée ou absente, corrige-la dans Vercel puis relance : ce sont les pages les plus fortes du document.',
-    'Générer sans ces mesures'))return;
+    '\n\n'+suite+'\n\nSi c\'est une clé SerpApi épuisée ou absente, corrige-la dans Vercel puis relance.',
+    plancheOk?'Générer quand même':'Générer sans ces mesures'))return;
   }
  }
  // Garde-fou : une analyse existe déjà sur cette fiche. La regénérer coûte un appel complet et

@@ -34,6 +34,8 @@ async function ensureAudit() {
     requete TEXT,
     categorie TEXT,
     ville TEXT,
+    lat NUMERIC,
+    lng NUMERIC,
     concurrents JSONB,
     mesure_le TIMESTAMPTZ DEFAULT NOW(),
     mesure_par TEXT
@@ -41,6 +43,8 @@ async function ensureAudit() {
   // Fiches auditées avant le 20/08 : colonnes ajoutées à la volée (jamais de bump SCHEMA_VERSION).
   try { await sql`ALTER TABLE fiche_audit ADD COLUMN IF NOT EXISTS categorie TEXT`; } catch (_) {}
   try { await sql`ALTER TABLE fiche_audit ADD COLUMN IF NOT EXISTS ville TEXT`; } catch (_) {}
+  try { await sql`ALTER TABLE fiche_audit ADD COLUMN IF NOT EXISTS lat NUMERIC`; } catch (_) {}
+  try { await sql`ALTER TABLE fiche_audit ADD COLUMN IF NOT EXISTS lng NUMERIC`; } catch (_) {}
   pret = true;
 }
 
@@ -120,6 +124,10 @@ export default async function handler(req, res) {
     categorie: (Array.isArray(fiche.categories) && fiche.categories[0] && (fiche.categories[0].name || fiche.categories[0]))
       || fiche.type || (Array.isArray(fiche.types) ? fiche.types[0] : null) || null,
     ville: villeDe(fiche.address || fiche.formatted_address),
+    // Les coordonnées de la fiche, telles que SerpApi les rend. On les garde : Apple Plans exige
+    // un repère géographique, et les fiches analysées avant août 2026 n'en ont aucun côté GMB.
+    lat: (fiche.gps_coordinates && fiche.gps_coordinates.latitude != null) ? fiche.gps_coordinates.latitude : null,
+    lng: (fiche.gps_coordinates && fiche.gps_coordinates.longitude != null) ? fiche.gps_coordinates.longitude : null,
     concurrents: null
   };
   if (audit.categorie) audit.categorie = String(audit.categorie).slice(0, 80);
@@ -155,18 +163,19 @@ export default async function handler(req, res) {
   try {
     await sql`INSERT INTO fiche_audit (place_id, nom, photos_total, photos_enseigne,
         description_presente, horaires_presents, nb_categories, nb_attributs,
-        position_locale, requete, concurrents, categorie, ville, mesure_le, mesure_par)
+        position_locale, requete, concurrents, categorie, ville, lat, lng, mesure_le, mesure_par)
       VALUES (${audit.place_id}, ${audit.nom}, ${audit.photos_total}, ${audit.photos_enseigne},
               ${audit.description_presente}, ${audit.horaires_presents}, ${audit.nb_categories},
               ${audit.nb_attributs}, ${audit.position_locale}, ${audit.requete},
               ${JSON.stringify(audit.concurrents)}::jsonb, ${audit.categorie}, ${audit.ville},
-              NOW(), ${user.nom})
+              ${audit.lat}, ${audit.lng}, NOW(), ${user.nom})
       ON CONFLICT (place_id) DO UPDATE SET nom = EXCLUDED.nom, photos_total = EXCLUDED.photos_total,
         photos_enseigne = EXCLUDED.photos_enseigne, description_presente = EXCLUDED.description_presente,
         horaires_presents = EXCLUDED.horaires_presents, nb_categories = EXCLUDED.nb_categories,
         nb_attributs = EXCLUDED.nb_attributs, position_locale = EXCLUDED.position_locale,
         requete = EXCLUDED.requete, concurrents = EXCLUDED.concurrents,
         categorie = EXCLUDED.categorie, ville = EXCLUDED.ville,
+        lat = EXCLUDED.lat, lng = EXCLUDED.lng,
         mesure_le = NOW(), mesure_par = EXCLUDED.mesure_par`;
   } catch (_) { }
 
