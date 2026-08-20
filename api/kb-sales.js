@@ -114,16 +114,31 @@ const SEED = [
 // seul quand la base est vide : demander une requête technique à un SDR n'est pas une option.
 export async function amorcer(par) {
   await ensureKb();
-  let ajoutes = 0;
+  let ajoutes = 0, remis = 0;
   for (const s of SEED) {
+    // ON CONFLICT DO NOTHING ne suffisait pas : les blocs insérés AVANT l'ajout de la gouvernance
+    // ont reçu le défaut de la colonne (`statut = 'propose'`) quand l'ALTER TABLE est passé. Ils
+    // existaient donc en base, invisibles pour le générateur, et l'amorçage les ignorait —
+    // « base vide malgré l'amorçage ». On les remet à l'état officiel, sans jamais écraser le
+    // texte : une correction faite à la main sur titre/contenu/source est préservée.
     const r = await sql`INSERT INTO kb_sales
-        (type, module, titre, contenu, source, secteur, territoire, cle_seed, verifie_le, statut, valide_par, valide_le)
+        (type, module, titre, contenu, source, secteur, territoire, cle_seed, verifie_le, actif, statut, valide_par, valide_le)
       VALUES (${s.type}, ${s.module}, ${s.titre}, ${s.contenu}, ${s.source}, ${s.secteur || null},
-              ${s.territoire || null}, ${s.cle_seed}, CURRENT_DATE, 'valide', ${par || 'amorçage Sofy'}, NOW())
-      ON CONFLICT (cle_seed) DO NOTHING RETURNING id`;
-    if (r.length) ajoutes++;
+              ${s.territoire || null}, ${s.cle_seed}, CURRENT_DATE, TRUE, 'valide', ${par || 'amorçage Sofy'}, NOW())
+      ON CONFLICT (cle_seed) DO UPDATE SET
+        statut = 'valide',
+        actif = TRUE,
+        motif_refus = NULL,
+        secteur = COALESCE(kb_sales.secteur, EXCLUDED.secteur),
+        territoire = COALESCE(kb_sales.territoire, EXCLUDED.territoire),
+        verifie_le = GREATEST(kb_sales.verifie_le, CURRENT_DATE),
+        valide_par = COALESCE(kb_sales.valide_par, EXCLUDED.valide_par),
+        valide_le = COALESCE(kb_sales.valide_le, NOW())
+      RETURNING id, (xmax = 0) AS cree`;
+    if (r.length && r[0].cree) ajoutes++;
+    else if (r.length) remis++;
   }
-  return { ajoutes, deja_presents: SEED.length - ajoutes, total: SEED.length };
+  return { ajoutes, remis, total: SEED.length };
 }
 
 export default async function handler(req, res) {
@@ -166,7 +181,9 @@ export default async function handler(req, res) {
         const r = await amorcer(user.nom);
         return res.status(200).json({
           ok: true, ...r,
-          info: r.ajoutes ? `${r.ajoutes} bloc(s) ajouté(s) depuis le deck Sofy.` : 'Tous les blocs du deck étaient déjà là — rien écrasé.'
+          info: [r.ajoutes ? `${r.ajoutes} bloc(s) ajouté(s)` : null,
+                 r.remis ? `${r.remis} bloc(s) remis à l'état validé` : null].filter(Boolean).join(' · ')
+                || 'Tous les blocs du deck étaient déjà en place — rien écrasé.'
         });
       }
 

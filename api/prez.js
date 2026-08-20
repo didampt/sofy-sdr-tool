@@ -279,7 +279,22 @@ export default async function handler(req, res) {
           detail: String((e && e.message) || e).slice(0, 200) });
       }
     }
-    if (!blocs.length) return res.status(400).json({ erreur: 'Base de connaissance vide malgré l\'amorçage — préviens un admin' });
+    if (!blocs.length) {
+      // Si ça arrive encore, le message doit dire POURQUOI plutôt que d'envoyer le SDR au support.
+      let diag = '';
+      try {
+        const [d] = await sql`SELECT COUNT(*)::int AS total,
+            COUNT(*) FILTER (WHERE statut = 'valide')::int AS valides,
+            COUNT(*) FILTER (WHERE NOT actif)::int AS inactifs,
+            COUNT(*) FILTER (WHERE verifie_le <= CURRENT_DATE - INTERVAL '6 months')::int AS perimes
+          FROM kb_sales`;
+        diag = `${d.total} bloc(s) en base, ${d.valides} validé(s), ${d.inactifs} désactivé(s), ${d.perimes} périmé(s)`;
+      } catch (_) { diag = 'table kb_sales illisible'; }
+      return res.status(400).json({
+        erreur: 'Aucun bloc utilisable pour ce module',
+        detail: diag + (amorcage ? ` · amorçage : ${amorcage.ajoutes} ajouté(s), ${amorcage.remis || 0} remis` : '')
+      });
+    }
 
     const out = await composer({ mes, radar, blocs, module, consigne: b.consigne, sdr: user.nom });
     if (out.erreur) return res.status(502).json(out);
