@@ -2105,7 +2105,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v337';
+const VERSION='v338';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -5540,7 +5540,7 @@ async function genererPrez(i){
  ].filter(Boolean);
  const ok=await confirmSofy('🎨 Générer l\'analyse de '+(enseigneDe(e)||e.nom),
   'Module mis en avant : '+nomModule(mod)+'\n\nCe que le document va citer :\n· '+dispo.join('\n· ')+
-  '\n\nUne planche par problème mesuré, avec en face le mécanisme Sofy qui y répond et le résultat visé, plus une courbe de trajectoire et un cas client. Page web privée valable 15 jours, suivi des ouvertures et des lecteurs, bouton PDF.\nCoût ≈ 0,20 € · 40 à 90 secondes pendant lesquelles Sofy Scrap est bloqué.',
+  '\n\nTon logo, ta fiche Google redessinée avec ses défauts, ton vrai avis négatif, une planche par problème mesuré avec en face le mécanisme Sofy, un exemple de message RCS écrit pour ton métier, une courbe de trajectoire et un cas client. Page web privée valable 15 jours, suivi des ouvertures et des lecteurs, bouton PDF.\nCoût ≈ 0,20 € · 40 à 90 secondes pendant lesquelles Sofy Scrap est bloqué.',
   '🎨 Générer l\'analyse');
  if(!ok)return;
  const v=voileTravail('🎨 Composition de l\'analyse',

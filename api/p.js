@@ -19,7 +19,20 @@ const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g,
 // **gras** → <strong> (les blocs de la base de connaissance en contiennent)
 const md = s => esc(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
 
-function planche(p, i, total) {
+// Une IA qui écrit en français écrit « 1,7 ». Number('1,7') vaut NaN : c'est ce qui a vidé la
+// planche trajectoire du premier document envoyé. Toute valeur numérique passe désormais par ici.
+const num = v => {
+  if (typeof v === 'number') return isFinite(v) ? v : null;
+  if (v == null) return null;
+  const n = parseFloat(String(v).replace(/\s/g, '').replace(',', '.').replace(/[^\d.\-]/g, ''));
+  return isFinite(n) ? n : null;
+};
+const etoiles = n => {
+  const v = Math.max(0, Math.min(5, num(n) || 0));
+  return [1, 2, 3, 4, 5].map(k => `<span class="et${v >= k ? ' on' : (v > k - 1 ? ' mi' : '')}">★</span>`).join('');
+};
+
+function planche(p, i, total, mes, logo) {
   const sombre = i % 2 === 1;
   const chiffres = (p.chiffres || []).map(c => `
     <div class="kpi">
@@ -43,9 +56,9 @@ function planche(p, i, total) {
     </div>`).join('');
   // Projection : LE graphique. Barre actuelle → barre cible, animée à l'entrée dans l'écran.
   const proj = (p.projection || []).map((x, k) => {
-    const max = Number(x.max) || Math.max(Number(x.cible) || 0, Number(x.actuel) || 0) * 1.15 || 1;
-    const pa = Math.max(2, Math.min(100, Math.round((Number(x.actuel) || 0) / max * 100)));
-    const pc = Math.max(2, Math.min(100, Math.round((Number(x.cible) || 0) / max * 100)));
+    const max = num(x.max) || Math.max(num(x.cible) || 0, num(x.actuel) || 0) * 1.15 || 1;
+    const pa = Math.max(2, Math.min(100, Math.round((num(x.actuel) || 0) / max * 100)));
+    const pc = Math.max(2, Math.min(100, Math.round((num(x.cible) || 0) / max * 100)));
     const fmt = v => String(v).replace('.', ',');
     return `<div class="pj reveal" style="--d:${k * 110}ms">
       <div class="pj-h"><span class="pj-n">${md(x.indicateur)}</span>${x.delai ? `<span class="pj-d">objectif ${esc(x.delai)}</span>` : ''}</div>
@@ -84,15 +97,16 @@ function planche(p, i, total) {
   // Trajectoire : une courbe qui se dessine, pas deux barres. C'est ce que le prospect regarde
   // pour se projeter — d'où le tracé animé et les valeurs posées sur chaque point.
   let courbe = '';
-  if (p.courbe && Array.isArray(p.courbe.points) && p.courbe.points.length > 1) {
-    const pts = p.courbe.points.filter(x => x && isFinite(Number(x.valeur)));
-    const vals = pts.map(x => Number(x.valeur));
-    const haut = Number(p.courbe.max) || Math.max(...vals) * 1.18;
+  if (p.courbe && Array.isArray(p.courbe.points) && p.courbe.points.length > 1
+      && p.courbe.points.filter(x => x && num(x.valeur) != null).length > 1) {
+    const pts = p.courbe.points.filter(x => x && num(x.valeur) != null);
+    const vals = pts.map(x => num(x.valeur));
+    const haut = num(p.courbe.max) || Math.max(...vals) * 1.18;
     const bas = Math.min(...vals) * 0.82;
     const W = 760, H = 260, PX = 54, PY = 34;
     const xy = pts.map((x, k) => [
       PX + k * ((W - PX * 2) / (pts.length - 1)),
-      H - PY - ((Number(x.valeur) - bas) / (haut - bas || 1)) * (H - PY * 2)
+      H - PY - ((num(x.valeur) - bas) / (haut - bas || 1)) * (H - PY * 2)
     ]);
     const d = xy.map((c, k) => (k ? 'L' : 'M') + c[0].toFixed(1) + ' ' + c[1].toFixed(1)).join(' ');
     const aire = d + ` L${xy[xy.length - 1][0].toFixed(1)} ${H - PY} L${xy[0][0].toFixed(1)} ${H - PY} Z`;
@@ -125,6 +139,79 @@ function planche(p, i, total) {
     <div class="jl reveal" style="--d:${k * 110}ms">
       <div class="jl-q">${md(x.quand)}</div><div class="jl-t">${md(x.texte)}</div>
     </div>`).join('');
+  // ══ Blocs visuels ══ Ce qui fait qu'on reconnaît SA marque et SA fiche, pas un modèle.
+  const g = (mes && mes.google) || {};
+
+  // Sa fiche Google, redessinée avec ses vraies valeurs. Un directeur marketing reconnaît
+  // immédiatement l'objet : c'est ce qu'un client voit avant d'acheter chez lui.
+  const ficheG = (p.fiche_google && (g.note_moyenne != null || (g.fiches || []).length)) ? (() => {
+    const pr = (g.fiches || [])[0] || {};
+    const nom = mes.nom || pr.nom || '';
+    const note = g.note_moyenne != null ? g.note_moyenne : pr.note;
+    return `<div class="gmb reveal">
+      <div class="gmb-w">
+        <div class="gmb-bar"><span class="gmb-d"></span><span class="gmb-d"></span><span class="gmb-d"></span>
+          <span class="gmb-u">google.com/maps</span></div>
+        <div class="gmb-b">
+          <div class="gmb-n">${esc(nom)}</div>
+          <div class="gmb-r">
+            <span class="gmb-note">${esc(String(note).replace('.', ','))}</span>
+            <span class="ets">${etoiles(note)}</span>
+            <span class="gmb-a">${g.total_avis != null ? esc(String(g.total_avis).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')) + ' avis' : ''}</span>
+          </div>
+          <div class="gmb-l">
+            ${pr.adresse ? `<div class="gmb-i"><span>📍</span>${esc(pr.adresse)}</div>` : ''}
+            <div class="gmb-i${g.telephone ? '' : ' vide'}"><span>📞</span>${g.telephone ? esc(g.telephone) : 'Aucun numéro renseigné'}</div>
+            <div class="gmb-i${g.site_declare ? '' : ' vide'}"><span>🌐</span>${g.site_declare ? esc(g.site_declare) : 'Aucun site web déclaré'}</div>
+            ${g.nb_fiches > 1 ? `<div class="gmb-i"><span>🏪</span>${g.nb_fiches} fiches rattachées à votre marque</div>` : ''}
+          </div>
+        </div>
+      </div>
+      <div class="gmb-c">Votre fiche, telle qu'un client la voit — relevée le jour de cette analyse.</div>
+    </div>`;
+  })() : '';
+
+  // Le vrai avis négatif, mis en page comme sur Google. C'est la pièce qui ne s'oublie pas.
+  const av = g.avis_negatif || {};
+  const avisReel = (p.avis_reel && av.texte) ? `<div class="av reveal">
+      <div class="av-h">
+        <span class="av-av">${esc(String(mes.nom || '?').trim().charAt(0).toUpperCase())}</span>
+        <div><div class="av-n">Un de vos clients</div>
+          <div class="av-m"><span class="ets sm">${etoiles(av.note != null ? av.note : 1)}</span>
+            ${av.date ? `<span>${esc(av.date)}</span>` : ''}</div></div>
+        <span class="av-g">Avis Google</span>
+      </div>
+      <div class="av-t">${md(av.texte)}</div>
+      ${(g.fiches || [])[0] || g.pire_fiche ? `<div class="av-f">sur la fiche ${esc(((g.pire_fiche || {}).nom) || (g.fiches || [])[0].nom)}</div>` : ''}
+    </div>` : '';
+
+  // Les défauts relevés sur la fiche : liste sèche, chaque ligne est un fait opposable.
+  const defauts = (p.defauts || []).length ? `<div class="dfs">
+      ${(p.defauts || []).map((x, k) => `<div class="df reveal" style="--d:${k * 95}ms">
+        <span class="df-x">✕</span><span>${md(x)}</span></div>`).join('')}
+    </div>` : '';
+
+  // La maquette RCS : le message que le prospect pourrait envoyer demain, écrit pour son métier.
+  const r = p.maquette_rcs || {};
+  const rcs = (r.titre || r.texte) ? `<div class="rcs reveal">
+      <div class="tel">
+        <div class="tel-n"></div>
+        <div class="tel-e">
+          <div class="tel-t">Messages</div>
+          <div class="bul">
+            <div class="bul-e">${esc(r.expediteur || mes.nom || '')} <span>vérifié ✓</span></div>
+            ${r.titre ? `<div class="bul-ti">${md(r.titre)}</div>` : ''}
+            ${r.texte ? `<div class="bul-x">${md(r.texte)}</div>` : ''}
+            ${r.bouton ? `<div class="bul-b">${esc(r.bouton)}</div>` : ''}
+          </div>
+        </div>
+      </div>
+      <div class="rcs-l">
+        <div class="rcs-t">Ce que vos clients recevraient</div>
+        <div class="rcs-x">Le RCS affiche le nom vérifié de votre enseigne, son logo et un bouton cliquable — là où un SMS classique n'affiche qu'un numéro court anonyme. Bascule automatique en SMS si le téléphone ne prend pas le RCS : aucun message perdu.</div>
+      </div>
+    </div>` : '';
+
   const cit = p.citation && p.citation.texte ? `
     <blockquote class="cit">${md(p.citation.texte)}
       ${p.citation.meta ? `<cite>${esc(p.citation.meta)}</cite>` : ''}</blockquote>` : '';
@@ -134,13 +221,18 @@ function planche(p, i, total) {
         <span class="logo">sofy</span>
         <span class="pag">${String(i + 1).padStart(2, '0')} / ${String(total).padStart(2, '0')}</span>
       </header>
+      ${p.role === 'couverture' && logo ? `<img class="logo-p" src="${esc(logo)}" alt="">` : ''}
       ${p.eyebrow ? `<div class="eyebrow">${esc(p.eyebrow)}</div>` : ''}
       <h2 class="pl-t">${md(p.titre)}</h2>
       <div class="rule"></div>
       ${p.texte ? `<p class="pl-x">${md(p.texte)}</p>` : ''}
+      ${ficheG}
       ${chiffres ? `<div class="kpis">${chiffres}</div>` : ''}
+      ${avisReel}
+      ${defauts}
       ${problemes ? `<div class="pbs">${problemes}</div>` : ''}
       ${duel}
+      ${rcs}
       ${courbe}
       ${jalons ? `<div class="jls">${jalons}</div>` : ''}
       ${proj ? `<div class="pjs">${proj}</div>` : ''}
@@ -230,6 +322,67 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .tools{position:fixed;right:16px;bottom:16px;display:flex;gap:8px;z-index:9}
 .tools button{font:inherit;font-size:13px;font-weight:650;padding:10px 15px;border-radius:11px;cursor:pointer;
  border:1px solid var(--line);background:#fff;color:var(--ink);box-shadow:0 6px 22px rgba(20,16,58,.16)}
+.logo-p{max-height:54px;max-width:190px;width:auto;margin-bottom:22px;display:block;object-fit:contain}
+.pl.dark .logo-p{filter:brightness(0) invert(1);opacity:.94}
+.ets{display:inline-flex;gap:1px;letter-spacing:-1px}
+.et{color:#DADCE0;font-size:17px;line-height:1}
+.et.on{color:#FBBC04} .et.mi{color:#FBBC04;opacity:.5}
+.ets.sm .et{font-size:14px}
+.gmb{margin-top:32px;max-width:560px}
+.gmb-w{border-radius:14px;overflow:hidden;background:#fff;border:1px solid #DADCE0;box-shadow:0 4px 10px rgba(20,16,58,.09),0 26px 54px rgba(20,16,58,.14)}
+.gmb-bar{display:flex;align-items:center;gap:6px;padding:9px 13px;background:#F1F3F4;border-bottom:1px solid #DADCE0}
+.gmb-d{width:9px;height:9px;border-radius:50%;background:#DADCE0}
+.gmb-u{margin-left:8px;font-size:11.5px;color:#5F6368;font-family:ui-monospace,Menlo,monospace}
+.gmb-b{padding:19px 21px 21px;color:#202124}
+.gmb-n{font-size:21px;font-weight:650;letter-spacing:-.015em;line-height:1.2}
+.gmb-r{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
+.gmb-note{font-size:15px;font-weight:700;color:#D93025}
+.gmb-a{font-size:13.5px;color:#1A73E8}
+.gmb-l{margin-top:15px;padding-top:14px;border-top:1px solid #E8EAED;display:flex;flex-direction:column;gap:9px}
+.gmb-i{display:flex;gap:10px;align-items:flex-start;font-size:13.5px;line-height:1.4;color:#3C4043}
+.gmb-i span{flex:none;width:17px;text-align:center;opacity:.75}
+.gmb-i.vide{color:#D93025;font-weight:600}
+.gmb-c{font-size:12px;margin-top:10px}
+.pl.light .gmb-c{color:#9990C4} .pl.dark .gmb-c{color:rgba(255,255,255,.45)}
+.av{margin-top:24px;max-width:600px;border-radius:14px;padding:19px 21px}
+.pl.light .av{background:#fff;border:1px solid var(--line);box-shadow:0 14px 34px rgba(20,16,58,.07)}
+.pl.dark .av{background:rgba(255,255,255,.06);border:1px solid var(--line-d)}
+.av-h{display:flex;align-items:center;gap:11px}
+.av-av{flex:none;width:38px;height:38px;border-radius:50%;background:#5B4FE9;color:#fff;display:flex;
+ align-items:center;justify-content:center;font-weight:700;font-size:16px}
+.av-n{font-size:14px;font-weight:650}
+.av-m{display:flex;align-items:center;gap:9px;margin-top:2px;font-size:12px}
+.pl.light .av-m span{color:#9990C4} .pl.dark .av-m span{color:rgba(255,255,255,.45)}
+.av-g{margin-left:auto;font-size:11px;letter-spacing:.06em;text-transform:uppercase;opacity:.55}
+.av-t{font-size:15px;line-height:1.6;margin-top:13px;font-style:italic}
+.av-f{font-size:12px;margin-top:11px;padding-top:10px;border-top:1px solid var(--line)}
+.pl.dark .av-f{border-top-color:var(--line-d);color:rgba(255,255,255,.45)}
+.pl.light .av-f{color:#9990C4}
+.dfs{display:flex;flex-direction:column;gap:10px;margin-top:30px;max-width:76ch}
+.df{display:flex;gap:12px;align-items:flex-start;padding:14px 17px;border-radius:11px;font-size:14.5px;line-height:1.5}
+.pl.light .df{background:#FFF4F6;border:1px solid #F7C9D8}
+.pl.dark .df{background:rgba(240,66,138,.1);border:1px solid rgba(240,66,138,.28)}
+.df-x{flex:none;width:21px;height:21px;border-radius:50%;background:var(--r);color:#fff;font-size:11px;
+ font-weight:800;display:flex;align-items:center;justify-content:center;margin-top:1px}
+.rcs{display:grid;gap:26px;margin-top:34px;align-items:center;grid-template-columns:1fr}
+@media(min-width:820px){.rcs{grid-template-columns:262px 1fr}}
+.tel{width:262px;max-width:100%;border-radius:34px;padding:11px;background:#14103A;
+ box-shadow:0 10px 26px rgba(0,0,0,.24),0 34px 70px rgba(20,16,58,.26);position:relative}
+.tel-n{position:absolute;top:19px;left:50%;transform:translateX(-50%);width:62px;height:5px;border-radius:3px;background:rgba(255,255,255,.22)}
+.tel-e{background:#F2F1F8;border-radius:26px;padding:34px 13px 20px;min-height:330px}
+.tel-t{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#8B84B0;text-align:center;margin-bottom:13px}
+.bul{background:#fff;border-radius:17px;padding:14px 15px;box-shadow:0 2px 8px rgba(20,16,58,.11);color:#14103A}
+.bul-e{font-size:11.5px;font-weight:700;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.bul-e span{font-size:10px;font-weight:600;color:#0F6E56;background:#EAF6F1;border-radius:4px;padding:1px 5px}
+.bul-ti{font-size:14.5px;font-weight:750;line-height:1.3;margin-top:9px}
+.bul-x{font-size:13px;line-height:1.5;margin-top:6px;color:#5A5580}
+.bul-b{margin-top:13px;text-align:center;font-size:13px;font-weight:700;color:#fff;background:var(--grad);
+ border-radius:10px;padding:10px 12px}
+.rcs-t{font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;margin-bottom:9px}
+.pl.light .rcs-t{color:var(--v)} .pl.dark .rcs-t{color:var(--r)}
+.rcs-x{font-size:14.5px;line-height:1.6;max-width:52ch}
+.pl.light .rcs-x{color:var(--ink-s)} .pl.dark .rcs-x{color:var(--ink-ds)}
+@media print{.tel{box-shadow:none}.gmb-w{box-shadow:none}}
 .duel{display:grid;gap:14px;margin-top:34px;align-items:stretch;grid-template-columns:1fr}
 @media(min-width:900px){.duel{grid-template-columns:1fr 62px 1.12fr}}
 .dl-p,.dl-s{border-radius:16px;padding:22px 24px;display:flex;flex-direction:column;gap:9px}
@@ -341,7 +494,7 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
  .reveal{opacity:1!important;transform:none!important}
 }
 </style></head><body>
-${pl.map((p, i) => planche(p, i, pl.length)).join('')}
+${pl.map((p, i) => planche(p, i, pl.length, doc._mes || {}, doc._logo || null)).join('')}
 ${apercu ? `<div class="apercu">👁 Aperçu interne — cette visite n'est pas comptée dans les ouvertures du prospect.</div>` : ''}
 <div class="tools"><button onclick="window.print()">⬇️ Télécharger en PDF</button></div>
 <script>

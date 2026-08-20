@@ -68,6 +68,12 @@ function mesures(e) {
   if (g.trouve) {
     m.google = {
       note_moyenne: g.note_moyenne, total_avis: g.total_avis, nb_fiches: g.nb_fiches,
+      telephone: g.telephone || null, site_declare: g.site_web || null,
+      // La liste complète : c'est elle qui permet de reproduire la fiche à l'écran et de pointer
+      // les divergences entre points de vente d'un même réseau.
+      fiches: (g.fiches || []).slice(0, 5).map(f => ({
+        nom: f.nom, note: f.note, nb_avis: f.nb_avis, adresse: f.adresse || null
+      })),
       pire_fiche: g.pire_fiche ? { nom: g.pire_fiche.nom, note: g.pire_fiche.note, nb_avis: g.pire_fiche.nb_avis } : null,
       avis_negatif: g.avis_negatif ? { note: g.avis_negatif.note, date: g.avis_negatif.date, texte: g.avis_negatif.texte } : null,
       concurrents: g.concurrents ? { note_moyenne: g.concurrents.note_moyenne, secteur: g.concurrents.secteur, zone: g.concurrents.zone, nb_analyses: g.concurrents.nb_analyses } : null,
@@ -80,7 +86,73 @@ function mesures(e) {
     if (!m.technos.length) m.technos = 'aucun outil détecté sur le site';
   }
   if (e.signal_gmb) m.alerte_note = { avant: e.signal_gmb.avant, apres: e.signal_gmb.apres, date: e.signal_gmb.date };
+
+  // Défauts de fiche relevés par le code, pas déduits par l'IA : ce sont des faits opposables,
+  // et c'est ce que Didier veut voir en face d'une brique Sofy (« les erreurs retrouvées sur
+  // la fiche GMB de Veepee »).
+  if (g.trouve) {
+    const d = [];
+    const fs = g.fiches || [];
+    if (!g.telephone) d.push('Aucun numéro de téléphone sur la fiche Google : un client qui veut joindre le service ne trouve pas de numéro et repart.');
+    if (!g.site_web) d.push('Aucun site web déclaré sur la fiche Google : le trafic que Google vous envoie n\'atterrit nulle part.');
+    if (fs.length > 1) {
+      const notes = fs.filter(f => typeof f.note === 'number').map(f => f.note);
+      if (notes.length > 1) {
+        const ecart = Math.round((Math.max(...notes) - Math.min(...notes)) * 10) / 10;
+        if (ecart >= 0.5) d.push(`Vos ${fs.length} fiches vont de ${String(Math.min(...notes)).replace('.', ',')}★ à ${String(Math.max(...notes)).replace('.', ',')}★ : ${ecart.toString().replace('.', ',')} point d'écart entre vos points de vente, donc aucune expérience homogène de votre marque.`);
+      }
+      const sansAdresse = fs.filter(f => !f.adresse).length;
+      if (sansAdresse) d.push(`${sansAdresse} de vos fiches n'ont pas d'adresse exploitable : Google ne peut pas les rattacher à une zone, elles ne sortent pas sur « près de moi ».`);
+      const noms = new Set(fs.map(f => String(f.nom || '').toLowerCase().replace(/[^a-z0-9]/g, '')));
+      if (noms.size === fs.length && fs.length > 2) d.push('Vos fiches portent des libellés tous différents : pour Google et pour les assistants IA, ce sont autant d\'entreprises distinctes plutôt qu\'un réseau.');
+    }
+    const faibles = fs.filter(f => typeof f.note === 'number' && f.note < 3);
+    if (faibles.length) d.push(`${faibles.length} fiche(s) sous 3★ tirent la moyenne du réseau vers le bas — dont ${faibles[0].nom} à ${String(faibles[0].note).replace('.', ',')}★.`);
+    if (d.length) m.defauts_fiche = d;
+  }
+  if (e.technos_fait && Array.isArray(e.technos) && !e.technos.some(t => /avis|review|reput/i.test(String(t.nom) + String(t.cat)))) {
+    m.defauts_fiche = (m.defauts_fiche || []).concat("Aucun outil de collecte ou de réponse aux avis détecté sur le site : la réputation n'est pilotée par personne, elle subit ce que les clients publient.");
+  }
   return m;
+}
+
+// Le logo du prospect sur la couverture : c'est le premier signal que le document a été fait
+// pour LUI. On le récupère sur son propre site (og:image, apple-touch-icon, favicon) et on
+// l'inline en data URI — le document doit rester autonome et ne jamais dépendre d'un serveur
+// tiers qui pourrait tomber ou tracer le lecteur.
+const MAX_LOGO = 90_000;
+async function logoDe(site) {
+  if (!site) return null;
+  let base;
+  try { base = new URL(/^https?:\/\//i.test(site) ? site : 'https://' + site); } catch (_) { return null; }
+  const abs = u => { try { return new URL(u, base).href; } catch (_) { return null; } };
+  const tenter = async (url) => {
+    if (!url) return null;
+    try {
+      const r = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(6000) });
+      if (!r.ok) return null;
+      const ct = String(r.headers.get('content-type') || '').split(';')[0].trim();
+      if (!/^image\/(png|jpeg|webp|svg\+xml|x-icon|vnd\.microsoft\.icon|gif)$/.test(ct)) return null;
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (!buf.length || buf.length > MAX_LOGO) return null;
+      return `data:${ct};base64,${buf.toString('base64')}`;
+    } catch (_) { return null; }
+  };
+  let html = '';
+  try {
+    const r = await fetch(base.href, { redirect: 'follow', signal: AbortSignal.timeout(7000) });
+    if (r.ok) html = (await r.text()).slice(0, 300000);
+  } catch (_) {}
+  const cherche = (re) => { const m = html.match(re); return m ? abs(m[1]) : null; };
+  const pistes = [
+    cherche(/<meta[^>]+property=["']og:logo["'][^>]+content=["']([^"']+)/i),
+    cherche(/<link[^>]+rel=["'][^"']*apple-touch-icon[^"']*["'][^>]+href=["']([^"']+)/i),
+    cherche(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)/i),
+    cherche(/<link[^>]+rel=["'][^"']*icon[^"']*["'][^>]+href=["']([^"']+)/i),
+    abs('/favicon.ico')
+  ];
+  for (const u of pistes) { const d = await tenter(u); if (d) return d; }
+  return null;
 }
 
 function prompt({ mes, radar, blocs, module, consigne, sdr }) {
@@ -144,15 +216,20 @@ Réponds UNIQUEMENT par cet objet JSON, sans texte autour, sans backticks :
   {"role":"couverture","eyebrow":"ANALYSE PRÉPARÉE POUR VOUS","titre":"nomme le prospect","texte":"qui l'a préparée, à partir de quoi"},
 
   {"role":"constat","eyebrow":"CE QUE NOUS AVONS MESURÉ","titre":"…","texte":"≤180 car.",
+   "fiche_google":true,
    "chiffres":[{"valeur":"1,7","unite":"★","legende":"votre note Google","source":"mesuré sur vos 2 fiches"}],
-   "citation":{"texte":"extrait du VRAI avis négatif","meta":"Avis Google · <fiche> · <date>"}},
+   "avis_reel":true},
+
+  {"role":"defauts","eyebrow":"CE QUE VOIT UN CLIENT AVANT D'ACHETER","titre":"…","texte":"≤180 car.",
+   "defauts":["reprends mot pour mot un élément de defauts_fiche, ou reformule-le sans en changer le fait"]},
 
   {"role":"duel","eyebrow":"PROBLÈME 1 SUR 3","titre":"le problème, formulé côté conséquence business",
    "probleme":{"constat":"le fait mesuré, ≤120 car.","cout":"ce que ça lui coûte concrètement, ≤130 car."},
    "solution":{"nom":"la brique Sofy (ex : Soview — collecte d'avis à chaud)",
      "comment":["l'étape 1 du mécanisme, ≤90 car.","étape 2","étape 3"],
      "resultat":"le résultat visé, formulé comme un objectif, ≤120 car."},
-   "chiffre_cle":{"valeur":"85,7","unite":" %","legende":"d'ouverture sur les campagnes SMS d'un client Sofy","source":"interview Groupe Kiosque, blog Sofy"}},
+   "chiffre_cle":{"valeur":"85,7","unite":" %","legende":"d'ouverture sur les campagnes SMS d'un client Sofy","source":"interview Groupe Kiosque, blog Sofy"},
+   "maquette_rcs":{"expediteur":"nom de l'enseigne","titre":"objet du message, ≤42 car.","texte":"le message tel qu'il s'affichera, ≤150 car.","bouton":"libellé du bouton, ≤22 car."}},
 
   {"role":"trajectoire","eyebrow":"LA TRAJECTOIRE VISÉE","titre":"…","texte":"≤180 car. — dis clairement que c'est un objectif de travail, pas un engagement contractuel",
    "courbe":{"indicateur":"Note Google moyenne","unite":"★","max":5,
@@ -180,6 +257,21 @@ RÈGLES DE REMPLISSAGE
 · "jalons" : 3 étapes de déploiement maximum, tirées du bloc des 90 premiers jours.
 · La planche "preuve" cite **toujours** un cas client réel avec ses chiffres. Secteur différent :
   tu le dis dans "texte" et tu expliques pourquoi le levier se transpose. Jamais de planche vide.
+· **BLOCS VISUELS** — ils portent l'essentiel de l'effet, sers-t'en :
+  — "fiche_google": true sur la planche constat : la page redessine SA fiche Google avec ses
+    vraies données (nom, note, étoiles, nombre d'avis, adresse, téléphone). N'écris pas ces
+    valeurs dans le texte, elles sont déjà affichées : commente-les.
+  — "avis_reel": true : le vrai avis négatif s'affiche mis en page comme un avis Google.
+    Ne le recopie pas dans une citation, mets simplement ce drapeau.
+  — "defauts" : la planche qui fait mal. Reprends les éléments de defauts_fiche ci-dessus —
+    ce sont des défauts RELEVÉS sur sa fiche, pas des généralités. N'en invente aucun. Si
+    defauts_fiche est absent, supprime cette planche.
+  — "maquette_rcs" : sur un duel SoReach uniquement, un exemple de message écrit POUR LUI,
+    dans son métier (ex. pour un site de ventes événementielles : annonce d'une vente en
+    avant-première avec un bouton « Avant-première »). Il s'affiche dans un téléphone dessiné.
+· Chaque planche doit porter au moins un bloc de contenu (chiffres, duel, courbe, défauts,
+  maquette, jalons ou citation). Une planche qui n'aurait qu'un titre et un paragraphe ne doit
+  pas exister : fusionne-la ou supprime-la.
 · Écris en français, à la deuxième personne du pluriel. Direct, concret, orienté mécanisme et
   résultat. Aucun point d'exclamation, aucune flatterie, aucun superlatif creux.`;
 }
@@ -317,8 +409,24 @@ export default async function handler(req, res) {
       });
     }
 
-    const out = await composer({ mes, radar, blocs, module, consigne: b.consigne, sdr: user.nom });
+    // Le logo se récupère pendant que Claude rédige : deux attentes en une.
+    const [out, logo] = await Promise.all([
+      composer({ mes, radar, blocs, module, consigne: b.consigne, sdr: user.nom }),
+      logoDe(mes.site_web).catch(() => null)
+    ]);
     if (out.erreur) return res.status(502).json(out);
+
+    // Garde-fou de dernier ressort : une planche qui n'a qu'un titre et un paragraphe est une
+    // page blanche à l'écran. Elle ne doit pas atteindre le prospect, même si l'IA l'a produite.
+    const porteQuelqueChose = pl => ['chiffres', 'points', 'problemes', 'projection', 'defauts', 'jalons']
+        .some(k => Array.isArray(pl[k]) && pl[k].length)
+      || (pl.probleme && pl.solution) || pl.courbe || pl.maquette_rcs
+      || (pl.citation && pl.citation.texte) || pl.fiche_google || pl.avis_reel
+      || ['couverture', 'cta'].includes(pl.role);
+    const gardees = (out.doc.planches || []).filter(porteQuelqueChose);
+    const vides = (out.doc.planches || []).length - gardees.length;
+    out.doc.planches = gardees;
+    if (logo) out.doc._logo = logo;
 
     const jeton = crypto.randomBytes(9).toString('base64url'); // 12 caractères, non devinable
     const jours = Math.max(1, Math.min(90, parseInt(b.jours_validite || process.env.PREZ_JOURS_VALIDITE || '15', 10) || 15));
@@ -345,6 +453,8 @@ export default async function handler(req, res) {
       ok: true, jeton, url: BASE_PUB() + '/p/' + jeton, client: mes.nom, module, jours_validite: jours,
       amorcage: amorcage && amorcage.ajoutes ? amorcage.ajoutes : undefined,
       planches: (out.doc.planches || []).length,
+      planches_vides_retirees: vides || undefined,
+      logo_prospect: !!logo,
       contexte_utilise: { radar: !!radar, blocs_kb: blocs.length, cas_clients: blocs.filter(x => x.type === 'cas_client').length },
       doc: out.doc
     });
