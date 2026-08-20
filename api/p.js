@@ -195,24 +195,54 @@ function planche(p, i, total, mes, logo, sdr, images) {
     </div>` : '';
 
   // La maquette RCS : le message que le prospect pourrait envoyer demain, écrit pour son métier.
+  // ══ La maquette RCS ══
+  // Reproduction fidèle d'un écran de messagerie iOS en mode sombre, à partir d'une vraie capture
+  // fournie par Didier : cadre de téléphone, barre d'état, en-tête d'expéditeur vérifié avec le
+  // logo Sofy, bannière de la carte enrichie, titre, corps tronqué comme le fait iOS, puis le
+  // bouton d'action et la barre de saisie. Le prospect ne regarde pas une illustration : il voit
+  // ce que ses clients auront réellement sous les yeux.
   const r = p.maquette_rcs || {};
+  const banniere = vis ? vis.image : null;
+  const expediteur = r.expediteur || mes.nom || 'Sofy';
   const rcs = (r.titre || r.texte) ? `<div class="rcs reveal">
       <div class="tel">
-        <div class="tel-n"></div>
-        <div class="tel-e">
-          <div class="tel-t">Messages</div>
-          <div class="bul">
-            ${vis && /produit|ambiance/.test(String(vis.type || 'produit')) ? `<img class="bul-img" src="${esc(vis.image)}" alt="">` : ''}
-            <div class="bul-e">${esc(r.expediteur || mes.nom || '')} <span>vérifié ✓</span></div>
-            ${r.titre ? `<div class="bul-ti">${md(r.titre)}</div>` : ''}
-            ${r.texte ? `<div class="bul-x">${md(r.texte)}</div>` : ''}
-            ${r.bouton ? `<div class="bul-b">${esc(r.bouton)}</div>` : ''}
+        <div class="tel-cadre">
+          <span class="tel-enc"><i class="tel-hp"></i><i class="tel-cam"></i></span>
+          <div class="tel-ec">
+            <div class="tel-st"><span>15:40</span><span class="tel-ic">▮▮ ᯤ <b>47</b></span></div>
+            <div class="tel-hd">
+              <span class="tel-back">‹ <b>313</b></span>
+              <span class="tel-exp">
+                ${logo ? `<span class="tel-av"><img src="${esc(logo)}" alt=""></span>`
+                       : `<span class="tel-av tel-av-i">${esc(String(expediteur).trim().charAt(0).toUpperCase())}</span>`}
+                <span class="tel-nom">${esc(expediteur)} ›</span>
+              </span>
+              <span class="tel-vide"></span>
+            </div>
+            <div class="tel-date">aujourd'hui à 07:00</div>
+            <div class="carte">
+              <div class="carte-b"${banniere ? ` style="background-image:url('${esc(banniere)}')"` : ''}>
+                <div class="carte-voile"></div>
+                ${logo ? `<span class="carte-marque"><img src="${esc(logo)}" alt=""></span>`
+                       : `<span class="carte-marque carte-marque-t">${esc(expediteur)}</span>`}
+                ${r.titre ? `<div class="carte-h">${md(r.titre)}</div>` : ''}
+              </div>
+              <div class="carte-c">
+                <div class="carte-t">${md(r.titre || '')}</div>
+                ${r.texte ? `<div class="carte-x">${md(r.texte)}</div>` : ''}
+                <span class="carte-fl">›</span>
+              </div>
+              ${r.bouton ? `<div class="carte-btn">${esc(r.bouton)}</div>` : ''}
+            </div>
+            <div class="tel-saisie"><span class="tel-plus">+</span>
+              <span class="tel-champ"><i>Objet</i><b>Message texte · SMS</b></span></div>
           </div>
         </div>
       </div>
       <div class="rcs-l">
         <div class="rcs-t">Ce que vos clients recevraient</div>
-        <div class="rcs-x">Le RCS affiche le nom vérifié de votre enseigne, son logo et un bouton cliquable — là où un SMS classique n'affiche qu'un numéro court anonyme. Bascule automatique en SMS si le téléphone ne prend pas le RCS : aucun message perdu.</div>
+        <div class="rcs-x">Le RCS affiche le <strong>nom vérifié</strong> de votre enseigne, son logo, une image et un <strong>bouton cliquable</strong> — là où un SMS classique n'affiche qu'un numéro court anonyme. Bascule automatique en SMS si le téléphone ne prend pas le RCS : aucun message perdu.</div>
+        ${banniere ? '' : `<div class="rcs-n">L'image de la carte se personnalise avec un visuel de votre univers : ajoutez-en un dans la bibliothèque et il apparaîtra ici.</div>`}
       </div>
     </div>` : '';
 
@@ -431,20 +461,58 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .pl.dark .df{background:rgba(240,66,138,.1);border:1px solid rgba(240,66,138,.28)}
 .df-x{flex:none;width:21px;height:21px;border-radius:50%;background:var(--r);color:#fff;font-size:11px;
  font-weight:800;display:flex;align-items:center;justify-content:center;margin-top:1px}
-.rcs{display:grid;gap:26px;margin-top:34px;align-items:center;grid-template-columns:1fr}
-@media(min-width:820px){.rcs{grid-template-columns:262px 1fr}}
-.tel{width:262px;max-width:100%;border-radius:34px;padding:11px;background:#14103A;
- box-shadow:0 10px 26px rgba(0,0,0,.24),0 34px 70px rgba(20,16,58,.26);position:relative}
-.tel-n{position:absolute;top:19px;left:50%;transform:translateX(-50%);width:62px;height:5px;border-radius:3px;background:rgba(255,255,255,.22)}
-.tel-e{background:#F2F1F8;border-radius:26px;padding:34px 13px 20px;min-height:330px}
-.tel-t{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#8B84B0;text-align:center;margin-bottom:13px}
-.bul{background:#fff;border-radius:17px;padding:14px 15px;box-shadow:0 2px 8px rgba(20,16,58,.11);color:#14103A}
-.bul-e{font-size:11.5px;font-weight:700;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-.bul-e span{font-size:10px;font-weight:600;color:#0F6E56;background:#EAF6F1;border-radius:4px;padding:1px 5px}
-.bul-ti{font-size:14.5px;font-weight:750;line-height:1.3;margin-top:9px}
-.bul-x{font-size:13px;line-height:1.5;margin-top:6px;color:#5A5580}
-.bul-b{margin-top:13px;text-align:center;font-size:13px;font-weight:700;color:#fff;background:var(--grad);
- border-radius:10px;padding:10px 12px}
+.rcs{display:grid;gap:30px;margin-top:34px;align-items:center;grid-template-columns:1fr}
+@media(min-width:900px){.rcs{grid-template-columns:312px 1fr}}
+.tel{justify-self:center}
+.tel-cadre{position:relative;width:312px;max-width:100%;border-radius:46px;padding:11px;
+ background:linear-gradient(160deg,#F4F4F6,#D9D9DE);box-shadow:0 3px 8px rgba(0,0,0,.2),0 22px 54px rgba(20,16,58,.34)}
+.tel-enc{position:absolute;top:20px;left:50%;transform:translateX(-50%);z-index:3;display:flex;align-items:center;gap:9px}
+.tel-hp{width:44px;height:5px;border-radius:3px;background:#1A1A1C;display:block}
+.tel-cam{width:9px;height:9px;border-radius:50%;background:#1A1A1C;display:block}
+.tel-ec{background:#000;border-radius:36px;overflow:hidden;padding:9px 9px 11px;color:#fff;min-height:560px;
+ display:flex;flex-direction:column}
+.tel-st{display:flex;justify-content:space-between;align-items:center;padding:5px 10px 9px;font-size:12.5px;font-weight:700}
+.tel-ic{font-size:10.5px;letter-spacing:.5px;opacity:.9}
+.tel-ic b{font-size:9.5px;background:#fff;color:#000;border-radius:4px;padding:0 3px;font-weight:800}
+.tel-hd{display:flex;align-items:center;gap:8px;padding:2px 4px 10px}
+.tel-back{flex:none;font-size:13px;font-weight:600;background:#1C1C1E;border-radius:14px;padding:5px 11px;color:#fff}
+.tel-back b{font-weight:700}
+.tel-exp{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px}
+.tel-exp img{border-radius:8px;background:#000}
+.tel-nom{font-size:14px;font-weight:750;background:#1C1C1E;border-radius:13px;padding:3px 11px}
+.tel-vide{flex:none;width:44px}
+.tel-date{text-align:center;font-size:11px;color:#8E8E93;margin:6px 0 9px}
+.carte{background:#1C1C1E;border-radius:19px;overflow:hidden;margin:0 2px}
+.carte-b{position:relative;height:186px;background:linear-gradient(150deg,#3B1E8C 0%,#6B2AA8 55%,#A0247A 100%);
+ background-size:cover;background-position:center;padding:13px 14px;display:flex;flex-direction:column;gap:7px}
+.carte-voile{position:absolute;inset:0;background:linear-gradient(150deg,rgba(59,30,140,.86),rgba(160,36,122,.7))}
+.tel-av{width:34px;height:34px;border-radius:9px;background:#fff;display:flex;align-items:center;
+ justify-content:center;overflow:hidden;flex:none}
+.tel-av img{max-width:28px;max-height:28px;width:auto;height:auto;object-fit:contain}
+.tel-av-i{background:var(--grad);color:#fff;font-size:16px;font-weight:800}
+.carte-marque{position:relative;z-index:1;align-self:flex-start;background:#fff;border-radius:9px;
+ padding:5px 9px;display:flex;align-items:center;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+.carte-marque img{max-height:20px;max-width:104px;width:auto;object-fit:contain;display:block}
+.carte-marque-t{font-size:13px;font-weight:800;color:#14103A;letter-spacing:-.01em}
+.carte-h{position:relative;z-index:1;font-size:23px;font-weight:800;line-height:1.1;letter-spacing:-.025em;
+ color:#fff;text-shadow:0 1px 10px rgba(0,0,0,.28);max-width:15ch}
+.carte-c{position:relative;padding:13px 15px 12px}
+.carte-t{font-size:15px;font-weight:750;line-height:1.25;color:#fff;padding-right:18px}
+.carte-x{font-size:13px;line-height:1.42;color:#8E8E93;margin-top:5px;padding-right:18px;
+ display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.carte-fl{position:absolute;right:13px;top:50%;transform:translateY(-50%);color:#8E8E93;font-size:19px}
+.carte-btn{margin:0 11px 11px;text-align:center;font-size:14.5px;font-weight:750;color:#fff;
+ background:var(--grad);border-radius:12px;padding:11px 12px}
+.tel-saisie{display:flex;align-items:center;gap:8px;margin-top:auto;padding:10px 4px 2px}
+.tel-plus{flex:none;width:29px;height:29px;border-radius:50%;background:#1C1C1E;color:#8E8E93;
+ display:flex;align-items:center;justify-content:center;font-size:17px}
+.tel-champ{flex:1;background:#1C1C1E;border-radius:15px;padding:6px 12px;display:flex;flex-direction:column}
+.tel-champ i{font-style:normal;font-size:11.5px;color:#8E8E93;border-bottom:1px solid #2C2C2E;padding-bottom:3px}
+.tel-champ b{font-size:11.5px;font-weight:400;color:#8E8E93;padding-top:3px}
+.rcs-n{font-size:12.5px;line-height:1.5;margin-top:11px;padding:10px 13px;border-radius:9px}
+.pl.light .rcs-n{background:#FEF6E7;border:1px solid #E9C88B;color:#7A4E12}
+.pl.dark .rcs-n{background:rgba(224,162,83,.12);border:1px solid rgba(224,162,83,.32);color:#E9C88B}
+@media print{.tel-cadre{box-shadow:none}}
 .rcs-t{font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;margin-bottom:9px}
 .pl.light .rcs-t{color:var(--v)} .pl.dark .rcs-t{color:var(--r)}
 .rcs-x{font-size:14.5px;line-height:1.6;max-width:52ch}

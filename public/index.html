@@ -2141,7 +2141,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v349';
+const VERSION='v350';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -5562,6 +5562,7 @@ function edPanneau(){
   </div>
   ${champs.length?champs.map(function(cf){
     const chemin=cf[0],max=cf[1],lib=ED_LIB[chemin]||chemin;
+    if(max===0)return ''; // visuel_id : rendu par le sélecteur d'image, pas par un champ texte
     if(chemin.includes('[]')){
       const vals=edVal(i,chemin);
       if(!vals.length)return '';
@@ -5608,7 +5609,10 @@ function edChamp(i,chemin,max,lib,val,k){
 function jsArgBrut(s){return String(s).replace(/'/g,"\\'");}
 function edCompte(id,max){
  const el=document.getElementById(id),c=document.getElementById(id+'-c');
- if(el&&c){const n=el.value.length;c.textContent=n+' / '+max;c.style.color=(n>=max)?'var(--danger)':'var(--ink-soft)';}
+ if(!el||!c)return;
+ const n=el.value.length;
+ c.textContent=n+' / '+max+(n>max?' — sera coupé à la publication':'');
+ c.style.color=(n>max)?'var(--danger)':(n>=max-8?'#B45309':'var(--ink-soft)');
 }
 
 async function edPublier(){
