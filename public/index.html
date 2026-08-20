@@ -2105,7 +2105,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v335';
+const VERSION='v336';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2158,6 +2158,10 @@ function deconnexion(volontaire){
 }
 function demarrerApp(u){
  state.user=u;
+ // Marqueur de poste interne. Les analyses client sont servies sur le MÊME domaine (/p/<jeton>),
+ // donc ce cookie suffit à exclure nos propres visites du compteur d'ouvertures du prospect.
+ // Aucun secret dedans : c'est un drapeau d'affichage, pas une autorisation.
+ try{document.cookie='sofy_staff=1; Path=/; Max-Age=31536000; SameSite=Lax'+(location.protocol==='https:'?'; Secure':'');}catch(_){}
  document.getElementById('login-overlay').style.display='none';
  const badge=document.getElementById('user-badge');
  badge.style.display='flex';
@@ -5116,7 +5120,7 @@ async function chargerMesPrez(){
      <span style="margin-left:auto;font-size:11.5px;color:var(--ink-soft)">${p.expiree?'lien expiré':(p.jours_restants!=null?'valable '+p.jours_restants+' j':'')}</span>
     </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;align-items:center">
-     ${p.expiree?'':`<a class="act act-call" style="padding:2px 9px;font-size:11.5px;text-decoration:none" href="${htmlSafe(p.url)}" target="_blank">👁 Voir</a>
+     ${p.expiree?'':`<a class="act act-call" style="padding:2px 9px;font-size:11.5px;text-decoration:none" href="${htmlSafe(p.url)}?apercu=1" target="_blank" title="Aperçu interne — non compté">👁 Voir</a>
      <button class="act act-copy" style="padding:2px 9px;font-size:11.5px" onclick="navigator.clipboard.writeText(decodeURIComponent('${jsArg(p.url)}'));toast('Lien copié ✓')">📋 Copier</button>`}
      <span style="font-size:11.5px;color:var(--ink-soft)">par ${htmlSafe(p.sdr||'?')} · ${htmlSafe(String(p.created_at||'').slice(0,10))}${p.destinataire?' · envoyée à '+htmlSafe(p.destinataire):''}</span>
     </div>
@@ -5147,7 +5151,7 @@ function prezHtml(e,i){
   ${p.expiree
    ? `<div style="font-size:12.5px;color:var(--ink-soft);line-height:1.5">Le lien ne s'ouvre plus. Régénère l'analyse si le prospect le redemande — elle repartira sur des données à jour.</div>`
    : `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-    <a class="act act-call" style="padding:3px 10px;font-size:12px;text-decoration:none" href="${htmlSafe(p.url)}" target="_blank" title="Ouvrir la page telle que le client la voit — attention, ta visite compte dans les ouvertures">👁 Voir</a>
+    <a class="act act-call" style="padding:3px 10px;font-size:12px;text-decoration:none" href="${htmlSafe(p.url)}?apercu=1" target="_blank" title="Ouvrir la page telle que le client la voit. Ta visite n'est pas comptée dans les ouvertures.">👁 Voir</a>
     <button class="act act-copy" style="padding:3px 10px;font-size:12px" onclick="navigator.clipboard.writeText(decodeURIComponent('${jsArg(p.url)}'));toast('Lien copié ✓')">📋 Copier le lien</button>
     <span style="font-size:11.5px;color:var(--ink-soft)">${htmlSafe(quand)}</span>
    </div>`}
@@ -5553,10 +5557,10 @@ async function genererPrez(i){
    <div style="font-size:13px;color:var(--ink-soft);margin-bottom:12px">${d.planches} planches · module ${htmlSafe(nomModule(d.module))} · ${ctx.blocs_kb||0} bloc(s) de la base${ctx.cas_clients?` dont ${ctx.cas_clients} cas client(s)`:''}${ctx.radar?' · contexte presse du radar inclus':''}</div>
    <div style="background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;word-break:break-all">${htmlSafe(d.url)}</div>
    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
-    <a class="btn btn-primary" href="${htmlSafe(d.url)}" target="_blank" style="text-decoration:none">👁 Voir la page du client</a>
+    <a class="btn btn-primary" href="${htmlSafe(d.url)}?apercu=1" target="_blank" style="text-decoration:none" title="Aperçu interne — ta visite n'est pas comptée">👁 Voir la page du client</a>
     <button class="btn" style="background:var(--paper)" onclick="navigator.clipboard.writeText(decodeURIComponent('${jsArg(d.url)}'));toast('Lien copié ✓')">📋 Copier le lien</button>
    </div>
-   <div style="font-size:12px;color:var(--ink-soft);margin-top:12px;line-height:1.5">Relis la page avant de l'envoyer : tu es responsable de ce qui part chez le client. Le lien est valable <strong>${d.jours_validite||15} jours</strong> puis s'éteint. Tu sauras quand il l'ouvre (alerte Slack), et une 2ᵉ alerte part si une <strong>autre personne</strong> le lit — c'est le signe qu'il circule en interne.</div>`;
+   <div style="font-size:12px;color:var(--ink-soft);margin-top:12px;line-height:1.5">Relis la page avant de l'envoyer — tes visites ne sont pas comptées, seules celles du prospect le sont. Tu es responsable de ce qui part chez le client. Le lien est valable <strong>${d.jours_validite||15} jours</strong> puis s'éteint. Tu sauras quand il l'ouvre (alerte Slack), et une 2ᵉ alerte part si une <strong>autre personne</strong> le lit — c'est le signe qu'il circule en interne.</div>`;
   document.getElementById('info-modal').style.display='flex';
   // Le lien reste dans la fiche : la fenêtre se ferme, le travail ne se perd pas.
   e._prez={jeton:d.jeton,url:d.url,module:d.module,ouvertures:0,lecteurs_distincts:0,

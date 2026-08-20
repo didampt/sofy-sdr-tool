@@ -85,7 +85,7 @@ function planche(p, i, total) {
   </section>`;
 }
 
-function page(doc, meta, sdr) {
+function page(doc, meta, sdr, apercu) {
   const pl = Array.isArray(doc.planches) ? doc.planches : [];
   const contact = sdr ? [
     sdr.nom ? `<div class="sdr-n">${esc(sdr.nom)}</div>` : '',
@@ -191,6 +191,9 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .pt-r{font-size:12.5px;margin-top:6px;font-weight:650}
 .pl.light .pt-r{color:var(--v)} .pl.dark .pt-r{color:var(--r)}
 .kpi-u{font-size:.5em;margin-left:2px}
+.apercu{position:fixed;left:14px;bottom:14px;z-index:50;background:#14103A;color:#fff;font-size:12.5px;
+ padding:8px 13px;border-radius:9px;max-width:min(360px,86vw);line-height:1.45;box-shadow:0 8px 24px rgba(0,0,0,.28)}
+@media print{.apercu{display:none}}
 .reveal{opacity:0;transform:translateY(20px);transition:opacity .75s ease var(--d,0ms),transform .75s cubic-bezier(.22,.68,.24,1) var(--d,0ms)}
 .reveal.on{opacity:1;transform:none}
 .pl-t .w{display:inline-block;opacity:0;transform:translateY(14px);transition:opacity .5s ease,transform .5s ease}
@@ -208,10 +211,11 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 }
 </style></head><body>
 ${pl.map((p, i) => planche(p, i, pl.length)).join('')}
+${apercu ? `<div class="apercu">👁 Aperçu interne — cette visite n'est pas comptée dans les ouvertures du prospect.</div>` : ''}
 <div class="tools"><button onclick="window.print()">⬇️ Télécharger en PDF</button></div>
 <script>
 // Révélation au défilement + profondeur de lecture (le SDR voit jusqu'où le client est allé)
-var jeton=${JSON.stringify(meta.jeton)},max=0;
+var jeton=${JSON.stringify(meta.jeton)},max=0,apercu=${apercu ? 'true' : 'false'};
 document.querySelectorAll('.wrap').forEach(function(w){w.classList.add('reveal');});
 // Titres révélés mot à mot : donne du rythme sans tomber dans l'effet gadget
 document.querySelectorAll('.pl-t').forEach(function(t){
@@ -236,7 +240,7 @@ var io=new IntersectionObserver(function(es){es.forEach(function(e){
  [].forEach.call(e.target.querySelectorAll('.reveal'),function(r,k){setTimeout(function(){r.classList.add('on');},60+k*70);});
  [].forEach.call(e.target.querySelectorAll('.kpi-v[data-n]'),function(v){anime(v);});
  var s=parseInt(e.target.closest('.pl').dataset.s||'0',10);
- if(s>max){max=s;clearTimeout(window._t);window._t=setTimeout(function(){
+ if(s>max&&!apercu){max=s;clearTimeout(window._t);window._t=setTimeout(function(){
   try{navigator.sendBeacon('/api/p?j='+encodeURIComponent(jeton)+'&s='+max);}catch(_){}
  },900);}
 });},{threshold:.28});
@@ -249,8 +253,16 @@ export default async function handler(req, res) {
   const jeton = String((req.query || {}).j || (req.query || {}).jeton || '').slice(0, 40);
   if (!jeton) return res.status(400).send('Lien incomplet.');
 
+  // Une visite d'un utilisateur Sofy ne doit pas polluer la mesure : le compteur sert à savoir
+  // si LE PROSPECT a lu. Deux verrous, parce qu'un seul laisse toujours passer un cas :
+  //  · le cookie `sofy_staff`, posé par l'app sur le même domaine dès qu'on est connecté ;
+  //  · `?apercu=1`, ajouté par le bouton « 👁 Voir » — couvre la navigation privée.
+  const interne = /(?:^|;\s*)sofy_staff=1/.test(String(req.headers.cookie || ''))
+    || String((req.query || {}).apercu || '') === '1';
+
   // Profondeur de lecture, envoyée par la page (sendBeacon) — jamais bloquant
   if (req.method === 'POST') {
+    if (interne) return res.status(204).end();
     const s = parseInt((req.query || {}).s || '0', 10) || 0;
     try { await sql`UPDATE prez SET profondeur = GREATEST(COALESCE(profondeur,0), ${s}) WHERE jeton = ${jeton}`; } catch (_) {}
     return res.status(204).end();
@@ -283,7 +295,7 @@ export default async function handler(req, res) {
     let sdr = null;
     try { const [s] = await sql`SELECT nom, email, ringover_numero FROM sdrs WHERE nom = ${row.sdr} LIMIT 1`; sdr = s || null; } catch (_) {}
 
-    const premiere = !row.ouvertures;
+    const premiere = !interne && !row.ouvertures;
 
     // Qui lit ? On ne peut pas NOMMER un lecteur sans l'obliger à s'identifier (ce qui tuerait le
     // taux d'ouverture). On peut en revanche les COMPTER : un identifiant aléatoire par appareil,
@@ -292,10 +304,12 @@ export default async function handler(req, res) {
     const cookies = String(req.headers.cookie || '');
     const dejaVu = (cookies.match(/(?:^|;\s*)sl=([A-Za-z0-9]{6,24})/) || [])[1] || null;
     const lecteur = dejaVu || crypto.randomBytes(6).toString('hex');
-    if (!dejaVu) res.setHeader('Set-Cookie', `sl=${lecteur}; Path=/p; Max-Age=7776000; HttpOnly; Secure; SameSite=Lax`);
+    // Pas d'identifiant de lecteur posé sur le poste d'un employé : il ne doit jamais entrer
+    // dans la liste des lecteurs, même s'il rouvre la page dix fois.
+    if (!dejaVu && !interne) res.setHeader('Set-Cookie', `sl=${lecteur}; Path=/p; Max-Age=7776000; HttpOnly; Secure; SameSite=Lax`);
     const connus = Array.isArray(row.lecteurs) ? row.lecteurs : [];
-    const nouveauLecteur = !connus.includes(lecteur);
-    try {
+    const nouveauLecteur = !interne && !connus.includes(lecteur);
+    if (!interne) try {
       await sql`UPDATE prez SET ouvertures = COALESCE(ouvertures,0) + 1, derniere_ouverture = NOW(),
         premiere_ouverture = COALESCE(premiere_ouverture, NOW()),
         lecteurs = CASE WHEN COALESCE(lecteurs,'[]'::jsonb) @> ${JSON.stringify([lecteur])}::jsonb
@@ -335,7 +349,7 @@ export default async function handler(req, res) {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
-    return res.status(200).send(page(doc, { jeton }, sdr));
+    return res.status(200).send(page(doc, { jeton }, sdr, interne));
   } catch (e) {
     return res.status(500).send('Analyse momentanément indisponible.');
   }
