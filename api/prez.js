@@ -183,118 +183,276 @@ ${parType('charte') || '(aucune)'}
 
 ════ RÈGLES ABSOLUES ════
 1. **Aucun chiffre inventé.** Tu ne peux écrire un chiffre que s'il vient (a) des mesures du prospect ci-dessus, ou (b) d'un bloc de la base avec sa source. Interdiction formelle d'inventer une statistique de marché, un pourcentage de gain ou une promesse de résultat. Ce document sort de l'entreprise et engage la parole de Sofy.
-2. **Ne promets aucun résultat.** Tu peux montrer ce qu'un autre client a obtenu (cas clients, avec la source) ; tu ne peux pas affirmer que ce prospect obtiendra la même chose. Formule la projection comme un objectif atteignable, jamais comme un engagement.
-3. **Choisis le cas client le plus proche** en secteur et en territoire. Si aucun ne colle vraiment, dis-le franchement dans la planche 5 plutôt que d'en forcer un.
-4. **Cite le prospect par son nom**, ses vrais chiffres, le vrai nom de son pire point de vente, un extrait de son vrai avis négatif. C'est ce qui prouve qu'on a travaillé pour lui.
-5. Écris en français, à la deuxième personne du pluriel (« vous »). Ton : direct, factuel, respectueux. Jamais de flatterie, jamais de jargon marketing creux, jamais de point d'exclamation.
-6. Si une mesure manque (pas de fiche Google, pas d'avis négatif), n'invente pas : construis la planche sur ce que tu as, ou signale l'absence comme un constat en soi (« aucune fiche Google trouvée » est un problème à nommer).
+2. **Ne promets aucun résultat.** Tu peux montrer ce qu'un autre client a obtenu (cas clients, avec la source) ; tu ne peux pas affirmer que ce prospect obtiendra la même chose. Formule la trajectoire comme un objectif de travail, jamais comme un engagement.
+3. **Cite un cas client dans TOUS les cas.** Si aucun n'est du même secteur, dis-le en une phrase et explique pourquoi le levier se transpose quand même. N'écris JAMAIS qu'on n'a rien à montrer : ce serait la pire phrase du document.
+4. **Cite le prospect par son nom**, ses vrais chiffres, le vrai nom de son point de vente le plus faible. C'est ce qui prouve qu'on a travaillé pour lui.
+5. Français, deuxième personne du pluriel. Direct, concret, sans flatterie, sans jargon, sans point d'exclamation.
 
 ════ CE QUE CE DOCUMENT DOIT FAIRE ════
 Un directeur marketing va le lire. Il connaît déjà ses problèmes : lui répéter sa note Google ne
-vend rien. Ce qui le décide, c'est de comprendre **le mécanisme** par lequel Sofy change ce
-chiffre, et de voir **quelqu'un qui l'a déjà fait**. Le constat n'est donc qu'une entrée en
-matière : le cœur du document, ce sont les planches « un problème = une solution Sofy ».
+vend rien. Ce qui le décide, c'est de comprendre **par quel mécanisme** Sofy change ce chiffre, et
+de voir **quelqu'un qui l'a déjà fait**. Le cœur du document, ce sont les "duels" : un problème
+mesuré chez lui, en face la brique Sofy qui y répond, et le résultat qu'il peut en attendre.
 
-Trois interdits qui ont ruiné la première version de ce document :
+TROIS INTERDITS — ils ont ruiné les trois versions précédentes de ce document :
 · Ne JAMAIS nommer un module sans dire comment il produit le résultat. « SoConnect — messagerie
-  unifiée » ne vend rien ; « toutes les conversations dans une seule boîte, Budy pré-qualifie,
-  réponse en 10-15 min au lieu de 30 » vend.
-· Ne JAMAIS écrire une planche qui dit qu'on n'a rien à montrer. Tu as des cas clients : ils
-  prouvent le MÉCANISME même quand le secteur diffère. Dis-le franchement en une phrase
-  (« ce client n'est pas de votre secteur, mais le levier est le même ») et montre les résultats.
-· Ne JAMAIS présenter un déploiement comme un résultat. « 0 → 3 outils actifs » n'intéresse
-  personne. Ce qui intéresse : la note, le volume d'avis, le délai de réponse, la position.
+  unifiée » ne vend rien. « Tous les canaux dans une seule boîte, Budy pré-qualifie, réponse en
+  10-15 min au lieu de 30 » vend.
+· Ne JAMAIS mettre le contenu dans le titre en laissant les champs vides. Le titre est une
+  accroche ; ce sont les champs qui s'affichent à l'écran. Un champ vide = une page blanche
+  devant le prospect.
+· Ne JAMAIS présenter un déploiement comme un résultat. « 3 outils actifs » n'intéresse personne.
+  Ce qui intéresse : la note, le volume d'avis, le délai de réponse, la position concurrentielle.
 
-════ STRUCTURE ════
-CONTRAINTES DE LONGUEUR — impératives :
-· "titre" ≤ 65 caractères · "texte" d'intro ≤ 180 · tout autre texte ≤ 130 · maximum 4 éléments par tableau
+════ LE FORMULAIRE À REMPLIR ════
+Tu ne composes pas la mise en page : tu remplis un formulaire, et le serveur construit le
+document. **Tous les champs sont obligatoires.** Quand un champ ne s'applique pas, mets une
+chaîne vide "" ou un tableau vide [] — jamais du remplissage.
 
-Réponds UNIQUEMENT par cet objet JSON, sans texte autour, sans backticks :
-{
- "titre_document": "Analyse Sofy — <Nom du prospect>",
- "planches": [
-  {"role":"couverture","eyebrow":"ANALYSE PRÉPARÉE POUR VOUS","titre":"nomme le prospect","texte":"qui l'a préparée, à partir de quoi"},
-
-  {"role":"constat","eyebrow":"CE QUE NOUS AVONS MESURÉ","titre":"…","texte":"≤180 car.",
-   "fiche_google":true,
-   "chiffres":[{"valeur":"1,7","unite":"★","legende":"votre note Google","source":"mesuré sur vos 2 fiches"}],
-   "avis_reel":true},
-
-  {"role":"defauts","eyebrow":"CE QUE VOIT UN CLIENT AVANT D'ACHETER","titre":"…","texte":"≤180 car.",
-   "defauts":["reprends mot pour mot un élément de defauts_fiche, ou reformule-le sans en changer le fait"]},
-
-  {"role":"duel","eyebrow":"PROBLÈME 1 SUR 3","titre":"le problème, formulé côté conséquence business",
-   "probleme":{"constat":"le fait mesuré, ≤120 car.","cout":"ce que ça lui coûte concrètement, ≤130 car."},
-   "solution":{"nom":"la brique Sofy (ex : Soview — collecte d'avis à chaud)",
-     "comment":["l'étape 1 du mécanisme, ≤90 car.","étape 2","étape 3"],
-     "resultat":"le résultat visé, formulé comme un objectif, ≤120 car."},
-   "chiffre_cle":{"valeur":"85,7","unite":" %","legende":"d'ouverture sur les campagnes SMS d'un client Sofy","source":"interview Groupe Kiosque, blog Sofy"},
-   "maquette_rcs":{"expediteur":"nom de l'enseigne","titre":"objet du message, ≤42 car.","texte":"le message tel qu'il s'affichera, ≤150 car.","bouton":"libellé du bouton, ≤22 car."}},
-
-  {"role":"trajectoire","eyebrow":"LA TRAJECTOIRE VISÉE","titre":"…","texte":"≤180 car. — dis clairement que c'est un objectif de travail, pas un engagement contractuel",
-   "courbe":{"indicateur":"Note Google moyenne","unite":"★","max":5,
-     "points":[{"quand":"aujourd'hui","valeur":1.7},{"quand":"3 mois","valeur":2.4},{"quand":"6 mois","valeur":3.1},{"quand":"12 mois","valeur":3.8}],
-     "appui":"le cas client ou le chiffre sourcé qui rend cette pente crédible"},
-   "jalons":[{"quand":"Semaines 1-2","texte":"ce qui se passe, ≤110 car."}]},
-
-  {"role":"preuve","eyebrow":"ILS L'ONT DÉJÀ FAIT","titre":"…","texte":"pourquoi ce cas éclaire le sien — y compris si le secteur diffère, ≤180 car.",
-   "chiffres":[{"valeur":"3,4","unite":"★ → 4,25★","legende":"note Google du client, en 3 ans","source":"interview Marimax, blog Sofy"}],
-   "citation":{"texte":"verbatim du client","meta":"<Client> · interview publiée sur le blog Sofy"}},
-
-  {"role":"cta","eyebrow":"LA SUITE","titre":"…","texte":"ce qu'on fait ensemble au premier rendez-vous, ≤180 car.","cta":"texte du bouton"}
- ]
+· titre_document — "Analyse Sofy — <nom du prospect>"
+· couverture.titre — le nom du prospect. couverture.texte — qui l'a préparée et à partir de quoi.
+· constat.titre — l'accroche du constat (≤65 car.). constat.texte — ≤180 car.
+  constat.chiffres — 2 à 4 chiffres MESURÉS chez lui. "valeur" est une chaîne courte ("1,7"),
+  "unite" est courte ("★", " %", " avis"), "legende" ≤60 car., "source" dit où on l'a relevé.
+· defauts.titre / defauts.texte / defauts.liste — 2 à 4 défauts RELEVÉS sur sa fiche. Reprends les
+  éléments de "defauts_fiche" ci-dessus, un par entrée de liste, ≤190 car. chacun. Si
+  "defauts_fiche" est absent des mesures, mets liste: [].
+· duels — **2 à 4 entrées, c'est le cœur du document.** Chaque entrée :
+  · titre — le problème formulé côté conséquence business (≤65 car.)
+  · probleme.constat — le fait mesuré (≤120 car.) · probleme.cout — ce que ça lui coûte (≤130 car.)
+  · solution.nom — la brique Sofy + ce qu'elle fait (ex : "Soview — collecte d'avis à chaud")
+  · solution.comment — **exactement 3 étapes** du mécanisme, ≤90 car. chacune, tirées des blocs
+    FONCTIONNALITÉS ci-dessus. C'est la partie qui vend : sois concret et technique.
+  · solution.resultat — le résultat visé (≤120 car.), formulé comme un objectif
+  · chiffre_cle — un chiffre SOURCÉ de la base qui étaye la solution (résultat d'un cas client ou
+    statistique de marché). Si tu n'en as pas de pertinent, mets valeur: "".
+  · maquette_rcs — UNIQUEMENT sur le duel qui parle de SMS/RCS, sinon tous les champs vides.
+    C'est un exemple de message écrit pour SON métier, avec son bouton (pour un site de ventes
+    événementielles : annonce d'une vente en avant-première, bouton "Avant-première").
+· trajectoire.titre / .texte (dis que c'est un objectif de travail, pas un engagement)
+  · trajectoire.courbe.indicateur — ce qu'on suit (ex : "Note Google moyenne")
+  · trajectoire.courbe.unite — "★", " %", " avis"… · .max — le maximum de l'échelle (NOMBRE)
+  · trajectoire.courbe.points — 3 ou 4 points. "valeur" est un NOMBRE (1.7, pas "1,7"). Le premier
+    point est SA valeur mesurée aujourd'hui. "quand" : "aujourd'hui", "3 mois", "6 mois", "12 mois".
+  · trajectoire.courbe.appui — le cas client ou le chiffre sourcé qui rend cette pente défendable.
+  · trajectoire.jalons — 3 étapes de déploiement (le bloc des 90 premiers jours).
+  Si tu n'as AUCUNE valeur de départ mesurée, mets points: [] — le serveur retirera la planche.
+· preuve.titre / .texte (pourquoi ce cas éclaire le sien, secteur différent assumé)
+  · preuve.chiffres — 2 à 3 résultats du cas client, avec leur source
+  · preuve.citation.texte — le verbatim du client · preuve.citation.meta — qui et où
+· cta.titre / cta.texte — ce qu'on fait ensemble au premier rendez-vous · cta.bouton — libellé`;
 }
 
-RÈGLES DE REMPLISSAGE
-· **Produis 2 à 4 planches "duel"**, une par problème réellement mesuré, numérotées dans l'eyebrow
-  (« PROBLÈME 1 SUR 3 »). C'est le cœur du document. Chaque "duel" doit contenir un mécanisme en
-  3 étapes concrètes tirées des blocs FONCTIONNALITÉS de la base — pas une reformulation du nom du module.
-· "chiffre_cle" d'un duel : un chiffre **sourcé de la base** qui étaye la solution (résultat d'un
-  cas client, statistique de marché). Omets-le si tu n'en as pas de pertinent — jamais d'invention.
-· "courbe" : 3 à 4 points, le premier est SA valeur mesurée aujourd'hui. La pente doit être
-  défendable par "appui". Si tu n'as aucune valeur de départ mesurée, remplace la planche
-  trajectoire par une planche "duel" supplémentaire.
-· "jalons" : 3 étapes de déploiement maximum, tirées du bloc des 90 premiers jours.
-· La planche "preuve" cite **toujours** un cas client réel avec ses chiffres. Secteur différent :
-  tu le dis dans "texte" et tu expliques pourquoi le levier se transpose. Jamais de planche vide.
-· **BLOCS VISUELS** — ils portent l'essentiel de l'effet, sers-t'en :
-  — "fiche_google": true sur la planche constat : la page redessine SA fiche Google avec ses
-    vraies données (nom, note, étoiles, nombre d'avis, adresse, téléphone). N'écris pas ces
-    valeurs dans le texte, elles sont déjà affichées : commente-les.
-  — "avis_reel": true : le vrai avis négatif s'affiche mis en page comme un avis Google.
-    Ne le recopie pas dans une citation, mets simplement ce drapeau.
-  — "defauts" : la planche qui fait mal. Reprends les éléments de defauts_fiche ci-dessus —
-    ce sont des défauts RELEVÉS sur sa fiche, pas des généralités. N'en invente aucun. Si
-    defauts_fiche est absent, supprime cette planche.
-  — "maquette_rcs" : sur un duel SoReach uniquement, un exemple de message écrit POUR LUI,
-    dans son métier (ex. pour un site de ventes événementielles : annonce d'une vente en
-    avant-première avec un bouton « Avant-première »). Il s'affiche dans un téléphone dessiné.
-· Chaque planche doit porter au moins un bloc de contenu (chiffres, duel, courbe, défauts,
-  maquette, jalons ou citation). Une planche qui n'aurait qu'un titre et un paragraphe ne doit
-  pas exister : fusionne-la ou supprime-la.
-· Écris en français, à la deuxième personne du pluriel. Direct, concret, orienté mécanisme et
-  résultat. Aucun point d'exclamation, aucune flatterie, aucun superlatif creux.`;
+// Le schéma est ce qui garantit la forme. Les trois documents précédents sont sortis avec des
+// planches réduites à un titre : le modèle abandonnait les structures imbriquées en cours de
+// route. Ici il ne peut plus — l'API refuse une sortie qui ne colle pas au schéma.
+const S_TXT = { type: 'string' };
+const S_CHIFFRES = {
+  type: 'array', items: {
+    type: 'object',
+    properties: { valeur: S_TXT, unite: S_TXT, legende: S_TXT, source: S_TXT },
+    required: ['valeur', 'unite', 'legende', 'source'], additionalProperties: false
+  }
+};
+const SCHEMA = {
+  type: 'object',
+  properties: {
+    titre_document: S_TXT,
+    couverture: {
+      type: 'object', properties: { titre: S_TXT, texte: S_TXT },
+      required: ['titre', 'texte'], additionalProperties: false
+    },
+    constat: {
+      type: 'object', properties: { titre: S_TXT, texte: S_TXT, chiffres: S_CHIFFRES },
+      required: ['titre', 'texte', 'chiffres'], additionalProperties: false
+    },
+    defauts: {
+      type: 'object',
+      properties: { titre: S_TXT, texte: S_TXT, liste: { type: 'array', items: S_TXT } },
+      required: ['titre', 'texte', 'liste'], additionalProperties: false
+    },
+    duels: {
+      type: 'array', items: {
+        type: 'object',
+        properties: {
+          titre: S_TXT,
+          probleme: {
+            type: 'object', properties: { constat: S_TXT, cout: S_TXT },
+            required: ['constat', 'cout'], additionalProperties: false
+          },
+          solution: {
+            type: 'object',
+            properties: { nom: S_TXT, comment: { type: 'array', items: S_TXT }, resultat: S_TXT },
+            required: ['nom', 'comment', 'resultat'], additionalProperties: false
+          },
+          chiffre_cle: {
+            type: 'object', properties: { valeur: S_TXT, unite: S_TXT, legende: S_TXT, source: S_TXT },
+            required: ['valeur', 'unite', 'legende', 'source'], additionalProperties: false
+          },
+          maquette_rcs: {
+            type: 'object', properties: { expediteur: S_TXT, titre: S_TXT, texte: S_TXT, bouton: S_TXT },
+            required: ['expediteur', 'titre', 'texte', 'bouton'], additionalProperties: false
+          }
+        },
+        required: ['titre', 'probleme', 'solution', 'chiffre_cle', 'maquette_rcs'],
+        additionalProperties: false
+      }
+    },
+    trajectoire: {
+      type: 'object',
+      properties: {
+        titre: S_TXT, texte: S_TXT,
+        courbe: {
+          type: 'object',
+          properties: {
+            indicateur: S_TXT, unite: S_TXT, max: { type: 'number' },
+            points: {
+              type: 'array', items: {
+                type: 'object', properties: { quand: S_TXT, valeur: { type: 'number' } },
+                required: ['quand', 'valeur'], additionalProperties: false
+              }
+            },
+            appui: S_TXT
+          },
+          required: ['indicateur', 'unite', 'max', 'points', 'appui'], additionalProperties: false
+        },
+        jalons: {
+          type: 'array', items: {
+            type: 'object', properties: { quand: S_TXT, texte: S_TXT },
+            required: ['quand', 'texte'], additionalProperties: false
+          }
+        }
+      },
+      required: ['titre', 'texte', 'courbe', 'jalons'], additionalProperties: false
+    },
+    preuve: {
+      type: 'object',
+      properties: {
+        titre: S_TXT, texte: S_TXT, chiffres: S_CHIFFRES,
+        citation: {
+          type: 'object', properties: { texte: S_TXT, meta: S_TXT },
+          required: ['texte', 'meta'], additionalProperties: false
+        }
+      },
+      required: ['titre', 'texte', 'chiffres', 'citation'], additionalProperties: false
+    },
+    cta: {
+      type: 'object', properties: { titre: S_TXT, texte: S_TXT, bouton: S_TXT },
+      required: ['titre', 'texte', 'bouton'], additionalProperties: false
+    }
+  },
+  required: ['titre_document', 'couverture', 'constat', 'defauts', 'duels', 'trajectoire', 'preuve', 'cta'],
+  additionalProperties: false
+};
+
+// Le formulaire rempli devient un document. C'est le SERVEUR qui décide de la mise en page et
+// qui écarte ce qui est vide — une planche sans contenu ne peut plus atteindre le prospect,
+// quoi que le modèle ait renvoyé.
+const plein = v => typeof v === 'string' ? v.trim().length > 0 : !!v;
+
+function assembler(f, mes) {
+  const pl = [];
+  const nb = (f.duels || []).filter(d => d && plein(d.titre) && d.probleme && d.solution
+    && plein(d.probleme.constat) && plein(d.solution.nom)).length;
+
+  pl.push({
+    role: 'couverture', eyebrow: 'ANALYSE PRÉPARÉE POUR VOUS',
+    titre: (f.couverture && f.couverture.titre) || mes.nom || '',
+    texte: (f.couverture && f.couverture.texte) || ''
+  });
+
+  const c = f.constat || {};
+  if (plein(c.titre) || (c.chiffres || []).length) {
+    pl.push({
+      role: 'constat', eyebrow: 'CE QUE NOUS AVONS MESURÉ', titre: c.titre, texte: c.texte,
+      chiffres: (c.chiffres || []).filter(x => plein(x.valeur)),
+      fiche_google: true, avis_reel: true
+    });
+  }
+
+  const d = f.defauts || {};
+  const liste = (d.liste || []).filter(plein);
+  if (liste.length) {
+    pl.push({ role: 'defauts', eyebrow: "CE QUE VOIT UN CLIENT AVANT D'ACHETER", titre: d.titre, texte: d.texte, defauts: liste });
+  }
+
+  (f.duels || []).forEach((x, k) => {
+    if (!x || !x.probleme || !x.solution || !plein(x.probleme.constat) || !plein(x.solution.nom)) return;
+    const rcs = x.maquette_rcs || {};
+    pl.push({
+      role: 'duel', eyebrow: `PROBLÈME ${k + 1} SUR ${nb}`, titre: x.titre,
+      probleme: { constat: x.probleme.constat, cout: plein(x.probleme.cout) ? x.probleme.cout : null },
+      solution: {
+        nom: x.solution.nom,
+        comment: (x.solution.comment || []).filter(plein),
+        resultat: plein(x.solution.resultat) ? x.solution.resultat : null
+      },
+      chiffre_cle: plein((x.chiffre_cle || {}).valeur) ? x.chiffre_cle : null,
+      maquette_rcs: (plein(rcs.titre) || plein(rcs.texte)) ? rcs : null
+    });
+  });
+
+  const t = f.trajectoire || {};
+  const cb = t.courbe || {};
+  const pts = (cb.points || []).filter(x => x && typeof x.valeur === 'number' && isFinite(x.valeur));
+  const jal = (t.jalons || []).filter(x => x && plein(x.quand) && plein(x.texte));
+  if (pts.length > 1 || jal.length) {
+    pl.push({
+      role: 'trajectoire', eyebrow: 'LA TRAJECTOIRE VISÉE', titre: t.titre, texte: t.texte,
+      courbe: pts.length > 1 ? { ...cb, points: pts } : null,
+      jalons: jal
+    });
+  }
+
+  const pv = f.preuve || {};
+  const pvc = (pv.chiffres || []).filter(x => plein(x.valeur));
+  if (pvc.length || plein((pv.citation || {}).texte)) {
+    pl.push({
+      role: 'preuve', eyebrow: "ILS L'ONT DÉJÀ FAIT", titre: pv.titre, texte: pv.texte,
+      chiffres: pvc, citation: plein((pv.citation || {}).texte) ? pv.citation : null
+    });
+  }
+
+  const ct = f.cta || {};
+  pl.push({ role: 'cta', eyebrow: 'LA SUITE', titre: ct.titre, texte: ct.texte, cta: ct.bouton || 'Réserver 30 minutes' });
+
+  return { titre_document: f.titre_document || `Analyse Sofy — ${mes.nom || ''}`, planches: pl };
 }
 
 async function composer(ctx) {
   const apiKey = process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return { erreur: 'CLAUDE_API_KEY manquante' };
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({
-      model: MODELE(), max_tokens: 14000,
-      output_config: { effort: 'high' }, // rédaction commerciale : la qualité prime ici
-      messages: [{ role: 'user', content: prompt(ctx) }]
-    })
-  });
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok) return { erreur: 'API Claude', detail: (d.error && d.error.message) || JSON.stringify(d).slice(0, 200) };
-  const t = (d.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').replace(/```json|```/g, '').trim();
-  const a = t.indexOf('{'), b2 = t.lastIndexOf('}');
-  if (a < 0 || b2 <= a) return { erreur: 'Réponse IA non exploitable' };
-  try { return { ok: true, doc: JSON.parse(t.slice(a, b2 + 1)), usage: d.usage || null }; }
-  catch (e) { return { erreur: 'JSON invalide dans la réponse IA' }; }
+  const corps = {
+    model: MODELE(), max_tokens: 16000,
+    output_config: { effort: 'high', format: { type: 'json_schema', schema: SCHEMA } },
+    messages: [{ role: 'user', content: prompt(ctx) }]
+  };
+  const appeler = async (c) => {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify(c)
+    });
+    return { r, d: await r.json().catch(() => ({})) };
+  };
+  let { r, d } = await appeler(corps);
+  // Repli si le compte ou le modèle n'expose pas encore la sortie contrainte : on repasse en
+  // texte libre, avec le même prompt (il décrit déjà la forme attendue mot pour mot).
+  if (!r.ok && /output_config|json_schema|format/i.test(JSON.stringify(d.error || ''))) {
+    const libre = { ...corps, output_config: { effort: 'high' } };
+    ({ r, d } = await appeler(libre));
+  }
+  if (!r.ok) return { erreur: 'API Claude ' + r.status, detail: (d.error && d.error.message) || JSON.stringify(d).slice(0, 200) };
+
+  const txt = (d.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').replace(/```(?:json)?/g, '').trim();
+  const a = txt.indexOf('{'), b2 = txt.lastIndexOf('}');
+  if (a < 0 || b2 <= a) return { erreur: 'Réponse IA non exploitable', detail: txt.slice(0, 200) };
+  let f;
+  try { f = JSON.parse(txt.slice(a, b2 + 1)); }
+  catch (e) { return { erreur: 'JSON invalide dans la réponse IA', detail: txt.slice(0, 200) }; }
+  // Sortie tronquée : le document serait amputé sans qu'on le sache. Mieux vaut le dire.
+  if (d.stop_reason === 'max_tokens') return { erreur: 'Rédaction interrompue (trop longue) — relance', detail: 'stop_reason max_tokens' };
+  return { ok: true, formulaire: f, usage: d.usage || null };
 }
 
 export default async function handler(req, res) {
@@ -416,16 +574,10 @@ export default async function handler(req, res) {
     ]);
     if (out.erreur) return res.status(502).json(out);
 
-    // Garde-fou de dernier ressort : une planche qui n'a qu'un titre et un paragraphe est une
-    // page blanche à l'écran. Elle ne doit pas atteindre le prospect, même si l'IA l'a produite.
-    const porteQuelqueChose = pl => ['chiffres', 'points', 'problemes', 'projection', 'defauts', 'jalons']
-        .some(k => Array.isArray(pl[k]) && pl[k].length)
-      || (pl.probleme && pl.solution) || pl.courbe || pl.maquette_rcs
-      || (pl.citation && pl.citation.texte) || pl.fiche_google || pl.avis_reel
-      || ['couverture', 'cta'].includes(pl.role);
-    const gardees = (out.doc.planches || []).filter(porteQuelqueChose);
-    const vides = (out.doc.planches || []).length - gardees.length;
-    out.doc.planches = gardees;
+    // Le formulaire rempli devient le document ici, côté serveur : c'est ce qui garantit qu'une
+    // planche affichée porte vraiment du contenu.
+    out.doc = assembler(out.formulaire, mes);
+    const duels = out.doc.planches.filter(p => p.role === 'duel').length;
     if (logo) out.doc._logo = logo;
 
     const jeton = crypto.randomBytes(9).toString('base64url'); // 12 caractères, non devinable
@@ -453,7 +605,7 @@ export default async function handler(req, res) {
       ok: true, jeton, url: BASE_PUB() + '/p/' + jeton, client: mes.nom, module, jours_validite: jours,
       amorcage: amorcage && amorcage.ajoutes ? amorcage.ajoutes : undefined,
       planches: (out.doc.planches || []).length,
-      planches_vides_retirees: vides || undefined,
+      duels: duels,
       logo_prospect: !!logo,
       contexte_utilise: { radar: !!radar, blocs_kb: blocs.length, cas_clients: blocs.filter(x => x.type === 'cas_client').length },
       doc: out.doc

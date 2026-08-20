@@ -259,6 +259,9 @@ function page(doc, meta, sdr, apercu) {
   return `<!doctype html><html lang="fr"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow"><title>${esc(doc.titre_document || 'Analyse Sofy')}</title>
+<noscript><style>.reveal{opacity:1!important;transform:none!important}.pl-t .w{opacity:1!important;transform:none!important}
+.rule{transform:none!important}.crb-l{stroke-dashoffset:0!important}.crb-a,.crb-pt{opacity:1!important}
+.pj-bar i{width:var(--w)!important}</style></noscript>
 <style>
 :root{
  --nuit:#0F0B29; --nuit2:#1A1040; --clair:#FFFFFF; --clair2:#F4F2FD;
@@ -529,6 +532,12 @@ var io=new IntersectionObserver(function(es){es.forEach(function(e){
  },900);}
 });},{threshold:.28});
 document.querySelectorAll('.wrap').forEach(function(w){io.observe(w);});
+// Filet de sécurité : au bout de 3 s, tout ce qui n'a pas été révélé le devient. Une animation
+// qui ne se déclenche pas ne doit jamais laisser une page blanche devant un prospect.
+setTimeout(function(){
+ document.querySelectorAll('.reveal:not(.on)').forEach(function(r){r.classList.add('on');});
+ document.querySelectorAll('.kpi-v[data-n],.dl-kv[data-n]').forEach(function(v){anime(v);});
+},3000);
 if(sdrCard=document.getElementById('sdr-card'))sdrCard.innerHTML=${JSON.stringify(contact)};
 </script></body></html>`;
 }
