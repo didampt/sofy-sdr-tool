@@ -85,6 +85,7 @@ function mesures(e) {
     m.technos = (e.technos || []).map(t => ({ nom: t.nom, categorie: t.cat, concurrent_sofy: !!t.concurrent }));
     if (!m.technos.length) m.technos = 'aucun outil détecté sur le site';
   }
+  const sc = scorer(e); if (sc) m.scoring = sc;
   if (e.signal_gmb) m.alerte_note = { avant: e.signal_gmb.avant, apres: e.signal_gmb.apres, date: e.signal_gmb.date };
 
   // Défauts de fiche relevés par le code, pas déduits par l'IA : ce sont des faits opposables,
@@ -153,6 +154,94 @@ async function logoDe(site) {
   ];
   for (const u of pistes) { const d = await tenter(u); if (d) return d; }
   return null;
+}
+
+// ── Scoring en trois axes, un par module ──────────────────────────────────────────────────────
+// Demande de Didier : « on annonce la couleur de suite et on démontre notre professionnalisme ».
+// Chaque axe est noté sur 100 à partir de ce qui est RÉELLEMENT mesuré. Un critère non mesurable
+// (taux de réponse aux avis, photos : l'API Places ne les expose pas) n'est pas inventé : il est
+// marqué « à vérifier » et devient un sujet de rendez-vous, ce qui est plus honnête et plus utile
+// qu'un score bricolé. Le calcul est en JS, jamais délégué à l'IA.
+function scorer(e) {
+  const g = e.gmb || {};
+  if (!g.trouve) return null;
+  const fiches = g.fiches || [];
+  const nbEtab = e.nb_etablissements || null;
+  const technos = (e.technos_fait && Array.isArray(e.technos)) ? e.technos : null;
+  const cherche = (re) => technos ? technos.some(t => re.test(String(t.nom) + ' ' + String(t.cat))) : null;
+
+  const crit = (libelle, etat, points, sur, detail) => ({ libelle, etat, points, sur, detail });
+  const axes = [];
+
+  // ── Visibilité locale (Soview) ──
+  const v = [];
+  if (typeof g.note_moyenne === 'number') {
+    const n = g.note_moyenne;
+    v.push(crit('Note moyenne', n >= 4.2 ? 'ok' : (n >= 3.5 ? 'moyen' : 'faible'),
+      Math.max(0, Math.min(25, Math.round((n / 5) * 25))), 25,
+      String(n).replace('.', ',') + '/5 sur ' + (g.nb_fiches || 1) + ' fiche(s)'));
+  }
+  if (typeof g.total_avis === 'number' && fiches.length) {
+    const parFiche = Math.round(g.total_avis / fiches.length);
+    v.push(crit('Volume d\'avis par établissement', parFiche >= 150 ? 'ok' : (parFiche >= 50 ? 'moyen' : 'faible'),
+      parFiche >= 150 ? 20 : (parFiche >= 50 ? 12 : 5), 20, parFiche + ' avis en moyenne'));
+  }
+  if (nbEtab && fiches.length) {
+    const couv = Math.min(1, fiches.length / nbEtab);
+    v.push(crit('Couverture du réseau', couv >= 0.9 ? 'ok' : (couv >= 0.5 ? 'moyen' : 'faible'),
+      Math.round(couv * 20), 20, fiches.length + ' fiche(s) trouvée(s) pour ' + nbEtab + ' établissement(s) déclaré(s)'));
+  }
+  v.push(crit('Téléphone sur la fiche', g.telephone ? 'ok' : 'faible', g.telephone ? 10 : 0, 10,
+    g.telephone ? 'renseigné' : 'absent — un client qui veut vous joindre repart'));
+  v.push(crit('Site web sur la fiche', g.site_declare ? 'ok' : 'faible', g.site_declare ? 10 : 0, 10,
+    g.site_declare ? 'renseigné' : 'absent — le trafic Google n\'atterrit nulle part'));
+  if (fiches.length > 1) {
+    const notes = fiches.filter(f => typeof f.note === 'number').map(f => f.note);
+    const ecart = notes.length > 1 ? Math.round((Math.max(...notes) - Math.min(...notes)) * 10) / 10 : 0;
+    v.push(crit('Homogénéité entre établissements', ecart <= 0.3 ? 'ok' : (ecart <= 0.8 ? 'moyen' : 'faible'),
+      ecart <= 0.3 ? 15 : (ecart <= 0.8 ? 8 : 3), 15,
+      ecart ? String(ecart).replace('.', ',') + ' point d\'écart entre vos fiches' : 'notes alignées'));
+  }
+  v.push(crit('Réponses aux avis', 'inconnu', 0, 0, 'non mesurable depuis l\'extérieur — à regarder ensemble'));
+  v.push(crit('Fraîcheur et photos', 'inconnu', 0, 0, 'à auditer fiche par fiche au premier rendez-vous'));
+  axes.push({ nom: 'Visibilité locale', module: 'Soview', criteres: v });
+
+  // ── Relation client (SoConnect) ──
+  const r = [];
+  const chat = cherche(/chat|crisp|intercom|zendesk|tawk|hubspot conversations|drift|livechat|messenger/i);
+  const avisOutil = cherche(/avis|review|trustpilot|avis-verifies|reput/i);
+  r.push(crit('Canal de conversation sur le site', chat === null ? 'inconnu' : (chat ? 'ok' : 'faible'),
+    chat ? 35 : 0, 35, chat === null ? 'site non analysé' : (chat ? 'outil de messagerie détecté' : 'aucun outil de messagerie détecté')));
+  r.push(crit('Outil de collecte ou de réponse aux avis', avisOutil === null ? 'inconnu' : (avisOutil ? 'ok' : 'faible'),
+    avisOutil ? 35 : 0, 35, avisOutil === null ? 'site non analysé' : (avisOutil ? 'outil détecté' : 'aucun outil détecté : la réputation subit')));
+  r.push(crit('Joignabilité téléphonique affichée', g.telephone ? 'ok' : 'faible', g.telephone ? 30 : 0, 30,
+    g.telephone ? 'numéro public' : 'aucun numéro sur la fiche'));
+  axes.push({ nom: 'Relation client', module: 'SoConnect', criteres: r });
+
+  // ── Communication mobile (SoReach) ──
+  const c = [];
+  const sms = cherche(/sms|rcs|twilio|sendinblue|brevo|mailjet|attentive|smsmode|esendex/i);
+  const mkt = cherche(/marketing|klaviyo|mailchimp|salesforce|emarsys|braze|actito|selligent/i);
+  c.push(crit('Dispositif SMS ou RCS identifié', sms === null ? 'inconnu' : (sms ? 'ok' : 'faible'),
+    sms ? 50 : 0, 50, sms === null ? 'site non analysé' : (sms ? 'outil détecté' : 'aucun dispositif mobile détecté')));
+  c.push(crit('Plateforme de campagnes', mkt === null ? 'inconnu' : (mkt ? 'ok' : 'moyen'),
+    mkt ? 30 : 10, 30, mkt === null ? 'site non analysé' : (mkt ? 'plateforme détectée' : 'aucune plateforme détectée')));
+  c.push(crit('Expéditeur de marque vérifié', 'inconnu', 0, 0, 'le RCS affiche votre nom et votre logo — à vérifier ensemble'));
+  axes.push({ nom: 'Communication mobile', module: 'SoReach', criteres: c });
+
+  axes.forEach(a => {
+    const notes = a.criteres.filter(x => x.sur > 0);
+    const obtenus = notes.reduce((s2, x) => s2 + x.points, 0);
+    const total = notes.reduce((s2, x) => s2 + x.sur, 0);
+    a.score = total ? Math.round((obtenus / total) * 100) : null;
+    a.verdict = a.score == null ? 'non évalué' : (a.score >= 70 ? 'solide' : (a.score >= 45 ? 'à renforcer' : 'critique'));
+  });
+
+  return {
+    etablissements: nbEtab, fiches_trouvees: fiches.length,
+    note_moyenne: g.note_moyenne, total_avis: g.total_avis,
+    site_analyse: !!technos, axes
+  };
 }
 
 function prompt({ mes, radar, blocs, module, consigne, sdr }) {
@@ -255,6 +344,7 @@ const SCHEMA_CADRE = {
         required: ['valeur', 'unite', 'legende', 'source']
       }
     },
+    bilan_titre: T, bilan_texte: T,
     defauts_titre: T, defauts_texte: T, defauts: { type: 'array', items: T },
     traj_titre: T, traj_texte: T, courbe_indicateur: T, courbe_unite: T, courbe_max: N,
     points: {
@@ -279,7 +369,7 @@ const SCHEMA_CADRE = {
     cta_titre: T, cta_texte: T, cta_bouton: T
   },
   required: ['titre_document', 'couv_titre', 'couv_texte', 'constat_titre', 'constat_texte',
-    'chiffres', 'defauts_titre', 'defauts_texte', 'defauts', 'traj_titre', 'traj_texte',
+    'chiffres', 'bilan_titre', 'bilan_texte', 'defauts_titre', 'defauts_texte', 'defauts', 'traj_titre', 'traj_texte',
     'courbe_indicateur', 'courbe_unite', 'courbe_max', 'points', 'courbe_appui', 'jalons',
     'preuve_titre', 'preuve_texte', 'preuve_chiffres', 'citation', 'citation_meta',
     'cta_titre', 'cta_texte', 'cta_bouton']
@@ -313,6 +403,10 @@ Remplis le cadre du document — tout sauf les duels, qui sont rédigés à part
 · constat_titre ≤65 car. · constat_texte ≤180 car.
 · chiffres — 2 à 4 chiffres MESURÉS chez lui. "valeur" est une chaîne courte ("1,7"), "unite" est
   courte ("★", " %", " avis"), "legende" ≤60 car., "source" dit où on l'a relevé.
+· bilan_titre ≤65 car. / bilan_texte ≤180 car. — la planche du SCORING. Les trois scores sur 100
+  et leur détail sont affichés par la page, tu n'as pas à les écrire : commente ce qu'ils
+  révèlent (l'axe le plus faible, ce que ça dit du réseau) et dis franchement que les critères
+  non mesurables à distance seront audités ensemble.
 · defauts_titre / defauts_texte / defauts — 2 à 4 défauts RELEVÉS sur sa fiche. Reprends les
   éléments de "defauts_fiche" des mesures, un par entrée, ≤190 car. chacun. Si "defauts_fiche"
   est absent des mesures, mets defauts: [].
@@ -345,6 +439,18 @@ function assembler(cadre, duelsBruts, mes) {
     titre: plein(c.couv_titre) ? c.couv_titre : (mes.nom || ''),
     texte: c.couv_texte || ''
   });
+
+  // Bilan chiffré juste après la couverture : le prospect voit où il en est sur les trois axes
+  // avant même qu'on lui parle de nous. C'est ce qui « annonce la couleur » (demande Didier).
+  if (mes.scoring && (mes.scoring.axes || []).length) {
+    pl.push({
+      role: 'bilan', eyebrow: 'OÙ VOUS EN ÊTES AUJOURD\'HUI',
+      titre: plein(c.bilan_titre) ? c.bilan_titre : 'Votre réseau, noté sur trois axes',
+      texte: plein(c.bilan_texte) ? c.bilan_texte
+        : 'Relevé depuis l\'extérieur, comme le ferait un client. Ce qui n\'est pas mesurable à distance est signalé plutôt que supposé.',
+      scoring: mes.scoring
+    });
+  }
 
   const ch = chiffresValides(c.chiffres);
   if (ch.length || plein(c.constat_titre)) {

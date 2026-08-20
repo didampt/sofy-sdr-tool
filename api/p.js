@@ -32,7 +32,7 @@ const etoiles = n => {
   return [1, 2, 3, 4, 5].map(k => `<span class="et${v >= k ? ' on' : (v > k - 1 ? ' mi' : '')}">★</span>`).join('');
 };
 
-function planche(p, i, total, mes, logo) {
+function planche(p, i, total, mes, logo, sdr) {
   const sombre = i % 2 === 1;
   const chiffres = (p.chiffres || []).map(c => `
     <div class="kpi">
@@ -212,6 +212,43 @@ function planche(p, i, total, mes, logo) {
       </div>
     </div>` : '';
 
+  // Le bilan chiffré : trois jauges, chacune reliée à son module, avec le détail des critères.
+  // Les scores viennent du serveur — l'IA ne les touche pas.
+  const sc = p.scoring;
+  const bilan = (sc && (sc.axes || []).length) ? `
+    <div class="bl-h reveal">
+      ${sc.etablissements ? `<div class="bl-k"><b>${esc(String(sc.etablissements))}</b><span>établissement${sc.etablissements > 1 ? 's' : ''} déclaré${sc.etablissements > 1 ? 's' : ''}</span></div>` : ''}
+      ${sc.fiches_trouvees ? `<div class="bl-k"><b>${esc(String(sc.fiches_trouvees))}</b><span>fiche${sc.fiches_trouvees > 1 ? 's' : ''} Google trouvée${sc.fiches_trouvees > 1 ? 's' : ''}</span></div>` : ''}
+      ${sc.note_moyenne != null ? `<div class="bl-k"><b>${esc(String(sc.note_moyenne).replace('.', ','))}<i>★</i></b><span>note moyenne du réseau</span></div>` : ''}
+      ${sc.total_avis != null ? `<div class="bl-k"><b>${esc(String(sc.total_avis).replace(/\B(?=(\d{3})+(?!\d))/g, ' '))}</b><span>avis publics cumulés</span></div>` : ''}
+    </div>
+    <div class="axes">
+      ${(sc.axes || []).map((a, k) => {
+        const n = a.score == null ? 0 : a.score;
+        const cls = a.score == null ? 'nc' : (n >= 70 ? 'ok' : (n >= 45 ? 'moy' : 'bas'));
+        const C = 2 * Math.PI * 52;
+        return `<div class="ax reveal" style="--d:${k * 120}ms">
+          <div class="ax-j">
+            <svg viewBox="0 0 120 120" class="ax-s" role="img" aria-label="${esc(a.nom)} : ${a.score == null ? 'non évalué' : n + ' sur 100'}">
+              <circle cx="60" cy="60" r="52" class="ax-f"/>
+              <circle cx="60" cy="60" r="52" class="ax-v ${cls}"
+                style="--c:${C.toFixed(1)};--o:${(C * (1 - n / 100)).toFixed(1)}"/>
+            </svg>
+            <div class="ax-n">${a.score == null ? '—' : `<b data-n="${n}">${n}</b><i>/100</i>`}</div>
+          </div>
+          <div class="ax-t">${md(a.nom)}</div>
+          <div class="ax-m">${esc(a.module)} · <span class="ax-vd ${cls}">${esc(a.verdict)}</span></div>
+          <div class="ax-c">
+            ${(a.criteres || []).map(x => `<div class="ax-l ${esc(x.etat)}">
+              <span class="ax-p"></span>
+              <span><b>${md(x.libelle)}</b>${x.detail ? ` — ${md(x.detail)}` : ''}</span>
+            </div>`).join('')}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+    ${sc.site_analyse === false ? `<div class="ax-w reveal">Le site n'a pas encore été analysé : les axes Relation client et Communication mobile sont donc partiels. L'audit complet se fait au premier rendez-vous.</div>` : ''}` : '';
+
   const cit = p.citation && p.citation.texte ? `
     <blockquote class="cit">${md(p.citation.texte)}
       ${p.citation.meta ? `<cite>${esc(p.citation.meta)}</cite>` : ''}</blockquote>` : '';
@@ -221,11 +258,15 @@ function planche(p, i, total, mes, logo) {
         <span class="logo">sofy</span>
         <span class="pag">${String(i + 1).padStart(2, '0')} / ${String(total).padStart(2, '0')}</span>
       </header>
-      ${p.role === 'couverture' && logo ? `<img class="logo-p" src="${esc(logo)}" alt="">` : ''}
+      ${p.role === 'couverture' ? `<div class="couv-h">
+        ${logo ? `<img class="logo-p" src="${esc(logo)}" alt="">` : ''}
+        <div class="couv-x"><span class="couv-s">Analyse Sofy</span><span class="couv-p">préparée pour ${esc(p.titre || '')}</span></div>
+      </div>` : ''}
       ${p.eyebrow ? `<div class="eyebrow">${esc(p.eyebrow)}</div>` : ''}
       <h2 class="pl-t">${md(p.titre)}</h2>
       <div class="rule"></div>
       ${p.texte ? `<p class="pl-x">${md(p.texte)}</p>` : ''}
+      ${bilan}
       ${ficheG}
       ${chiffres ? `<div class="kpis">${chiffres}</div>` : ''}
       ${avisReel}
@@ -238,6 +279,15 @@ function planche(p, i, total, mes, logo) {
       ${proj ? `<div class="pjs">${proj}</div>` : ''}
       ${points ? `<div class="pts">${points}</div>` : ''}
       ${cit}
+      ${p.role === 'couverture' && sdr && (sdr.photo || sdr.nom) ? `<div class="ae reveal">
+        ${sdr.photo ? `<img class="ae-p" src="${esc(sdr.photo)}" alt="">`
+          : `<span class="ae-i">${esc(String(sdr.nom || '?').trim().charAt(0).toUpperCase())}</span>`}
+        <div><div class="ae-n">${esc(sdr.nom || '')}</div>
+          <div class="ae-r">Votre interlocuteur chez Sofy</div>
+          ${sdr.email ? `<a class="ae-c" href="mailto:${esc(sdr.email)}">${esc(sdr.email)}</a>` : ''}
+          ${sdr.ringover_numero ? `<a class="ae-c" href="tel:${esc(String(sdr.ringover_numero).replace(/\s/g, ''))}">${esc(sdr.ringover_numero)}</a>` : ''}
+        </div>
+      </div>` : ''}
       ${p.role === 'cta' ? `<div class="cta-zone">
         <a class="btn-demo" href="${esc(LIEN_DEMO())}" target="_blank" rel="noopener">📅 ${esc(p.cta || 'Réserver 15 minutes')}</a>
         <div class="sdr-card" id="sdr-card"></div>
@@ -385,6 +435,64 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .rcs-x{font-size:14.5px;line-height:1.6;max-width:52ch}
 .pl.light .rcs-x{color:var(--ink-s)} .pl.dark .rcs-x{color:var(--ink-ds)}
 @media print{.tel{box-shadow:none}.gmb-w{box-shadow:none}}
+.couv-h{display:flex;align-items:center;gap:16px;margin-bottom:26px;flex-wrap:wrap}
+.logo-p{max-height:52px;max-width:170px;width:auto;display:block;object-fit:contain}
+.couv-x{display:flex;flex-direction:column;padding-left:16px;border-left:2px solid var(--line)}
+.pl.dark .couv-x{border-left-color:var(--line-d)}
+.couv-s{font-size:19px;font-weight:800;letter-spacing:-.02em;background:var(--grad);
+ -webkit-background-clip:text;background-clip:text;color:transparent}
+.couv-p{font-size:12.5px;letter-spacing:.04em}
+.pl.light .couv-p{color:var(--ink-s)} .pl.dark .couv-p{color:var(--ink-ds)}
+.ae{display:flex;align-items:center;gap:15px;margin-top:34px;padding:16px 20px;border-radius:14px;max-width:430px}
+.pl.light .ae{background:#fff;border:1px solid var(--line);box-shadow:0 12px 30px rgba(20,16,58,.07)}
+.pl.dark .ae{background:rgba(255,255,255,.06);border:1px solid var(--line-d)}
+.ae-p,.ae-i{flex:none;width:62px;height:62px;border-radius:50%;object-fit:cover}
+.ae-i{display:flex;align-items:center;justify-content:center;background:var(--grad);color:#fff;font-size:24px;font-weight:800}
+.ae-n{font-size:16.5px;font-weight:750;letter-spacing:-.01em}
+.ae-r{font-size:12.5px;margin-top:1px}
+.pl.light .ae-r{color:#9990C4} .pl.dark .ae-r{color:rgba(255,255,255,.48)}
+.ae-c{display:block;font-size:13px;margin-top:3px;text-decoration:none}
+.pl.light .ae-c{color:var(--v)} .pl.dark .ae-c{color:#B9B2E0}
+.bl-h{display:grid;gap:14px;margin-top:30px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.bl-k{padding:15px 17px;border-radius:12px}
+.pl.light .bl-k{background:#fff;border:1px solid var(--line)}
+.pl.dark .bl-k{background:rgba(255,255,255,.055);border:1px solid var(--line-d)}
+.bl-k b{display:block;font-size:31px;font-weight:800;letter-spacing:-.035em;line-height:1;font-variant-numeric:tabular-nums}
+.bl-k b i{font-size:.55em;font-style:normal;margin-left:2px}
+.bl-k span{display:block;font-size:12px;line-height:1.35;margin-top:6px}
+.pl.light .bl-k span{color:var(--ink-s)} .pl.dark .bl-k span{color:var(--ink-ds)}
+.axes{display:grid;gap:16px;margin-top:22px;grid-template-columns:repeat(auto-fit,minmax(265px,1fr))}
+.ax{padding:20px 22px;border-radius:15px}
+.pl.light .ax{background:#fff;border:1px solid var(--line);box-shadow:0 14px 34px rgba(20,16,58,.06)}
+.pl.dark .ax{background:rgba(255,255,255,.055);border:1px solid var(--line-d)}
+.ax-j{position:relative;width:120px;height:120px;margin:0 auto 12px}
+.ax-s{width:120px;height:120px;transform:rotate(-90deg)}
+.ax-f{fill:none;stroke:var(--line);stroke-width:9}
+.pl.dark .ax-f{stroke:rgba(255,255,255,.1)}
+.ax-v{fill:none;stroke-width:9;stroke-linecap:round;stroke-dasharray:var(--c);stroke-dashoffset:var(--o)}
+.ax-v.ok{stroke:#0F9D6E} .ax-v.moy{stroke:#E0A253} .ax-v.bas{stroke:var(--r)} .ax-v.nc{stroke:var(--line)}
+.anim .ax-v{stroke-dashoffset:var(--c);transition:stroke-dashoffset 1.4s cubic-bezier(.3,.05,.2,1) .2s}
+.anim .reveal.on .ax-v{stroke-dashoffset:var(--o)}
+.ax-n{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:1px}
+.ax-n b{font-size:33px;font-weight:800;letter-spacing:-.04em;font-variant-numeric:tabular-nums}
+.ax-n i{font-size:13px;font-style:normal;opacity:.5}
+.ax-t{font-size:17px;font-weight:750;text-align:center;letter-spacing:-.01em}
+.ax-m{font-size:12px;text-align:center;margin-top:4px}
+.pl.light .ax-m{color:#9990C4} .pl.dark .ax-m{color:rgba(255,255,255,.45)}
+.ax-vd{font-weight:800;text-transform:uppercase;letter-spacing:.06em;font-size:10.5px}
+.ax-vd.ok{color:#0F9D6E} .ax-vd.moy{color:#B45309} .ax-vd.bas{color:var(--r)} .ax-vd.nc{opacity:.6}
+.ax-c{margin-top:14px;padding-top:12px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+.pl.dark .ax-c{border-top-color:var(--line-d)}
+.ax-l{display:flex;gap:9px;font-size:12.5px;line-height:1.4;align-items:flex-start}
+.ax-l b{font-weight:700}
+.ax-p{flex:none;width:8px;height:8px;border-radius:50%;margin-top:5px;background:var(--line)}
+.ax-l.ok .ax-p{background:#0F9D6E} .ax-l.moyen .ax-p{background:#E0A253}
+.ax-l.faible .ax-p{background:var(--r)} .ax-l.inconnu .ax-p{background:none;border:1.5px dashed #B9B2E0}
+.ax-l.inconnu{opacity:.72}
+.ax-w{font-size:12.5px;line-height:1.5;margin-top:16px;padding:12px 15px;border-radius:10px}
+.pl.light .ax-w{background:#FEF6E7;border:1px solid #E9C88B;color:#7A4E12}
+.pl.dark .ax-w{background:rgba(224,162,83,.12);border:1px solid rgba(224,162,83,.34);color:#E9C88B}
+@media print{.ax,.bl-k,.ae{box-shadow:none}}
 .duel{display:grid;gap:14px;margin-top:34px;align-items:stretch;grid-template-columns:1fr}
 @media(min-width:900px){.duel{grid-template-columns:1fr 62px 1.12fr}}
 .dl-p,.dl-s{border-radius:16px;padding:22px 24px;display:flex;flex-direction:column;gap:9px}
@@ -495,7 +603,7 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
  .reveal{opacity:1!important;transform:none!important}
 }
 </style></head><body>
-${pl.map((p, i) => planche(p, i, pl.length, doc._mes || {}, doc._logo || null)).join('')}
+${pl.map((p, i) => planche(p, i, pl.length, doc._mes || {}, doc._logo || null, sdr)).join('')}
 ${apercu ? `<div class="apercu">👁 Aperçu interne — cette visite n'est pas comptée dans les ouvertures du prospect.</div>` : ''}
 <div class="tools"><button onclick="window.print()">⬇️ Télécharger en PDF</button></div>
 <script>
@@ -538,7 +646,7 @@ var io=new IntersectionObserver(function(es){es.forEach(function(e){
  if(!e.isIntersecting)return;
  e.target.classList.add('on');
  [].forEach.call(e.target.querySelectorAll('.reveal'),function(r,k){setTimeout(function(){r.classList.add('on');},60+k*70);});
- [].forEach.call(e.target.querySelectorAll('.kpi-v[data-n],.dl-kv[data-n]'),function(v){anime(v);});
+ [].forEach.call(e.target.querySelectorAll('.kpi-v[data-n],.dl-kv[data-n],.ax-n b[data-n]'),function(v){anime(v);});
  var s=parseInt(e.target.closest('.pl').dataset.s||'0',10);
  if(s>max&&!apercu){max=s;clearTimeout(window._t);window._t=setTimeout(function(){
   try{navigator.sendBeacon('/api/p?j='+encodeURIComponent(jeton)+'&s='+max);}catch(_){}
@@ -549,7 +657,7 @@ document.querySelectorAll('.wrap').forEach(function(w){io.observe(w);});
 // qui ne se déclenche pas ne doit jamais laisser une page blanche devant un prospect.
 setTimeout(function(){
  document.querySelectorAll('.reveal:not(.on)').forEach(function(r){r.classList.add('on');});
- document.querySelectorAll('.kpi-v[data-n],.dl-kv[data-n]').forEach(function(v){anime(v);});
+ document.querySelectorAll('.kpi-v[data-n],.dl-kv[data-n],.ax-n b[data-n]').forEach(function(v){anime(v);});
 },3000);
 if(sdrCard=document.getElementById('sdr-card'))sdrCard.innerHTML=${JSON.stringify(contact)};
 </script></body></html>`;
@@ -599,7 +707,11 @@ export default async function handler(req, res) {
 
     // Coordonnées du commercial, lues au rendu pour rester à jour
     let sdr = null;
-    try { const [s] = await sql`SELECT nom, email, ringover_numero FROM sdrs WHERE nom = ${row.sdr} LIMIT 1`; sdr = s || null; } catch (_) {}
+    try { const [s] = await sql`SELECT nom, email, ringover_numero, photo FROM sdrs WHERE nom = ${row.sdr} LIMIT 1`; sdr = s || null; }
+    catch (_) {
+      // La colonne photo n'existe pas encore (aucun commercial ne l'a renseignée) : on continue.
+      try { const [s] = await sql`SELECT nom, email, ringover_numero FROM sdrs WHERE nom = ${row.sdr} LIMIT 1`; sdr = s || null; } catch (__) {}
+    }
 
     const premiere = !interne && !row.ouvertures;
 

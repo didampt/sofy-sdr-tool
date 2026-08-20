@@ -27,6 +27,29 @@ export default async function handler(req, res) {
 
   const user = verifierToken(req);
   if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
+
+  // Photo de profil : elle apparaît sur les analyses client, pour mettre un visage sur le
+  // document (demande Didier : « ajouter un visuel de l'AE pour donner plus d'humain »).
+  // Chacun gère la sienne — c'est la seule action ici qui n'exige pas d'être admin.
+  if (req.method === 'PUT' && (req.body || {}).ma_photo !== undefined) {
+    const ph = (req.body || {}).ma_photo;
+    if (ph && !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(String(ph))) {
+      return res.status(400).json({ erreur: 'Photo invalide (PNG, JPEG ou WebP attendu)' });
+    }
+    if (ph && String(ph).length > 400000) {
+      return res.status(413).json({ erreur: 'Photo trop lourde — 250 Ko maximum' });
+    }
+    try { await sql`ALTER TABLE sdrs ADD COLUMN IF NOT EXISTS photo TEXT`; } catch (_) {}
+    await sql`UPDATE sdrs SET photo = ${ph || null} WHERE nom = ${user.nom}`;
+    return res.status(200).json({ ok: true, info: ph ? 'Photo enregistrée — elle apparaîtra sur tes prochaines analyses.' : 'Photo retirée.' });
+  }
+  if (req.method === 'GET' && (req.query || {}).ma_photo === '1') {
+    try {
+      const [r] = await sql`SELECT photo FROM sdrs WHERE nom = ${user.nom}`;
+      return res.status(200).json({ ok: true, photo: (r && r.photo) || null });
+    } catch (_) { return res.status(200).json({ ok: true, photo: null }); }
+  }
+
   if (req.method !== 'GET' && !['superadmin', 'admin'].includes(user.role)) {
     return res.status(403).json({ erreur: 'Réservé au superadmin (gestion des utilisateurs et crédits)' });
   }

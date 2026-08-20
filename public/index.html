@@ -1068,6 +1068,15 @@ Spot-Hit</textarea>
             <button class="btn btn-primary" onclick="nav('history',null);chargerHistorique()">🗂 Ouvrir une liste</button>
             <button class="btn" style="background:var(--paper)" onclick="nav('cockpit',null);chargerCockpit()">☀️ Voir mes hot leads</button>
           </div>
+          <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)">
+            <div style="font-size:13px;font-weight:700;margin-bottom:4px">👤 Ta photo sur les analyses</div>
+            <div style="font-size:12.5px;color:var(--ink-soft);line-height:1.55;margin-bottom:9px">Elle apparaît sur la couverture, à côté de ton nom et de tes coordonnées. Un document signé par une personne obtient plus de réponses qu'un document anonyme.</div>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <img id="ma-photo" alt="" style="display:none;width:52px;height:52px;border-radius:50%;object-fit:cover;border:1px solid var(--line)">
+              <input type="file" id="ma-photo-f" accept=".png,.jpg,.jpeg,.webp" style="font-size:12.5px" onchange="envoyerMaPhoto()">
+              <button class="btn" style="background:var(--paper);font-size:12.5px;padding:5px 11px" onclick="envoyerMaPhoto(true)">Retirer</button>
+            </div>
+          </div>
           <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line);font-size:13px;color:var(--ink-soft);line-height:1.6">
             Le document suit toujours la même logique : <strong>ce qu'on a mesuré</strong> → <strong>ce que ça coûte</strong> → <strong>la brique Sofy qui y répond</strong> → <strong>le résultat visé, chiffré</strong> → un cas client comparable → la prise de rendez-vous. Chaque lien vit 15 jours et compte ses lecteurs.
           </div>
@@ -2105,7 +2114,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v341';
+const VERSION='v342';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4858,6 +4867,7 @@ function sousOngletPrez(o){
   if(p)p.style.display=(x===o?'':'none');
   if(b){b.className='btn'+(x===o?' btn-primary':'');b.style.background=(x===o?'':'var(--paper)');}
  });
+ if(o==='gen')chargerMaPhoto();
  if(o==='kb')chargerKb();
  if(o==='mes')chargerMesPrez();
 }
@@ -5096,6 +5106,30 @@ async function lancerImportKb(){
   if(v.arrete||err.name==='AbortError')toast('Lecture arrêtée');
   else toast('Import : '+err.message);
  }finally{v.fermer();}
+}
+
+async function chargerMaPhoto(){
+ try{
+  const r=await api('/api/sdrs?ma_photo=1'); const d=await r.json();
+  const img=document.getElementById('ma-photo');
+  if(img&&d.photo){img.src=d.photo;img.style.display='';}
+  else if(img){img.style.display='none';}
+ }catch(_){}
+}
+async function envoyerMaPhoto(retirer){
+ let data=null;
+ if(!retirer){
+  const inp=document.getElementById('ma-photo-f'),f=inp&&inp.files&&inp.files[0];
+  if(!f){toast('Choisis une image');return;}
+  if(f.size>260000){toast('Image trop lourde — 250 Ko maximum (recadre-la ou réduis-la)');return;}
+  data=await new Promise(function(ok,ko){const fr=new FileReader();fr.onload=()=>ok(String(fr.result));fr.onerror=ko;fr.readAsDataURL(f);});
+ }
+ try{
+  const r=await api('/api/sdrs',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({ma_photo:retirer?null:data})});
+  const d=await r.json();
+  toast(d.erreur||d.info||'Enregistré');
+  chargerMaPhoto();
+ }catch(e){toast('Photo : '+e.message);}
 }
 
 // Rouvrir la fiche du prospect depuis l'historique : le SDR arrive souvent ici par le compteur
@@ -5564,6 +5598,20 @@ async function genererPrez(i){
   e.technos_fait?'technos détectées sur le site':null,
   e.nb_etablissements?`${e.nb_etablissements} établissement(s)`:null
  ].filter(Boolean);
+ // Pré-vol (idée de Didier) : une analyse ne vaut que ce qu'on a mesuré. On liste ce qui manque
+ // AVANT de payer une rédaction, et on propose de le compléter — c'est là que la personnalisation
+ // se gagne, pas dans la rédaction.
+ const manque=[];
+ if(!(e.gmb&&e.gmb.trouve))manque.push({q:'la fiche Google (note, avis, établissements)',f:'gmb'});
+ if(!e.technos_fait)manque.push({q:'les outils détectés sur son site (chat, avis, SMS)',f:'technos'});
+ if(estVisiteSite(e)&&!e._radarLu)manque.push({q:'le contexte presse récent',f:'radar'});
+ if(manque.length){
+  const ok2=await confirmSofy('Il manque des mesures pour '+(enseigneDe(e)||e.nom),
+   'Sans elles, le document restera générique :\n· '+manque.map(x=>x.q).join('\n· ')+
+   '\n\nLe scoring des trois axes (visibilité, relation client, communication) s\'appuie précisément là-dessus.\n\nComplète d\'abord la fiche : ↻ Analyser pour la fiche Google et les technos, 📰 Chercher le contexte pour la presse.',
+   'Générer quand même');
+  if(!ok2)return;
+ }
  // Garde-fou : une analyse existe déjà sur cette fiche. La regénérer coûte un appel complet et
  // crée un SECOND lien — l'ancien continue de vivre et de compter ses ouvertures.
  if(e._prez&&!e._prez.expiree){
