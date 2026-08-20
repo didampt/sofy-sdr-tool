@@ -523,6 +523,91 @@ function assembler(cadre, duelsBruts, mes) {
   };
 }
 
+// ── L'éditeur ─────────────────────────────────────────────────────────────────────────────────
+// Décision prise avec Didier : les textes sont libres, les VALEURS MESURÉES sont verrouillées.
+// Si l'on peut taper « 4,2 » à la main sur un prospect relevé à 1,7, on a construit une machine
+// à produire des documents faux signés Sofy. Cette table est la seule autorité sur ce qui est
+// modifiable ; elle est renvoyée au front, qui construit son formulaire à partir d'elle. Rien
+// d'autre n'est écrit, quel que soit le contenu de la requête.
+const CHAMPS = {
+  couverture:  [['titre', 65], ['texte', 200]],
+  bilan:       [['titre', 65], ['texte', 200]],
+  constat:     [['titre', 65], ['texte', 200], ['chiffres[].legende', 60]],
+  defauts:     [['titre', 65], ['texte', 200], ['defauts[]', 190]],
+  duel:        [['titre', 65], ['probleme.constat', 120], ['probleme.cout', 130],
+                ['solution.nom', 90], ['solution.comment[]', 90], ['solution.resultat', 120],
+                ['chiffre_cle.legende', 80],
+                ['maquette_rcs.titre', 42], ['maquette_rcs.texte', 150], ['maquette_rcs.bouton', 22]],
+  trajectoire: [['titre', 65], ['texte', 200], ['courbe.appui', 220],
+                ['jalons[].quand', 32], ['jalons[].texte', 110]],
+  preuve:      [['titre', 65], ['texte', 200]],
+  cta:         [['titre', 65], ['texte', 200], ['cta', 40]]
+};
+// Ce que l'éditeur montre en lecture seule, avec la raison : le SDR doit comprendre pourquoi
+// c'est verrouillé, sinon il croit à un bug.
+const VERROUS = {
+  constat: ['les valeurs et sources des chiffres — elles viennent du relevé'],
+  bilan: ['les trois scores et leurs critères — ils sont calculés, pas rédigés'],
+  duel: ['la valeur du chiffre d\'appui et sa source — elles viennent de la base de connaissance'],
+  trajectoire: ['le point de départ de la courbe — c\'est la valeur mesurée aujourd\'hui'],
+  preuve: ['les résultats du cas client et le verbatim — ils viennent de la base']
+};
+
+const tronquer = (v, max) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, max);
+
+// Applique une valeur sur un chemin ('solution.comment[]', 'probleme.cout') dans la planche
+// stockée, en partant TOUJOURS de l'existant : un champ absent de la requête reste inchangé.
+function appliquer(cible, source, chemin, max) {
+  const tab = chemin.includes('[]');
+  const [avant, apres] = chemin.split('[]');
+  const parts = avant.split('.').filter(Boolean);
+  const feuille = apres ? apres.replace(/^\./, '') : null;
+
+  let refC = cible, refS = source;
+  for (let i = 0; i < parts.length - (tab ? 0 : 1); i++) {
+    refC = refC && refC[parts[i]]; refS = refS && refS[parts[i]];
+    if (!refC) return;
+  }
+  if (!tab) {
+    const cle = parts[parts.length - 1];
+    if (refS && typeof refS[cle] === 'string') refC[cle] = tronquer(refS[cle], max);
+    return;
+  }
+  // Cas tableau : on garde la longueur du tableau stocké, on n'écrase que les textes.
+  if (!Array.isArray(refC) || !Array.isArray(refS)) return;
+  refC.forEach((el, i) => {
+    const src = refS[i];
+    if (src == null) return;
+    if (feuille) { if (el && typeof src[feuille] === 'string') el[feuille] = tronquer(src[feuille], max); }
+    else if (typeof src === 'string') refC[i] = tronquer(src, max);
+  });
+}
+
+// Reconstruit le document à partir du stocké + des modifications autorisées, dans l'ordre
+// demandé, en retirant les planches supprimées.
+function fusionner(stocke, recu) {
+  const src = Array.isArray(recu && recu.planches) ? recu.planches : [];
+  const parId = new Map();
+  (stocke.planches || []).forEach((pl, i) => parId.set(i, pl));
+
+  const sortie = [];
+  const vues = new Set();
+  for (const p of src) {
+    const i = parseInt(p && p.i, 10);
+    if (!parId.has(i) || vues.has(i)) continue;      // index inconnu ou dupliqué : ignoré
+    if (p.supprimee) { vues.add(i); continue; }
+    const base = JSON.parse(JSON.stringify(parId.get(i)));
+    for (const [chemin, max] of (CHAMPS[base.role] || [])) appliquer(base, p, chemin, max);
+    sortie.push(base); vues.add(i);
+  }
+  // Une planche non mentionnée n'est pas perdue : elle reste à sa place relative.
+  (stocke.planches || []).forEach((pl, i) => { if (!vues.has(i)) sortie.push(pl); });
+
+  // Un document sans couverture ni conclusion n'a pas de sens : on refuse de tout supprimer.
+  if (!sortie.length) return null;
+  return { ...stocke, planches: sortie };
+}
+
 // Un appel = un formulaire court. Le mode utilisé est remonté : si la sortie contrainte est
 // refusée par l'API, on veut le savoir plutôt que de découvrir un document dégradé.
 async function remplir(apiKey, base, consigne, schema) {
@@ -625,9 +710,62 @@ export default async function handler(req, res) {
     if (q.jeton) {
       const [row] = await sql`SELECT * FROM prez WHERE jeton = ${String(q.jeton)}`;
       if (!row) return res.status(404).json({ erreur: 'Présentation introuvable' });
+      if (q.edit === '1') {
+        const admin = ['admin', 'superadmin'].includes(user.role);
+        if (!admin && row.sdr !== user.nom) {
+          return res.status(403).json({ erreur: 'Tu ne peux modifier que tes propres analyses.' });
+        }
+        const doc = row.contenu || {};
+        return res.status(200).json({
+          ok: true, jeton: row.jeton, client: row.client, module: row.module,
+          url: BASE_PUB() + '/p/' + row.jeton,
+          ouvertures: row.ouvertures, lecteurs: (row.lecteurs || []).length,
+          modifie_le: row.modifie_le || null, modifie_par: row.modifie_par || null,
+          annulable: !!row.contenu_precedent,
+          planches: (doc.planches || []).map((pl, i) => ({ ...pl, i })),
+          champs: CHAMPS, verrous: VERROUS,
+          // Les chiffres citables, pour changer un chiffre d'appui sans jamais le saisir à la main
+          appuis: (doc._appuis || null)
+        });
+      }
       return res.status(200).json({ ok: true, prez: row, url: BASE_PUB() + '/p/' + row.jeton });
     }
     return res.status(400).json({ erreur: 'jeton, liste_id ou mes=1 requis' });
+  }
+
+  // Publication des modifications : on republie sur le MÊME jeton — le prospect qui a déjà le
+  // lien voit la nouvelle version, et on ne repaye aucune rédaction.
+  if (req.method === 'PUT') {
+    const b2 = req.body || {};
+    const j = String(b2.jeton || '');
+    if (!j) return res.status(400).json({ erreur: 'jeton requis' });
+    const [row] = await sql`SELECT * FROM prez WHERE jeton = ${j}`;
+    if (!row) return res.status(404).json({ erreur: 'Analyse introuvable' });
+    const admin = ['admin', 'superadmin'].includes(user.role);
+    if (!admin && row.sdr !== user.nom) {
+      return res.status(403).json({ erreur: 'Tu ne peux modifier que tes propres analyses.' });
+    }
+    try { await sql`ALTER TABLE prez ADD COLUMN IF NOT EXISTS contenu_precedent JSONB`; } catch (_) {}
+    try { await sql`ALTER TABLE prez ADD COLUMN IF NOT EXISTS modifie_le TIMESTAMPTZ`; } catch (_) {}
+    try { await sql`ALTER TABLE prez ADD COLUMN IF NOT EXISTS modifie_par TEXT`; } catch (_) {}
+
+    // Retour en arrière : une seule version conservée, c'est suffisant pour rattraper une bourde.
+    if (b2.annuler) {
+      if (!row.contenu_precedent) return res.status(400).json({ erreur: 'Aucune version précédente à restaurer' });
+      await sql`UPDATE prez SET contenu = contenu_precedent, contenu_precedent = NULL,
+        modifie_le = NOW(), modifie_par = ${user.nom} WHERE jeton = ${j}`;
+      return res.status(200).json({ ok: true, info: 'Version précédente restaurée.' });
+    }
+
+    const fusion = fusionner(row.contenu || {}, b2);
+    if (!fusion) return res.status(400).json({ erreur: 'Le document ne peut pas être vide' });
+    await sql`UPDATE prez SET contenu_precedent = contenu, contenu = ${JSON.stringify(fusion)}::jsonb,
+      modifie_le = NOW(), modifie_par = ${user.nom} WHERE jeton = ${j}`;
+    return res.status(200).json({
+      ok: true, planches: fusion.planches.length,
+      url: BASE_PUB() + '/p/' + j,
+      info: `Modifications publiées sur le même lien${row.ouvertures ? ` — le prospect l'avait déjà ouvert ${row.ouvertures} fois` : ''}.`
+    });
   }
 
   // Suppression manuelle : un document parti chez le mauvais interlocuteur, ou une version
@@ -644,7 +782,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, info: `Analyse ${row.client || ''} supprimée — le lien ne s'ouvre plus.` });
   }
 
-  if (req.method !== 'POST') return res.status(405).json({ erreur: 'GET, POST ou DELETE' });
+  if (req.method !== 'POST') return res.status(405).json({ erreur: 'GET, POST, PUT ou DELETE' });
   const b = req.body || {};
   const module = ['soview', 'soconnect', 'soreach', 'tous'].includes(b.module) ? b.module : 'tous';
 
@@ -715,6 +853,10 @@ export default async function handler(req, res) {
     // Le formulaire rempli devient le document ici, côté serveur : c'est ce qui garantit qu'une
     // planche affichée porte vraiment du contenu.
     out.doc = assembler(out.cadre, out.duels, mes);
+    // Mémorisés pour l'éditeur : changer un chiffre d'appui se fait en le CHOISISSANT, jamais
+    // en le tapant — c'est ce qui garantit qu'un chiffre publié a toujours sa source.
+    out.doc._appuis = blocs.filter(x => ['chiffre_marche', 'cas_client', 'preuve'].includes(x.type))
+      .slice(0, 40).map(x => ({ titre: x.titre, source: x.source || 'interne' }));
     const duels = out.doc.planches.filter(p => p.role === 'duel').length;
     if (logo) out.doc._logo = logo;
 

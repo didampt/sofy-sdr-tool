@@ -1058,6 +1058,7 @@ Spot-Hit</textarea>
         <button class="btn btn-primary" id="pz-t-gen" onclick="sousOngletPrez('gen')">Générateur</button>
         <button class="btn" id="pz-t-kb" style="background:var(--paper)" onclick="sousOngletPrez('kb')">Base de connaissance</button>
         <button class="btn" id="pz-t-mes" style="background:var(--paper)" onclick="sousOngletPrez('mes')">Mes présentations</button>
+        <button class="btn" id="pz-t-edit" style="background:var(--paper);display:none" onclick="sousOngletPrez('edit')">✏️ Éditeur</button>
       </div>
 
       <!-- ── Générateur ── -->
@@ -1093,6 +1094,9 @@ Spot-Hit</textarea>
         <div id="kb-form" style="display:none;margin-bottom:16px"></div>
         <div id="kb-liste"><p style="color:var(--ink-soft)">Chargement…</p></div>
       </div>
+
+      <!-- ── Éditeur (ouvert depuis une présentation) ── -->
+      <div id="pz-edit" style="display:none"></div>
 
       <!-- ── Mes présentations ── -->
       <div id="pz-mes" style="display:none">
@@ -2114,7 +2118,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v342';
+const VERSION='v343';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4862,11 +4866,13 @@ function estAdmin(){return !!(state.user&&['admin','superadmin'].includes(state.
 function ouvrirPrez(){sousOngletPrez(window._pzOnglet||'gen');}
 function sousOngletPrez(o){
  window._pzOnglet=o;
- ['gen','kb','mes'].forEach(function(x){
+ ['gen','kb','mes','edit'].forEach(function(x){
   const p=document.getElementById('pz-'+x),b=document.getElementById('pz-t-'+x);
   if(p)p.style.display=(x===o?'':'none');
   if(b){b.className='btn'+(x===o?' btn-primary':'');b.style.background=(x===o?'':'var(--paper)');}
  });
+ const be=document.getElementById('pz-t-edit');
+ if(be)be.style.display=(o==='edit'?'':'none');
  if(o==='gen')chargerMaPhoto();
  if(o==='kb')chargerKb();
  if(o==='mes')chargerMesPrez();
@@ -5132,6 +5138,225 @@ async function envoyerMaPhoto(retirer){
  }catch(e){toast('Photo : '+e.message);}
 }
 
+// ═══ ÉDITEUR DE PRÉSENTATION ═══════════════════════════════════════════════
+// Le formulaire est construit à partir de la table de champs renvoyée par le serveur : une
+// seule autorité sur ce qui est modifiable, donc le front ne peut pas proposer un champ que le
+// serveur refuserait d'écrire.
+let ED = null;
+
+const ED_LIB = {
+ titre:'Titre de la planche', texte:'Texte d\'introduction', cta:'Libellé du bouton',
+ 'probleme.constat':'Le problème mesuré', 'probleme.cout':'Ce que ça coûte',
+ 'solution.nom':'La brique Sofy', 'solution.comment[]':'Mécanisme, étape', 'solution.resultat':'Résultat visé',
+ 'chiffre_cle.legende':'Légende du chiffre d\'appui',
+ 'maquette_rcs.titre':'Message RCS — objet', 'maquette_rcs.texte':'Message RCS — texte', 'maquette_rcs.bouton':'Message RCS — bouton',
+ 'courbe.appui':'Ce qui rend la trajectoire crédible', 'jalons[].quand':'Jalon — quand', 'jalons[].texte':'Jalon — quoi',
+ 'chiffres[].legende':'Légende du chiffre', 'defauts[]':'Défaut relevé'
+};
+const ED_ROLE = {couverture:'Couverture',bilan:'Bilan chiffré',constat:'Constat',defauts:'Défauts relevés',
+ duel:'Problème / solution',trajectoire:'Trajectoire',preuve:'Preuve client',cta:'Rendez-vous'};
+
+function edLire(pl,chemin){
+ const t=chemin.includes('[]'); const [av,ap]=chemin.split('[]');
+ const parts=av.split('.').filter(Boolean); const feuille=ap?ap.replace(/^\./,''):null;
+ let r=pl;
+ for(let i=0;i<parts.length-(t?0:1);i++){r=r&&r[parts[i]];if(!r)return t?[]:'';}
+ if(!t)return (r&&r[parts[parts.length-1]])||'';
+ if(!Array.isArray(r))return [];
+ return r.map(x=>feuille?((x&&x[feuille])||''):(typeof x==='string'?x:''));
+}
+
+async function ouvrirEditeur(jeton){
+ const j=decodeURIComponent(jeton);
+ nav('prez',null);
+ sousOngletPrez('edit');
+ const c=document.getElementById('pz-edit');
+ c.innerHTML='<p style="color:var(--ink-soft)">Chargement…</p>';
+ try{
+  const r=await api('/api/prez?edit=1&jeton='+encodeURIComponent(j));
+  const d=await r.json();
+  if(d.erreur){c.innerHTML='<p style="color:var(--danger)">'+htmlSafe(d.erreur)+'</p>';return;}
+  ED={...d, actif:0, modifs:{}, retires:{}, ordre:d.planches.map(p=>p.i)};
+  rendreEditeur();
+ }catch(e){c.innerHTML='<p style="color:var(--danger)">Éditeur : '+htmlSafe(e.message)+'</p>';}
+}
+
+function edPlanche(i){return ED.planches.find(p=>p.i===i);}
+function edVal(i,chemin,k){
+ const m=ED.modifs[i]&&ED.modifs[i][chemin];
+ if(m!==undefined)return k==null?m:(m[k]!==undefined?m[k]:'');
+ const v=edLire(edPlanche(i),chemin);
+ return k==null?v:(Array.isArray(v)?(v[k]||''):'');
+}
+function edSet(i,chemin,val,k){
+ ED.modifs[i]=ED.modifs[i]||{};
+ if(k==null){ED.modifs[i][chemin]=val;}
+ else{
+  const cur=ED.modifs[i][chemin]!==undefined?ED.modifs[i][chemin].slice():edLire(edPlanche(i),chemin).slice();
+  cur[k]=val; ED.modifs[i][chemin]=cur;
+ }
+ const b=document.getElementById('ed-nb');
+ if(b)b.textContent=edNbModifs()+' modification(s) non publiée(s)';
+ const d=document.getElementById('ed-dot-'+i); if(d)d.style.display='';
+}
+function edNbModifs(){
+ let n=0;
+ Object.keys(ED.modifs).forEach(i=>{n+=Object.keys(ED.modifs[i]).length;});
+ n+=Object.keys(ED.retires).filter(k=>ED.retires[k]).length;
+ return n;
+}
+
+function rendreEditeur(){
+ const c=document.getElementById('pz-edit');
+ const ordre=ED.ordre.filter(i=>!ED.retires[i]);
+ c.innerHTML=`
+ <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+  <strong style="font-size:16px">${htmlSafe(ED.client||'')}</strong>
+  <span class="badge">${ordre.length} planche(s)</span>
+  <span class="badge b-signal" id="ed-nb">${edNbModifs()} modification(s) non publiée(s)</span>
+  ${ED.ouvertures?`<span class="badge b-gmb">👀 ouverte ${ED.ouvertures}×</span>`:''}
+  <span style="margin-left:auto;display:flex;gap:7px;flex-wrap:wrap">
+   <a class="btn" style="background:var(--paper);text-decoration:none" href="${htmlSafe(ED.url)}?apercu=1" target="_blank">👁 Aperçu (version publiée)</a>
+   ${ED.annulable?`<button class="btn" style="background:var(--paper)" onclick="edAnnuler()" title="Restaurer la version d'avant la dernière publication">↩︎ Revenir en arrière</button>`:''}
+   <button class="btn btn-primary" onclick="edPublier()">⬆️ Publier les modifications</button>
+  </span>
+ </div>
+ <div style="display:grid;gap:12px;grid-template-columns:200px 1fr" id="ed-grille">
+  <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px;display:flex;flex-direction:column;gap:3px;align-self:start">
+   ${ordre.map((i,k)=>{
+     const p=edPlanche(i);
+     return `<button style="text-align:left;border:0;cursor:pointer;font:inherit;font-size:12.5px;padding:7px 9px;border-radius:7px;display:flex;gap:7px;align-items:center;background:${i===ED.actif?'var(--accent-soft,#EEF)':'transparent'};color:${i===ED.actif?'var(--accent)':'var(--ink-soft)'};font-weight:${i===ED.actif?'700':'400'}" onclick="edAller(${i})">
+       <span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;opacity:.6">${String(k+1).padStart(2,'0')}</span>
+       ${htmlSafe(ED_ROLE[p.role]||p.role)}
+       <span id="ed-dot-${i}" style="display:${ED.modifs[i]?'':'none'};margin-left:auto;width:7px;height:7px;border-radius:50%;background:#B45309"></span>
+     </button>`;}).join('')}
+   ${Object.keys(ED.retires).filter(k=>ED.retires[k]).length?`<div style="font-size:11.5px;color:var(--ink-soft);padding:8px 9px;border-top:1px solid var(--line);margin-top:5px">${Object.keys(ED.retires).filter(k=>ED.retires[k]).map(i=>`<div>🗑 ${htmlSafe(ED_ROLE[edPlanche(+i).role]||'')} <button style="border:0;background:none;cursor:pointer;color:var(--accent);font:inherit;text-decoration:underline" onclick="edRestaurer(${i})">annuler</button></div>`).join('')}</div>`:''}
+  </div>
+  <div id="ed-panneau"></div>
+ </div>`;
+ if(!ordre.includes(ED.actif))ED.actif=ordre[0];
+ edPanneau();
+}
+
+function edAller(i){ED.actif=i;rendreEditeur();}
+function edRetirer(i){
+ const ordre=ED.ordre.filter(x=>!ED.retires[x]);
+ if(ordre.length<=2){toast('Il faut garder au moins deux planches');return;}
+ ED.retires[i]=true;if(ED.actif===i)ED.actif=ordre.find(x=>x!==i);
+ rendreEditeur();
+}
+function edRestaurer(i){ED.retires[i]=false;rendreEditeur();}
+function edDeplacer(i,sens){
+ const pos=ED.ordre.indexOf(i),cible=pos+sens;
+ if(cible<0||cible>=ED.ordre.length)return;
+ ED.ordre.splice(pos,1);ED.ordre.splice(cible,0,i);
+ rendreEditeur();
+}
+
+function edPanneau(){
+ const i=ED.actif,p=edPlanche(i);if(!p)return;
+ const champs=ED.champs[p.role]||[];
+ const verrous=ED.verrous[p.role]||[];
+ const pos=ED.ordre.filter(x=>!ED.retires[x]).indexOf(i);
+ const html=`
+ <div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px">
+  <div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+   <span class="badge">${htmlSafe(p.eyebrow||ED_ROLE[p.role]||p.role)}</span>
+   <span style="margin-left:auto;display:flex;gap:6px">
+    <button class="act" style="padding:3px 10px;font-size:12px" onclick="edDeplacer(${i},-1)" ${pos<=0?'disabled':''}>↑</button>
+    <button class="act" style="padding:3px 10px;font-size:12px" onclick="edDeplacer(${i},1)">↓</button>
+    <button class="act" style="padding:3px 10px;font-size:12px" onclick="edRetirer(${i})">🗑 Retirer cette planche</button>
+   </span>
+  </div>
+  ${champs.length?champs.map(function(cf){
+    const chemin=cf[0],max=cf[1],lib=ED_LIB[chemin]||chemin;
+    if(chemin.includes('[]')){
+      const vals=edVal(i,chemin);
+      if(!vals.length)return '';
+      return vals.map((v,k)=>edChamp(i,chemin,max,lib+(vals.length>1?' '+(k+1):''),v,k)).join('');
+    }
+    return edChamp(i,chemin,max,lib,edVal(i,chemin),null);
+  }).join(''):"<p style=\"color:var(--ink-soft);font-size:13.5px\">Cette planche n'a pas de texte modifiable.</p>"}
+  ${verrous.length?`<div style="margin-top:14px;padding:12px 14px;background:var(--paper);border:1px dashed var(--line);border-radius:9px">
+    <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:6px">🔒 Verrouillé</div>
+    <div style="font-size:12.5px;color:var(--ink-soft);line-height:1.55">${verrous.map(v=>'· '+htmlSafe(v)).join('<br>')}
+    <br><span style="color:#B45309">Pour changer une valeur mesurée, relance la mesure sur la fiche puis régénère l'analyse.</span></div>
+   </div>`:''}
+ </div>`;
+ document.getElementById('ed-panneau').innerHTML=html;
+}
+
+function edChamp(i,chemin,max,lib,val,k){
+ const id='ed-'+i+'-'+chemin.replace(/[^a-z]/gi,'')+'-'+(k==null?'x':k);
+ const long=max>120;
+ return `<div style="margin-bottom:12px">
+  <label style="display:block;font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:4px">${htmlSafe(lib)}</label>
+  ${long
+   ? `<textarea class="field" id="${id}" style="width:100%;min-height:64px;font-family:inherit" maxlength="${max}"
+       oninput="edSet(${i},'${jsArgBrut(chemin)}',this.value${k==null?'':','+k});edCompte('${id}',${max})">${htmlSafe(val)}</textarea>`
+   : `<input class="field" id="${id}" style="width:100%" maxlength="${max}" value="${htmlSafe(val)}"
+       oninput="edSet(${i},'${jsArgBrut(chemin)}',this.value${k==null?'':','+k});edCompte('${id}',${max})">`}
+  <div id="${id}-c" style="text-align:right;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--ink-soft);margin-top:3px">${String(val||'').length} / ${max}</div>
+ </div>`;
+}
+function jsArgBrut(s){return String(s).replace(/'/g,"\\'");}
+function edCompte(id,max){
+ const el=document.getElementById(id),c=document.getElementById(id+'-c');
+ if(el&&c){const n=el.value.length;c.textContent=n+' / '+max;c.style.color=(n>=max)?'var(--danger)':'var(--ink-soft)';}
+}
+
+async function edPublier(){
+ if(!edNbModifs()){toast('Aucune modification à publier');return;}
+ const ordre=ED.ordre.filter(i=>!ED.retires[i]);
+ const retirees=Object.keys(ED.retires).filter(k=>ED.retires[k]).length;
+ if(!await confirmSofy('Publier les modifications ?',
+  'Le lien ne change pas : '+ED.url+'\n'+
+  (ED.ouvertures?('Le prospect l\'a déjà ouvert '+ED.ouvertures+' fois — il verra la nouvelle version à sa prochaine visite.\n'):'')+
+  (retirees?(retirees+' planche(s) retirée(s).\n'):'')+
+  '\nLa version actuelle est conservée : tu pourras revenir en arrière une fois.\nAucun coût — pas de nouvelle rédaction IA.',
+  'Publier'))return;
+ // On renvoie l'ordre complet ; le serveur ne retient que les champs autorisés.
+ const planches=ordre.map(function(i){
+  const o={i:i};
+  Object.keys(ED.modifs[i]||{}).forEach(function(chemin){
+   const v=ED.modifs[i][chemin];
+   const t=chemin.includes('[]'); const [av,ap]=chemin.split('[]');
+   const parts=av.split('.').filter(Boolean); const feuille=ap?ap.replace(/^\./,''):null;
+   let ref=o;
+   for(let x=0;x<parts.length-(t?0:1);x++){ref[parts[x]]=ref[parts[x]]||{};ref=ref[parts[x]];}
+   if(!t){ref[parts[parts.length-1]]=v;}
+   else{
+    const arr=(Array.isArray(v)?v:[]).map(function(el){return feuille?({[feuille]:el}):el;});
+    if(parts.length){ref[parts[parts.length-1]]=arr;}else{o[av||'defauts']=arr;}
+   }
+  });
+  return o;
+ });
+ const suppr=Object.keys(ED.retires).filter(k=>ED.retires[k]).map(i=>({i:+i,supprimee:true}));
+ try{
+  const r=await api('/api/prez',{method:'PUT',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({jeton:ED.jeton,planches:planches.concat(suppr)})});
+  const d=await r.json();
+  if(d.erreur){toast(d.erreur);return;}
+  toast(d.info||'Publié ✓');
+  ouvrirEditeur(encodeURIComponent(ED.jeton));
+  chargerMesPrez();
+ }catch(e){toast('Publication : '+e.message);}
+}
+
+async function edAnnuler(){
+ if(!await confirmSofy('Revenir à la version précédente ?',
+  'La version actuellement en ligne sera remplacée par celle d\'avant la dernière publication. Cette opération n\'est possible qu\'une fois.',
+  'Restaurer'))return;
+ try{
+  const r=await api('/api/prez',{method:'PUT',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({jeton:ED.jeton,annuler:true})});
+  const d=await r.json();
+  toast(d.erreur||d.info||'Restauré');
+  ouvrirEditeur(encodeURIComponent(ED.jeton));
+ }catch(e){toast('Restauration : '+e.message);}
+}
+
 // Rouvrir la fiche du prospect depuis l'historique : le SDR arrive souvent ici par le compteur
 // d'ouvertures (« ouverte 3× »), et son geste suivant est d'appeler.
 async function ficheDepuisPrez(listeId,cleFiche){
@@ -5179,6 +5404,7 @@ async function chargerMesPrez(){
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;align-items:center">
      ${p.expiree?'':`<a class="act act-call" style="padding:2px 9px;font-size:11.5px;text-decoration:none" href="${htmlSafe(p.url)}?apercu=1" target="_blank" title="Aperçu interne — non compté">👁 Voir</a>
      <button class="act act-copy" style="padding:2px 9px;font-size:11.5px" onclick="navigator.clipboard.writeText(decodeURIComponent('${jsArg(p.url)}'));toast('Lien copié ✓')">📋 Copier</button>`}
+     <button class="act act-copy" style="padding:2px 9px;font-size:11.5px" onclick="ouvrirEditeur('${jsArg(p.jeton)}')" title="Corriger les textes et republier sur le même lien">✏️ Modifier</button>
      ${p.liste_id?`<button class="act" style="padding:2px 9px;font-size:11.5px" onclick="ficheDepuisPrez(${p.liste_id},'${jsArg(p.cle_fiche||'')}')" title="Rouvrir la fiche du prospect dans sa liste">🚀 Fiche client</button>`:''}
      <button class="act" style="padding:2px 9px;font-size:11.5px" onclick="supprimerPrez('${jsArg(p.jeton)}','${jsArg(p.client||'')}')" title="Supprimer l'analyse — le lien cesse immédiatement de fonctionner">🗑</button>
      <span style="font-size:11.5px;color:var(--ink-soft)">par ${htmlSafe(p.sdr||'?')} · ${htmlSafe(String(p.created_at||'').slice(0,10))}${p.destinataire?' · envoyée à '+htmlSafe(p.destinataire):''}</span>
@@ -5212,6 +5438,7 @@ function prezHtml(e,i){
    : `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
     <a class="act act-call" style="padding:3px 10px;font-size:12px;text-decoration:none" href="${htmlSafe(p.url)}?apercu=1" target="_blank" title="Ouvrir la page telle que le client la voit. Ta visite n'est pas comptée dans les ouvertures.">👁 Voir</a>
     <button class="act act-copy" style="padding:3px 10px;font-size:12px" onclick="navigator.clipboard.writeText(decodeURIComponent('${jsArg(p.url)}'));toast('Lien copié ✓')">📋 Copier le lien</button>
+    <button class="act act-copy" style="padding:3px 10px;font-size:12px" onclick="ouvrirEditeur('${jsArg(p.jeton)}')" title="Relire et corriger avant l'envoi">✏️ Modifier</button>
     <button class="act" style="padding:3px 10px;font-size:12px" onclick="supprimerPrez('${jsArg(p.jeton)}','${jsArg(e.nom||'')}')" title="Supprimer — le lien cesse immédiatement de fonctionner">🗑</button>
     <span style="font-size:11.5px;color:var(--ink-soft)">${htmlSafe(quand)}</span>
    </div>`}
