@@ -86,8 +86,8 @@ async function envoyerSofy(tel, titre, texte, bouton, replicourt, sauterV2) {
     // mais le provider rejette ensuite — l'API ne nous laisse pas le voir de façon synchrone)
     try {
       const v1 = await envoyerSmsSofy({ to: tel, message: fbk, user: 'rcs-rdv', liste_id: null, transactionnel: true });
-      if (v1.ok) return { ok: true, canal: 'sms (v1)', id: v1.id || null };
-      return { ok: false, erreur: 'v1: ' + (v1.detail || v1.status) };
+      if (v1.ok) return { ok: true, canal: 'sms (' + (v1.via || '?') + ')', id: v1.id || null };
+      return { ok: false, erreur: 'sms: ' + (v1.detail || v1.status) };
     } catch (e) { return { ok: false, erreur: 'v1: ' + e.message }; }
   }
   // « from » alphanumérique : uniquement s'il est déclaré côté Sofy (SOFY_SMS_FROM) — sinon
@@ -106,7 +106,7 @@ async function envoyerSofy(tel, titre, texte, bouton, replicourt, sauterV2) {
   //    clé v2 est « rejected by provider » toutes destinations (constat 07/08, à régler côté produit)
   try {
     const v1 = await envoyerSmsSofy({ to: tel, message: fbk, user: 'rcs-rdv', liste_id: null, transactionnel: true });
-    if (v1.ok) return { ok: true, canal: 'sms (v1)', id: v1.id || null, rcs_echec: typeof rcsEchec !== 'undefined' ? rcsEchec : null, sms_v2_echec: JSON.stringify(d2).slice(0, 150) };
+    if (v1.ok) return { ok: true, canal: 'sms (' + (v1.via || '?') + ')', id: v1.id || null, rcs_echec: typeof rcsEchec !== 'undefined' ? rcsEchec : null, sms_v2_echec: JSON.stringify(d2).slice(0, 150) };
   } catch (_) {}
   return { ok: false, erreur: JSON.stringify(d2).slice(0, 200), rcs_echec: typeof rcsEchec !== 'undefined' ? rcsEchec : null };
 }

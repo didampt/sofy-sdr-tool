@@ -24,6 +24,9 @@ const BASE_PUB = () => process.env.SOFY_BASE_PUBLIQUE || 'https://www.sofyscrap.
 // ⚠️ fallback.text est plafonné à 129 caractères par l'API v2 : au-delà, la rich-card est
 // refusée (400) et l'envoi retombe en SMS. Limite constatée au test du 06/08.
 const MAX_FALLBACK = 129;
+// Mention STOP : retirée sur décision de Didier (21/08) — « nous avons les accords ». Miroir de
+// SMS_AJOUTER_STOP dans db.js : les deux se remettent ensemble si le cadre change.
+const MENTION_STOP = false;
 const VISUEL_PREZ = process.env.SOFY_RCS_IMAGE_PREZ
   || (process.env.SOFY_BASE_PUBLIQUE || 'https://www.sofyscrap.com') + '/rcs-prez.jpg';
 
@@ -161,15 +164,15 @@ export default async function handler(req, res) {
     const dn = Number.isInteger(parseInt(b.d, 10)) ? parseInt(b.d, 10) : null;
     const url = BASE_PUB() + '/p/' + jeton + (dn != null && dn >= 0 ? '?d=' + dn : '');
     const txt = (String(b.texte || '').trim() || textePrez({ prenom, entreprise: entreprise || row.client, sdr: user.nom })).slice(0, 900);
-    const stopP = ' Pour ne plus recevoir de message : répondez STOP.';
+    const stopP = MENTION_STOP ? ' Pour ne plus recevoir de message : répondez STOP.' : '';
     // Le repli SMS a DEUX contraintes, et j'en avais oublié une le 20/08 :
     //  · alphabet GSM — une apostrophe courbe ou un ★ fait basculer tout le message en UCS-2 ;
     //  · 129 CARACTÈRES MAXIMUM — au-delà, l'API v2 refuse la rich-card avec un 400 (limite
     //    documentée dans rcs-rdv-cron.js depuis le test du 06/08). Mon repli faisait 135
     //    caractères : le RCS était donc rejeté à chaque envoi, et le SMS v1 prenait le relais.
-    const queue = ' STOP pour ne plus etre contacte.';
-    let repli = gsmifier(`Sofy : votre analyse est prete. ${url}${queue}`);
-    if (repli.length > MAX_FALLBACK) repli = gsmifier(`Sofy : votre analyse. ${url}`).slice(0, MAX_FALLBACK);
+    const queue = MENTION_STOP ? ' STOP pour ne plus etre contacte.' : '';
+    let repli = gsmifier(`Sofy : votre analyse de visibilite locale est prete. ${url}${queue}`);
+    if (repli.length > MAX_FALLBACK) repli = gsmifier(`Sofy : votre analyse est prete. ${url}`).slice(0, MAX_FALLBACK);
     const diag = analyserSms(repli);
 
     if (b.apercu) {
@@ -205,32 +208,13 @@ export default async function handler(req, res) {
     // Quand la rich-card passe, c'est l'API v2 qui gère elle-même la bascule SMS : on n'a rien à
     // faire. Les étages ci-dessous ne servent QUE si la rich-card a été refusée — et l'erreur
     // remonte jusqu'à l'écran, pour qu'un refus ne ressemble plus à un envoi normal.
-    if ((!envoi || envoi.erreur) && cleV2()) {
-      // SMS de l'API v2, avec le lien complet (pas de limite 129 ici).
-      try {
-        const rs = await fetch('https://api.sofy.fr/v2/sms', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cleV2()}` },
-          // Expéditeur : « SOFY » par défaut, comme la route v1 (db.js envoie from:'Sofy').
-          // Sans lui, le compte prend son expéditeur par défaut — un code court DOM refusé vers
-          // la métropole (incident du 07/08). Surchargeable par SOFY_SMS_FROM.
-          body: JSON.stringify({ to: tel, body: repli, isTransactional: false,
-            from: process.env.SOFY_SMS_FROM || 'SOFY' })
-        });
-        const ds = await rs.json().catch(() => ({}));
-        if (rs.ok && ds.id) envoi = { canal: 'sms (v2)', id: ds.id, rcs_echec: envoi && envoi.erreur };
-      } catch (_) { }
-    }
-    // Dernier filet : l'API v1. La route SMS v2 ci-dessus fonctionne depuis qu'elle porte un
-    // expéditeur (testée le 21/08 : HTTP 201, SMS reçu) ; la v1 ne sert donc plus qu'en cas de
-    // refus, et parce qu'elle ajoute seule la mention STOP au bon code court par territoire.
+    // Si la rich-card a été refusée, un SMS part quand même avec le lien. envoyerSmsSofy() tente
+    // la v2 puis la v1 et dit par où il est passé : un seul point d'entrée pour tous les SMS de
+    // l'application, donc un seul endroit à corriger le jour où une route change.
     if (!envoi || envoi.erreur) {
-      // Sans ma mention STOP : db.js ajoute celle qui est légalement due, avec le BON code court
-      // selon le territoire (36789 en DOM, 36229 en métropole). En laisser deux serait fautif.
-      const pourV1 = repli.replace(/\s*STOP pour ne plus etre contacte\.?\s*$/i, '').trim();
-      const v1 = await envoyerSmsSofy({ to: tel, message: pourV1, user: user.nom, liste_id: b.liste_id || null, transactionnel: false });
-      if (v1.ok) envoi = { canal: 'sms (v1)', id: v1.id || null, rcs_echec: envoi && envoi.erreur };
-      else return res.status(502).json({ erreur: 'Envoi refusé', detail: (envoi && envoi.erreur) || v1.detail });
+      const sms = await envoyerSmsSofy({ to: tel, message: repli, user: user.nom, liste_id: b.liste_id || null, transactionnel: false });
+      if (sms.ok) envoi = { canal: 'sms (' + (sms.via || '?') + ')', id: sms.id || null, rcs_echec: envoi && envoi.erreur };
+      else return res.status(502).json({ erreur: 'Envoi refusé', detail: (envoi && envoi.erreur) || sms.detail });
     }
 
     try { await loggerConso(user.nom, 'soreach', 1, b.liste_id || null); } catch (_) {}
@@ -263,7 +247,7 @@ export default async function handler(req, res) {
       repli_operateur: !!envoi.repli_operateur, statut_api: envoi.statut_api || null,
       dom: estDom, heure_paris: new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' }).format(new Date()),
       repli_sms: repli, segments_sms: diag.segments,
-      // Pourquoi le RCS n'est pas parti : sans ça, « envoyé par sms (v1) » ne dit pas si l'agent
+      // Pourquoi le RCS n'est pas parti : sans ça, « envoyé par sms » ne dit pas si l'agent
       // RCS a refusé, si la clé manque, ou si le mobile ne gère simplement pas le RCS.
       rcs_echec: (envoi && envoi.rcs_echec) || null,
       rcs_configure: !!(cleV2() && process.env.SOFY_RCS_SENDER_ID) });
@@ -306,7 +290,7 @@ export default async function handler(req, res) {
     // Repli : SMS v1 route alerte (la route SMS v2 est rejetée par le provider, cf. 07/08)
     if (!envoi || envoi.erreur) {
       const v1 = await envoyerSmsSofy({ to: tel, message: replicourt, user: user.nom, liste_id: b.liste_id || null, transactionnel: false });
-      if (v1.ok) envoi = { canal: 'sms (v1)', id: v1.id || null, rcs_echec: envoi && envoi.erreur };
+      if (v1.ok) envoi = { canal: 'sms (' + (v1.via || '?') + ')', id: v1.id || null, rcs_echec: envoi && envoi.erreur };
       else return res.status(502).json({ erreur: 'Envoi refusé', detail: (envoi && envoi.erreur) || v1.detail });
     }
 

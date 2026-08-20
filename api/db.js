@@ -476,18 +476,54 @@ function formatNumeroSms(brut) {
   }
   return n;
 }
+// ── L'ENVOI SMS PASSE PAR L'API v2 ─────────────────────────────────────────────────────────────
+// Décision de Didier le 21/08, après vérification sur pièce : la route /v2/sms accepte l'envoi
+// (HTTP 201) et le SMS arrive, dès lors qu'elle porte un EXPÉDITEUR. C'est ce qui manquait au
+// constat du 07/08 (« rejected by provider ») : sans `from`, le compte prenait son défaut, un
+// code court DOM refusé vers la métropole.
+// La v1 reste en second étage — pas par nostalgie, parce qu'elle est éprouvée sur le volume
+// quotidien et qu'un refus de la v2 ne doit pas coûter un envoi.
+const SMS_EXPEDITEUR = () => process.env.SOFY_SMS_FROM || 'SOFY';
+// Mention STOP : retirée sur décision de Didier (21/08) — « nous avons les accords ». Les envois
+// se font vers des contacts pour lesquels Sofy dispose du consentement. Remettre à true si le
+// cadre change : c'est le seul endroit à toucher.
+const SMS_AJOUTER_STOP = false;
+
 export async function envoyerSmsSofy({ to, message, user, liste_id, transactionnel }) {
-  const keyId = process.env.SOFY_API_KEY_ID, keySecret = process.env.SOFY_API_KEY_SECRET;
-  if (!keyId || !keySecret) return { ok: false, status: 0, detail: 'SOFY_API_KEY_ID/SECRET manquante' };
   const dest = formatNumeroSms(to);
   if (!/^\d{10,14}$/.test(dest)) return { ok: false, status: 0, detail: 'Numero invalide : ' + dest };
   const estDom = /^(590|596|594|262)/.test(dest);
   const stop = estDom ? 'STOP au 36789' : 'STOP au 36229';
-  // Route ALERTE (transactionnel:true, ex. rappels de RDV) : pas de mention STOP et pas de fenêtre
-  // horaire marketing. Les SoReach de prospection restent en marketing (STOP), rien ne change pour eux.
-  const corps = transactionnel
-    ? String(message || '').trim()
-    : String(message || '').replace(/\s*STOP au \d{5}\.?\s*$/i, '').trim() + ' ' + stop;
+  const corps = (SMS_AJOUTER_STOP && !transactionnel)
+    ? String(message || '').replace(/\s*STOP au \d{5}\.?\s*$/i, '').trim() + ' ' + stop
+    : String(message || '').trim();
+  const lg = corps.length, nbSms = lg <= 160 ? 1 : Math.ceil(lg / 153);
+
+  // ── Étage 1 : API v2 (Bearer). L'expéditeur est obligatoire en pratique. ──
+  const cleV2 = process.env.SOFY_API_KEY_V2 || process.env.SOFY_API_KEY || '';
+  let echecV2 = null;
+  if (cleV2) {
+    try {
+      const r2 = await fetch('https://api.sofy.fr/v2/sms', {
+        method: 'POST',
+        headers: { 'accept': 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${cleV2}` },
+        // La v2 attend le numéro au format international, avec le +.
+        body: JSON.stringify({ to: '+' + dest, body: corps, from: SMS_EXPEDITEUR(), isTransactional: !!transactionnel })
+      });
+      const d2 = await r2.json().catch(() => ({}));
+      if (r2.ok && d2.id) {
+        await loggerConso(user, 'soreach', nbSms, liste_id);
+        return { ok: true, via: 'v2', id: d2.id, statut: d2.status || 'pending', destinataire: dest, credits: nbSms, caracteres: lg };
+      }
+      echecV2 = 'v2 ' + r2.status + ': ' + JSON.stringify(d2).slice(0, 200);
+    } catch (err) { echecV2 = 'v2 injoignable : ' + err.message; }
+  } else {
+    echecV2 = 'aucune clé v2 (SOFY_API_KEY_V2 / SOFY_API_KEY)';
+  }
+
+  // ── Étage 2 : API v1 (X-API-KEY-ID/SECRET), si la v2 a refusé ──
+  const keyId = process.env.SOFY_API_KEY_ID, keySecret = process.env.SOFY_API_KEY_SECRET;
+  if (!keyId || !keySecret) return { ok: false, status: 0, detail: echecV2 + ' · et SOFY_API_KEY_ID/SECRET manquante pour le repli v1' };
   try {
     const r = await fetch('https://api.sofy.fr/v1/sms', {
       method: 'POST',
@@ -495,11 +531,10 @@ export async function envoyerSmsSofy({ to, message, user, liste_id, transactionn
       body: JSON.stringify({ from: 'Sofy', to: dest, body: corps, shortenUrls: true, isTransactional: !!transactionnel })
     });
     const data = await r.json().catch(() => ({}));
-    if (!r.ok) return { ok: false, status: r.status, detail: JSON.stringify(data).slice(0, 300) };
-    const lg = corps.length, nbSms = lg <= 160 ? 1 : Math.ceil(lg / 153);
+    if (!r.ok) return { ok: false, status: r.status, detail: JSON.stringify(data).slice(0, 300), v2_echec: echecV2 };
     await loggerConso(user, 'soreach', nbSms, liste_id);
-    return { ok: true, id: data.id || null, statut: data.status || 'pending', destinataire: dest, credits: nbSms, caracteres: lg };
+    return { ok: true, via: 'v1', id: data.id || null, statut: data.status || 'pending', destinataire: dest, credits: nbSms, caracteres: lg, v2_echec: echecV2 };
   } catch (err) {
-    return { ok: false, status: 0, detail: err.message };
+    return { ok: false, status: 0, detail: err.message, v2_echec: echecV2 };
   }
 }

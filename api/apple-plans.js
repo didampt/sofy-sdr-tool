@@ -92,8 +92,10 @@ export default async function handler(req, res) {
 
   let lieux = [];
   try {
-    const p = { engine: 'apple_maps', q: requete, api_key: cle };
-    if (ll) p.center = ll; else p.location = lieu;
+    // ⚠️ Le moteur apple_maps attend `query`, PAS `q` (400 « Missing query parameter » le 21/08).
+    // Et `center` (« lat,lng », sans @) ET `location` ne peuvent pas être envoyés ensemble.
+    const p = { engine: 'apple_maps', query: requete, api_key: cle };
+    if (ll) p.center = ll.replace(/^@/, ''); else p.location = lieu;
     const u = 'https://serpapi.com/search.json?' + new URLSearchParams(p).toString();
     const r = await fetch(u, { signal: AbortSignal.timeout(30000) });
     const d = await r.json().catch(() => ({}));

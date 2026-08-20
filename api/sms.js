@@ -14,5 +14,7 @@ export default async function handler(req, res) {
 
   const r = await envoyerSmsSofy({ to, message, user, liste_id });
   if (!r.ok) return res.status(502).json({ erreur: 'API Sofy SMS', status: r.status, detail: r.detail });
-  return res.status(200).json({ ok: true, id: r.id, statut: r.statut, destinataire: r.destinataire, credits: r.credits, caracteres: r.caracteres });
+  // `via` dit par quelle route l'envoi est passé (v2 par défaut, v1 en repli) — utile le jour où
+  // une route se met à refuser sans bruit.
+  return res.status(200).json({ ok: true, id: r.id, statut: r.statut, destinataire: r.destinataire, credits: r.credits, caracteres: r.caracteres, via: r.via || null });
 }
