@@ -287,6 +287,13 @@ Retours après lecture du premier site généré : *« trop de texte, pas assez 
 
 ## Pièges connus (ne pas se refaire avoir)
 
+### ⚠️ 20 août 2026 — La CSP de production interdit `blob:` (images refusées en silence)
+Le compresseur d'image chargeait les fichiers par `URL.createObjectURL()`. La CSP de `vercel.json` autorise `img-src 'self' data: https:` : **pas `blob:`**. Résultat : « Image illisible » sur *tous* les fichiers déposés, alors que le test local passait sans une erreur.
+
+Deux règles :
+1. **Pour décoder un fichier image côté navigateur** : `createImageBitmap(fichier)` (ne passe par aucune URL, donc hors champ de la CSP), avec repli sur `FileReader.readAsDataURL` (`data:` est autorisé). Jamais `createObjectURL` pour un `<img>`.
+2. **Tester le front avec les en-têtes de production** : `python3 outils/serveur-test-csp.py` sert `public/` sur le port 8902 en appliquant la CSP lue dans `vercel.json`. Un `http.server` nu n'envoie rien — c'est ce qui a laissé passer le bug. Le bon test vérifie AUSSI que l'ancienne méthode échoue sous cette CSP : sans ça, on ne sait pas si les conditions sont fidèles.
+
 ### ⚠️ 20 août 2026 — Une regex invalide dans le script client = document blanc chez le prospect
 Trois livraisons de suite ont montré à Didier des planches vides. Le contenu **était rendu** : il
 restait à `opacity: 0`. L'animation des titres mot à mot faisait `innerHTML.replace(/(<strong>)?([^<s]+)(</strong>)?(s|$)/g, …)` — le `/` de `</strong>` **ferme l'expression régulière**, le reste devient des drapeaux invalides, `SyntaxError` au parse, et **tout le script de la page meurt**. Les titres restaient visibles (ils ne portent pas `.reveal`), d'où l'illusion de pages vides.
