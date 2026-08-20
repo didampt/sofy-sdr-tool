@@ -2118,7 +2118,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v343';
+const VERSION='v344';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -5902,7 +5902,13 @@ function ouvrirInfo(i){
  }
  if(e.gmb&&e.gmb.trouve){
   const fl=(e.gmb.fiches||[]).map(f=>`<div>• ${f.nom} — ${String(f.note).replace('.',',')}★ (${f.nb_avis} avis)${f.match?` <span class="badge b-gmb">preuve : ${f.match}</span>`:''}</div>`).join('');
-  sec.push(`<h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-soft);margin:14px 0 6px">⭐ Fiches Google matchées (${e.gmb.nb_fiches})</h3>${fl}`)
+  const att=e.nb_etablissements||e.gmb.reseau_attendu||0;
+  const manquantes=att&&e.gmb.nb_fiches<att?att-e.gmb.nb_fiches:0;
+  sec.push(`<h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-soft);margin:14px 0 6px">⭐ Fiches Google matchées (${e.gmb.nb_fiches}${att?' / '+att+' établissement(s) déclaré(s)':''})</h3>${fl}`
+   +(manquantes?`<div style="background:#FEF6E7;border:1px solid #E9C88B;border-radius:9px;padding:10px 12px;margin-top:8px;font-size:12.5px;line-height:1.5;color:#7A4E12">
+      <b>${manquantes} établissement(s) sans fiche rattachée.</b> Un réseau national n'a pas toutes ses fiches dans la ville du siège. Ouvre la fiche manquante dans Google Maps, copie son lien, et ajoute-la : elle entrera dans la note du réseau et dans le scoring.
+      <div style="margin-top:8px"><button class="act act-call" style="padding:3px 10px;font-size:12px" onclick="ajouterFicheGmb(${i})">➕ Ajouter une fiche par son lien Maps</button></div></div>`
+    :`<div style="margin-top:8px"><button class="act act-copy" style="padding:3px 10px;font-size:12px" onclick="ajouterFicheGmb(${i})">➕ Ajouter une fiche</button></div>`))
  }
  const cs=contactsDe(e).filter(c=>c.nom);
  if(cs.length){
@@ -6360,6 +6366,58 @@ async function enrichirFE(i,j){
  }catch(err){toast('FullEnrich erreur réseau : '+err.message);return false;}
 }
 
+// ── Fiches Google d'un réseau ─────────────────────────────────────────────
+// Fusionner une fiche récupérée à la main avec celles déjà trouvées. Sans ça, coller un lien
+// Maps ÉCRASAIT tout le relevé pour ne garder qu'une fiche — et le document annonçait « 1 fiche »
+// à un prospect qui en a douze.
+function fusionnerGmb(ancien, nouveau){
+ const nf=(nouveau.fiches||[])[0];
+ if(!nf)return ancien||nouveau;
+ if(!ancien||!ancien.trouve)return nouveau;
+ const fiches=(ancien.fiches||[]).slice();
+ // Déjà présente ? On met à jour au lieu de dupliquer.
+ const idx=fiches.findIndex(f=>(f.place_id&&nf.place_id&&f.place_id===nf.place_id));
+ if(idx>=0)fiches[idx]=Object.assign({},fiches[idx],nf); else fiches.push(nf);
+ // Agrégats recalculés : la note du réseau est une moyenne PONDÉRÉE par le volume d'avis,
+ // sinon une fiche à 5★ avec 2 avis remonterait artificiellement l'ensemble.
+ const avec=fiches.filter(f=>typeof f.note==='number'&&f.nb_avis>0);
+ const total=avec.reduce((s,f)=>s+f.nb_avis,0);
+ const moy=total?Math.round((avec.reduce((s,f)=>s+f.note*f.nb_avis,0)/total)*10)/10:null;
+ const signif=avec.filter(f=>f.nb_avis>=3);
+ const pire=(signif.length?signif:avec).slice().sort((a,b)=>a.note-b.note)[0]||null;
+ return Object.assign({},ancien,{
+  trouve:true, fiches:fiches, nb_fiches:fiches.length,
+  total_avis:total||ancien.total_avis, note_moyenne:moy!=null?moy:ancien.note_moyenne,
+  pire_fiche:pire||ancien.pire_fiche,
+  telephone:ancien.telephone||nouveau.telephone||null,
+  site_web:ancien.site_web||nouveau.site_web||null,
+  avis_negatif:ancien.avis_negatif||nouveau.avis_negatif||null,
+  reseau_incomplet:(ancien.reseau_attendu&&fiches.length<ancien.reseau_attendu)
+    ? ancien.reseau_attendu-fiches.length : null
+ });
+}
+
+async function ajouterFicheGmb(i){
+ const e=REAL[i];
+ const lien=prompt('Colle le lien Google Maps de l\'établissement à ajouter :\n\n(ouvre la fiche dans Maps, bouton Partager, Copier le lien)');
+ if(!lien||!/^https?:\/\//i.test(lien.trim())){if(lien)toast('Lien Maps invalide');return;}
+ toast('⏳ Lecture de la fiche…');
+ try{
+  const r=await api('/api/gmb-url?url='+encodeURIComponent(lien.trim())+'&liste_id='+(state.savedId||''));
+  const d=await r.json();
+  if(!r.ok||d.erreur){toast('Fiche : '+(d.erreur||('erreur '+r.status)));return;}
+  if(!d.gmb){toast('Cette fiche n\'a pas de note Google exploitable');return;}
+  const avant=(e.gmb&&e.gmb.nb_fiches)||0;
+  e.gmb=fusionnerGmb(e.gmb,d.gmb);
+  e.gmb._sig=enseigneDe(e)+'|'+domaineDe(e);
+  persister();rerender(i);
+  const nf=(d.gmb.fiches||[])[0]||{};
+  toast(avant===e.gmb.nb_fiches
+   ? '↻ Fiche déjà présente, mise à jour : '+(nf.nom||'')
+   : '✅ '+(nf.nom||'Fiche')+' ajoutée — '+e.gmb.nb_fiches+' fiche(s), note du réseau '+String(e.gmb.note_moyenne).replace('.',',')+'★');
+ }catch(err){toast('Fiche : '+err.message);}
+}
+
 /* ───────── ANALYSE GMB ───────── */
 async function analyserGmb(i){
  const e=REAL[i];
@@ -6367,7 +6425,7 @@ async function analyserGmb(i){
  if(btn){btn.disabled=true;btn.textContent='⏳ Analyse…';}
  try{
   const estHL=estVisiteSite(e);
-  const p=new URLSearchParams({liste_id:state.savedId||'',nom:e.nom,ville:e.ville||'',naf:e.naf||'',enseigne:enseigneDe(e),adresse:e.adresse||'',cp:e.code_postal||'',site:domaineDe(e),ens_forte:e.enseigne_ia?'1':'',hotlead:estHL?'1':''});
+  const p=new URLSearchParams({liste_id:state.savedId||'',nom:e.nom,ville:e.ville||'',naf:e.naf||'',enseigne:enseigneDe(e),adresse:e.adresse||'',cp:e.code_postal||'',site:domaineDe(e),ens_forte:e.enseigne_ia?'1':'',hotlead:estHL?'1':'',reseau:String(e.nb_etablissements||'')});
   const r=await api('/api/gmb?'+p.toString());
   const g=await r.json();
   if(!r.ok||g.erreur){toast('Erreur GMB : '+(g.erreur||r.status));if(btn){btn.disabled=false;btn.textContent='⭐ Analyser GMB';}return false;}

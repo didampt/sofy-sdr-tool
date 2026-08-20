@@ -115,12 +115,24 @@ async function gPlaces(url) {
   return r.json().catch(() => ({}));
 }
 
-async function textSearch(q, key) {
-  const data = await gPlaces(`https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(q)}&language=fr&key=${key}`);
+async function textSearch(q, key, pages = 1) {
+  const base = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(q)}&language=fr&key=${key}`;
+  let data = await gPlaces(base);
   if (['REQUEST_DENIED', 'OVER_QUERY_LIMIT', 'INVALID_REQUEST'].includes(data.status || '')) {
     throw Object.assign(new Error('Google Places : ' + data.status), { google: data.error_message || '' });
   }
-  return data.results || [];
+  let out = data.results || [];
+  // Pages suivantes : demandées seulement pour un RÉSEAU (un mono-établissement n'en a pas besoin,
+  // et chaque page est un appel facturé). Google exige un court délai avant que le jeton soit actif.
+  let jeton = data.next_page_token;
+  for (let k = 1; k < pages && jeton; k++) {
+    await new Promise(r => setTimeout(r, 1800));
+    const suite = await gPlaces(base + '&pagetoken=' + encodeURIComponent(jeton));
+    if (!(suite.results || []).length) break;
+    out = out.concat(suite.results);
+    jeton = suite.next_page_token;
+  }
+  return out;
 }
 
 export default async function handler(req, res) {
@@ -135,8 +147,14 @@ export default async function handler(req, res) {
   const key = process.env.GOOGLE_PLACES_API_KEY;
   if (!key) return res.status(500).json({ erreur: 'GOOGLE_PLACES_API_KEY manquante dans Vercel' });
 
-  const { nom = '', enseigne = '', ville = '', naf = '', adresse = '', cp = '', site = '', ens_forte = '', hotlead = '' } = req.query;
+  const { nom = '', enseigne = '', ville = '', naf = '', adresse = '', cp = '', site = '', ens_forte = '', hotlead = '', reseau = '' } = req.query;
     const estHotLead = hotlead === '1';
+  // Réseau : nombre d'établissements déclaré par le prospect (Pappers). Un groupe de 12 magasins
+  // n'a pas ses 12 fiches dans la ville du siège — sans ce mode, on en trouvait 2 sur 12 et le
+  // document annonçait « 2 fiches » à un prospect qui en a douze.
+  const nbReseau = Math.max(0, parseInt(reseau, 10) || 0);
+  const estReseau = nbReseau > 1;
+  const PLAFOND = estReseau ? Math.min(25, Math.max(8, nbReseau + 3)) : 5;
   if (!nom) return res.status(400).json({ erreur: "Paramètre 'nom' requis" });
 
   const prefixeNaf = (naf || '').slice(0, 5);
@@ -151,12 +169,16 @@ export default async function handler(req, res) {
     if (enseigne) requetes.push([enseigne, ville, terr].filter(Boolean).join(' '));
     requetes.push([nom, ville, terr].filter(Boolean).join(' '));
     if (qCat) requetes.push(qCat); // sert aussi pour les concurrents
+    // Réseau : une requête SANS ville, pour attraper les établissements hors zone du siège.
+    if (estReseau && enseigne) requetes.push(enseigne + (terr ? ' ' + terr : ''));
 
     const vus = new Set();
     const candidats = [];
     let resultatsCategorie = [];
     for (const q of requetes) {
-      const results = await textSearch(q, key);
+      // Deux pages pour la première requête d'un réseau : c'est là que sont les établissements.
+      const pages = (estReseau && q === requetes[0]) ? 2 : 1;
+      const results = await textSearch(q, key, pages);
       if (qCat && q === qCat) resultatsCategorie = results;
       for (const r of results) {
         if (vus.has(r.place_id)) continue;
@@ -187,6 +209,14 @@ export default async function handler(req, res) {
     // Acceptés d'office : (nom OU adresse exacte) dans la zone (même département/île — JAMAIS une autre île :
     // les groupes ont des sociétés sœurs par île, chaque entité doit matcher SA fiche locale)
     let retenus = valides.filter(c => c.enZone && (c.matchNom || c.matchAdresse === 'exacte'));
+    // Réseau : un nom distinctif (===2) hors zone est un autre établissement de la MÊME enseigne,
+    // pas un homonyme — c'est précisément ce qu'on cherche. Le garde-fou reste le nom distinctif :
+    // une enseigne générique ne passe pas ce test.
+    if (estReseau) {
+      for (const c of valides) {
+        if (c.matchNom === 2 && !retenus.includes(c)) retenus.push(c);
+      }
+    }
     // Hot Lead : un match nom distinctif (===2) est accepté même hors zone (adresse RB2B peu fiable)
     if (estHotLead) {
       for (const c of valides) {
@@ -212,7 +242,7 @@ export default async function handler(req, res) {
 
     retenus.sort((a, b) => ((b.matchNom?2:0)+(b.matchAdresse==='exacte'?2:0)+(b.matchSite?2:0)) - ((a.matchNom?2:0)+(a.matchAdresse==='exacte'?2:0)+(a.matchSite?2:0)) || b.r.user_ratings_total - a.r.user_ratings_total);
 
-    const fiches = retenus.slice(0, 5).map(c => ({
+    const fiches = retenus.slice(0, PLAFOND).map(c => ({
       nom: c.r.name,
       note: c.r.rating,
       nb_avis: c.r.user_ratings_total,
@@ -284,6 +314,8 @@ export default async function handler(req, res) {
       total_avis: totalAvis,
       nb_fiches: fiches.length,
       fiches,
+      reseau_attendu: nbReseau || null,
+      reseau_incomplet: estReseau && fiches.length < nbReseau ? nbReseau - fiches.length : null,
       pire_fiche: pire,
       avis_negatif: avisNegatif,
       concurrents
