@@ -115,10 +115,21 @@ function mesures(e) {
         trois_premiers: g.audit.concurrents || null,
         // Le bouton WhatsApp de la fiche Google : l'argument SoConnect le plus direct, et il est
         // MESURÉ. Il ne remontait pas jusqu'ici — la mesure existait sans jamais servir le document.
+        categorie_google: g.audit.categorie || null,
         bouton_whatsapp_actif: !!(g.audit.whatsapp_sur_fiche
           || (g.ia_visibilite && g.ia_visibilite.whatsapp_google)),
         whatsapp_ou: g.audit.whatsapp_champ || null
       } : null,
+      // Quand la note est inerte (gros volume d'avis), le titre de la planche « trajectoire » doit
+      // parler du FLUX et des réponses, jamais d'une note qui remonte.
+      note_inerte: (() => {
+        const n0 = Number(g.total_avis), a0 = Number(g.note_moyenne);
+        if (!isFinite(n0) || !isFinite(a0) || n0 <= 0) return null;
+        const r = (g.reponses && Number(g.reponses.rythme_par_mois)) || null;
+        const pm = r ? r * 2 : 2.3 * Math.max(1, Number(g.nb_fiches) || 1);
+        const N = Math.round(pm * 12);
+        return ((a0 * n0 + 4.7 * N) / (n0 + N)) - a0 < 0.25;
+      })(),
       reponses_aux_avis: g.reponses ? {
         avis_analyses: g.reponses.analyses,
         avis_avec_reponse: g.reponses.repondus,
@@ -411,10 +422,17 @@ function scorer(e) {
     || (g.ia_visibilite && g.ia_visibilite.whatsapp_google));
   const waQqPart = waFiche || wa === true;
   const waEtat = (wa === null && !waFiche) ? 'inconnu' : (waQqPart ? 'ok' : 'faible');
+  // Le libellé doit dire CE QUI A ÉTÉ VÉRIFIÉ. « site non analysé » seul laissait croire qu'on
+  // n'avait rien regardé, alors que la fiche Google avait bien été contrôlée (retour Didier, 21/08).
+  const ficheVue = !!au;
   r.push(crit('Bouton WhatsApp', waEtat, waQqPart ? 20 : 0, 20,
     waFiche && wa === true ? 'WhatsApp sur le site ET sur la fiche Google — le canal est en place, reste à savoir ce qu\'il y a derrière'
     : waFiche ? 'WhatsApp actif sur la fiche Google : vos clients écrivent déjà, sur un mobile, sans historique ni suivi partagé'
-    : detail(wa, 'lien WhatsApp détecté sur le site', 'aucun bouton WhatsApp, ni sur le site ni sur la fiche Google : le canal préféré de vos clients est absent')));
+    : wa === true ? 'lien WhatsApp détecté sur le site'
+    : (wa === null && ficheVue) ? 'aucun WhatsApp sur votre fiche Google (vérifié) — le site, lui, n\'a pas encore été analysé'
+    : (wa === null) ? 'site non analysé et fiche non relevée — rien n\'a pu être vérifié'
+    : ficheVue ? 'aucun bouton WhatsApp, ni sur le site ni sur votre fiche Google : le canal préféré de vos clients est absent'
+    : 'aucun bouton WhatsApp sur le site ; la fiche Google n\'a pas été relevée'));
   r.push(crit('Chat sur le site', chatWeb === null ? 'inconnu' : (chatWeb ? 'ok' : 'faible'), chatWeb ? 20 : 0, 20,
     detail(chatWeb, 'outil de chat détecté', 'aucune messagerie web détectée')));
   r.push(crit('Messenger ou réseaux sociaux', msgr === null ? 'inconnu' : (msgr ? 'ok' : 'moyen'), msgr ? 10 : 0, 10,
@@ -475,6 +493,8 @@ function prompt({ mes, radar, blocs, module, consigne, sdr, visuels }) {
 Module mis en avant : **${NOM_MODULE[module] || module}**. Commercial signataire : ${sdr || 'l\'équipe Sofy'}.
 ${consigne ? `\nCONSIGNE DU COMMERCIAL (prioritaire) : ${consigne}\n` : ''}
 ════ CE QUE NOUS AVONS MESURÉ CHEZ CE PROSPECT (données réelles, utilisables librement) ════
+SECTEUR DU PROSPECT : ${mes.activite || mes.secteur_rb2b || '(non renseigné)'}${mes.google && mes.google.audit_fiche && mes.google.audit_fiche.categorie_google ? ` · catégorie Google : ${mes.google.audit_fiche.categorie_google}` : ''}
+(c'est ce secteur qui doit guider le choix du cas client — voir la consigne plus bas)
 ${JSON.stringify(mes, null, 1)}
 ${radar ? `\n════ CONTEXTE PRESSE RÉCENT (faits sourcés, chaque signal porte son URL) ════\n${JSON.stringify({ resume: radar.resume, signaux: (radar.signaux || []).map(s => ({ titre: s.titre, date: s.date, media: s.media, source_url: s.source_url })) }, null, 1)}\n` : ''}
 ════ BASE DE CONNAISSANCE SOFY — la SEULE source autorisée pour tout ce qui ne vient pas du prospect ════
@@ -660,6 +680,11 @@ Remplis le cadre du document — tout sauf les duels, qui sont rédigés à part
   « 4,2★ dans 12 mois », pas de « 350 avis ». Deux analyses du même client doivent afficher la
   même prévision ; c'est le calcul qui la garantit, pas toi. Laisse points, points2, courbe_max
   et courbe2_* vides.
+· ⚠️ Si google.note_inerte est vrai, la note NE PEUT PAS être l'objectif : avec ce volume d'avis
+  accumulés, elle bougerait de moins d'un quart de point en un an. N'écris donc AUCUNE promesse de
+  remontée de note dans traj_titre ni traj_texte. Le sujet devient : ce qu'un client lit avant de
+  choisir, ce sont les derniers avis et les réponses publiques. Le serveur affichera les courbes
+  « avis traités » et « avis collectés par mois » — écris le titre qui va avec.
 · traj_texte — explique le MÉCANISME, pas les chiffres : pourquoi le volume d'avis récents tire
   la note, et ce que le prospect doit mettre en place pour que ça arrive.
 · courbe_appui — le cas client ou le chiffre sourcé qui rend cette pente défendable
@@ -673,6 +698,13 @@ Remplis le cadre du document — tout sauf les duels, qui sont rédigés à part
   historique partagé, sans transfert entre collègues, sans reprise quand la personne est absente,
   et rien de mesurable. Formule-le comme un constat, jamais comme un reproche : il a fait le bon
   choix de canal. S'il est faux, N'EN PARLE PAS : l'absence de bouton ne prouve rien.
+· ⚠️ CHOIX DU CAS CLIENT — le secteur passe avant tout le reste. Les blocs portent leur secteur
+  entre crochets. Le prospect est du secteur indiqué dans « activite » des mesures : prends le cas
+  client du MÊME métier s'il existe, même si un autre cas a de plus beaux chiffres. Un garagiste
+  qui lit le cas d'un distributeur de pièces auto se reconnaît ; le même garagiste qui lit le cas
+  d'un réseau télécom se demande ce qu'il fait là. Ne choisis un cas d'un autre secteur que si
+  AUCUN cas du métier du prospect n'est disponible — et dis alors explicitement pourquoi le
+  mécanisme se transpose.
 · preuve_cas_id — le NUMÉRO [#n] du cas client dont tu t'es servi, tel qu'il figure dans la base
   ci-dessus. Il sert au serveur à poser le bon lien « Lire l'interview ». Mets 0 si tu n'as
   utilisé aucun cas client nommé. N'écris JAMAIS d'adresse web toi-même.
@@ -726,6 +758,12 @@ const AVIS_MOIS_PAR_FICHE = parseFloat(process.env.PREZ_AVIS_MOIS_PAR_FICHE || '
 const FACTEUR_SOLLICITATION = parseFloat(process.env.PREZ_FACTEUR_SOLLICITATION || '2');
 const NOTE_AVIS_SOLLICITE = parseFloat(process.env.PREZ_NOTE_AVIS_SOLLICITE || '4.7');
 const JALONS_TRAJ = [[0, "aujourd'hui"], [3, '3 mois'], [6, '6 mois'], [12, '12 mois']];
+// Sous ce gain sur 12 mois, la note est INERTE et n'est plus le bon objectif à montrer.
+// Constat NORAUTO du 21/08 : 2 899 avis, 3,3★ — même en doublant la collecte, +0,13 point en un an,
+// et 65 mois pour gagner un demi-point. La courbe était juste et invendable, ce qui est le pire des
+// deux mondes. Quand la moyenne ne peut pas bouger, on montre ce qui bouge VRAIMENT et on dit
+// pourquoi : ce qu'un client lit, ce sont les derniers avis et les réponses, pas la moyenne.
+const SEUIL_INERTIE = parseFloat(process.env.PREZ_SEUIL_INERTIE || '0.25');
 
 function trajectoire(mes) {
   const g = (mes && mes.google) || {};
@@ -747,8 +785,42 @@ function trajectoire(mes) {
     volumes.push({ quand: lib, valeur: n0 + nouveaux });
   }
   const finale = notes[notes.length - 1].valeur;
+  const gain = Math.round((finale - a0) * 100) / 100;
+
+  // ── Cas de la note inerte : on change d'indicateur, pas de discours ──
+  if (gain < SEUIL_INERTIE) {
+    const rep = (g.reponses_aux_avis && Number(g.reponses_aux_avis.taux_de_reponse_pct));
+    const taux0 = isFinite(rep) ? rep : null;
+    // Le CUMUL d'avis récents, pas le rythme : un rythme plafonne dès le 3ᵉ mois et donne une
+    // courbe plate, qui ne montre rien. Le cumul monte, et c'est lui qui parle — « 298 avis
+    // récents collectés en 12 mois » se voit et se défend.
+    const flux = JALONS_TRAJ.map(([m, lib]) => ({ quand: lib, valeur: Math.round(parMois * m) }));
+    const reponses = taux0 == null ? null : JALONS_TRAJ.map(([m, lib]) => ({
+      quand: lib, valeur: m === 0 ? taux0 : Math.min(100, Math.round(taux0 + (100 - taux0) * (m / 6)))
+    }));
+    return {
+      note_inerte: true, gain_note_12_mois: gain,
+      notes: reponses || flux, volumes: reponses ? flux : volumes,
+      indicateur1: reponses ? 'Avis traités' : 'Avis récents collectés',
+      unite1: reponses ? ' %' : ' avis', max1: reponses ? 100 : null,
+      indicateur2: reponses ? 'Avis récents collectés' : 'Nombre total d\'avis',
+      unite2: ' avis', max2: null,
+      par_mois: Math.round(parMois * 10) / 10,
+      hypothese: `Votre note ne peut PAS être l'objectif : avec ${n0} avis accumulés, elle ne gagnerait `
+        + `que ${String(gain).replace('.', ',')} point en 12 mois même en doublant la collecte — il faudrait plus de `
+        + `cinq ans pour un demi-point. C'est de l'arithmétique, pas un manque d'ambition. `
+        + `Ce qu'un client lit avant de choisir, ce sont les DERNIERS avis et vos réponses : c'est là que ça se joue, `
+        + `et c'est ce que cette courbe suit.`,
+      resume: taux0 != null
+        ? `${taux0} % → 100 % d'avis traités, et ${Math.round(parMois * 12)} avis récents collectés en 12 mois.`
+        : `${Math.round(parMois * 12)} avis récents collectés en 12 mois, contre ${Math.round((actuel || plancher) * 12)} au rythme actuel.`
+    };
+  }
+
   return {
-    notes, volumes, par_mois: Math.round(parMois * 10) / 10,
+    notes, volumes, par_mois: Math.round(parMois * 10) / 10, note_inerte: false,
+    indicateur1: 'Note Google' + ((g.nb_fiches > 1) ? ' moyenne du réseau' : ''),
+    unite1: '★', max1: 5, indicateur2: 'Nombre total d\'avis', unite2: ' avis', max2: null,
     hypothese: `Calcul arithmétique sur vos ${n0} avis actuels (${String(a0).replace('.', ',')}★). `
       + (actuel
         ? `Vous collectez aujourd'hui ${String(Math.round(actuel * 10) / 10).replace('.', ',')} avis par mois — mesuré sur les dates de vos avis récents. `
@@ -869,17 +941,19 @@ function assembler(cadre, duelsBruts, mes, blocs) {
     pl.push({
       role: 'trajectoire', eyebrow: 'LA TRAJECTOIRE VISÉE',
       titre: c.traj_titre, texte: c.traj_texte,
+      // Les indicateurs viennent du calcul, pas d'ici : quand la note est inerte, trajectoire()
+      // renvoie « avis traités » et « avis collectés par mois » à sa place.
       courbe: tr ? {
-        indicateur: 'Note Google' + ((mes.google && mes.google.nb_fiches > 1) ? ' moyenne du réseau' : ''),
-        unite: '★', max: 5, points: tr.notes,
+        indicateur: tr.indicateur1, unite: tr.unite1,
+        max: tr.max1 || Math.ceil(Math.max(...tr.notes.map(x => x.valeur)) * 1.2),
+        points: tr.notes,
         appui: plein(c.courbe_appui) ? c.courbe_appui : null,
         hypothese: tr.hypothese
       } : null,
-      // Deux courbes : le volume d'avis explique la note. La seconde est le levier, la première
-      // la conséquence — les montrer ensemble évite de faire passer la note pour magique.
       courbe2: tr ? {
-        indicateur: 'Nombre total d\'avis', unite: ' avis',
-        max: Math.ceil(tr.volumes[tr.volumes.length - 1].valeur * 1.15), points: tr.volumes
+        indicateur: tr.indicateur2, unite: tr.unite2,
+        max: tr.max2 || Math.ceil(Math.max(...tr.volumes.map(x => x.valeur)) * 1.15),
+        points: tr.volumes
       } : null,
       jalons: jal
     });

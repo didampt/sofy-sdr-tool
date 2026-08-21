@@ -288,6 +288,27 @@ export default async function handler(req, res) {
       }
     }
     if (reprise) delete reprise._n;
+    // Deux fiches du même nom dans la même ville, venues de deux listes différentes : le SDR
+    // appelait deux fois le même endroit sans le savoir (NORAUTO Villeneuve-d'Ascq, 21/08).
+    // On ne supprime rien — deux téléphones différents peuvent être deux centres réels — mais
+    // chaque ligne concernée porte le nombre de fiches et la liste d'où elle vient.
+    const parCleVille = new Map();
+    for (const p of prospecter) {
+      const k = normCk(p.nom) + '|' + normCk(p.ville || '');
+      if (!k.replace('|', '')) continue;
+      (parCleVille.get(k) || parCleVille.set(k, []).get(k)).push(p);
+    }
+    for (const [, grp] of parCleVille) {
+      if (grp.length < 2) continue;
+      const listes = [...new Set(grp.map(x => x.liste_nom).filter(Boolean))];
+      grp.forEach(p => {
+        p.doublon_n = grp.length;
+        p.doublon_listes = listes;
+        p.doublon_note = `${grp.length} fiches pour « ${p.nom} » (${p.ville || 'ville inconnue'})`
+          + (listes.length > 1 ? ` — listes : ${listes.join(', ')}` : ' — même liste')
+          + `. Vérifie qu'il s'agit bien de deux établissements avant d'appeler les deux.`;
+      });
+    }
     prospecter.sort((a, b) => b.score - a.score);
     const restants = listeChoisie ? prospecter.length : prospecter.length; // restants = périmètre affiché
 
@@ -323,7 +344,18 @@ export default async function handler(req, res) {
           const csH = e.contacts || [];
           const c0H = csH.find(c => c && c.enrich && (c.enrich.telephone || c.enrich.email)) || csH[0] || null;
           const emH = csH.find(c => c && c.enrich && c.enrich.email);
+          // Les lignes de la tuile HOT étaient construites à la main, avec un jeu de champs
+          // réduit : ni relevés, ni gmb_trouve, ni clés d'historique. Résultat, le bouton
+          // « 🔍 Pré-audit » n'apparaissait que sur les fiches de prospection (constat Didier,
+          // 21/08), et le dépli d'un hot lead était plus pauvre que celui d'une fiche de liste.
+          // On repart donc de infoFiche(), comme partout ailleurs.
+          const { info: iH } = infoFiche(e, hl.id, 'Hot Leads');
           hot.push({
+            releves: iH.releves, releves_faits: iH.releves_faits, gmb_trouve: iH.gmb_trouve,
+            technos: iH.technos, technos_fait: iH.technos_fait,
+            cles_histo: iH.cles_histo, accroche: iH.accroche, synthese: iH.synthese,
+            vars: iH.vars, produit_dominant: iH.produit_dominant, statut: iH.statut,
+            site: iH.site, linkedin_entreprise: iH.linkedin_entreprise, nom_officiel: iH.nom_officiel,
             liste_id: hl.id, liste_nom: 'Hot Leads', cle: cleH,
             nom: e.enseigne_ia || e.enseigne || e.nom, ville: e.ville || '',
             contact: c0H ? ((c0H.prenom || '') + ' ' + (c0H.nom || '')).trim() : '',

@@ -340,12 +340,25 @@ export async function estClientHubspot(email, domaine) {
 export async function ajouterHotLead(profil, cfg) {
   const hl = await listeHotLeads(cfg && cfg.sdr);
   const ents = hl.entreprises || [];
-  // Clé STABLE = domaine, LinkedIn société ou nom d'entreprise. (Le contact change après enrichissement → ne pas s'en servir.)
+  // ⚠️ LA CLÉ N'ÉTAIT PAS STABLE, malgré son nom. Ancien code : on comparait UNE seule identité
+  // par fiche, la première non vide dans l'ordre site → LinkedIn → nom. Or une fiche ajoutée sans
+  // site web a pour clé son NOM ; dès qu'on la complète (à la main ou par enrichissement) elle
+  // acquiert un site, et sa clé devient le DOMAINE. Un second ajout par le même nom ne
+  // correspondait alors plus à rien, et créait un doublon.
+  // C'est exactement le cas « optima france » du 21/08 : ajout manuel, puis complétion de la fiche
+  // avec sofy.fr, puis second ajout → deux lignes dans la tuile 🔥.
+  // Correctif : on compare TOUTES les identités connues de chaque fiche contre TOUTES celles du
+  // profil entrant. Une seule correspondance suffit à reconnaître un doublon.
   const norm = v => (v || '').toString().toLowerCase().replace(/^https?:\/\//,'').replace(/^www\./,'').replace(/\/$/,'').trim();
-  const cleStable = p => norm(p.domaine) || norm(p.linkedin_societe) || norm(p.entreprise);
-  const connus = new Set(ents.map(e => norm(e.site_web) || norm(e.linkedin_entreprise) || norm(e.nom)));
-  const cleP = cleStable(profil);
-  if (profil.type !== 'signup' && cleP && connus.has(cleP)) return { ajoute: false, raison: 'déjà présent' };
+  const identites = o => [o.domaine, o.site_web, o.linkedin_societe, o.linkedin_entreprise,
+    o.entreprise, o.nom, o.enseigne].map(norm).filter(x => x && x.length > 2);
+  const connus = new Set();
+  for (const e of ents) for (const id of identites(e)) connus.add(id);
+  const idsP = identites(profil);
+  const collision = idsP.find(id => connus.has(id));
+  if (profil.type !== 'signup' && collision) {
+    return { ajoute: false, raison: 'déjà présent (' + collision + ')' };
+  }
   if ((cfg && cfg.exclure_hubspot) !== false) {
     const dom = profil.email && !profil.email.match(/@(gmail|outlook|hotmail|yahoo|orange|wanadoo|free|sfr|laposte|icloud|live)\./) ? profil.email.split('@')[1] : profil.domaine;
     if (await estClientHubspot(profil.email, dom)) return { ajoute: false, raison: 'client HubSpot' };
