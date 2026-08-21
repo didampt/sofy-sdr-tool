@@ -223,11 +223,18 @@ function mesures(e) {
     m.technos = (e.technos || []).map(t => ({ nom: t.nom, categorie: t.cat,
       concurrent_sofy: !!t.concurrent, deja_client_sofy: !!t.nous }));
     const nous = (e.technos || []).filter(t => t.nous).map(t => t.nom);
-    if (nous.length) m.deja_equipe_sofy = {
-      outils: nous,
-      consigne: 'CE PROSPECT EST DÉJÀ CLIENT SOFY (' + nous.join(', ') + ', détecté sur son site). '
+    // Deux sources, et la seconde est la plus fiable : le statut CLIENT dans HubSpot. Soview et
+    // SoReach se pilotent depuis app.sofy.fr et ne déposent rien sur le site du prospect — aucun
+    // scan ne peut les voir, seul le CRM le sait.
+    const clientCrm = !!(e.client_sofy);
+    if (nous.length || clientCrm) m.deja_equipe_sofy = {
+      outils: nous.length ? nous : null,
+      statut_crm: clientCrm ? 'client confirmé dans le CRM' : null,
+      consigne: 'CE PROSPECT EST DÉJÀ CLIENT SOFY'
+        + (nous.length ? ' (' + nous.join(', ') + ', détecté sur son site)' : ' (confirmé par le CRM)') + '. '
         + 'Ne lui propose PAS ce qu\'il utilise déjà et ne parle pas de « mettre en place » ces briques. '
-        + 'L\'angle est ailleurs : ce qui n\'est pas encore couvert, ou ce qui est en place mais mal exploité.'
+        + 'L\'angle est ailleurs : ce qui n\'est pas encore couvert, ou ce qui est en place mais mal exploité. '
+        + 'Et n\'écris nulle part qu\'il « n\'a pas d\'outil » : nous savons qu\'il en a un.'
     };
     // Formulation resserrée : « aucun outil détecté » invitait l'IA à écrire que le prospect n'a
     // aucun outil. Ce qu'on sait est plus étroit : aucune BALISE sur les pages lues. Beaucoup
@@ -616,12 +623,20 @@ function scorer(e) {
   // Un outil d'avis se voit s'il est chargé sur le site — mais beaucoup se pilotent entièrement
   // hors du site (tableau de bord, emails, SMS) sans y déposer la moindre balise. L'absence de
   // balise ne vaut donc pas absence d'outil : on ne pénalise pas, on le dit.
+  /* ⚠️ CE CRITÈRE NE PEUT PAS CONCLURE À UNE ABSENCE, et Didier en a donné la raison exacte le
+     21/08 : un outil de collecte d'avis se pilote depuis un tableau de bord (pour Soview,
+     app.sofy.fr) et ne dépose RIEN sur le site du client. Ce que le scan voit, ce sont uniquement
+     les outils qui AFFICHENT des avis sur les pages — un sous-ensemble.
+     Ce qui EST observable, en revanche, et que nous mesurons déjà : le taux de réponse aux avis et
+     le délai. Un prospect à 100 % de réponses en 3 h est manifestement outillé, même sans aucune
+     balise. C'est ce fait-là qu'il faut dire, pas une absence qu'on ne peut pas établir. */
+  const gere = rep && typeof rep.taux === 'number' && rep.taux >= 60;
   r.push(crit('Outil de collecte ou de réponse aux avis',
-    avisOutil === null ? 'inconnu' : (avisOutil ? 'ok' : 'inconnu'),
-    avisOutil ? 25 : 0, avisOutil ? 25 : 0,
+    avisOutil ? 'ok' : 'inconnu', avisOutil ? 25 : 0, avisOutil ? 25 : 0,
     avisOutil ? (chezNous.length ? `${chezNous.join(', ')} en place` : 'outil chargé sur le site : ' + nomsTechnos.slice(0, 60))
-      : (avisOutil === null ? 'site non analysé'
-        : 'aucune balise d\'outil d\'avis sur vos pages — beaucoup se pilotent hors du site, cela ne dit pas que vous n\'en avez pas')));
+      : avisOutil === null ? 'site non analysé'
+      : gere ? `aucune balise sur vos pages, mais ${rep.taux} % de vos avis récents ont une réponse : vos avis sont manifestement pilotés par un outil, depuis son tableau de bord — invisible de l'extérieur`
+      : 'les outils de collecte d\'avis se pilotent depuis un tableau de bord et ne laissent aucune trace sur un site : ce point ne se vérifie pas de l\'extérieur'));
   r.push(crit('Joignabilité téléphonique affichée', tel ? 'ok' : (deuxVues ? 'faible' : 'inconnu'),
     tel ? 25 : 0, tel || deuxVues ? 25 : 0,
     tel ? 'numéro public sur la fiche' : (deuxVues ? 'aucun numéro sur la fiche' : 'non vérifié')));

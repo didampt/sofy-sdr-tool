@@ -2159,7 +2159,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v400';
+const VERSION='v401';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -7543,6 +7543,33 @@ async function completerMesures(i){
  // ⚠️ Sauvegarde ATTENDUE, pas différée. /api/prez relit la fiche EN BASE : avec un persister()
  // de 400 ms non attendu, la rédaction partait sans les relevés qu'on venait de payer — c'est
  // pour ça que les planches « position locale » et « aperçu IA » manquaient le 20/08.
+ /* 4 bis. EST-CE DÉJÀ UN CLIENT ? — gratuit, et ça ne se devine pas.
+    On a cherché à détecter Sofy sur le site du prospect. C'est impossible pour Soview et SoReach :
+    ces briques se pilotent depuis app.sofy.fr et ne déposent RIEN sur son site (constat Didier,
+    21/08). J'avais malgré tout écrit des signatures — inventées.
+    L'information n'est pas dehors, elle est chez nous : le lifecyclestage HubSpot dit « customer ».
+    On arrête de déduire, on demande à celui qui sait. Un appel HubSpot, aucun coût SerpApi.
+    Enjeu concret : générer un audit de prospection pour un client existant, c'est 0,30 € dépensés
+    et une conversation gênante. */
+ try{
+  const dom=domaineDe(e);
+  const emails=contactsDe(e).map(c=>c.enrich&&c.enrich.email).filter(Boolean);
+  if(dom||emails.length){
+   const rc=await api('/api/hubspot-check',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({emails:emails,domaines:dom?[dom]:[]})});
+   const dc=await rc.json();
+   const parDomaine=!!(dom&&dc.clients&&dc.clients[dom]);
+   const parEmail=Object.values(dc.connus||{}).some(x=>x&&['customer','evangelist'].includes(String(x.stage||'').toLowerCase()));
+   if(parDomaine||parEmail){
+    e.client_sofy={source:'hubspot',par:parDomaine?'domaine':'email du contact',le:new Date().toISOString()};
+    faits.push('⚠️ déjà CLIENT Sofy (HubSpot)');
+   }else if(e.client_sofy){
+    // HubSpot ne le dit plus : on ne garde pas un statut périmé, il changerait le discours à tort.
+    e.client_sofy=null;
+   }
+  }
+ }catch(err){erreurs.push('statut client HubSpot : '+String(err.message||err).slice(0,100));}
+
  // 5. Les outils de son site — GRATUIT (un seul fetch, aucun appel facturé).
  // Ajouté ici le 21/08 : c'était la seule mesure manquante après un pré-audit, et elle déclenchait
  // ensuite un dialogue « cette fiche n'est pas complètement mesurée » avant l'audit client. Une
@@ -7731,6 +7758,20 @@ async function completerFiche(i){
 async function genererPrez(i){
  const e=REAL[i];if(!e)return;
  if(!state.savedId){toast('Ouvre la fiche depuis une liste enregistrée');return;}
+ // ⚠️ EN PREMIER, avant même de demander le module : un audit de PROSPECTION sur un client existant,
+ // c'est 0,30 € dépensés et une conversation gênante. Le prévenir après lui avoir fait choisir un
+ // module serait le faire cliquer pour rien.
+ // Ce contrôle vaut mieux que n'importe quelle détection de widget, parce qu'il est CERTAIN : il
+ // vient du CRM, pas d'une déduction sur un site où Soview ne laisse aucune trace.
+ if(e.client_sofy){
+  if(!await confirmSofy('⚠️ '+(enseigneDe(e)||e.nom)+' est déjà CLIENT Sofy',
+   'HubSpot le marque comme client (repéré par le '+(e.client_sofy.par||'CRM')+').\n\n'
+   +'L\'audit client est un document de PROSPECTION : il pointe des manques et propose des briques. '
+   +'Envoyé à un client, il tombe à plat au mieux, il vexe au pire.\n\n'
+   +'Si tu veux lui parler d\'un module qu\'il n\'a pas, c\'est un autre discours — et son AE est '
+   +'probablement mieux placé. Génère quand même seulement si tu sais pourquoi.',
+   'Générer quand même'))return;
+ }
  const sugg=e.angle||produitDominant(e)||'generique';
  const mod=await choisirModule(sugg);
  if(!mod)return;                       // fenêtre fermée = rien n'est lancé, rien n'est facturé
@@ -8207,7 +8248,11 @@ function technosHtml(e){
  // « 🟢 Aucun outil d'avis — terrain vierge pour Soview », et le SDR lui proposait ce qu'il a déjà.
  // Constaté le 21/08 en auditant notre propre fiche.
  const nous=t.filter(x=>x.nous);
- if(nous.length)h+=`<span class="badge b-gmb" style="background:#EDE9FE;border-color:#C4B5FD;color:#5B21B6" title="Outil Sofy détecté sur le site — c'est un CLIENT : ne pas lui vendre ce qu'il a déjà, regarder ce qui manque">💜 Client Sofy : ${nous.map(x=>x.nom).join(', ')}</span>`;
+ // HubSpot d'abord : c'est une CERTITUDE (lifecyclestage = customer), là où un widget détecté n'est
+ // qu'un indice partiel. Soview et SoReach ne déposent rien sur le site du client — seul HubSpot
+ // peut le dire.
+ if(e.client_sofy)h+=`<span class="badge" style="background:#EDE9FE;border-color:#C4B5FD;color:#5B21B6;font-weight:800" title="Marqué CLIENT dans HubSpot (via le ${htmlSafe(e.client_sofy.par||'CRM')}). Ne pas lui vendre ce qu'il a déjà : appelle-le pour ce qui manque, ou passe la main à son AE.">💜 CLIENT Sofy${nous.length?' · '+nous.map(x=>x.nom).join(', '):''}</span>`;
+ else if(nous.length)h+=`<span class="badge b-gmb" style="background:#EDE9FE;border-color:#C4B5FD;color:#5B21B6" title="Outil Sofy détecté sur le site — c'est un CLIENT : ne pas lui vendre ce qu'il a déjà, regarder ce qui manque">💜 Client Sofy : ${nous.map(x=>x.nom).join(', ')}</span>`;
  for(const x of t.filter(x=>x.cat==='avis'&&!x.nous))h+=`<span class="badge b-signal" title="Outil d'avis chargé sur le site — angle switch : ils investissent déjà dans leur e-réputation">⚔️ Équipé : ${x.nom}</span>`;
  // « Aucun outil détecté » ≠ « aucun outil ». Beaucoup se pilotent entièrement hors du site.
  // Le libellé dit ce qui a été regardé, pour que le SDR n'ouvre pas l'appel sur une erreur.
@@ -8215,7 +8260,7 @@ function technosHtml(e){
  // Soview » — alors qu'il est peut-être déjà équipé Soview, piloté hors du site (nous ne
  // connaissons pas encore la signature du widget Soview). Le badge doit orienter l'appel, pas le
  // fausser.
- if(!t.some(x=>x.cat==='avis'))h+=nous.length
+ if(!t.some(x=>x.cat==='avis'))h+=(nous.length||e.client_sofy)
   ? `<span class="badge b-gmb" title="Aucune balise d'outil d'avis sur les pages lues — mais ce prospect est déjà client Sofy : demande-lui s'il a Soview avant de le lui proposer.">❔ Soview : à vérifier avec lui</span>`
   : `<span class="badge b-new" title="Aucune balise d'outil d'avis sur les pages lues. Beaucoup d'outils se pilotent hors du site : à confirmer pendant l'appel, ne pas l'affirmer.">🟢 Aucune balise d'outil d'avis</span>`;
  // `!x.nous` : nos outils sont déjà nommés dans le badge « Client Sofy » juste au-dessus — les
