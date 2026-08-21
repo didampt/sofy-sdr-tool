@@ -2159,7 +2159,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v380';
+const VERSION='v381';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2632,14 +2632,27 @@ async function importerLikers(simuler){
    // Le tableau profil par profil : c'est lui qui permet de dire « ce filtre se trompe ICI ».
    const esc=s=>String(s||'').replace(/</g,'&lt;');
    const res=document.getElementById('imp-lk-res');
-   const g=(d.profils||[]).filter(x=>x.garde), x0=(d.profils||[]).filter(x=>!x.garde);
-   let h='<b>🧪 Simulation — rien n\'a été créé.</b> '+d.analyses+' profil(s) qualifié(s) · '
+   const g=(d.profils||[]).filter(x=>x.garde);
+   const na=(d.profils||[]).filter(x=>x.non_analyse);
+   const x0=(d.profils||[]).filter(x=>!x.garde&&!x.non_analyse);
+   let h='<b>🧪 Simulation — rien n\'a été créé.</b> '+d.analyses+' profil(s) soumis · '
     +'<b style="color:#0F7B4F">'+d.gardes+' gardé(s)</b> · <b style="color:#B91C1C">'+d.ecartes+' écarté(s)</b>'
-    +(d.non_analyses?' · ⚠️ '+d.non_analyses+' non analysé(s)':'')
+    +(d.non_analyses?' · <b style="color:#B45309">'+d.non_analyses+' jamais qualifié(s)</b>':'')
+    +(d.ia_reprises?'<span style="font-size:11px;color:var(--ink-soft)"> · '+d.ia_reprises+' reprise(s) après troncature</span>':'')
     +'<span style="font-size:11px;color:var(--ink-soft)"> · filtre : '+esc(d.modele)+'</span>';
-   if(d.gardes===0&&d.analyses>=5)h+='<div style="margin-top:8px;background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;padding:8px 10px;color:#92400E">⚠️ <b>Aucun profil gardé.</b> C\'est rare et généralement anormal — regarde les raisons ci-dessous et signale celles qui te semblent fausses.</div>';
+   // Une panne d'API n'est PAS un filtre trop strict : le message doit dire lequel des deux c'est,
+   // sinon on corrige la mauvaise chose (cas du 21/08 : 22 « écartés » qui étaient 22 non analysés).
+   if(d.non_analyses){
+    h+='<div style="margin-top:8px;background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:8px 10px;color:#B91C1C">'
+     +'🛠 <b>Le filtre n\'a pas répondu pour '+d.non_analyses+' profil(s)</b> — ce n\'est pas un rejet, c\'est une panne. '
+     +'Ces profils n\'ont jamais été jugés.'
+     +(d.ia_erreur?'<div style="margin-top:5px;font-weight:400;font-family:ui-monospace,Menlo,monospace;font-size:11.5px">'+esc(d.ia_erreur)+'</div>':'')
+     +'</div>';
+   }
+   else if(d.gardes===0&&d.analyses>=5)h+='<div style="margin-top:8px;background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;padding:8px 10px;color:#92400E">⚠️ <b>Aucun profil gardé.</b> C\'est rare et généralement anormal — regarde les raisons ci-dessous et signale celles qui te semblent fausses.</div>';
    if(g.length)h+='<div style="margin-top:8px">✅ <b>Gardés :</b><br>'+g.map(x=>'· <b>'+esc(x.nom)+'</b>'+(x.societe?' <i>('+esc(x.societe)+')</i>':'')+(x.fonction?' — <span style="color:var(--ink-soft)">'+esc(x.fonction)+'</span>':'')).join('<br>')+'</div>';
-   if(x0.length)h+='<div style="margin-top:8px">🚫 <b>Écartés :</b><br>'+x0.map(x=>'· '+esc(x.nom)+' — <i style="color:#B91C1C">'+esc(x.raison)+'</i>'+(x.fonction?' <span style="color:var(--ink-soft)">· '+esc(x.fonction)+'</span>':'')).join('<br>')+'</div>';
+   if(x0.length)h+='<div style="margin-top:8px">🚫 <b>Écartés par le filtre :</b><br>'+x0.map(x=>'· '+esc(x.nom)+' — <i style="color:#B91C1C">'+esc(x.raison)+'</i>'+(x.fonction?' <span style="color:var(--ink-soft)">· '+esc(x.fonction)+'</span>':'')).join('<br>')+'</div>';
+   if(na.length)h+='<div style="margin-top:8px">🛠 <b>Jamais qualifiés :</b> '+na.map(x=>esc(x.nom)).join(', ')+'</div>';
    if(d.accroche)h+='<div style="margin-top:8px;color:var(--ink-soft)">🗣 <b>Accroche proposée :</b> « '+esc(d.accroche)+' »</div>';
    h+='<div style="margin-top:8px;font-size:11.5px;color:var(--ink-soft)">'+esc(d.note||'')+' Si un profil écarté te paraît être une vraie cible, dis-le : c\'est le filtre qu\'on corrige, pas le post.</div>';
    if(res){res.innerHTML=h;res.style.display='block';}
@@ -2676,6 +2689,7 @@ async function importerLikers(simuler){
      const gs=Object.values(grp).sort((a,b)=>b.n-a.n);
      h+='<div style="margin-top:6px">🚫 <b>Exclus :</b><br>'+gs.map(x=>'· '+esc(x.nom)+(x.n>1?' <b>×'+x.n+'</b>':'')+' — <i>'+esc(x.raison)+'</i>').join('<br>')+'</div>';
      // Exclusion totale : on le dit avant la liste, sinon le SDR conclut que le post ne valait rien.
+     if(d.ia_erreur)h+='<div style="margin-top:8px;background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:8px 10px;color:#B91C1C">🛠 <b>Le filtre a échoué</b> — les profils marqués « non analysé » n\'ont pas été jugés, ils restent repêchables avec ♻️.<div style="margin-top:5px;font-weight:400;font-family:ui-monospace,Menlo,monospace;font-size:11.5px">'+esc(d.ia_erreur)+'</div></div>';
      if(d.alerte_filtre)h+='<div style="margin-top:8px;background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;padding:8px 10px;color:#92400E">⚠️ <b>'+esc(d.alerte_filtre)+'</b></div>';
      const pire=gs[0];
      if(pire&&pire.n>=3&&d.importes>=5&&pire.n>=Math.ceil(d.importes*0.5))

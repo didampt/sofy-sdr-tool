@@ -241,6 +241,7 @@ export default async function handler(req, res) {
       let garderIA = new Set();
       let socIA = {};        // indice → société extraite de la tagline par l'IA
       let raisonsIA = {};    // indice → pourquoi ce profil a été écarté (sinon le rejet est muet)
+      let erreurIA = null;   // pourquoi l'appel a échoué (sinon « non analysé » est indiagnosticable)
       const nonAnalyses = new Set(); // lot dont l'IA a échoué → exclus (repêchables avec ♻️)
       // ── LE FILTRE DE QUALIFICATION ──────────────────────────────────────────────────────────
       // Refondu le 21/08 après un cas net : un post BMW Guadeloupe (présentation d'un iX3) a vu
@@ -298,7 +299,10 @@ EXCLURE, et seulement pour ces raisons :
 ⚠️ « Président » ou « CEO » d'une ENTREPRISE reste à GARDER : seules les associations, fédérations
 et fondations sont exclues. Ne confonds pas un sigle d'entreprise avec un nom d'association.`;
       if (process.env.ANTHROPIC_API_KEY && nouveauxI.length) {
-        const TAILLE = 25;
+        // 12 et non 25 : moins de profils à juger par appel = moins de raisonnement interne, donc
+        // moins de risque de saturer le budget de sortie. Deux appels pour 22 profils coûtent
+        // ≈ 0,02 € — le prix d'une fiabilité qu'on n'avait pas.
+        const TAILLE = 12;
         for (let d = 0; d < nouveauxI.length; d += TAILLE) {
           const lot = nouveauxI.slice(d, d + TAILLE).map((p, k) => ({ i: d + k, nom: p.nom, fonction: (p.occupation || '').slice(0, 120) }));
           const veutAccroche = postTexte && d === 0; // l'accroche ne se demande qu'une fois
@@ -308,15 +312,29 @@ et fondations sont exclues. Ne confonds pas un sigle d'entreprise avec un nom d'
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
               body: JSON.stringify({
-                model: (process.env.MODELE_FILTRE_LIKERS || 'claude-sonnet-5') /* filtre de qualification des likers : la QUALITÉ prime (un faux positif pollue les Hot Leads, un faux négatif perd un lead). Sonnet 5 en test depuis le 07/08 — plus capable ET tarif d'introduction inférieur à Sonnet 4.6 jusqu'au 31/08/2026. Repli immédiat sans redéploiement : variable Vercel MODELE_FILTRE_LIKERS = claude-sonnet-4-6 */, max_tokens: 2000,
+                model: (process.env.MODELE_FILTRE_LIKERS || 'claude-sonnet-5') /* filtre de qualification des likers : la QUALITÉ prime (un faux positif pollue les Hot Leads, un faux négatif perd un lead). Sonnet 5 en test depuis le 07/08 — plus capable ET tarif d'introduction inférieur à Sonnet 4.6 jusqu'au 31/08/2026. Repli immédiat sans redéploiement : variable Vercel MODELE_FILTRE_LIKERS = claude-sonnet-4-6 */, // ⚠️ 8000 et non 2000 : sur les modèles Claude 5, le raisonnement interne est compté DANS
+                // max_tokens. En ajoutant le champ « raisons » (un motif par profil écarté), la réponse
+                // dépassait le budget, arrivait tronquée, JSON.parse échouait — et les 22 profils
+                // ressortaient « non analysés », donc écartés. Constaté le 21/08 sur le post BMW.
+                // On ne paie que les jetons réellement produits : un plafond large ne coûte rien.
+                max_tokens: 8000,
                 messages: [{ role: 'user', content: `${CONSIGNES}
 Profils : ${JSON.stringify(lot)}
 ${veutAccroche ? `Texte du post (publié par « ${societePost || 'inconnu'} »${moduleDuPost ? `, concurrent de notre module ${MODULES_CONC[moduleDuPost]}` : ''}) : «${postTexte.slice(0, 800)}»\n` : ''}Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"garder":[indices des profils à garder],"raisons":{"<indice d'un profil ÉCARTÉ>":"la raison, en 3 à 6 mots, reprise de la liste des exclusions (ex : « agence de communication », « employé de l'entreprise du post », « chef de projet »)"},"societes":{"<indice>":"nom de l'entreprise UNIQUEMENT si la fonction du profil la mentionne (ex : Head of sales @ Décathlon → Décathlon) — omets l'indice sinon, n'invente jamais"}${veutAccroche ? `,"accroche":"1 phrase d'ouverture d'appel pour le SDR, 40 mots MAXIMUM et complète : « J'ai vu que vous avez réagi au post de ${societePost || 'X'} sur [le sujet RÉEL du texte ci-dessus — INTERDICTION d'évoquer un thème absent du post] », puis un pont naturel vers ${moduleDuPost ? 'notre terrain : ' + MODULES_CONC[moduleDuPost] : 'le module Sofy le plus proche du sujet du post (Soview=avis Google/visibilité locale, SoConnect=messagerie client, SoReach=SMS/RCS)'}"` : ''}}` }]
               })
             });
             const dIA = await rIA.json().catch(() => null);
-            if (rIA.ok && dIA) {
+            if (!rIA.ok) {
+              erreurIA = 'HTTP ' + rIA.status + ' — ' + JSON.stringify((dIA && dIA.error) || dIA || {}).slice(0, 220);
+            } else if (dIA) {
               const brutIA = ((dIA.content || []).map(c => c.text || '').join('')).replace(/```json|```/g, '');
+              // Une réponse tronquée ou vide est la panne la plus fréquente : on la nomme, plutôt
+              // que de laisser JSON.parse jeter une exception muette.
+              if (dIA.stop_reason === 'max_tokens') {
+                erreurIA = 'réponse tronquée (max_tokens atteint) — augmente le plafond ou réduis la taille des lots';
+              } else if (brutIA.indexOf('{') < 0) {
+                erreurIA = 'réponse sans JSON' + (brutIA ? ' : « ' + brutIA.slice(0, 120) + ' »' : ' (vide)');
+              }
               const pIA = JSON.parse(brutIA.slice(brutIA.indexOf('{'), brutIA.lastIndexOf('}') + 1));
               if (Array.isArray(pIA.garder)) {
                 pIA.garder.map(Number).forEach(n => garderIA.add(n));
@@ -326,7 +344,42 @@ ${veutAccroche ? `Texte du post (publié par « ${societePost || 'inconnu'} »${
               if (pIA.societes && typeof pIA.societes === 'object') Object.assign(socIA, pIA.societes);
               if (pIA.raisons && typeof pIA.raisons === 'object') Object.assign(raisonsIA, pIA.raisons);
             }
-          } catch (_) {}
+          } catch (e) {
+            if (!erreurIA) erreurIA = 'réponse illisible : ' + String((e && e.message) || e).slice(0, 160);
+          }
+          // Une seule reprise, sur un lot coupé en deux : si la réponse a été tronquée, c'est que
+          // le modèle a raisonné trop longtemps sur trop de profils. Moitié moins de profils, moitié
+          // moins de raisonnement. Mieux vaut un appel de plus que 12 leads jetés.
+          if (!ok && lot.length > 3) {
+            for (const moitie of [lot.slice(0, Math.ceil(lot.length / 2)), lot.slice(Math.ceil(lot.length / 2))]) {
+              try {
+                const rR = await fetch('https://api.anthropic.com/v1/messages', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+                  body: JSON.stringify({
+                    model: process.env.MODELE_FILTRE_LIKERS || 'claude-sonnet-5', max_tokens: 8000,
+                    messages: [{ role: 'user', content: CONSIGNES + '\nProfils : ' + JSON.stringify(moitie)
+                      + '\nRéponds UNIQUEMENT avec un objet JSON : {"garder":[indices],"raisons":{"<indice écarté>":"motif en 3 à 6 mots"},"societes":{"<indice>":"entreprise si la fonction la nomme"}}' }]
+                  })
+                });
+                const dR = await rR.json().catch(() => null);
+                if (rR.ok && dR) {
+                  const bR = ((dR.content || []).map(c => c.text || '').join('')).replace(/```json|```/g, '');
+                  const pR = JSON.parse(bR.slice(bR.indexOf('{'), bR.lastIndexOf('}') + 1));
+                  if (Array.isArray(pR.garder)) {
+                    pR.garder.map(Number).forEach(n => garderIA.add(n));
+                    if (pR.raisons && typeof pR.raisons === 'object') Object.assign(raisonsIA, pR.raisons);
+                    if (pR.societes && typeof pR.societes === 'object') Object.assign(socIA, pR.societes);
+                    moitie.forEach(x => nonAnalyses.delete(x.i));
+                    resImp.ia_reprises = (resImp.ia_reprises || 0) + 1;
+                    continue;
+                  }
+                }
+              } catch (_) { }
+              moitie.forEach(x => nonAnalyses.add(x.i));
+            }
+            continue;
+          }
           // Lot non qualifié (IA en erreur / réponse illisible) : on N'ajoute PAS ces profils aux Hot
           // Leads — ils seraient non filtrés. Ils sont signalés et restent repêchables (♻️).
           if (!ok) lot.forEach(x => nonAnalyses.add(x.i));
@@ -334,21 +387,29 @@ ${veutAccroche ? `Texte du post (publié par « ${societePost || 'inconnu'} »${
         resImp.ia_lots = Math.ceil(nouveauxI.length / TAILLE);
         resImp.ia_modele = process.env.MODELE_FILTRE_LIKERS || 'claude-sonnet-5';
         if (nonAnalyses.size) resImp.ia_non_analyses = nonAnalyses.size;
+        if (erreurIA) resImp.ia_erreur = erreurIA;
         // Zéro profil gardé sur un lot entier : c'est presque toujours le filtre qui se trompe,
         // pas la réalité (cas BMW Guadeloupe du 21/08). On le dit au SDR au lieu de le laisser
         // conclure que le post ne valait rien.
         if (simuler) {
+          // Trois états, pas deux : gardé, écarté par le filtre, ou JAMAIS QUALIFIÉ (appel en
+          // erreur). Les confondre a fait passer une panne d'API pour un filtre trop strict.
           const detail = nouveauxI.map((p, k) => ({
             nom: p.nom, fonction: (p.occupation || '').slice(0, 90),
             garde: garderIA.has(k),
-            raison: garderIA.has(k) ? null : (raisonsIA[k] || raisonsIA[String(k)] || '(aucune raison donnée)'),
+            non_analyse: nonAnalyses.has(k),
+            raison: garderIA.has(k) ? null
+              : (nonAnalyses.has(k) ? 'jamais qualifié — le filtre n\'a pas répondu'
+                : (raisonsIA[k] || raisonsIA[String(k)] || '(aucune raison donnée)')),
             societe: socIA[k] || socIA[String(k)] || null
           }));
           return res.status(200).json({
             ok: true, simulation: true, analyses: nouveauxI.length,
             gardes: detail.filter(x => x.garde).length,
-            ecartes: detail.filter(x => !x.garde).length,
+            ecartes: detail.filter(x => !x.garde && !x.non_analyse).length,
             non_analyses: nonAnalyses.size,
+            ia_erreur: erreurIA,
+            ia_reprises: resImp.ia_reprises || 0,
             modele: process.env.MODELE_FILTRE_LIKERS || 'claude-sonnet-5',
             profils: detail,
             accroche: resImp.accroche || null,
