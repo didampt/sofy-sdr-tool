@@ -133,12 +133,16 @@ function infoFiche(e, listeId, listeNom) {
         annonceurs: (gV.ia_visibilite.annonceurs || []).slice(0, 3)
       } : null,
       apple: gV.apple ? { present: gV.apple.present, position: gV.apple.position,
-        note: gV.apple.note, total_resultats: gV.apple.total_resultats } : null
+        note: gV.apple.note, total_resultats: gV.apple.total_resultats } : null,
+      // Le constat du SDR sur le bouton WhatsApp : sans lui dans cette charge utile, « Ma journée »
+      // affichait toujours le bouton « ✋ Je le vois » même après l'avoir cliqué.
+      whatsapp_declare: gV.whatsapp_declare || null,
+      revision: gV.audit ? (gV.audit.revision || null) : null
     } : null,
     // Le pré-audit a-t-il été fait, et la messagerie du site est-elle connue ?
     releves_faits: !!(gV.reponses || gV.audit || gV.ia_visibilite || gV.apple),
     gmb_trouve: !!gV.trouve,
-    technos: (e.technos || []).filter(t => t && t.cat === 'chat').map(t => ({ id: t.id, nom: t.nom, cat: t.cat })),
+    technos: (e.technos || []).filter(t => t && t.cat === 'chat').map(t => ({ id: t.id, nom: t.nom, cat: t.cat, nous: !!t.nous })),
     technos_fait: !!e.technos_fait,
     vars: varsLem,
     produit_dominant: (prodV && prodV[1]) ? prodV[0] : null

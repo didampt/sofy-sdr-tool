@@ -2159,7 +2159,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v401';
+const VERSION='v402';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4993,7 +4993,7 @@ async function rattacher(i,qs){
 // que si la mesure existe — jamais « non mesuré », qui n'apprend rien.
 // `compact` : rendu sans repliage, pour « Ma journée » — là, le panneau est injecté dans un div
 // qui ne se re-rend pas, donc un chevron cliquable ne servirait à rien.
-function relevesHtml(e,i,compact){
+function relevesHtml(e,i,compact,rid){
  const g=e.gmb||{}, r=g.reponses||null, a=g.audit||null, iv=g.ia_visibilite||null, ap=g.apple||null;
  if(!r&&!a&&!iv&&!ap){
   if(!(g&&g.trouve))return '';
@@ -5080,10 +5080,18 @@ function relevesHtml(e,i,compact){
   // Le geste qui débloque un argument que la machine ne peut pas mesurer : le SDR ouvre la fiche
   // Google, voit (ou non) le bouton, et le dit. Une case cochée par un humain qui regarde vaut
   // mieux qu'un relevé qui ne sait pas regarder — à condition de dire QUI l'a vue et QUAND.
-  if(!(a&&a.whatsapp_sur_fiche)&&!waG2&&i!=null){
+  // ⚠️ DEUX CHEMINS D'APPEL, ET LE SECOND NE MARCHAIT PAS (constat Didier, 21/08).
+  // Depuis « Ma journée », relevesHtml est appelé avec i = -1 : mon garde-fou `i != null` laissait
+  // donc le bouton s'afficher, et declarerWhatsapp(-1) tombait sur REAL[-1] === undefined puis
+  // sortait par un `return` MUET. Le SDR cliquait, rien ne se passait, aucun message.
+  // Un bouton qui ne peut pas agir ne doit pas être affiché — et ici il PEUT, à condition de
+  // charger la liste d'abord : c'est ce que fait ckDeclarerWhatsapp, comme ckPreAudit.
+  const cible=(i!=null&&i>=0)?('declarerWhatsapp('+i+',%V%)')
+    :(rid?('ckDeclarerWhatsapp(\''+rid+'\',%V%)'):null);
+  if(!(a&&a.whatsapp_sur_fiche)&&!waG2&&cible){
    bouts.push(waDecl
-    ? '<span onclick="declarerWhatsapp('+i+',false)" style="cursor:pointer;text-decoration:underline;font-size:11.5px;color:var(--ink-soft)">annuler ce constat</span>'
-    : '<span onclick="declarerWhatsapp('+i+',true)" style="cursor:pointer;font-size:11.5px;font-weight:700;color:#6D28D9;border:1px solid #C4B5FD;background:#F5F3FF;border-radius:7px;padding:1px 7px" title="Notre relevé ne sait pas lire le bouton WhatsApp d\'une fiche Google (SerpApi ne l\'expose pas). Ouvre la fiche Google : si le bouton y est, dis-le ici — ça devient un fait utilisable dans l\'audit.">✋ Je le vois sur la fiche</span>');
+    ? '<span onclick="'+cible.replace('%V%','false')+'" style="cursor:pointer;text-decoration:underline;font-size:11.5px;color:var(--ink-soft)">annuler ce constat</span>'
+    : '<span onclick="'+cible.replace('%V%','true')+'" style="cursor:pointer;font-size:11.5px;font-weight:700;color:#6D28D9;border:1px solid #C4B5FD;background:#F5F3FF;border-radius:7px;padding:1px 7px" title="Notre relevé ne sait pas lire le bouton WhatsApp d\'une fiche Google (SerpApi ne l\'expose pas). Ouvre la fiche Google : si le bouton y est, dis-le ici — ça devient un fait utilisable dans l\'audit.">✋ Je le vois sur la fiche</span>');
   }
   li('💬','Messagerie client',bouts.join(' · '));
  }
@@ -7574,10 +7582,12 @@ async function completerMesures(i){
  // Ajouté ici le 21/08 : c'était la seule mesure manquante après un pré-audit, et elle déclenchait
  // ensuite un dialogue « cette fiche n'est pas complètement mesurée » avant l'audit client. Une
  // mesure gratuite qui alimente deux axes du scoring sur trois n'a aucune raison d'attendre.
- if(!e.technos_fait&&!e.technos_tente&&domaineDe(e)){
+ if(technosAFaire(e)){
   try{
+   const avant=(e.technos||[]).map(t=>t.id).sort().join(',');
    await detecterTechnos(i);
-   if(e.technos_fait)faits.push('outils du site');
+   const apres=(e.technos||[]).map(t=>t.id).sort().join(',');
+   if(e.technos_fait)faits.push(avant&&avant!==apres?'outils du site (résultat mis à jour)':'outils du site');
    else if(e.technos_echec)erreurs.push('outils du site : '+e.technos_echec);
   }catch(err){erreurs.push('outils du site : '+String(err.message||err).slice(0,120));}
  }
@@ -7658,7 +7668,9 @@ function villeDeAdresse(ad){
    il vient. Un fait relevé par un humain n'est pas moins solide qu'un fait relevé par une API ;
    il est juste d'une autre nature, et ça doit se voir. */
 async function declarerWhatsapp(i,actif){
- const e=REAL[i];if(!e)return;
+ const e=REAL[i];
+ // Jamais de sortie muette : c'est ce qui a fait croire que le bouton « ne marchait pas ».
+ if(!e){toast('Fiche introuvable en mémoire — ouvre la fiche complète et réessaie');return false;}
  if(actif){
   if(!await confirmSofy('Le bouton WhatsApp est bien sur sa fiche Google ?',
    'Notre relevé ne sait pas le lire : SerpApi ne l\'expose dans aucun champ de la fiche.\n\n'
@@ -7674,6 +7686,23 @@ async function declarerWhatsapp(i,actif){
  e.gmb=g;
  rerender(i);persister();
  toast(actif?'✋ Constat enregistré — l\'audit pourra s\'appuyer dessus':'Constat retiré');
+ return true;
+}
+
+// Le même geste depuis « Ma journée », sans éjecter le SDR de son écran : on charge la liste en
+// arrière-plan, on déclare, on ATTEND la sauvegarde, puis on rafraîchit la file. Même schéma que
+// ckPreAudit — parce que c'est le même besoin.
+async function ckDeclarerWhatsapp(rid,actif){
+ const it=CK_ITEMS[rid]||{};
+ if(!it.liste_id||!it.cle){toast('Fiche non localisable — ouvre la fiche complète');return;}
+ try{
+  await chargerListeEnSilence(it.liste_id);
+  const i=REAL.findIndex(x=>cleSignal(x)===it.cle);
+  if(i<0){toast('Fiche introuvable dans sa liste');return;}
+  if(!await declarerWhatsapp(i,actif))return;
+  await persisterMaintenant();
+  await chargerCockpit();
+ }catch(err){toast('Constat WhatsApp : '+err.message);}
 }
 
 function requeteValable(q,ville){
@@ -7744,7 +7773,7 @@ async function completerFiche(i){
   const v=voileTravail('⭐ Fiche Google',(enseigneDe(e)||e.nom)+'\nRecherche de la fiche, des avis et des concurrents locaux.');
   try{ await analyserGmb(i); if(e.gmb&&e.gmb.trouve)faits.push('fiche Google'); }catch(_){ }finally{ v.fermer(); }
  }
- if(!e.technos_fait&&!e.technos_tente){
+ if(technosAFaire(e)){
   const v=voileTravail('🔎 Outils du site','Détection des outils d\'avis, de chat et de SMS sur son site — gratuit.');
   try{ await detecterTechnos(i); if(e.technos_fait)faits.push('outils du site'); }catch(_){ }finally{ v.fermer(); }
  }
@@ -7792,7 +7821,7 @@ async function genererPrez(i){
  // Ce qui manque et qu'on peut FAIRE tout seul : on le fait, après un seul accord.
  const aFaire=[];
  if(!(e.gmb&&e.gmb.trouve))aFaire.push('la fiche Google (note, avis, concurrents locaux)');
- if(!e.technos_fait&&!e.technos_tente)aFaire.push('les outils de son site (avis, chat, SMS) — gratuit');
+ if(technosAFaire(e))aFaire.push('les outils de son site (avis, chat, SMS) — gratuit');
  if(!e.score||!e.score.scores)aFaire.push('le scoring des 3 axes + la synthèse d\'appel (≈ 0,02 €)');
  if(aFaire.length){
   if(!await confirmSofy('Compléter la fiche de '+(enseigneDe(e)||e.nom)+' avant l\'audit ?',
@@ -8217,6 +8246,19 @@ function lancerKaspr(i,j){
 // Avant, une fiche sans site web ou au site injoignable ressortait indéfiniment comme
 // « incomplète » : le SDR de NORAUTO voyait l'avertissement même après avoir analysé, sans aucun
 // moyen de le faire taire. Une impossibilité doit être ENREGISTRÉE, pas répétée.
+/* ⚠️ LE SCAN DU SITE DOIT ÊTRE REFAIT QUAND NOS SIGNATURES ONT CHANGÉ (21/08).
+   Didier a installé le webchat SoConnect sur sofy.fr, relancé le pré-audit… et rien. Cause : la
+   fiche portait déjà `technos_fait = true` d'un scan fait AVEC LES ANCIENNES SIGNATURES, donc le
+   scan était sauté et le résultat périmé conservé. Exactement le même piège que le cache de
+   fiche_audit : une correction de code qui n'atteint aucune fiche déjà traitée.
+   Le scan est GRATUIT (un fetch) : il n'y a aucune raison de garder un résultat obsolète.
+   TECHNO_REV doit suivre la constante REVISION de api/techno.js. */
+const TECHNO_REV=3;
+function technosAFaire(e){
+ if(!domaineDe(e))return false;                 // rien à analyser sans site
+ if(!e.technos_fait&&!e.technos_tente)return true;
+ return (e.technos_rev||0)<TECHNO_REV;          // signatures plus récentes → on refait, c'est gratuit
+}
 async function detecterTechnos(i){
  const e=REAL[i];
  const site=domaineDe(e);
@@ -8233,6 +8275,8 @@ async function detecterTechnos(i){
    // Les simples mentions textuelles sont rangées à part : elles ne valent pas équipement et ne
    // doivent jamais entrer dans le scoring ni dans l'audit client (cf. Guest Suite sur sofy.fr).
    e.technos_mentions=d.mentions||[];
+   // La génération de signatures utilisée. Sans elle, un résultat périmé n'était jamais rafraîchi.
+   if(d.revision!=null)e.technos_rev=d.revision;
    if(d.scanne){e.technos_fait=true;delete e.technos_echec;}
    else e.technos_echec='site injoignable'+(d.detail?' ('+String(d.detail).slice(0,60)+')':'');
    rerender(i);persister();
@@ -8651,7 +8695,7 @@ async function pipelineFiche(i){
    wfSet(i,'ia',e.ia&&(e.ia.site_web||e.ia.nom_commercial)?'ok':(domaineDe(e)?'ok':'—'));
   }
   // ── 2.6 Technologies du site (gratuit, 1 fetch) : outil d'avis concurrent, chat, marketing ──
-  if(!e.technos_fait&&domaineDe(e)){
+  if(technosAFaire(e)){
    prog(i,30,'Étape 2 bis · 🔎 Technologies du site (outils d’avis, chat)…');
    await detecterTechnos(i);
   }
@@ -10251,7 +10295,7 @@ function ckDetailHtml(it,rid){
  // Les relevés terrain, juste avant les contacts : c'est ce qu'on lit dans les secondes qui
  // précèdent l'appel. Rendu compact (pas de repliage : ce panneau ne se re-rend pas).
  if(it.doublon_note)h+=`<div style="font-size:12px;background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;padding:7px 10px;margin-bottom:8px;color:#92400E">⚠️ ${htmlSafe(it.doublon_note)}</div>`;
- if(it.releves)h+=relevesHtml({gmb:it.releves,technos:it.technos||[],technos_fait:!!it.technos_fait},-1,true);
+ if(it.releves)h+=relevesHtml({gmb:it.releves,technos:it.technos||[],technos_fait:!!it.technos_fait},-1,true,rid);
  else if(it.gmb_trouve&&it.liste_id&&it.cle)h+=`<div class="hint" style="margin-bottom:8px">🔍 Aucun relevé sur ce prospect — <b>Pré-audit</b> mesure ses réponses aux avis, sa position locale et sa visibilité IA, puis reprend l'accroche et l'email avec ces chiffres.</div>`;
  const cs=it.contacts_detail||[];
  if(cs.length)h+=cs.map((c,ci)=>ckContactLigne(c,it,rid,ci)).join('');

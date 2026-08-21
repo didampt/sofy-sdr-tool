@@ -9,6 +9,13 @@ import { verifierToken } from './db.js';
 
 export const config = { maxDuration: 15 };
 
+// ⚠️ GÉNÉRATION DES SIGNATURES. À incrémenter à CHAQUE changement de SIGNATURES ou de la façon
+// de les chercher. Sans ce numéro, un résultat de scan déjà stocké sur une fiche n'est jamais
+// rafraîchi : le webchat SoConnect ajouté sur sofy.fr restait invisible parce que la fiche portait
+// `technos_fait = true` d'un scan fait avec les anciennes signatures (constat Didier, 21/08).
+// Le scan est GRATUIT — il n'y a aucune raison de garder un résultat périmé.
+const REVISION = 3;
+
 /* ⚠️ INTÉGRATION vs MENTION — le défaut le plus grave relevé le 21/08.
    Un motif était cherché n'importe où dans le HTML, texte compris. Sur sofy.fr — qui VEND contre
    Guest Suite et le nomme dans ses pages comparatives — l'audit annonçait donc « outil détecté :
@@ -146,7 +153,7 @@ export default async function handler(req, res) {
 
   try {
     let html = await lire(url);
-    if (!html) return res.status(200).json({ ok: true, technos: [], scanne: false });
+    if (!html) return res.status(200).json({ ok: true, technos: [], revision: REVISION, scanne: false });
     const pagesLues = ['/'];
     // Pages secondaires en parallèle : le coût est un fetch, le gain est un constat juste.
     const suites = await Promise.all(CHEMINS.slice(1).map(c => lire(url + c)));
@@ -173,8 +180,8 @@ export default async function handler(req, res) {
           ou: s.motifs.some(m => liens.includes(m)) ? 'lien sortant' : 'texte de la page' });
       }
     }
-    return res.status(200).json({ ok: true, technos, mentions, scanne: true, pages_lues: pagesLues });
+    return res.status(200).json({ ok: true, technos, mentions, revision: REVISION, scanne: true, pages_lues: pagesLues });
   } catch (e) {
-    return res.status(200).json({ ok: true, technos: [], scanne: false, detail: String(e.message || e).slice(0, 120) });
+    return res.status(200).json({ ok: true, technos: [], revision: REVISION, scanne: false, detail: String(e.message || e).slice(0, 120) });
   }
 }
