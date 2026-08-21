@@ -40,7 +40,10 @@ const SIGNATURES = [
   { id: 'tidio', nom: 'Tidio', cat: 'chat', concurrent: true, motifs: ['tidio.co'] },
   { id: 'livechat', nom: 'LiveChat', cat: 'chat', concurrent: true, motifs: ['livechatinc'] },
   { id: 'messenger', nom: 'Messenger (plugin FB)', cat: 'chat', concurrent: false, motifs: ['customerchat', 'xfbml.customer'] },
-  { id: 'whatsapp', nom: 'WhatsApp (lien/widget)', cat: 'chat', concurrent: false, motifs: ['wa.me/', 'api.whatsapp.com'] },
+  // parLien : un bouton WhatsApp ou Messenger EST un <a href>. Exiger un script les rendrait
+  // indétectables, alors que c'est leur seule façon d'exister sur un site.
+  { id: 'whatsapp', nom: 'WhatsApp (lien/widget)', cat: 'chat', concurrent: false, parLien: true, motifs: ['wa.me/', 'api.whatsapp.com', 'chat.whatsapp.com'] },
+  { id: 'messenger-lien', nom: 'Messenger (lien)', cat: 'chat', concurrent: false, parLien: true, motifs: ['m.me/'] },
   // Marketing / emailing — contexte (l'entreprise investit déjà dans la relation client)
   { id: 'brevo', nom: 'Brevo (ex-Sendinblue)', cat: 'marketing', concurrent: true, motifs: ['sendinblue', 'sibforms', 'brevo.com'] },
   { id: 'mailchimp', nom: 'Mailchimp', cat: 'marketing', concurrent: false, motifs: ['mailchimp', 'list-manage.com'] },
@@ -55,17 +58,35 @@ const SIGNATURES = [
   { id: 'octopush', nom: 'Octopush', cat: 'sms', concurrent: true, motifs: ['octopush.com'] }
 ];
 
-// Les URL de ressources du document : c'est là, et seulement là, qu'un outil réellement chargé
-// laisse sa trace. On isole src/href/data-*/content d'URL plutôt que de lire tout le texte.
+/* ⚠️ DEUX FAMILLES D'URL, ET ELLES NE PROUVENT PAS LA MÊME CHOSE (correction du 21/08).
+   Ma première version capturait `href` sans distinction. Résultat sur sofy.fr : l'unique
+   correspondance « guest-suite.com » venait d'un LIEN VERS UN ARTICLE DE BLOG cité en source
+   (…/blog/statistiques-avis-clients), et l'audit annonçait « Guest Suite chargé sur le site » à
+   propos de notre propre site. J'avais corrigé la mention textuelle et créé le lien sortant.
+
+   · RESSOURCES CHARGÉES (script src, iframe src, link href, data-* de widgets) : c'est la preuve
+     qu'un outil TOURNE sur la page. Un éditeur d'avis, un CRM, un chat s'y voient.
+   · LIENS CLIQUABLES (<a href>) : de la navigation. Un article cité ne prouve rien.
+     SAUF pour les canaux de contact — un bouton WhatsApp EST un <a href="https://wa.me/…">, il n'y
+     a pas d'autre façon de le poser. Ces signatures portent donc `parLien: true`. */
 function urlsDuDocument(html) {
-  const out = [];
-  const rx = /(?:src|href|data-(?:src|url|domain|host)|content)\s*=\s*["']([^"']{4,300})["']/gi;
-  let m;
-  while ((m = rx.exec(html)) !== null) {
-    const v = m[1];
-    if (/^(https?:)?\/\//.test(v) || /^\//.test(v) || /\.[a-z]{2,}\//.test(v)) out.push(v.toLowerCase());
+  const charge = [], liens = [];
+  const rxTag = /<([a-z][a-z0-9-]*)\b([^>]*)>/gi;
+  let t;
+  while ((t = rxTag.exec(html)) !== null) {
+    const tag = t[1].toLowerCase(), attrs = t[2];
+    const cible = (tag === 'a' || tag === 'area') ? liens : charge;
+    let m;
+    const rxSrc = /(?:src|data-(?:src|url|domain|host))\s*=\s*["']([^"']{4,300})["']/gi;
+    while ((m = rxSrc.exec(attrs)) !== null) cible.push(m[1].toLowerCase());
+    // `href` charge une ressource sur <link> (feuille de style, préconnexion) ; sur <a> c'est un lien.
+    const rxHref = /href\s*=\s*["']([^"']{4,300})["']/gi;
+    while ((m = rxHref.exec(attrs)) !== null) {
+      if (tag === 'link') charge.push(m[1].toLowerCase());
+      else if (tag === 'a' || tag === 'area') liens.push(m[1].toLowerCase());
+    }
   }
-  return out.join(' \n');
+  return { charge: charge.join(' \n'), liens: liens.join(' \n') };
 }
 
 function urlSure(u) {
@@ -111,16 +132,21 @@ export default async function handler(req, res) {
     suites.forEach((h, k) => { if (h) { html += '\n' + h; pagesLues.push(CHEMINS[k + 1]); } });
 
     const bas = html.toLowerCase();
-    const ressources = urlsDuDocument(bas);
+    const { charge, liens } = urlsDuDocument(bas);
     const technos = [], mentions = [];
     for (const s of SIGNATURES) {
-      // Chargé (une URL de ressource le porte) → outil INSTALLÉ, il compte.
-      if (s.motifs.some(m => ressources.includes(m))) {
+      // Une ressource chargée prouve qu'un outil tourne. Pour un canal de contact, un lien suffit :
+      // c'est ainsi qu'on pose un bouton WhatsApp.
+      const installe = s.motifs.some(m => charge.includes(m))
+        || (s.parLien && s.motifs.some(m => liens.includes(m)));
+      if (installe) {
         technos.push({ id: s.id, nom: s.nom, cat: s.cat, concurrent: s.concurrent, nous: !!s.nous, charge: true });
       } else if (s.motifs.some(m => bas.includes(m))) {
-        // Nommé quelque part dans la page, sans ressource chargée : c'est du contenu éditorial
-        // (page comparative, article de blog), pas un équipement. Rendu à part, jamais compté.
-        mentions.push({ id: s.id, nom: s.nom, cat: s.cat, concurrent: s.concurrent, nous: !!s.nous });
+        // Nommé quelque part — texte éditorial, ou lien vers un article du concurrent. Sur sofy.fr,
+        // « guest-suite.com » n'apparaît QUE dans un lien vers un de leurs articles de blog.
+        // Rendu à part, jamais compté comme équipement.
+        mentions.push({ id: s.id, nom: s.nom, cat: s.cat, concurrent: s.concurrent, nous: !!s.nous,
+          ou: s.motifs.some(m => liens.includes(m)) ? 'lien sortant' : 'texte de la page' });
       }
     }
     return res.status(200).json({ ok: true, technos, mentions, scanne: true, pages_lues: pagesLues });

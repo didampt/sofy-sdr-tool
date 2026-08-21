@@ -140,8 +140,11 @@ function mesures(e) {
         // MESURÉ. Il ne remontait pas jusqu'ici — la mesure existait sans jamais servir le document.
         categorie_google: g.audit.categorie || null,
         bouton_whatsapp_actif: !!(g.audit.whatsapp_sur_fiche
-          || (g.ia_visibilite && g.ia_visibilite.whatsapp_google)),
-        whatsapp_ou: g.audit.whatsapp_champ || null
+          || (g.ia_visibilite && g.ia_visibilite.whatsapp_google)
+          || (g.whatsapp_declare && g.whatsapp_declare.actif)),
+        whatsapp_ou: g.audit.whatsapp_champ
+          || ((g.whatsapp_declare && g.whatsapp_declare.actif)
+            ? 'constaté sur la fiche Google par le commercial (notre relevé automatique ne lit pas ce champ)' : null)
       } : null,
       // Quand la note est inerte (gros volume d'avis), le titre de la planche « trajectoire » doit
       // parler du FLUX et des réponses, jamais d'une note qui remonte.
@@ -257,6 +260,8 @@ function mesures(e) {
     }
     if (g.audit) {
       const a2 = g.audit;
+      // Vaut aussi pour un bouton constaté par le commercial : c'est le même fait, vérifiable par
+      // le prospect sur sa propre fiche.
       if (a2.bouton_whatsapp_actif) {
         d.push('Votre fiche Google propose WhatsApp : vos clients vous écrivent déjà, sur un mobile — '
           + 'sans historique partagé, sans transfert possible, et sans trace de ce qui a été promis.');
@@ -560,12 +565,19 @@ function scorer(e) {
   // fiche Google » — une affirmation que nos propres relevés ne pouvaient pas soutenir, et qui est
   // fausse chez le premier prospect qui l'a lue : nous.
   // Le trouver PROUVE qu'il existe ; ne pas le trouver ne prouve RIEN. Donc jamais « faible ».
-  const waFiche = !!((au && au.whatsapp_sur_fiche)
+  const waRelev = !!((au && au.whatsapp_sur_fiche)
     || (g.ia_visibilite && g.ia_visibilite.whatsapp_google));
+  // Constat du SDR : il a ouvert la fiche Google et vu le bouton. SerpApi ne l'expose pas, donc
+  // sans ce chemin l'argument SoConnect le plus direct restait inutilisable. Le libellé dit que
+  // c'est une observation humaine — c'est vérifiable par le prospect en trois secondes, et c'est
+  // précisément pour ça qu'on peut l'écrire.
+  const waDecl = (g.whatsapp_declare && g.whatsapp_declare.actif) ? g.whatsapp_declare : null;
+  const waFiche = waRelev || !!waDecl;
   const waQqPart = waFiche || wa === true;
   r.push(crit('Bouton WhatsApp', waQqPart ? 'ok' : 'inconnu', waQqPart ? 20 : 0, waQqPart ? 20 : 0,
     waFiche && wa === true ? 'WhatsApp sur le site ET sur la fiche Google — le canal est en place, reste à savoir ce qu\'il y a derrière'
-    : waFiche ? 'WhatsApp actif sur la fiche Google : vos clients écrivent déjà, sur un mobile, sans historique ni suivi partagé'
+    : waRelev ? 'WhatsApp actif sur la fiche Google : vos clients écrivent déjà, sur un mobile, sans historique ni suivi partagé'
+    : waDecl ? 'WhatsApp actif sur votre fiche Google — vos clients écrivent déjà, sur un mobile, sans historique partagé ni suivi. Constaté sur la fiche, pas relevé automatiquement'
     : wa === true ? 'lien WhatsApp détecté sur le site'
     : 'aucun lien WhatsApp trouvé sur le site ; sur la fiche Google, le bouton n\'est pas lisible depuis l\'extérieur — à ouvrir ensemble'));
   r.push(crit('Chat sur le site', chatWeb === null ? 'inconnu' : (chatWeb ? 'ok' : 'faible'),

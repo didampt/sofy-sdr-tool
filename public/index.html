@@ -2159,7 +2159,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v397';
+const VERSION='v398';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -5045,16 +5045,21 @@ function relevesHtml(e,i,compact){
  // Deux sources, et deux niveaux de certitude à ne pas mélanger :
  //  · le SITE — la détection de technos cherche wa.me / api.whatsapp.com et les widgets de chat.
  //    C'est une MESURE : le bouton est là ou il n'est pas là.
- //  · la FICHE Google — Google n'a pas de bouton WhatsApp (sa fonction « Chat » a été arrêtée en
- //    juillet 2024). On ne peut donc que repérer un lien wa.me placé dans le champ site web ou
- //    réservation. Présent, c'est un signal fort ; absent, ça ne prouve rien.
+ //  · la FICHE Google — Google PERMET bien de rattacher un numéro WhatsApp (démontré capture en
+ //    main par Didier sur la fiche SOFY France ; mon affirmation contraire était fausse). Mais le
+ //    diagnostic ?champs=1 du 21/08 a rendu les 34 clés de la fiche telle que SerpApi la voit :
+ //    AUCUNE ne porte WhatsApp. La détection automatique par cette voie est donc impossible — pas
+ //    difficile, impossible. Présent, c'est un signal fort ; absent du relevé, ça ne prouve rien.
+ //    → D'où le bouton « ✋ Je le vois sur la fiche » : le SDR, lui, l'a sous les yeux. Sa
+ //      constatation devient un fait daté et signé, utilisable dans le document.
  const tec=e.technos||[];
  const wa=tec.find(t=>t&&t.id==='whatsapp');
  const chats=tec.filter(t=>t&&t.cat==='chat'&&t.id!=='whatsapp');
  // La ligne s'affiche aussi quand seule la FICHE Google a été relevée : c'est le cas d'un
  // pré-audit sans analyse de site, et le bouton WhatsApp de la fiche est justement l'argument
  // SoConnect le plus direct — il ne doit pas rester invisible (constat Didier, fiche Sofy).
- if(e.technos_fait||wa||chats.length||(a&&a.whatsapp_sur_fiche)||(iv&&iv.whatsapp_google)){
+ const waDecl=(g.whatsapp_declare&&g.whatsapp_declare.actif)?g.whatsapp_declare:null;
+ if(e.technos_fait||wa||chats.length||(a&&a.whatsapp_sur_fiche)||(iv&&iv.whatsapp_google)||waDecl){
   // L'ordre compte : le fait vendeur d'abord, l'état du relevé ensuite. « site non analysé » en
   // tête reléguait le bouton WhatsApp de la fiche en seconde position, alors que c'est LUI
   // l'argument (constat Didier, fiche Sofy).
@@ -5062,6 +5067,9 @@ function relevesHtml(e,i,compact){
   const waG2=(iv&&iv.whatsapp_google)||null;
   if(a&&a.whatsapp_sur_fiche)bouts.push('<b style="color:#B45309">bouton WhatsApp actif sur la fiche Google</b> — vos clients écrivent déjà, sur un mobile, sans historique ni suivi');
   else if(waG2)bouts.push('<b style="color:#B45309">WhatsApp visible dans le panneau Google</b> — vos clients écrivent déjà, sur un mobile, sans historique ni suivi');
+  else if(waDecl)bouts.push('<b style="color:#B45309">bouton WhatsApp actif sur la fiche Google</b> — constaté par '+htmlSafe(waDecl.par||'un SDR')
+   +(waDecl.le?' le '+new Date(waDecl.le).toLocaleDateString('fr-FR'):'')
+   +' <span class="badge b-gmb" title="Notre relevé ne sait pas lire ce bouton : c\'est le SDR qui l\'a vu sur la fiche. Fait daté et signé, utilisable dans le document.">constat SDR</span>');
   if(wa)bouts.push('<b style="color:#0F7B4F">bouton WhatsApp sur le site</b>');
   if(chats.length)bouts.push('chat : '+chats.map(t=>htmlSafe(t.nom)).join(', '));
   if(!wa&&!chats.length&&e.technos_fait)bouts.push('<b style="color:#B45309">aucun canal de messagerie sur le site</b> — ni WhatsApp, ni chat');
@@ -5069,6 +5077,14 @@ function relevesHtml(e,i,compact){
   // Google permet de rattacher un numéro WhatsApp à une fiche : le bouton apparaît alors à côté
   // du téléphone. C'est le signal SoConnect le plus direct — les clients écrivent DÉJÀ, mais sur
   // un mobile personnel : sans historique, sans transfert, sans suivi, et sans rien de mesurable.
+  // Le geste qui débloque un argument que la machine ne peut pas mesurer : le SDR ouvre la fiche
+  // Google, voit (ou non) le bouton, et le dit. Une case cochée par un humain qui regarde vaut
+  // mieux qu'un relevé qui ne sait pas regarder — à condition de dire QUI l'a vue et QUAND.
+  if(!(a&&a.whatsapp_sur_fiche)&&!waG2&&i!=null){
+   bouts.push(waDecl
+    ? '<span onclick="declarerWhatsapp('+i+',false)" style="cursor:pointer;text-decoration:underline;font-size:11.5px;color:var(--ink-soft)">annuler ce constat</span>'
+    : '<span onclick="declarerWhatsapp('+i+',true)" style="cursor:pointer;font-size:11.5px;font-weight:700;color:#6D28D9;border:1px solid #C4B5FD;background:#F5F3FF;border-radius:7px;padding:1px 7px" title="Notre relevé ne sait pas lire le bouton WhatsApp d\'une fiche Google (SerpApi ne l\'expose pas). Ouvre la fiche Google : si le bouton y est, dis-le ici — ça devient un fait utilisable dans l\'audit.">✋ Je le vois sur la fiche</span>');
+  }
   li('💬','Messagerie client',bouts.join(' · '));
  }
  if(ap)li('🍎','Apple Plans',
@@ -7606,6 +7622,33 @@ function villeDeAdresse(ad){
 }
 // Une requête est valable si elle décrit un MÉTIER, pas seulement un lieu. « Paris » n'est pas une
 // requête : c'est ce qui a fait répondre « 0 résultat » à Apple sur la fiche SOFY France.
+/* ✋ CE QUE LA MACHINE NE SAIT PAS LIRE, L'HUMAIN QUI REGARDE PEUT LE DIRE.
+   Le bouton WhatsApp d'une fiche Google existe (démontré par Didier, capture en main) mais SerpApi
+   ne l'expose dans aucun de ses 34 champs — vérifié au diagnostic du 21/08. Aucune détection
+   automatique n'est possible par cette voie, et nous refusons d'affirmer une absence qu'on n'a pas
+   constatée. Restait donc un argument SoConnect direct, visible du SDR, et inutilisable.
+   Le constat du SDR le débloque — à une condition : il est DATÉ et SIGNÉ, et le document dit d'où
+   il vient. Un fait relevé par un humain n'est pas moins solide qu'un fait relevé par une API ;
+   il est juste d'une autre nature, et ça doit se voir. */
+async function declarerWhatsapp(i,actif){
+ const e=REAL[i];if(!e)return;
+ if(actif){
+  if(!await confirmSofy('Le bouton WhatsApp est bien sur sa fiche Google ?',
+   'Notre relevé ne sait pas le lire : SerpApi ne l\'expose dans aucun champ de la fiche.\n\n'
+   +'Ouvre sa fiche Google et regarde à côté du téléphone et du site. Si le bouton y est, confirme : '
+   +'ça devient un fait utilisable dans l\'audit client, daté et à ton nom.\n\n'
+   +'⚠️ Ne confirme que si tu l\'as vu. Le prospect vérifiera en trois secondes.',
+   '✋ Je l\'ai vu, confirmer'))return;
+ }
+ const g=Object.assign({},e.gmb||{});
+ g.whatsapp_declare=actif
+  ? {actif:true,par:(state.user&&state.user.nom)||state.sdr||'un SDR',le:new Date().toISOString()}
+  : null;
+ e.gmb=g;
+ rerender(i);persister();
+ toast(actif?'✋ Constat enregistré — l\'audit pourra s\'appuyer dessus':'Constat retiré');
+}
+
 function requeteValable(q,ville){
  const s=String(q||'').trim();
  if(s.length<6)return false;
