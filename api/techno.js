@@ -17,11 +17,25 @@ export const config = { maxDuration: 15 };
    (src=, href=, data-*, une balise link) — c'est ce qui distingue un widget chargé d'un mot écrit.
    Un motif vu ailleurs est rendu comme `mention:true` et ne vaut PAS équipement. */
 const SIGNATURES = [
-  // Nos propres outils. Ils manquaient — donc un client Sofy était vu comme « terrain vierge »,
-  // et l'audit de notre propre fiche concluait qu'on n'avait ni outil d'avis ni dispositif SMS.
-  // Conséquence commerciale directe : proposer Soview à un client qui l'a déjà.
-  { id: 'sofy', nom: 'Sofy', cat: 'avis', concurrent: false, nous: true,
-    motifs: ['soview', 'soconnect', 'soreach', 'widget.sofy', 'cdn.sofy', 'sofy.fr/widget', 'getsofy', 'budy.sofy'] },
+  /* NOS PROPRES OUTILS — signature CONFIRMÉE, plus supposée (Didier, 21/08).
+     J'avais d'abord écrit des motifs inventés (widget.sofy, cdn.sofy, sofy.fr/widget, budy.sofy).
+     Confrontés au vrai code d'intégration, ils ne correspondaient à RIEN : un webchat SoConnect
+     réellement installé restait invisible, et un client Sofy était vu comme terrain vierge.
+     Le code d'intégration réel, communiqué par Didier :
+       <div id="sofy-chat-widget" data-id="01K…">
+         <script src="https://webchat-next.sofy.fr/plugin.js"></script>
+       </div>
+     Deux preuves indépendantes, et toutes deux dans du MARKUP RÉEL (donc insensibles à un extrait
+     de code affiché dans une page de documentation, qui arrive échappé dans le HTML) :
+       · le script chargé depuis webchat-next.sofy.fr ;
+       · le conteneur id="sofy-chat-widget".
+     ⚠️ MANQUE ENCORE : l'URL d'embarquement du widget Soview (collecte/affichage d'avis) et celle
+     de SoReach. Elles ne sont pas devinables — tant qu'elles ne sont pas confirmées, un client
+     Soview qui n'a pas le webchat ne sera pas reconnu comme client. Ne pas remettre de motifs
+     inventés ici : c'est exactement ce qui a produit les affirmations fausses du 21/08. */
+  { id: 'sofy-webchat', nom: 'SoConnect (webchat Sofy)', cat: 'chat', concurrent: false, nous: true,
+    motifs: ['webchat-next.sofy.fr', 'webchat.sofy.fr', 'sofy.fr/plugin.js'],
+    balises: ['sofy-chat-widget'] },
   // Outils d'avis / e-réputation — concurrents directs de Soview
   { id: 'partoo', nom: 'Partoo', cat: 'avis', concurrent: true, motifs: ['partoo.co', 'partoo.com', 'widget.partoo'] },
   { id: 'guest-suite', nom: 'Guest Suite', cat: 'avis', concurrent: true, motifs: ['guest-suite.com', 'guestsuite.io', 'guest-suite.io'] },
@@ -50,7 +64,9 @@ const SIGNATURES = [
   { id: 'hubspot', nom: 'HubSpot', cat: 'marketing', concurrent: false, motifs: ['js.hs-scripts', 'hsforms'] },
   // Vrais outils SMS/RCS. ⚠️ Leur ABSENCE ne prouve rien : une plateforme d'envoi SMS ne laisse
   // aucune trace sur un site web. C'est le scorer qui doit refuser d'en conclure quoi que ce soit.
-  { id: 'sofy-sms', nom: 'Sofy SMS/RCS', cat: 'sms', concurrent: false, nous: true, motifs: ['soreach', 'sms.sofy', 'ur9.fr'] },
+  // ⚠️ Pas de signature Sofy pour le SMS/RCS, et c'est volontaire : « soreach » / « ur9.fr » étaient
+  // des suppositions. De toute façon un envoi SMS ne laisse AUCUNE trace sur un site web — cette
+  // catégorie ne peut pas se mesurer de l'extérieur, quel que soit l'éditeur.
   { id: 'smsmode', nom: 'smsmode', cat: 'sms', concurrent: true, motifs: ['smsmode.com'] },
   { id: 'twilio', nom: 'Twilio', cat: 'sms', concurrent: true, motifs: ['twilio.com', 'twiliocdn'] },
   { id: 'esendex', nom: 'Esendex', cat: 'sms', concurrent: true, motifs: ['esendex.'] },
@@ -70,7 +86,7 @@ const SIGNATURES = [
      SAUF pour les canaux de contact — un bouton WhatsApp EST un <a href="https://wa.me/…">, il n'y
      a pas d'autre façon de le poser. Ces signatures portent donc `parLien: true`. */
 function urlsDuDocument(html) {
-  const charge = [], liens = [];
+  const charge = [], liens = [], marqueurs = [];
   const rxTag = /<([a-z][a-z0-9-]*)\b([^>]*)>/gi;
   let t;
   while ((t = rxTag.exec(html)) !== null) {
@@ -85,8 +101,13 @@ function urlsDuDocument(html) {
       if (tag === 'link') charge.push(m[1].toLowerCase());
       else if (tag === 'a' || tag === 'area') liens.push(m[1].toLowerCase());
     }
+    // Certains outils se prouvent par leur CONTENEUR, pas par une URL : le webchat Sofy s'installe
+    // dans <div id="sofy-chat-widget">. On ne lit que de VRAIS attributs — un extrait de code
+    // montré dans une page de documentation arrive échappé (&lt;div id=…) et n'en produit aucun.
+    const rxId = /(?:id|class|data-widget|data-app)\s*=\s*["']([^"']{2,120})["']/gi;
+    while ((m = rxId.exec(attrs)) !== null) marqueurs.push(m[1].toLowerCase());
   }
-  return { charge: charge.join(' \n'), liens: liens.join(' \n') };
+  return { charge: charge.join(' \n'), liens: liens.join(' \n'), marqueurs: marqueurs.join(' \n') };
 }
 
 function urlSure(u) {
@@ -132,12 +153,15 @@ export default async function handler(req, res) {
     suites.forEach((h, k) => { if (h) { html += '\n' + h; pagesLues.push(CHEMINS[k + 1]); } });
 
     const bas = html.toLowerCase();
-    const { charge, liens } = urlsDuDocument(bas);
+    const { charge, liens, marqueurs } = urlsDuDocument(bas);
     const technos = [], mentions = [];
     for (const s of SIGNATURES) {
-      // Une ressource chargée prouve qu'un outil tourne. Pour un canal de contact, un lien suffit :
-      // c'est ainsi qu'on pose un bouton WhatsApp.
+      // Trois preuves possibles, par ordre de fiabilité :
+      //  · une ressource chargée (script, iframe, feuille de style) → l'outil TOURNE ;
+      //  · un conteneur déclaré (id="sofy-chat-widget") → l'outil est INSTALLÉ ;
+      //  · un lien, mais seulement pour un canal de contact (un bouton WhatsApp EST un <a href>).
       const installe = s.motifs.some(m => charge.includes(m))
+        || (s.balises || []).some(b => marqueurs.includes(b))
         || (s.parLien && s.motifs.some(m => liens.includes(m)));
       if (installe) {
         technos.push({ id: s.id, nom: s.nom, cat: s.cat, concurrent: s.concurrent, nous: !!s.nous, charge: true });

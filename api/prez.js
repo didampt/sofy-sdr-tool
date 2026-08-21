@@ -217,7 +217,18 @@ function mesures(e) {
     }
   }
   if (e.technos_fait) {
-    m.technos = (e.technos || []).map(t => ({ nom: t.nom, categorie: t.cat, concurrent_sofy: !!t.concurrent }));
+    // Le drapeau `nous` était PERDU ici : l'IA ne pouvait pas savoir que le prospect est déjà
+    // client, et le document lui proposait ce qu'il utilise. Sur un client SoConnect, proposer
+    // SoConnect est la pire chose que ce document puisse faire.
+    m.technos = (e.technos || []).map(t => ({ nom: t.nom, categorie: t.cat,
+      concurrent_sofy: !!t.concurrent, deja_client_sofy: !!t.nous }));
+    const nous = (e.technos || []).filter(t => t.nous).map(t => t.nom);
+    if (nous.length) m.deja_equipe_sofy = {
+      outils: nous,
+      consigne: 'CE PROSPECT EST DÉJÀ CLIENT SOFY (' + nous.join(', ') + ', détecté sur son site). '
+        + 'Ne lui propose PAS ce qu\'il utilise déjà et ne parle pas de « mettre en place » ces briques. '
+        + 'L\'angle est ailleurs : ce qui n\'est pas encore couvert, ou ce qui est en place mais mal exploité.'
+    };
     // Formulation resserrée : « aucun outil détecté » invitait l'IA à écrire que le prospect n'a
     // aucun outil. Ce qu'on sait est plus étroit : aucune BALISE sur les pages lues. Beaucoup
     // d'outils (avis, SMS, CRM) se pilotent entièrement hors du site.
@@ -546,11 +557,20 @@ function scorer(e) {
 
   // ── Relation client (SoConnect) ──
   const r = [];
-  const nomsTechnos = technos ? technos.map(t => t.nom).join(', ') : '';
+  const nomsTechnos = installes ? installes.map(t => t.nom).join(', ') : '';
   const wa = cherche(/whatsapp/i);
   const msgr = cherche(/messenger/i);
-  const chatWeb = cherche(/crisp|intercom|zendesk|tawk|tidio|livechat|drift/i);
-  const avisOutil = cherche(/avis|review|trustpilot|reput|custeed|garagescore|skeepers/i);
+  /* ⚠️ CES CRITÈRES REPOSAIENT SUR UNE LISTE DE NOMS D'ÉDITEURS CODÉE EN DUR (21/08).
+     « Chat sur le site » testait /crisp|intercom|zendesk|tawk|tidio|livechat|drift/ : tout outil
+     absent de cette liste — dont NOTRE PROPRE webchat SoConnect — laissait écrire « aucune
+     messagerie web détectée » à un prospect qui en a une. Une liste de noms doit être maintenue à
+     chaque nouvel éditeur ; la catégorie, elle, est portée par la signature elle-même. */
+  const parCat = (cat, sauf) => installes
+    ? installes.some(t => t.cat === cat && !(sauf && sauf.test(String(t.id) + ' ' + String(t.nom))))
+    : null;
+  // WhatsApp et Messenger ont leurs propres critères : on ne les compte pas deux fois.
+  const chatWeb = parCat('chat', /whatsapp|messenger/i);
+  const avisOutil = parCat('avis');
   const detail = (v, oui, non) => v === null ? 'site non analysé' : (v ? oui : non);
   // WhatsApp d'abord : c'est le canal que les clients utilisent spontanément, et son absence est
   // le manque le plus parlant sur un site grand public.
@@ -580,9 +600,16 @@ function scorer(e) {
     : waDecl ? 'WhatsApp actif sur votre fiche Google — vos clients écrivent déjà, sur un mobile, sans historique partagé ni suivi. Constaté sur la fiche, pas relevé automatiquement'
     : wa === true ? 'lien WhatsApp détecté sur le site'
     : 'aucun lien WhatsApp trouvé sur le site ; sur la fiche Google, le bouton n\'est pas lisible depuis l\'extérieur — à ouvrir ensemble'));
+  // Le libellé NOMME l'outil, et dit s'il est de chez nous : « outil de chat détecté » ne servait à
+  // rien au commercial, et sur un client SoConnect c'était même trompeur.
+  const nomsChat = installes ? installes.filter(t => t.cat === 'chat' && !/whatsapp|messenger/i.test(String(t.id)))
+    .map(t => t.nom).join(', ') : '';
+  const chatNous = installes ? installes.some(t => t.cat === 'chat' && t.nous) : false;
   r.push(crit('Chat sur le site', chatWeb === null ? 'inconnu' : (chatWeb ? 'ok' : 'faible'),
     chatWeb ? 20 : 0, chatWeb === null ? 0 : 20,
-    detail(chatWeb, 'outil de chat détecté', 'aucune messagerie web détectée sur les pages lues')));
+    chatWeb === null ? 'site non analysé'
+    : chatWeb ? (chatNous ? nomsChat + ' — déjà en place chez vous' : nomsChat + ' chargé sur vos pages')
+    : 'aucune messagerie web détectée sur les pages lues'));
   r.push(crit('Messenger ou réseaux sociaux', msgr === null ? 'inconnu' : (msgr ? 'ok' : 'moyen'),
     msgr ? 10 : 0, msgr === null ? 0 : 10,
     detail(msgr, 'plugin Messenger détecté', 'aucun canal social branché sur le site')));
@@ -606,7 +633,7 @@ function scorer(e) {
   // Brevo, Mailjet et Mailchimp sont détectés par leurs FORMULAIRES email : les compter comme
   // dispositif mobile donnait 100/100 en communication mobile à un prospect qui n'envoie aucun
   // SMS — et détruisait l'argument SoReach. Seuls les outils réellement SMS/RCS comptent ici.
-  const sms = cherche(/\bsms\b|\brcs\b|twilio|attentive|smsmode|esendex|smsfactor|octopush|vonage/i);
+  const sms = parCat('sms');
   const mkt = cherche(/brevo|sendinblue|mailjet|mailchimp|klaviyo|salesforce|emarsys|braze|actito|selligent|hubspot/i);
   const nomsMkt = technos ? technos.filter(t => /marketing|sms|rcs/i.test(String(t.cat))).map(t => t.nom).join(', ') : '';
   // ⚠️ UNE PLATEFORME D'ENVOI SMS NE LAISSE AUCUNE TRACE SUR UN SITE WEB. Les envois partent d'un
