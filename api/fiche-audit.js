@@ -119,8 +119,29 @@ export default async function handler(req, res) {
   if (!cle) return res.status(500).json({ erreur: 'SERPAPI_KEY absente', detail: 'À créer dans Vercel, puis redéployer.' });
 
   const b = req.body || {};
-  const placeId = String(b.place_id || '').trim();
+  let placeId = String(b.place_id || '').trim();
+  // Un lien Maps collé à la place d'un place_id : on essaie d'en extraire l'identifiant plutôt
+  // que de partir en erreur.
+  const dansUrl = placeId.match(/place_id[:=]([A-Za-z0-9_-]{20,})/);
+  if (dansUrl) placeId = dansUrl[1];
   if (!placeId) return res.status(400).json({ erreur: 'place_id requis' });
+  // ⚠️ VALIDATION AVANT L'APPEL. Un identifiant mal formé partait quand même chez SerpApi :
+  // le relevé était facturé sur les 230 du mois, puis on répondait « Fiche introuvable » (502).
+  // Cas réel du 21/08 : « 4Pp9ndnj4CS5gubM7 », qui est l'identifiant d'un lien court
+  // maps.app.goo.gl — pas un place_id (ceux-ci font 20 caractères et plus, souvent en ChIJ…).
+  if (!/^[A-Za-z0-9_-]{20,}$/.test(placeId)) {
+    return res.status(400).json({
+      erreur: 'Ce n\'est pas un place_id Google',
+      detail: /^https?:\/\//i.test(placeId)
+        ? `C'est une URL, et elle ne contient pas « place_id:… ». Les liens courts maps.app.goo.gl ne portent `
+          + `pas le place_id : il faut d'abord les ouvrir dans Google Maps pour obtenir l'adresse complète.`
+        : `« ${placeId.slice(0, 40)} » fait ${placeId.length} caractère(s). Un place_id en fait au moins 20 `
+          + `(souvent « ChIJ… »). L'identifiant d'un lien court maps.app.goo.gl n'en est pas un.`,
+      ou_le_trouver: 'Sur la fiche Sofy Scrap : ⭐ Fiches Google matchées → le lien de chaque fiche contient « ?q=place_id:… ». '
+        + 'Sinon, rattache la fiche avec « ➕ Ajouter une fiche par son lien Maps » : cette action résout le lien et enregistre le place_id.',
+      aucun_releve_consomme: true
+    });
+  }
 
   if (!b.forcer) {
     try {

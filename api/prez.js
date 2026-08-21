@@ -112,7 +112,11 @@ function mesures(e) {
         photos: g.audit.photos_total, photos_publiees_par_lenseigne: g.audit.photos_enseigne,
         description: !!g.audit.description_presente, horaires: !!g.audit.horaires_presents,
         position_locale: g.audit.position_locale, requete_testee: g.audit.requete,
-        trois_premiers: g.audit.concurrents || null
+        trois_premiers: g.audit.concurrents || null,
+        // Le bouton WhatsApp de la fiche Google : l'argument SoConnect le plus direct, et il est
+        // MESURÉ. Il ne remontait pas jusqu'ici — la mesure existait sans jamais servir le document.
+        bouton_whatsapp_actif: !!g.audit.whatsapp_sur_fiche,
+        whatsapp_ou: g.audit.whatsapp_champ || null
       } : null,
       reponses_aux_avis: g.reponses ? {
         avis_analyses: g.reponses.analyses,
@@ -162,6 +166,10 @@ function mesures(e) {
     }
     if (g.audit) {
       const a2 = g.audit;
+      if (a2.bouton_whatsapp_actif) {
+        d.push('Votre fiche Google propose WhatsApp : vos clients vous écrivent déjà, sur un mobile — '
+          + 'sans historique partagé, sans transfert possible, et sans trace de ce qui a été promis.');
+      }
       if (a2.requete && a2.position_locale == null) {
         d.push(`Sur « ${a2.requete} », votre fiche n'apparaît pas dans les résultats locaux : un client qui cherche le service, et non votre nom, ne vous voit pas.`);
       } else if (a2.position_locale && a2.position_locale > 3 && (a2.concurrents || []).length) {
@@ -394,8 +402,17 @@ function scorer(e) {
   const detail = (v, oui, non) => v === null ? 'site non analysé' : (v ? oui : non);
   // WhatsApp d'abord : c'est le canal que les clients utilisent spontanément, et son absence est
   // le manque le plus parlant sur un site grand public.
-  r.push(crit('Bouton WhatsApp', wa === null ? 'inconnu' : (wa ? 'ok' : 'faible'), wa ? 20 : 0, 20,
-    detail(wa, 'lien WhatsApp détecté sur le site', 'aucun bouton WhatsApp : le canal préféré de vos clients est absent')));
+  // DEUX sources depuis le 21/08 : le site (détection de technos) ET la fiche Google, où Google
+  // permet de rattacher un numéro WhatsApp. Le score ne change pas de sens — l'avoir vaut mieux
+  // que ne pas l'avoir — mais le libellé dit OÙ il est, parce que l'angle de vente n'est pas le
+  // même : sur la fiche, le canal existe déjà et c'est ce qu'il y a derrière qui manque.
+  const waFiche = !!(au && au.whatsapp_sur_fiche);
+  const waQqPart = waFiche || wa === true;
+  const waEtat = (wa === null && !waFiche) ? 'inconnu' : (waQqPart ? 'ok' : 'faible');
+  r.push(crit('Bouton WhatsApp', waEtat, waQqPart ? 20 : 0, 20,
+    waFiche && wa === true ? 'WhatsApp sur le site ET sur la fiche Google — le canal est en place, reste à savoir ce qu\'il y a derrière'
+    : waFiche ? 'WhatsApp actif sur la fiche Google : vos clients écrivent déjà, sur un mobile, sans historique ni suivi partagé'
+    : detail(wa, 'lien WhatsApp détecté sur le site', 'aucun bouton WhatsApp, ni sur le site ni sur la fiche Google : le canal préféré de vos clients est absent')));
   r.push(crit('Chat sur le site', chatWeb === null ? 'inconnu' : (chatWeb ? 'ok' : 'faible'), chatWeb ? 20 : 0, 20,
     detail(chatWeb, 'outil de chat détecté', 'aucune messagerie web détectée')));
   r.push(crit('Messenger ou réseaux sociaux', msgr === null ? 'inconnu' : (msgr ? 'ok' : 'moyen'), msgr ? 10 : 0, 10,
@@ -648,6 +665,12 @@ Remplis le cadre du document — tout sauf les duels, qui sont rédigés à part
 · preuve_titre / preuve_texte — pourquoi ce cas client éclaire le sien, secteur différent assumé
 · preuve_chiffres — 2 à 3 résultats de ce client, chacun avec sa source
 · citation — le verbatim du client · citation_meta — qui l'a dit et où c'est publié
+· Si audit_fiche.bouton_whatsapp_actif est vrai, c'est l'argument SoConnect le plus direct qui
+  existe et il doit servir : ce prospect envoie DÉJÀ ses clients sur WhatsApp depuis sa fiche
+  Google. Le problème n'est pas le canal, c'est ce qu'il y a derrière — un mobile personnel, sans
+  historique partagé, sans transfert entre collègues, sans reprise quand la personne est absente,
+  et rien de mesurable. Formule-le comme un constat, jamais comme un reproche : il a fait le bon
+  choix de canal. S'il est faux, N'EN PARLE PAS : l'absence de bouton ne prouve rien.
 · preuve_cas_id — le NUMÉRO [#n] du cas client dont tu t'es servi, tel qu'il figure dans la base
   ci-dessus. Il sert au serveur à poser le bon lien « Lire l'interview ». Mets 0 si tu n'as
   utilisé aucun cas client nommé. N'écris JAMAIS d'adresse web toi-même.
