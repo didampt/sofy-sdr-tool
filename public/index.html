@@ -1294,6 +1294,7 @@ Spot-Hit</textarea>
             <div id="imp-lk-res" style="display:none;margin-top:10px;font-size:12.5px;line-height:1.55;background:var(--paper);border-radius:8px;padding:10px 12px;max-height:230px;overflow-y:auto"></div>
             <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
               <button class="btn" style="background:var(--paper)" onclick="document.getElementById('import-likers-modal').style.display='none'">Fermer</button>
+              <button class="btn" style="background:var(--paper)" id="imp-lk-sim" onclick="importerLikers(true)" title="Qualifier les profils et voir profil par profil qui est gardé et pourquoi les autres sont écartés — sans créer aucun hot lead">🧪 Simuler le filtre</button>
               <button class="btn btn-primary" id="imp-lk-btn" onclick="importerLikers()">📥 Importer &amp; croiser</button>
             </div>
           </div>
@@ -2158,7 +2159,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v379';
+const VERSION='v380';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2613,16 +2614,37 @@ async function supprimerSource(url){
  await api('/api/sources-veille',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:decodeURIComponent(url),supprimer:true})});
  chargerSources();
 }
-async function importerLikers(){
+// `simuler` : on qualifie et on AFFICHE, sans rien créer. Régler un filtre à l'aveugle coûte des
+// leads perdus (les 22 likers du post BMW tous écartés, 21/08) — et une commande console n'est pas
+// un outil : ça se règle depuis l'écran où on colle les profils.
+async function importerLikers(simuler){
  const src=(document.getElementById('imp-lk-source')||{value:''}).value.trim();
  const txt=(document.getElementById('imp-lk-texte')||{value:''}).value.trim();
  if(!txt){toast('Colle d\'abord la liste des likers');return;}
- const btn=document.getElementById('imp-lk-btn');
- if(btn){btn.disabled=true;btn.textContent='⏳ Croisement…';}
+ const btn=document.getElementById(simuler?'imp-lk-sim':'imp-lk-btn');
+ const libelle=simuler?'🧪 Simuler le filtre':'📥 Importer & croiser';
+ if(btn){btn.disabled=true;btn.textContent=simuler?'⏳ Qualification…':'⏳ Croisement…';}
  try{
-  const r=await api('/api/veille',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:src||'likers importés',texte:txt,post_url:((document.getElementById('imp-lk-url')||{}).value||'').trim(),post_texte:((document.getElementById('imp-lk-post')||{}).value||'').trim(),forcer:!!(document.getElementById('imp-lk-forcer')||{}).checked})});
+  const r=await api('/api/veille',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:src||'likers importés',texte:txt,post_url:((document.getElementById('imp-lk-url')||{}).value||'').trim(),post_texte:((document.getElementById('imp-lk-post')||{}).value||'').trim(),forcer:!!(document.getElementById('imp-lk-forcer')||{}).checked,simuler:!!simuler})});
   const d=await r.json();
   if(d.erreur){toast('Import : '+d.erreur);}
+  else if(d.simulation){
+   // Le tableau profil par profil : c'est lui qui permet de dire « ce filtre se trompe ICI ».
+   const esc=s=>String(s||'').replace(/</g,'&lt;');
+   const res=document.getElementById('imp-lk-res');
+   const g=(d.profils||[]).filter(x=>x.garde), x0=(d.profils||[]).filter(x=>!x.garde);
+   let h='<b>🧪 Simulation — rien n\'a été créé.</b> '+d.analyses+' profil(s) qualifié(s) · '
+    +'<b style="color:#0F7B4F">'+d.gardes+' gardé(s)</b> · <b style="color:#B91C1C">'+d.ecartes+' écarté(s)</b>'
+    +(d.non_analyses?' · ⚠️ '+d.non_analyses+' non analysé(s)':'')
+    +'<span style="font-size:11px;color:var(--ink-soft)"> · filtre : '+esc(d.modele)+'</span>';
+   if(d.gardes===0&&d.analyses>=5)h+='<div style="margin-top:8px;background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;padding:8px 10px;color:#92400E">⚠️ <b>Aucun profil gardé.</b> C\'est rare et généralement anormal — regarde les raisons ci-dessous et signale celles qui te semblent fausses.</div>';
+   if(g.length)h+='<div style="margin-top:8px">✅ <b>Gardés :</b><br>'+g.map(x=>'· <b>'+esc(x.nom)+'</b>'+(x.societe?' <i>('+esc(x.societe)+')</i>':'')+(x.fonction?' — <span style="color:var(--ink-soft)">'+esc(x.fonction)+'</span>':'')).join('<br>')+'</div>';
+   if(x0.length)h+='<div style="margin-top:8px">🚫 <b>Écartés :</b><br>'+x0.map(x=>'· '+esc(x.nom)+' — <i style="color:#B91C1C">'+esc(x.raison)+'</i>'+(x.fonction?' <span style="color:var(--ink-soft)">· '+esc(x.fonction)+'</span>':'')).join('<br>')+'</div>';
+   if(d.accroche)h+='<div style="margin-top:8px;color:var(--ink-soft)">🗣 <b>Accroche proposée :</b> « '+esc(d.accroche)+' »</div>';
+   h+='<div style="margin-top:8px;font-size:11.5px;color:var(--ink-soft)">'+esc(d.note||'')+' Si un profil écarté te paraît être une vraie cible, dis-le : c\'est le filtre qu\'on corrige, pas le post.</div>';
+   if(res){res.innerHTML=h;res.style.display='block';}
+   toast('🧪 '+d.gardes+' gardé(s) / '+d.analyses+' — rien créé');
+  }
   else{
    toast(`📥 ${d.importes} profil(s) lus · ${d.nouveaux} analysé(s) · 🔥 ${d.matches} match(s) · ${d.hotleads||0} hot lead(s)`);
    const z=document.getElementById('imp-lk-texte');if(z)z.value='';
@@ -2664,7 +2686,7 @@ async function importerLikers(){
    }
   }
  }catch(e){toast('Erreur réseau : '+e.message);}
- finally{if(btn){btn.disabled=false;btn.textContent='📥 Importer & croiser';}}
+ finally{if(btn){btn.disabled=false;btn.textContent=libelle;}}
 }
 async function ouvrirSignaux(btn){
  // Active le bouton Signaux dans le menu
