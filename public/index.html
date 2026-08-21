@@ -2159,7 +2159,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v381';
+const VERSION='v382';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -5399,8 +5399,10 @@ function gmbHtml(g,i){
  // Tolérant : les fiches issues d'une « Liste Google Maps » n'ont ni pire_fiche ni avis_negatif
  const noteTxt=(g.note_moyenne!=null)?String(g.note_moyenne).replace('.',','):'—';
  const nbF=g.nb_fiches||1;
- return `
-  <h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);margin:16px 0 8px">Google Business — ${noteTxt} ★ (${(g.total_avis||0).toLocaleString('fr-FR')} avis · ${nbF} fiche${nbF>1?'s':''})${ecart>0?` · <span style="color:var(--danger)">${String(ecart).replace('.',',')} pt sous les concurrents</span>`:''}</h3>
+ // Le bloc le plus long de la fiche (jauges, fiches du réseau, avis négatif intégral) : replié,
+ // il garde sa note et son écart aux concurrents — c'est tout ce qu'il faut pour décider de l'ouvrir.
+ const titreGmb=`Google Business — ${noteTxt} ★ (${(g.total_avis||0).toLocaleString('fr-FR')} avis · ${nbF} fiche${nbF>1?'s':''})${ecart>0?` · <span style="color:var(--danger)">${String(ecart).replace('.',',')} pt sous les concurrents</span>`:''}`;
+ const corpsGmb=`
   ${g.telephone?`<div class="contact-line" style="margin-bottom:8px">☎️ Standard : <b>${g.telephone}</b>${telBtns(g.telephone,i,'Standard')} <span class="badge b-gmb">source GMB</span></div>`:''}
   ${(g.pire_fiche||comp)?`<div class="gmb-vs">
    ${g.pire_fiche?`<div class="gmb-cell gmb-bad"><b>${String(g.pire_fiche.note).replace('.',',')} ★ (${g.pire_fiche.nb_avis} avis)</b>Pire fiche : <a href="${g.pire_fiche.lien}" target="_blank">${g.pire_fiche.nom}</a></div>`:''}
@@ -5408,6 +5410,13 @@ function gmbHtml(g,i){
   </div>`:''}
   ${g.avis_negatif?`<h3 style="font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);margin:14px 0 8px">Avis négatif récent (${g.avis_negatif.note}★ · ${g.avis_negatif.date})</h3>
   <div class="review-box">« ${g.avis_negatif.texte} »<span class="who">Avis Google${g.pire_fiche?' · '+g.pire_fiche.nom:''}${g.avis_negatif.lien?` · <a href="${g.avis_negatif.lien}" target="_blank">Voir tous les avis ↗</a>`:''}</span></div>`:''}`;
+ // Replié, on garde l'essentiel : l'écart aux concurrents et l'existence d'un avis négatif à citer.
+ const resumeGmb=[
+  ecart>0?('⚠️ '+String(ecart).replace('.',',')+' pt sous les concurrents ('+String(g.concurrents.note_moyenne).replace('.',',')+'★)'):null,
+  g.avis_negatif?('un avis '+g.avis_negatif.note+'★ à citer'+(g.avis_negatif.date?' ('+g.avis_negatif.date+')':'')):null,
+  nbF>1?(nbF+' fiches dans le réseau'):null
+ ].filter(Boolean).join(' · ');
+ return bloc('gmb',titreGmb,corpsGmb,{resume:resumeGmb||'Déplier pour la fiche, les jauges et l\'avis négatif.'});
 }
 
 function contactHtml(c,i,j){
