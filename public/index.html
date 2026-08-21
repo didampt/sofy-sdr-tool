@@ -2159,7 +2159,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v396';
+const VERSION='v397';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -7527,6 +7527,17 @@ async function completerMesures(i){
  // ⚠️ Sauvegarde ATTENDUE, pas différée. /api/prez relit la fiche EN BASE : avec un persister()
  // de 400 ms non attendu, la rédaction partait sans les relevés qu'on venait de payer — c'est
  // pour ça que les planches « position locale » et « aperçu IA » manquaient le 20/08.
+ // 5. Les outils de son site — GRATUIT (un seul fetch, aucun appel facturé).
+ // Ajouté ici le 21/08 : c'était la seule mesure manquante après un pré-audit, et elle déclenchait
+ // ensuite un dialogue « cette fiche n'est pas complètement mesurée » avant l'audit client. Une
+ // mesure gratuite qui alimente deux axes du scoring sur trois n'a aucune raison d'attendre.
+ if(!e.technos_fait&&!e.technos_tente&&domaineDe(e)){
+  try{
+   await detecterTechnos(i);
+   if(e.technos_fait)faits.push('outils du site');
+   else if(e.technos_echec)erreurs.push('outils du site : '+e.technos_echec);
+  }catch(err){erreurs.push('outils du site : '+String(err.message||err).slice(0,120));}
+ }
  if(faits.length){ try{ await persisterMaintenant(); }catch(_){ erreurs.push('sauvegarde des relevés : échec — la rédaction risque de les ignorer'); } rerender(i); }
  return {faits,erreurs,plafondAtteint,alerteBudget};
 }
@@ -10290,7 +10301,8 @@ async function preAudit(i){
    +'· le taux de réponse à ses avis, son délai, et son rythme de collecte\n'
    +'· sa position quand un client cherche son métier, et les 3 concurrents devant lui\n'
    +'· les concurrents qui PAIENT pour passer devant\n'
-   +'· si l\'IA de Google le cite, et s\'il existe sur Apple Plans\n\n'
+   +'· si l\'IA de Google le cite, et s\'il existe sur Apple Plans\n'
+   +'· les outils de son site (avis, chat, SMS) — gratuit\n\n'
    +'Puis la synthèse d\'appel et l\'email seront repris avec ces mesures.\n\n'
    +(secondaires.length
      ? 'Coût : ≈'+(8+4*secondaires.length)+' relevés sur les 230 du mois — 8 pour '
@@ -10369,9 +10381,15 @@ async function ckPreAudit(rid){
 }
 
 // 🎨 Audit client depuis « Ma journée ». La génération travaille sur la fiche chargée : on
-// ouvre donc la liste, on retrouve la fiche, puis on lance le même chemin que depuis la fiche.
-// ⚠️ Une analyse sans mesures est un document générique qui porte le nom de Sofy : on vérifie
-// AVANT de dépenser quoi que ce soit que la fiche est scorée et que sa fiche Google est connue.
+// ouvre donc la liste, on retrouve la fiche, puis on lance EXACTEMENT le même chemin que depuis
+// la fiche — genererPrez().
+//
+// ⚠️ CE CHEMIN AVAIT SON PROPRE CONTRÔLE, ET IL DISAIT LE CONTRAIRE DE L'AUTRE (retour Didier 21/08).
+// Il listait ce qui manquait puis renvoyait le SDR lancer « ↻ Analyser » et « ↻ Re-scorer » à la
+// main sur la fiche — précisément l'aller-retour qu'on a supprimé le 19/08. Et s'il cliquait
+// « Générer quand même », genererPrez() ouvrait aussitôt un SECOND dialogue proposant, lui, de tout
+// lancer sans rien faire d'autre. Deux fenêtres pour la même chose, avec des conseils opposés.
+// Un seul endroit décide : genererPrez(), qui vérifie ce qui manque ET le fait.
 async function ckAnalyse(rid){
  const it=CK_ITEMS[rid]||{};
  if(!it.liste_id||!it.cle){toast('Fiche non localisable — ouvre la fiche complète');return;}
@@ -10381,19 +10399,6 @@ async function ckAnalyse(rid){
  catch(err){ toast('Liste illisible : '+err.message); return; }
  const i=REAL.findIndex(e=>cleSignal(e)===it.cle);
  if(i<0){toast('Fiche introuvable dans sa liste');return;}
- const e=REAL[i];
- // Ce qui fait la différence entre une analyse personnalisée et une plaquette : le relevé.
- const manque=[];
- if(!(e.gmb&&e.gmb.trouve))manque.push('la fiche Google (note, avis, établissements) — c\'est la matière de la moitié du document');
- if(!e.score||!e.score.scores)manque.push('le scoring des 3 axes — sans lui, pas de bilan chiffré ni de choix de module');
- if(!e.technos_fait&&!e.technos_tente)manque.push('les outils détectés sur son site (avis, chat, SMS)');
- if(manque.length){
-  const ok=await confirmSofy('Cette fiche n\'est pas complètement mesurée',
-   'Il manque :\n· '+manque.join('\n· ')+
-   '\n\nLance « ↻ Analyser » puis « ↻ Re-scorer » sur la fiche avant de générer : c\'est ce relevé qui rend le document personnalisé. Sans lui, tu paieras 0,30 € pour une plaquette.',
-   'Générer quand même');
-  if(!ok)return;
- }
  await genererPrez(i);
  // La file reflète l'état réel : l'audit généré, et les relevés s'ils ont été faits au passage.
  // chargerCockpit() et non rendreCockpit() : le second ne fait que redessiner la mémoire.
