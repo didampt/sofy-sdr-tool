@@ -112,7 +112,9 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
       <div class="dl-p reveal">
         <div class="dl-lab">Ce que nous avons mesuré</div>
         <div class="dl-c">${md(p.probleme.constat)}</div>
-        ${p.probleme.cout ? `<div class="dl-cout"><span>Ce que ça coûte</span>${md(p.probleme.cout)}</div>` : ''}
+        ${/* « Ce que ça coûte » adressé à un client se lit comme un reproche sur ce qu'il a acheté.
+              Sur un document d'expansion, le même champ dit ce qui reste à gagner. */''}
+        ${p.probleme.cout ? `<div class="dl-cout"><span>${(mes && mes.mode === 'expansion') ? 'Ce qui reste à gagner' : 'Ce que ça coûte'}</span>${md(p.probleme.cout)}</div>` : ''}
       </div>
       ${BUDY}
       <div class="dl-s reveal" style="--d:180ms">

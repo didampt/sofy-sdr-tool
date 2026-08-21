@@ -242,6 +242,25 @@ function mesures(e) {
     if (!m.technos.length) m.technos = 'aucune balise d\'outil trouvée sur les pages lues du site — '
       + 'ne pas en conclure que le prospect n\'a aucun outil : beaucoup se pilotent hors du site';
   }
+  /* ── LE MODE DU DOCUMENT (décision Didier, 21/08 : option b) ──────────────────────────────────
+     Un audit est un document de PROSPECTION : il part de manques et propose des briques. Envoyé à
+     un client, il ne tombe pas seulement à plat — il affirme des manques qui n'existent pas, et le
+     client le voit en trois secondes sur sa propre plateforme.
+     Pour un client, le document garde exactement les MÊMES MESURES mais change de nature : il part
+     de ce qui est en place et pointe ce qui ne l'est pas encore. C'est le document qu'un AE veut,
+     et le travail de relevé est déjà fait.
+     Deux sources, la seconde faisant foi : un outil Sofy détecté sur le site, et le statut client
+     du CRM (le seul qui voie Soview et SoReach, invisibles depuis un site). */
+  const outilsSofy = (e.technos || []).filter(t => t && t.nous).map(t => t.nom);
+  m.mode = (outilsSofy.length || e.client_sofy) ? 'expansion' : 'prospection';
+  if (m.mode === 'expansion') m.expansion = {
+    outils_detectes: outilsSofy.length ? outilsSofy : null,
+    statut_crm: e.client_sofy ? 'client confirmé dans le CRM' : null,
+    consigne: 'DOCUMENT D\'EXPANSION, PAS DE PROSPECTION. Ce prospect est déjà client. Chaque planche '
+      + 'part de ce qui EST EN PLACE et pointe ce qui ne l\'est pas encore, ou ce qui est en place et '
+      + 'peu exploité. Ne présente jamais une brique qu\'il utilise comme quelque chose « à mettre en '
+      + 'place », et n\'affirme JAMAIS un manque qui découlerait de l\'absence d\'un outil qu\'il a.'
+  };
   const sc = scorer(e); if (sc) m.scoring = sc;
   if (e.signal_gmb) m.alerte_note = { avant: e.signal_gmb.avant, apres: e.signal_gmb.apres, date: e.signal_gmb.date };
 
@@ -280,9 +299,51 @@ function mesures(e) {
       const a2 = g.audit;
       // Vaut aussi pour un bouton constaté par le commercial : c'est le même fait, vérifiable par
       // le prospect sur sa propre fiche.
-      if (a2.bouton_whatsapp_actif) {
-        d.push('Votre fiche Google propose WhatsApp : vos clients vous écrivent déjà, sur un mobile — '
-          + 'sans historique partagé, sans transfert possible, et sans trace de ce qui a été promis.');
+      /* ⚠️ CETTE PHRASE AFFIRMAIT CE QU'AUCUN RELEVÉ NE PEUT VOIR (21/08).
+         Elle disait « sans historique partagé, sans transfert possible, et sans trace de ce qui a
+         été promis ». Or ce qui se trouve DERRIÈRE un canal — un outil, un process, une personne —
+         n'est pas observable de l'extérieur. Elle n'était inoffensive que parce qu'on n'avait
+         jamais audité quelqu'un d'équipé : elle est souvent vraie, donc elle passait.
+         Sur un client SoConnect, elle est exactement fausse : historique partagé, transfert entre
+         collègues et reprise en cas d'absence sont précisément ce qui est en place.
+         Et le dégât ne s'arrêtait pas là : cette phrase part dans les FAITS MESURÉS envoyés au
+         modèle, qui l'a reprise mot pour mot dans le champ « ce que ça coûte » de la planche 3.
+         Notre propre affirmation lui a appris l'erreur — nous lui envoyions deux informations
+         contradictoires (« il a SoConnect » et « rien n'est branché derrière »), il a retenu la
+         plus concrète.
+         Désormais : le FAIT mesuré, puis une QUESTION sur ce qu'on ne sait pas. Et quand un outil
+         Sofy est détecté, la question change de nature — elle devient un levier, pas un manque. */
+      const outilsNous = ((e.technos || []).filter(t => t && t.nous).map(t => t.nom));
+      const boiteEnPlace = outilsNous.length > 0 || !!e.client_sofy;
+      // ⚠️ `a2` est l'audit BRUT ; `bouton_whatsapp_actif` est un champ CALCULÉ qui n'existe que sur
+      // m.google.audit_fiche. `a2.bouton_whatsapp_actif` valait donc toujours undefined : cette
+      // phrase n'est JAMAIS sortie depuis qu'elle a été écrite. Elle était fausse ET morte — et
+      // c'est l'instruction du prompt, plus bas, qui produisait la phrase que Didier a lue.
+      // On recalcule ici la même chose qu'à la ligne 142, à partir des trois sources connues.
+      const waActif = !!(a2.whatsapp_sur_fiche
+        || (g.ia_visibilite && g.ia_visibilite.whatsapp_google)
+        || (g.whatsapp_declare && g.whatsapp_declare.actif));
+      if (waActif) {
+        /* ⚠️ TROIS ÉTATS, PAS DEUX. J'ai d'abord écrit « vous disposez déjà d'une boîte de réception
+           unifiée » dès que le prospect était client — or HubSpot dit « client », PAS « a
+           SoConnect ». Un client Soview seul n'a aucune boîte unifiée, et je m'apprêtais à le lui
+           affirmer : exactement l'erreur qu'on passe la session à éliminer, commise en la corrigeant.
+           · boîte unifiée CONSTATÉE (outil de chat Sofy chargé sur le site) → on peut le dire ;
+           · client, module inconnu → on dit qu'il est client, et on demande ;
+           · prospect → le canal est mesuré, ce qu'il y a derrière se demande. */
+        const boiteVue = (e.technos || []).some(t => t && t.nous && t.cat === 'chat');
+        const nomsBoite = (e.technos || []).filter(t => t && t.nous && t.cat === 'chat').map(t => t.nom);
+        d.push(boiteVue
+          ? 'Votre fiche Google propose WhatsApp, et ' + nomsBoite.join(', ') + ' est en place sur '
+            + 'votre site. Reste à vérifier ensemble que WhatsApp arrive bien dans cette même boîte : '
+            + 'c\'est le canal le plus utilisé, et le premier gain à aller chercher s\'il n\'y est pas encore.'
+          : boiteEnPlace
+          ? 'Votre fiche Google propose WhatsApp, et vous êtes déjà équipé chez nous. À vérifier '
+            + 'ensemble : est-ce que ce canal remonte dans une boîte de réception partagée, ou '
+            + 'aboutit-il encore sur un mobile ?'
+          : 'Votre fiche Google propose WhatsApp : vos clients vous écrivent déjà, sur un mobile. '
+            + 'Ce qui se passe derrière — historique partagé, reprise par un collègue, trace de ce qui '
+            + 'a été promis — n\'est pas visible de l\'extérieur : c\'est la première chose à regarder ensemble.');
       }
       if (requeteValable(a2.requete, e.ville || a2.ville) && a2.position_locale == null) {
         d.push(`Sur « ${a2.requete} », votre fiche n'apparaît pas dans les résultats locaux : un client qui cherche le service, et non votre nom, ne vous voit pas.`);
@@ -602,9 +663,11 @@ function scorer(e) {
   const waFiche = waRelev || !!waDecl;
   const waQqPart = waFiche || wa === true;
   r.push(crit('Bouton WhatsApp', waQqPart ? 'ok' : 'inconnu', waQqPart ? 20 : 0, waQqPart ? 20 : 0,
+    // Même correction que dans les défauts : le canal se mesure, ce qu'il y a derrière ne se mesure
+    // pas. « sans historique ni suivi partagé » était une supposition, fausse chez un client équipé.
     waFiche && wa === true ? 'WhatsApp sur le site ET sur la fiche Google — le canal est en place, reste à savoir ce qu\'il y a derrière'
-    : waRelev ? 'WhatsApp actif sur la fiche Google : vos clients écrivent déjà, sur un mobile, sans historique ni suivi partagé'
-    : waDecl ? 'WhatsApp actif sur votre fiche Google — vos clients écrivent déjà, sur un mobile, sans historique partagé ni suivi. Constaté sur la fiche, pas relevé automatiquement'
+    : waRelev ? 'WhatsApp actif sur la fiche Google : vos clients y écrivent déjà, depuis un mobile'
+    : waDecl ? 'WhatsApp actif sur votre fiche Google : vos clients y écrivent déjà, depuis un mobile. Constaté sur la fiche, pas relevé automatiquement'
     : wa === true ? 'lien WhatsApp détecté sur le site'
     : 'aucun lien WhatsApp trouvé sur le site ; sur la fiche Google, le bouton n\'est pas lisible depuis l\'extérieur — à ouvrir ensemble'));
   // Le libellé NOMME l'outil, et dit s'il est de chez nous : « outil de chat détecté » ne servait à
@@ -744,6 +807,7 @@ ${visuels.slice(0, 25).map(v => `#${v.id} [${v.type}${v.secteur ? ' · ' + v.sec
 ` : ''}
 ════ RÈGLES ABSOLUES ════
 1. **Aucun chiffre inventé.** Tu ne peux écrire un chiffre que s'il vient (a) des mesures du prospect ci-dessus, ou (b) d'un bloc de la base avec sa source. Interdiction formelle d'inventer une statistique de marché, un pourcentage de gain ou une promesse de résultat. Ce document sort de l'entreprise et engage la parole de Sofy.
+1 ter. **LE CHAMP « ce que ça coûte » NE PEUT AFFIRMER QUE CE QUE LA MESURE ÉTABLIT.** C'est par ce champ que l'erreur est passée le 21/08 : sur un client qui a une boîte de réception unifiée, le document a écrit « une demande arrivée par WhatsApp reste sur un mobile : pas d'historique partagé, pas de reprise par un collègue, pas de suivi ». Or ce qui se trouve DERRIÈRE un canal — un outil, un process, une personne — n'est jamais visible depuis l'extérieur. Un coût qui suppose l'absence d'un outil est interdit ; formule-le comme une question à regarder ensemble, ou n'écris rien. Un coût qui découle directement de la mesure (« 0 réponse sur 28 avis » → « chaque client mécontent reste seul à s'exprimer ») est en revanche légitime.
 1 bis. **UNE ABSENCE DE MESURE N'EST PAS UNE ABSENCE.** C'est la règle la plus importante de ce document. Un champ absent, nul, vide, ou portant la mention « NON MESURABLE » ne t'autorise **jamais** à écrire que la chose n'existe pas. Tu ne peux affirmer un manque que si une mesure le CONSTATE explicitement. Le 21/08, ce document a annoncé à un prospect « aucun site web déclaré », « aucune description », « aucune photo publiée par vous » et « aucun bouton WhatsApp » — les quatre étaient faux, et le prospect a pu le vérifier en trois secondes sur sa propre fiche. Une seule affirmation fausse détruit la crédibilité des vingt qui sont justes. En cas de doute : n'en parle pas du tout. Un document plus court est infiniment préférable à un document contestable.
 2. **Ne promets aucun résultat.** Tu peux montrer ce qu'un autre client a obtenu (cas clients, avec la source) ; tu ne peux pas affirmer que ce prospect obtiendra la même chose. Formule la trajectoire comme un objectif de travail, jamais comme un engagement.
 3. **Cite un cas client dans TOUS les cas.** Si aucun n'est du même secteur, dis-le en une phrase et explique pourquoi le levier se transpose quand même. N'écris JAMAIS qu'on n'a rien à montrer : ce serait la pire phrase du document.
@@ -751,11 +815,30 @@ ${visuels.slice(0, 25).map(v => `#${v.id} [${v.type}${v.secteur ? ' · ' + v.sec
 5. Français, deuxième personne du pluriel. Direct, concret, sans flatterie, sans jargon, sans point d'exclamation.
 ${mes.groupe ? `6. **Ce prospect exploite ${mes.groupe.nb_enseignes} enseignes** (${mes.groupe.enseignes.map(x => x.enseigne).join(', ')}), ${mes.groupe.total_avis_du_groupe} avis au total. Parle du RÉSEAU, jamais d'un seul point de vente : l'affaire se décide au niveau du groupe. ${mes.groupe.enseignes_sans_aucune_reponse ? `${mes.groupe.enseignes_sans_aucune_reponse} de ces enseignes n'ont AUCUNE réponse publique à leurs avis — nomme-les, c'est mesuré.` : ''} N'invente aucun chiffre par enseigne : n'utilise que ceux de groupe.enseignes, et une enseigne dont taux_de_reponse_pct est null n'a PAS été mesurée — n'en dis rien.` : ''}
 
-════ CE QUE CE DOCUMENT DOIT FAIRE ════
+${mes.mode === 'expansion' ? `════ ⚠️ CE PROSPECT EST DÉJÀ CLIENT — DOCUMENT D'EXPANSION ════
+${mes.expansion.outils_detectes ? `Outils Sofy détectés sur son site : ${mes.expansion.outils_detectes.join(', ')}.` : ''}${mes.expansion.statut_crm ? ` Statut : ${mes.expansion.statut_crm}.` : ''}
+
+Ce n'est PAS un document de prospection. Il sera lu par quelqu'un qui a déjà signé, qui connaît le
+produit, et qui vérifiera chaque affirmation sur sa propre plateforme en trois secondes.
+
+Ce qui change, concrètement :
+· Chaque planche part de CE QUI EST EN PLACE, puis pointe ce qui ne l'est pas encore, ou ce qui est
+  en place et peu exploité. Jamais un manque, toujours un levier.
+· N'écris JAMAIS qu'il faut « mettre en place » une brique qu'il utilise. L'angle est : la brancher
+  sur un canal de plus, l'étendre à un établissement de plus, en exploiter une fonction qu'il n'a
+  pas activée.
+· N'affirme JAMAIS un manque qui découlerait de l'absence d'un outil qu'il possède. Exemple exact
+  de l'erreur à ne pas refaire : écrire « pas d'historique partagé, pas de reprise par un collègue »
+  à un client dont la boîte unifiée fait précisément cela.
+· Le ton n'est pas celui d'un vendeur qui découvre, c'est celui d'un partenaire qui relit le
+  dispositif avec lui. Les mesures restent les mêmes, l'interprétation change.
+· Quand tu ne sais pas si une brique est branchée sur un canal, DEMANDE-LE (« à vérifier ensemble »)
+  au lieu de supposer qu'elle ne l'est pas.
+` : `════ CE QUE CE DOCUMENT DOIT FAIRE ════
 Un directeur marketing va le lire. Il connaît déjà ses problèmes : lui répéter sa note Google ne
 vend rien. Ce qui le décide, c'est de comprendre **par quel mécanisme** Sofy change ce chiffre, et
 de voir **quelqu'un qui l'a déjà fait**. Le cœur du document, ce sont les "duels" : un problème
-mesuré chez lui, en face la brique Sofy qui y répond, et le résultat qu'il peut en attendre.
+mesuré chez lui, en face la brique Sofy qui y répond, et le résultat qu'il peut en attendre.`}
 
 TROIS INTERDITS — ils ont ruiné les trois versions précédentes de ce document :
 · Ne JAMAIS nommer un module sans dire comment il produit le résultat. « SoConnect — messagerie
@@ -920,12 +1003,17 @@ Remplis le cadre du document — tout sauf les duels, qui sont rédigés à part
 · preuve_titre / preuve_texte — pourquoi ce cas client éclaire le sien, secteur différent assumé
 · preuve_chiffres — 2 à 3 résultats de ce client, chacun avec sa source
 · citation — le verbatim du client · citation_meta — qui l'a dit et où c'est publié
-· Si audit_fiche.bouton_whatsapp_actif est vrai, c'est l'argument SoConnect le plus direct qui
-  existe et il doit servir : ce prospect envoie DÉJÀ ses clients sur WhatsApp depuis sa fiche
-  Google. Le problème n'est pas le canal, c'est ce qu'il y a derrière — un mobile personnel, sans
-  historique partagé, sans transfert entre collègues, sans reprise quand la personne est absente,
-  et rien de mesurable. Formule-le comme un constat, jamais comme un reproche : il a fait le bon
-  choix de canal. S'il est faux, N'EN PARLE PAS : l'absence de bouton ne prouve rien.
+· Si audit_fiche.bouton_whatsapp_actif est vrai, c'est un argument SoConnect direct et il doit
+  servir : ce prospect envoie DÉJÀ ses clients sur WhatsApp depuis sa fiche Google. Le canal est le
+  bon — dis-le, ce n'est pas un reproche.
+  ⚠️ MAIS N'ÉCRIS RIEN SUR CE QU'IL Y A DERRIÈRE. Cette instruction dictait mot pour mot « un mobile
+  personnel, sans historique partagé, sans transfert entre collègues, sans reprise quand la personne
+  est absente ». Aucun de nos relevés ne voit ce qui se trouve derrière un canal, et le 21/08 ce
+  document a servi cette phrase à un client dont la boîte unifiée fait exactement ces trois choses.
+  Ce qu'on ne mesure pas se DEMANDE : « ce qui arrive derrière — historique partagé, reprise par un
+  collègue — est à regarder ensemble ». Et si mode vaut « expansion », il A déjà cette boîte :
+  l'angle devient « WhatsApp y arrive-t-il ? », jamais « il n'y a rien derrière ».
+  S'il est faux, N'EN PARLE PAS : l'absence de bouton ne prouve rien.
 · ⚠️ CHOIX DU CAS CLIENT — le secteur passe avant tout le reste. Les blocs portent leur secteur
   entre crochets. Le prospect est du secteur indiqué dans « activite » des mesures : prends le cas
   client du MÊME métier s'il existe, même si un autre cas a de plus beaux chiffres. Un garagiste
@@ -1148,7 +1236,9 @@ function assembler(cadre, duelsBruts, mes, blocs) {
   const duels = (duelsBruts || []).filter(d => d && plein(d.probleme) && plein(d.solution));
   duels.forEach((d, k) => {
     pl.push({
-      role: 'duel', eyebrow: `PROBLÈME ${k + 1} SUR ${duels.length}`,
+      // « PROBLÈME 3 SUR 4 » au-dessus d'une planche adressée à un client se lit comme un reproche
+      // sur ce qu'il a justement acheté. Le mot change, la structure reste.
+      role: 'duel', eyebrow: (mes.mode === 'expansion' ? 'LEVIER ' : 'PROBLÈME ') + `${k + 1} SUR ${duels.length}`,
       titre: plein(d.titre) ? d.titre : d.probleme,
       probleme: { constat: d.probleme, cout: plein(d.cout) ? d.cout : null },
       solution: {
