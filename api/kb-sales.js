@@ -315,11 +315,28 @@ export const lienSain = (u) => {
   catch (_) { return null; }
 };
 
-export async function blocsUtilisables(module) {
+// `secteur` : celui du prospect. Il ne filtre pas, il TRIE — les blocs de son métier remontent.
+export async function blocsUtilisables(module, secteur) {
   await ensureKb();
+  // ⚠️ LES CAS CLIENTS ÉCHAPPENT AU FILTRE PAR MODULE, et c'est le correctif du 21/08.
+  // NORAUTO (pièces auto) recevait le cas du Groupe Kiosque (réseau télécom) alors que Marimax
+  // (distributeur de pièces auto) est en base. La consigne de prompt n'y pouvait rien : le bloc
+  // Marimax est rangé en module « soconnect », l'audit était en « soview », donc le filtre
+  // l'écartait AVANT que le modèle le voie. On ne peut pas demander de choisir ce qu'on ne montre
+  // pas. Les cas clients sont peu nombreux et racontent tous les trois modules : ils partent tous.
   const rows = await sql`SELECT id, type, module, titre, contenu, source, secteur, territoire, verifie_le, lien
-    FROM kb_sales WHERE actif AND statut = 'valide' AND (module = ${module || 'tous'} OR module = 'tous')
+    FROM kb_sales WHERE actif AND statut = 'valide'
+      AND (type = 'cas_client' OR module = ${module || 'tous'} OR module = 'tous')
       AND verifie_le > CURRENT_DATE - (${PEREMPTION_MOIS} || ' months')::interval
     ORDER BY type, id`;
-  return rows;
+  // Tri par proximité de secteur : le cas du même métier doit être le PREMIER que le modèle lit.
+  const mots = String(secteur || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .split(/[^a-z0-9]+/).filter(m => m.length > 3);
+  if (!mots.length) return rows;
+  const proche = b => {
+    const t = (String(b.secteur || '') + ' ' + String(b.titre || '')).toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return mots.filter(m => t.includes(m)).length;
+  };
+  return rows.slice().sort((a, b) => (a.type === b.type ? proche(b) - proche(a) : 0));
 }

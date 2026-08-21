@@ -1343,12 +1343,17 @@ export default async function handler(req, res) {
     // Base vide au premier usage : on l'amorce nous-mêmes avec le contenu du deck Sofy.
     // Renvoyer « lance POST /api/kb-sales { seed: true } » à un SDR n'était pas une erreur
     // d'affichage, c'était une erreur de conception : l'app sait faire, elle le fait.
-    let blocs = await blocsUtilisables(module);
+    // Le secteur du prospect sert à TRIER les blocs : le cas client de son métier doit être le
+    // premier que le modèle lit. La catégorie Google est le secteur le plus fiable dont on dispose.
+    const secteurProspect = mes.activite
+      || (mes.google && mes.google.audit_fiche && mes.google.audit_fiche.categorie_google)
+      || mes.secteur_rb2b || '';
+    let blocs = await blocsUtilisables(module, secteurProspect);
     let amorcage = null;
     if (!blocs.length) {
       try {
         amorcage = await amorcer(user.nom);
-        blocs = await blocsUtilisables(module);
+        blocs = await blocsUtilisables(module, secteurProspect);
       } catch (e) {
         return res.status(500).json({ erreur: "Base de connaissance vide et l'amorçage a échoué",
           detail: String((e && e.message) || e).slice(0, 200) });
