@@ -181,13 +181,24 @@ export default async function handler(req, res) {
   // exemple « SOFY France ») pour confirmer le champ, au lieu de le supposer.
   if (b.champs && ['admin', 'superadmin'].includes(user.role)) {
     const wa0 = whatsappDe(fiche, '', 0);
+    // Le relevé de clés du 21/08 sur la fiche Sofy montre qu'il n'y a NI champ « links », NI champ
+    // « whatsapp ». Restent trois conteneurs où Google range ce qu'il ne modélise pas :
+    // extensions, service_options et surtout unsupported_extensions — c'est là que SerpApi dépose
+    // ce qu'il ne sait pas nommer. On les rend en entier : une seule exécution doit trancher.
     return res.status(200).json({
       ok: true, diagnostic: true, place_id: placeId, nom: fiche.title || null,
       cles_racine: Object.keys(fiche).sort(),
-      liens: fiche.links || null,
       whatsapp_trouve: wa0 || null,
+      // Les conteneurs candidats, en entier — c'est leur CONTENU qui tranche, pas leur présence.
       extensions: fiche.extensions || null,
-      note: 'Aucune écriture, aucun cache. Le champ de whatsapp_trouve dit où l\'information se trouve réellement.'
+      service_options: fiche.service_options || null,
+      unsupported_extensions: fiche.unsupported_extensions || null,
+      posts: Array.isArray(fiche.posts) ? fiche.posts.slice(0, 2) : (fiche.posts || null),
+      liens: fiche.links || null,
+      website: fiche.website || null,
+      phone: fiche.phone || null,
+      note: 'Aucune écriture, aucun cache. Si whatsapp_trouve est null ET que la fiche interrogée '
+        + 'PORTE le bouton, alors SerpApi ne l\'expose pas : la détection par cette voie est impossible.'
     });
   }
 

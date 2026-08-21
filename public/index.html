@@ -2159,7 +2159,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v386';
+const VERSION='v387';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4764,7 +4764,9 @@ function relevesHtml(e,i,compact){
   // Google permet de rattacher un numéro WhatsApp à une fiche : le bouton apparaît alors à côté
   // du téléphone. C'est le signal SoConnect le plus direct — les clients écrivent DÉJÀ, mais sur
   // un mobile personnel : sans historique, sans transfert, sans suivi, et sans rien de mesurable.
+  const waG=(iv&&iv.whatsapp_google)||null;
   if(a&&a.whatsapp_sur_fiche)bouts.push('<b style="color:#B45309">bouton WhatsApp actif sur la fiche Google</b> — vos clients écrivent déjà, sur un mobile, sans historique ni suivi');
+  else if(waG)bouts.push('<b style="color:#B45309">WhatsApp visible dans le panneau Google</b> — vos clients écrivent déjà, sur un mobile, sans historique ni suivi');
   li('💬','Messagerie client',bouts.join(' · '));
  }
  if(ap)li('🍎','Apple Plans',

@@ -115,7 +115,8 @@ function mesures(e) {
         trois_premiers: g.audit.concurrents || null,
         // Le bouton WhatsApp de la fiche Google : l'argument SoConnect le plus direct, et il est
         // MESURÉ. Il ne remontait pas jusqu'ici — la mesure existait sans jamais servir le document.
-        bouton_whatsapp_actif: !!g.audit.whatsapp_sur_fiche,
+        bouton_whatsapp_actif: !!(g.audit.whatsapp_sur_fiche
+          || (g.ia_visibilite && g.ia_visibilite.whatsapp_google)),
         whatsapp_ou: g.audit.whatsapp_champ || null
       } : null,
       reponses_aux_avis: g.reponses ? {
@@ -406,7 +407,8 @@ function scorer(e) {
   // permet de rattacher un numéro WhatsApp. Le score ne change pas de sens — l'avoir vaut mieux
   // que ne pas l'avoir — mais le libellé dit OÙ il est, parce que l'angle de vente n'est pas le
   // même : sur la fiche, le canal existe déjà et c'est ce qu'il y a derrière qui manque.
-  const waFiche = !!(au && au.whatsapp_sur_fiche);
+  const waFiche = !!((au && au.whatsapp_sur_fiche)
+    || (g.ia_visibilite && g.ia_visibilite.whatsapp_google));
   const waQqPart = waFiche || wa === true;
   const waEtat = (wa === null && !waFiche) ? 'inconnu' : (waQqPart ? 'ok' : 'faible');
   r.push(crit('Bouton WhatsApp', waEtat, waQqPart ? 20 : 0, 20,

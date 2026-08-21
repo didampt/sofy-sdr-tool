@@ -45,6 +45,36 @@ async function ensureIA() {
 // l'aperçu IA (local_ads et ads font partie du moteur `google`) : aucun appel de plus, aucun coût
 // de plus. Et c'est le fait le plus concret qu'on puisse poser sur la table — « trois de vos
 // concurrents achètent votre métier au-dessus de vous » se vérifie en une recherche devant lui.
+// WhatsApp, seconde tentative — et elle ne coûte RIEN.
+// La fiche Maps (google_maps type=place) n'expose pas le bouton WhatsApp : relevé de champs du
+// 21/08, il n'y a ni « links » ni « whatsapp » dans place_results. Mais l'appel au moteur `google`
+// que nous faisons DÉJÀ pour l'aperçu IA ramène parfois le panneau d'informations de l'entreprise
+// (knowledge_graph), qui liste ses moyens de contact. On y regarde : aucun appel de plus, aucun
+// centime de plus. Si on ne trouve rien, on ne conclut rien.
+const MOTIF_WA2 = /wa\.me\/|api\.whatsapp\.com|chat\.whatsapp\.com|(^|[^a-z])whatsapp([^a-z]|$)/i;
+function whatsappDansGoogle(d, nom) {
+  const kg = d && d.knowledge_graph;
+  if (!kg) return null;
+  // On limite volontairement au panneau de CETTE entreprise : un résultat organique qui parle de
+  // WhatsApp ne dit rien du prospect.
+  if (nom && kg.title && !String(kg.title).toLowerCase().includes(String(nom).toLowerCase().slice(0, 12))) return null;
+  const vu = [];
+  const parcours = (v, ch, prof) => {
+    if (prof > 4 || v == null || vu.length) return;
+    if (typeof v === 'string') { if (MOTIF_WA2.test(v)) vu.push({ valeur: v.slice(0, 200), champ: 'knowledge_graph.' + ch }); return; }
+    if (Array.isArray(v)) { v.slice(0, 12).forEach((x, k) => parcours(x, ch + '[' + k + ']', prof + 1)); return; }
+    if (typeof v === 'object') for (const [c, x] of Object.entries(v)) {
+      if (/description|snippet|review/i.test(c)) continue;
+      if (MOTIF_WA2.test(c) && (typeof x === 'string' || typeof x === 'number') && String(x).trim()) {
+        vu.push({ valeur: String(x).slice(0, 200), champ: 'knowledge_graph.' + (ch ? ch + '.' : '') + c }); return;
+      }
+      parcours(x, ch ? ch + '.' + c : c, prof + 1);
+    }
+  };
+  parcours(kg, '', 0);
+  return vu[0] || null;
+}
+
 function annoncesDe(d) {
   const out = [];
   const la = (d.local_ads && Array.isArray(d.local_ads.ads)) ? d.local_ads.ads : [];
@@ -109,12 +139,13 @@ export default async function handler(req, res) {
     return { ok: r.ok, status: r.status, d: r.d };
   };
 
-  let apercu = null, annonces = [];
+  let apercu = null, annonces = [], waGoogle = null;
   try {
     const rep = await lire({ engine: 'google', q: requete });
     if (budget && budget.refuse) return res.status(429).json({ erreur: budget.d.error, plafond_atteint: true, conso: budget.conso, plafond: budget.plafond });
     if (!rep.ok) return res.status(502).json({ erreur: 'SerpApi ' + rep.status, detail: String((rep.d && rep.d.error) || '').slice(0, 200) });
     annonces = annoncesDe(rep.d);
+    waGoogle = whatsappDansGoogle(rep.d, nom);
     apercu = rep.d.ai_overview || null;
     // Google renvoie parfois l'aperçu derrière un jeton : un second appel le déplie.
     if (apercu && apercu.page_token && !apercu.text_blocks) {
@@ -129,7 +160,8 @@ export default async function handler(req, res) {
     const mesure = {
       cle: cleCache, requete, domaine: dom, nom, apercu_present: false, cite: false,
       rang_citation: null, sources: null, entreprises_citees: null, extrait: null,
-      annonceurs: annonces, nb_annonces: annonces.length
+      annonceurs: annonces, nb_annonces: annonces.length,
+      whatsapp_google: waGoogle
     };
     try {
       await sql`INSERT INTO ia_visibilite (cle, requete, domaine, nom, apercu_present, cite,
@@ -176,7 +208,8 @@ export default async function handler(req, res) {
     cite: !!trouve,
     rang_citation: trouve ? trouve.rang : null,
     sources, entreprises_citees: citees.slice(0, 8), extrait: texte || null,
-    annonceurs: annonces, nb_annonces: annonces.length
+    annonceurs: annonces, nb_annonces: annonces.length,
+    whatsapp_google: waGoogle
   };
 
   try {
