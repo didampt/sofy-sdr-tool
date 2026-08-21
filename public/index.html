@@ -2159,7 +2159,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v391';
+const VERSION='v392';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -3779,6 +3779,11 @@ async function choisirGoogleEdit(i,placeId){
   if(d.erreur){toast('Erreur : '+d.erreur);box.style.display='none';return;}
   const set=(id,val)=>{const el=document.getElementById(id);if(el&&val)el.value=val;};
   set('edit-nom'+i,d.nom);set('edit-ville'+i,d.ville);set('edit-cp'+i,d.code_postal);set('edit-adresse'+i,d.adresse);set('edit-site'+i,d.site_web);
+  // ⚠️ LE NOM COMMERCIAL AUSSI. Il était le seul champ non corrigé, et c'est LUI que la recherche
+  // Google utilise (enseigneDe() le préfère au nom officiel). Sur la fiche Sofy, l'enseigne était
+  // restée « optima france » : chaque relance d'analyse retrouvait donc les fiches OPTIMA, y
+  // compris après que Didier ait choisi « SOFY France » dans l'autocomplétion (constat 21/08).
+  set('edit-ens'+i,d.nom);
   // Mémorise le place_id et le téléphone Google sur la fiche
   const e=REAL[i];
   e.place_id=d.place_id||placeId;
@@ -4756,17 +4761,24 @@ function relevesHtml(e,i,compact){
  const tec=e.technos||[];
  const wa=tec.find(t=>t&&t.id==='whatsapp');
  const chats=tec.filter(t=>t&&t.cat==='chat'&&t.id!=='whatsapp');
- if(e.technos_fait||wa||chats.length){
+ // La ligne s'affiche aussi quand seule la FICHE Google a été relevée : c'est le cas d'un
+ // pré-audit sans analyse de site, et le bouton WhatsApp de la fiche est justement l'argument
+ // SoConnect le plus direct — il ne doit pas rester invisible (constat Didier, fiche Sofy).
+ if(e.technos_fait||wa||chats.length||(a&&a.whatsapp_sur_fiche)||(iv&&iv.whatsapp_google)){
+  // L'ordre compte : le fait vendeur d'abord, l'état du relevé ensuite. « site non analysé » en
+  // tête reléguait le bouton WhatsApp de la fiche en seconde position, alors que c'est LUI
+  // l'argument (constat Didier, fiche Sofy).
   const bouts=[];
+  const waG2=(iv&&iv.whatsapp_google)||null;
+  if(a&&a.whatsapp_sur_fiche)bouts.push('<b style="color:#B45309">bouton WhatsApp actif sur la fiche Google</b> — vos clients écrivent déjà, sur un mobile, sans historique ni suivi');
+  else if(waG2)bouts.push('<b style="color:#B45309">WhatsApp visible dans le panneau Google</b> — vos clients écrivent déjà, sur un mobile, sans historique ni suivi');
   if(wa)bouts.push('<b style="color:#0F7B4F">bouton WhatsApp sur le site</b>');
   if(chats.length)bouts.push('chat : '+chats.map(t=>htmlSafe(t.nom)).join(', '));
-  if(!wa&&!chats.length)bouts.push('<b style="color:#B45309">aucun canal de messagerie sur le site</b> — ni WhatsApp, ni chat');
+  if(!wa&&!chats.length&&e.technos_fait)bouts.push('<b style="color:#B45309">aucun canal de messagerie sur le site</b> — ni WhatsApp, ni chat');
+  else if(!wa&&!chats.length&&!e.technos_fait)bouts.push('site non analysé (↻ Analyser)');
   // Google permet de rattacher un numéro WhatsApp à une fiche : le bouton apparaît alors à côté
   // du téléphone. C'est le signal SoConnect le plus direct — les clients écrivent DÉJÀ, mais sur
   // un mobile personnel : sans historique, sans transfert, sans suivi, et sans rien de mesurable.
-  const waG=(iv&&iv.whatsapp_google)||null;
-  if(a&&a.whatsapp_sur_fiche)bouts.push('<b style="color:#B45309">bouton WhatsApp actif sur la fiche Google</b> — vos clients écrivent déjà, sur un mobile, sans historique ni suivi');
-  else if(waG)bouts.push('<b style="color:#B45309">WhatsApp visible dans le panneau Google</b> — vos clients écrivent déjà, sur un mobile, sans historique ni suivi');
   li('💬','Messagerie client',bouts.join(' · '));
  }
  if(ap)li('🍎','Apple Plans',
@@ -7880,7 +7892,38 @@ async function analyserGmb(i){
   const r=await api('/api/gmb?'+p.toString());
   const g=await r.json();
   if(!r.ok||g.erreur){toast('Erreur GMB : '+(g.erreur||r.status));if(btn){btn.disabled=false;btn.textContent='⭐ Analyser GMB';}return false;}
+  // ⚠️ NE PAS ÉCRASER e.gmb EN ENTIER. Les relevés du pré-audit (réponses aux avis, audit de
+  // fiche, aperçu IA, Apple Plans) sont rangés DANS e.gmb : un « e.gmb = g » les effaçait, et
+  // avec eux 6 à 10 relevés SerpApi déjà payés sur les 230 du mois. Constat Didier 21/08 sur la
+  // fiche Sofy : le bloc « Relevés terrain » avait disparu après une relance d'analyse.
+  // Les relevés sont attachés à un place_id précis : on les garde si la fiche est la MÊME, on les
+  // jette (proprement, en le disant) si l'analyse a rattaché une autre fiche.
+  const ancien=e.gmb||{};
+  const pidAvant=((ancien.fiches||[])[0]||{}).place_id||(ancien.pire_fiche||{}).place_id||null;
+  const pidApres=((g.fiches||[])[0]||{}).place_id||(g.pire_fiche||{}).place_id||null;
+  const memeFiche=pidAvant&&pidApres&&pidAvant===pidApres;
+  // Fiche rattachée À LA MAIN (autocomplétion Google ou lien Maps) : elle fait autorité sur une
+  // recherche par nom, qui peut tomber sur une homonymie. On demande avant de la remplacer.
+  if((e.place_id||e.maps_url)&&pidApres&&e.place_id&&pidApres!==e.place_id){
+   const ok=await confirmSofy('La recherche a trouvé une AUTRE fiche Google',
+    'Tu avais rattaché une fiche à la main sur ce prospect. La recherche par nom en propose une différente'
+    +((g.fiches||[])[0]?' : « '+((g.fiches||[])[0].nom||'')+' »':'')+'.\n\n'
+    +'Les homonymies sont fréquentes (« optima france » a ramené les fiches OPTIMA sur la fiche Sofy).\n\n'
+    +'Garder celle que tu avais choisie est presque toujours le bon choix.',
+    'Remplacer quand même');
+   if(!ok){
+    if(btn){btn.disabled=false;btn.textContent='⭐ Analyser GMB';}
+    toast('Fiche Google conservée telle quelle');
+    return !!(ancien&&ancien.trouve);
+   }
+  }
+  const releves=['reponses','audit','ia_visibilite','apple'];
+  const avait=releves.filter(k=>ancien[k]);
   e.gmb=g;
+  if(avait.length){
+   if(memeFiche||!pidApres){ releves.forEach(k=>{if(ancien[k])e.gmb[k]=ancien[k];}); }
+   else toast('⚠️ Fiche Google différente : les relevés précédents ('+avait.join(', ')+') ne s\'y appliquent plus');
+  }
   e.gmb._sig=enseigneDe(e)+'|'+domaineDe(e);
   rerender(i);persister();
   return !!g.trouve;
