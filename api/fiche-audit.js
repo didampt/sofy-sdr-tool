@@ -38,6 +38,7 @@ async function ensureAudit() {
     lat NUMERIC,
     lng NUMERIC,
     whatsapp_sur_fiche TEXT,
+    whatsapp_champ TEXT,
     concurrents JSONB,
     mesure_le TIMESTAMPTZ DEFAULT NOW(),
     mesure_par TEXT
@@ -48,7 +49,52 @@ async function ensureAudit() {
   try { await sql`ALTER TABLE fiche_audit ADD COLUMN IF NOT EXISTS lat NUMERIC`; } catch (_) {}
   try { await sql`ALTER TABLE fiche_audit ADD COLUMN IF NOT EXISTS lng NUMERIC`; } catch (_) {}
   try { await sql`ALTER TABLE fiche_audit ADD COLUMN IF NOT EXISTS whatsapp_sur_fiche TEXT`; } catch (_) {}
+  try { await sql`ALTER TABLE fiche_audit ADD COLUMN IF NOT EXISTS whatsapp_champ TEXT`; } catch (_) {}
   pret = true;
+}
+
+// ── WhatsApp sur la fiche Google ────────────────────────────────────────────────────────────────
+// ⚠️ J'ai d'abord écrit que Google n'avait pas de bouton WhatsApp. C'est FAUX : Didier l'a
+// démontré capture en main (fiche « SOFY France » — une ligne WhatsApp figure dans l'aperçu, à
+// côté du téléphone et du site). Google permet bien de rattacher un numéro WhatsApp à une fiche.
+//
+// Restait à savoir dans quel champ SerpApi le range. Plutôt que de le deviner une seconde fois, on
+// PARCOURT la fiche et on note où on l'a trouvé : le champ exact part dans la réponse (whatsapp_champ),
+// ce qui rend la détection vérifiable au lieu d'être supposée.
+//
+// On exclut volontairement les avis, les photos et les descriptions : un client qui ÉCRIT
+// « contactez-les sur WhatsApp » dans un avis ne prouve pas que le bouton existe.
+const EXCLUS_WA = new Set(['user_reviews', 'reviews', 'images', 'photos', 'description', 'snippet',
+  'about', 'editorial_summary', 'people_also_search_for', 'similar_places_nearby']);
+const MOTIF_WA = /wa\.me\/|api\.whatsapp\.com|chat\.whatsapp\.com|(^|[^a-z])whatsapp([^a-z]|$)/i;
+function whatsappDe(fiche, chemin, prof) {
+  // Profondeur 5 : les options de contact de Google arrivent parfois imbriquées
+  // (extensions → [0] → contact_options → ['WhatsApp']), soit quatre niveaux.
+  if (prof > 5 || fiche == null) return null;
+  if (typeof fiche === 'string') {
+    return MOTIF_WA.test(fiche) ? { valeur: fiche.slice(0, 200), champ: chemin || '(racine)' } : null;
+  }
+  if (typeof fiche === 'number') return null;
+  if (Array.isArray(fiche)) {
+    for (let k = 0; k < Math.min(fiche.length, 12); k++) {
+      const t = whatsappDe(fiche[k], (chemin || '') + '[' + k + ']', prof + 1);
+      if (t) return t;
+    }
+    return null;
+  }
+  if (typeof fiche === 'object') {
+    for (const [c, v] of Object.entries(fiche)) {
+      if (EXCLUS_WA.has(c)) continue;
+      // Un champ NOMMÉ whatsapp est une preuve à lui seul : sa valeur peut n'être qu'un numéro,
+      // sans le mot « whatsapp » dedans (cas d'un champ dédié côté API).
+      if (MOTIF_WA.test(c) && (typeof v === 'string' || typeof v === 'number') && String(v).trim()) {
+        return { valeur: String(v).slice(0, 200), champ: chemin ? chemin + '.' + c : c };
+      }
+      const t = whatsappDe(v, chemin ? chemin + '.' + c : c, prof + 1);
+      if (t) return t;
+    }
+  }
+  return null;
 }
 
 // La ville, extraite d'une adresse française : on repère le code postal et on prend ce qui suit.
@@ -109,6 +155,21 @@ export default async function handler(req, res) {
     return res.status(502).json({ erreur: 'SerpApi injoignable', detail: String((e && e.message) || e).slice(0, 160) });
   }
 
+  // ?champs=1 (superadmin) : les clés réellement rendues par SerpApi pour cette fiche, plus le
+  // résultat de la recherche WhatsApp. À lancer une fois sur une fiche qui PORTE le bouton (par
+  // exemple « SOFY France ») pour confirmer le champ, au lieu de le supposer.
+  if (b.champs && ['admin', 'superadmin'].includes(user.role)) {
+    const wa0 = whatsappDe(fiche, '', 0);
+    return res.status(200).json({
+      ok: true, diagnostic: true, place_id: placeId, nom: fiche.title || null,
+      cles_racine: Object.keys(fiche).sort(),
+      liens: fiche.links || null,
+      whatsapp_trouve: wa0 || null,
+      extensions: fiche.extensions || null,
+      note: 'Aucune écriture, aucun cache. Le champ de whatsapp_trouve dit où l\'information se trouve réellement.'
+    });
+  }
+
   const photos = Array.isArray(fiche.images) ? fiche.images : [];
   // Une photo publiée par l'enseigne montre ce qu'elle veut montrer ; celles des clients, ce
   // qu'ils ont vu. Le déséquilibre est un argument en soi.
@@ -136,20 +197,9 @@ export default async function handler(req, res) {
     // un repère géographique, et les fiches analysées avant août 2026 n'en ont aucun côté GMB.
     lat: (fiche.gps_coordinates && fiche.gps_coordinates.latitude != null) ? fiche.gps_coordinates.latitude : null,
     lng: (fiche.gps_coordinates && fiche.gps_coordinates.longitude != null) ? fiche.gps_coordinates.longitude : null,
-    // ── WhatsApp sur la fiche Google ──
-    // Google n'a PAS de bouton WhatsApp : sa fonction « Chat » a été arrêtée en juillet 2024, et
-    // aucun champ SerpApi n'expose de messagerie. Ce qui existe et se mesure : certaines enseignes
-    // mettent un lien wa.me dans le champ site web, le lien de réservation ou de commande. Quand
-    // c'est le cas, c'est un signal SoConnect en or (« vous envoyez déjà vos clients sur WhatsApp,
-    // sans historique ni suivi »). Quand ce n'est pas le cas, on ne conclut rien : c'est l'absence
-    // d'un usage détourné, pas l'absence de WhatsApp.
-    whatsapp_sur_fiche: (() => {
-      const cands = [fiche.website, fiche.booking_link, fiche.order_online,
-        ...(fiche.links ? Object.values(fiche.links) : [])]
-        .filter(x => typeof x === 'string');
-      const t = cands.find(u => /wa\.me\/|api\.whatsapp\.com|chat\.whatsapp\.com/i.test(u));
-      return t ? t.slice(0, 200) : null;
-    })(),
+    // WhatsApp : cherché dans toute la fiche, avec le champ où il a été trouvé (cf. whatsappDe).
+    whatsapp_sur_fiche: (waT => waT ? waT.valeur : null)(whatsappDe(fiche, '', 0)),
+    whatsapp_champ: (waT => waT ? waT.champ : null)(whatsappDe(fiche, '', 0)),
     concurrents: null
   };
   if (audit.categorie) audit.categorie = String(audit.categorie).slice(0, 80);
@@ -185,12 +235,12 @@ export default async function handler(req, res) {
   try {
     await sql`INSERT INTO fiche_audit (place_id, nom, photos_total, photos_enseigne,
         description_presente, horaires_presents, nb_categories, nb_attributs,
-        position_locale, requete, concurrents, categorie, ville, lat, lng, whatsapp_sur_fiche, mesure_le, mesure_par)
+        position_locale, requete, concurrents, categorie, ville, lat, lng, whatsapp_sur_fiche, whatsapp_champ, mesure_le, mesure_par)
       VALUES (${audit.place_id}, ${audit.nom}, ${audit.photos_total}, ${audit.photos_enseigne},
               ${audit.description_presente}, ${audit.horaires_presents}, ${audit.nb_categories},
               ${audit.nb_attributs}, ${audit.position_locale}, ${audit.requete},
               ${JSON.stringify(audit.concurrents)}::jsonb, ${audit.categorie}, ${audit.ville},
-              ${audit.lat}, ${audit.lng}, ${audit.whatsapp_sur_fiche}, NOW(), ${user.nom})
+              ${audit.lat}, ${audit.lng}, ${audit.whatsapp_sur_fiche}, ${audit.whatsapp_champ}, NOW(), ${user.nom})
       ON CONFLICT (place_id) DO UPDATE SET nom = EXCLUDED.nom, photos_total = EXCLUDED.photos_total,
         photos_enseigne = EXCLUDED.photos_enseigne, description_presente = EXCLUDED.description_presente,
         horaires_presents = EXCLUDED.horaires_presents, nb_categories = EXCLUDED.nb_categories,
@@ -198,6 +248,7 @@ export default async function handler(req, res) {
         requete = EXCLUDED.requete, concurrents = EXCLUDED.concurrents,
         categorie = EXCLUDED.categorie, ville = EXCLUDED.ville,
         lat = EXCLUDED.lat, lng = EXCLUDED.lng, whatsapp_sur_fiche = EXCLUDED.whatsapp_sur_fiche,
+        whatsapp_champ = EXCLUDED.whatsapp_champ,
         mesure_le = NOW(), mesure_par = EXCLUDED.mesure_par`;
   } catch (eCache) {
     // Un cache non écrit n'est pas anodin : la prochaine analyse REPAYERA ces appels, sur un

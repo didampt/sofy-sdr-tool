@@ -2159,7 +2159,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v384';
+const VERSION='v385';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4761,7 +4761,10 @@ function relevesHtml(e,i,compact){
   if(wa)bouts.push('<b style="color:#0F7B4F">bouton WhatsApp sur le site</b>');
   if(chats.length)bouts.push('chat : '+chats.map(t=>htmlSafe(t.nom)).join(', '));
   if(!wa&&!chats.length)bouts.push('<b style="color:#B45309">aucun canal de messagerie sur le site</b> — ni WhatsApp, ni chat');
-  if(a&&a.whatsapp_sur_fiche)bouts.push('<b>lien WhatsApp sur la fiche Google</b> — vos clients écrivent déjà, sans historique ni suivi');
+  // Google permet de rattacher un numéro WhatsApp à une fiche : le bouton apparaît alors à côté
+  // du téléphone. C'est le signal SoConnect le plus direct — les clients écrivent DÉJÀ, mais sur
+  // un mobile personnel : sans historique, sans transfert, sans suivi, et sans rien de mesurable.
+  if(a&&a.whatsapp_sur_fiche)bouts.push('<b style="color:#B45309">bouton WhatsApp actif sur la fiche Google</b> — vos clients écrivent déjà, sur un mobile, sans historique ni suivi');
   li('💬','Messagerie client',bouts.join(' · '));
  }
  if(ap)li('🍎','Apple Plans',
@@ -4769,7 +4772,7 @@ function relevesHtml(e,i,compact){
   :'<b style="color:#B91C1C">absent</b> des '+(ap.total_resultats||0)+' résultats');
  const fort=[
   (e.technos_fait&&!(e.technos||[]).some(t=>t&&t.cat==='chat'))&&'aucune messagerie sur le site',
-  (a&&a.whatsapp_sur_fiche)&&'WhatsApp bricolé sur la fiche Google',
+  (a&&a.whatsapp_sur_fiche)&&'WhatsApp actif sur la fiche Google, sans outil derrière',
   r&&r.taux===0&&'aucune réponse aux avis',
   a&&a.position_locale==null&&a.requete&&'absent du local',
   iv&&iv.apercu_present&&!iv.cite&&'non cité par l\'IA',
