@@ -1,5 +1,139 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 21 août 2026)
 
+## 🛑 21 août 2026 — « Ne jamais affirmer ce qu'on n'a pas mesuré » (v395 → v403)
+
+> **À lire avant de toucher à `api/prez.js`, `api/techno.js` ou `api/fiche-audit.js`.**
+> Didier a généré l'audit sur **notre propre fiche Google** et y a relevé **sept affirmations
+> fausses**, puis trois autres au fil des corrections. Ce n'était pas dix bugs : c'était **une seule
+> faute, répétée** — le code affirmait une ABSENCE là où il n'avait rien réussi à DÉTECTER.
+> Ce document sort de l'entreprise. Une affirmation fausse sur la fiche du prospect détruit
+> exactement ce qui fait sa valeur : le fait que tout y soit vérifiable devant lui.
+
+### Les trois règles qui en sortent
+
+**RÈGLE 1 — Un critère ne peut valoir « faible » que sur une absence CONSTATÉE.**
+Sinon il vaut `inconnu`, il est noté **sur 0** (donc exclu du score : ni pénalité, ni cadeau) et son
+libellé dit ce qui n'a pas pu être vérifié. Un chiffre absent ne se remplace jamais par un zéro.
+Corollaire livré au prompt (règles **1 bis** et **1 ter**) : un champ nul ou marqué
+« NON MESURABLE » n'autorise aucune affirmation de manque, et le champ « ce que ça coûte » ne peut
+affirmer que ce que la mesure établit.
+
+**RÈGLE 2 — Un axe trop peu mesuré ne se note pas.**
+En excluant l'invérifiable, « Communication mobile » n'a plus gardé qu'un critère et affichait
+**100/100 solide** — le miroir exact du défaut corrigé, et la fin de l'angle SoReach. Un axe n'est
+noté que si **≥ 2 critères** sont mesurés ET couvrent **≥ 40 %** de ses points. Sinon « non évalué »,
+avec la raison écrite — ce qui est précisément ce qui justifie le rendez-vous.
+
+**RÈGLE 3 — Une correction qui n'atteint pas les données existantes n'est pas une correction.**
+Le piège le plus coûteux de la session, tombé **trois fois** :
+* le cache `fiche_audit` dure 30 jours et `SELECT *` rend la ligne telle quelle → colonne
+  `revision` ; les lignes < 2 voient `photos_enseigne` et `description_presente` neutralisées à la
+  lecture. **La révision voyage AUSSI dans l'objet rendu**, car une copie périmée reste stockée sur
+  la fiche des semaines sans que rien ne la rafraîchisse ;
+* `technos_fait = true` faisait sauter le scan du site → `REVISION` dans `api/techno.js` +
+  `TECHNO_REV` côté front + helper unique `technosAFaire(e)`. **Les deux constantes doivent rester
+  synchronisées à chaque évolution des signatures** ;
+* une requête locale erronée (« Paris ») stockée dans l'audit était relue en priorité par
+  `requeteLocale()` → l'erreur s'auto-entretenait pendant 30 jours. Une valeur qu'on a nous-mêmes
+  écrite par erreur ne fait pas autorité : `requeteValable(q, ville)` la refuse.
+
+### Ce qui N'EST PAS mesurable de l'extérieur — ne pas réessayer
+
+| Sujet | Pourquoi c'est impossible |
+|---|---|
+| **Bouton WhatsApp d'une fiche Google** | Le bouton existe (prouvé capture en main). Le diagnostic `?champs=1` a rendu les **34 clés** de la fiche telle que SerpApi la voit : aucune ne le porte. → bouton **« ✋ Je le vois sur la fiche »**, constat SDR daté et signé, et le document dit d'où il vient. |
+| **Soview / SoReach chez un client** | Pilotés depuis `app.sofy.fr`, ils ne déposent **rien** sur le site du client. Aucune signature n'existe. → le statut client vient de **HubSpot** (`estClientHubspot`, lifecyclestage). |
+| **Toute plateforme d'envoi SMS** | Les envois partent d'un tableau de bord, jamais du navigateur du visiteur. |
+| **Description du propriétaire d'une fiche** | SerpApi ne l'expose pas de façon fiable (elle existe sur SOFY France, il ne l'a pas rendue). Tri-état `true` / `null`, **jamais `false`**. |
+| **Attribution des photos d'une fiche** | Le filtre cherchait `p.source`/`p.author`, champs que SerpApi ne rend pas → `0` sur **toutes** les fiches du monde. `photos_enseigne` vaut `null` quand on ne sait pas. |
+| **Ce qu'il y a DERRIÈRE un canal** | Un outil, un process, une personne : rien de tout ça n'est visible. C'est ce qui a produit « sans historique partagé, sans transfert entre collègues » servi à un client SoConnect. |
+
+### Détection d'outils sur un site : trois natures de preuve
+
+`api/techno.js` — `urlsDuDocument()` rend `{charge, liens, marqueurs}` :
+
+1. **ressource chargée** (`script src`, `iframe src`, `link href`, `data-*`) → l'outil **tourne** ;
+2. **conteneur déclaré** (`id="sofy-chat-widget"`) → l'outil est **installé** ;
+3. **lien cliquable** (`<a href>`) → de la **navigation**, ça ne prouve rien —
+   **SAUF** pour un canal de contact : un bouton WhatsApp EST un `<a href="wa.me/…">`, il n'y a pas
+   d'autre façon de le poser. Ces signatures portent `parLien: true`.
+
+Deux faux positifs successifs, tous deux sur notre propre site :
+* un motif cherché dans **tout le HTML** → « Guest Suite détecté » parce que sofy.fr le nomme dans
+  ses pages comparatives ;
+* puis `href` capturé **sans distinction** → même verdict, cette fois à cause d'un **lien vers un
+  article de blog** de Guest Suite cité en source.
+Et l'inverse : une page de **documentation** qui montre un snippet l'a échappé (`&lt;div id=…`),
+elle ne produit donc aucun faux positif — vérifié explicitement.
+
+**Signature Sofy confirmée** (fournie par Didier — les précédentes étaient **inventées** et ne
+détectaient rien) :
+```html
+<div id="sofy-chat-widget" data-id="01K…">
+  <script src="https://webchat-next.sofy.fr/plugin.js"></script>
+</div>
+```
+→ `motifs: ['webchat-next.sofy.fr','webchat.sofy.fr','sofy.fr/plugin.js']`,
+`balises: ['sofy-chat-widget']`. **Ne pas y remettre de motif supposé.**
+
+Les critères chat / avis / SMS reposent désormais sur la **catégorie** portée par la signature, plus
+sur une liste de noms d'éditeurs codée en dur — notre propre webchat n'y figurait pas, et un client
+SoConnect lisait « aucune messagerie web détectée ».
+
+### 🆕 Mode EXPANSION (décision Didier : option b)
+
+`m.mode` vaut `'expansion'` dès qu'un outil Sofy est détecté **ou** que le CRM confirme le statut
+client. Mêmes mesures, **autre nature de document** :
+* cadrage dédié dans le prompt : chaque planche part de **ce qui est en place** et pointe ce qui ne
+  l'est pas encore ; interdiction de proposer de « mettre en place » une brique qu'il utilise ;
+  quand on ne sait pas si une brique est branchée sur un canal, **on le demande** ;
+* bandeau **« LEVIER n SUR m »** au lieu de « PROBLÈME n SUR m » ;
+* champ **« Ce qui reste à gagner »** au lieu de « Ce que ça coûte » ;
+* et en amont, une alerte **avant le choix du module** dans `genererPrez()` — sur un refus, zéro
+  appel réseau.
+
+⚠️ **HubSpot dit « client », PAS « a SoConnect ».** Trois états à distinguer, jamais deux :
+boîte unifiée **constatée** (on la nomme) · client au **module inconnu** (on demande) ·
+**prospect** (le canal est mesuré, ce qu'il y a derrière se demande). J'ai failli livrer
+« vous disposez déjà d'une boîte de réception unifiée » à un client Soview seul.
+
+### Deux bugs de plomberie à connaître
+
+* **`a2.bouton_whatsapp_actif` valait toujours `undefined`** : `a2` est l'audit BRUT, le champ est
+  calculé sur `m.google.audit_fiche`. Ce défaut n'était jamais sorti depuis son écriture. La phrase
+  que Didier a lue venait en réalité d'une **instruction du prompt** qui la dictait mot pour mot.
+* **`ckAnalyse()` avait son propre contrôle pré-vol**, qui renvoyait le SDR lancer « ↻ Analyser » à
+  la main — alors que `genererPrez()` proposait deux secondes plus tard de tout lancer seul. Deux
+  fenêtres, conseils opposés. Un seul endroit décide : `genererPrez()`.
+* **Un bouton qui ne peut pas agir ne doit pas être affiché.** Depuis « Ma journée », `relevesHtml`
+  est appelé avec `i = -1` : le bouton « ✋ Je le vois » s'affichait et `REAL[-1]` sortait par un
+  `return` **muet**. → `relevesHtml(e, i, compact, rid)`, et `ckDeclarerWhatsapp(rid)` pour ce
+  chemin. `api/cockpit.js` transporte `whatsapp_declare` et le drapeau `nous`.
+
+### Où retrouver quoi
+
+| Version | Ce qui a été corrigé |
+|---|---|
+| **v395** | La règle : plus de « faible » sans absence constatée. Les 7 affirmations fausses. `revision` de `fiche_audit`. Intégration vs mention textuelle. Axe non noté faute de mesures. |
+| **v396** | La requête « Paris » qui s'auto-entretenait dans le cache · catégorie Google cherchée AVANT ce qui en dépend · neutralisation des champs périmés à la lecture du cache. |
+| **v397** | Les deux dialogues contradictoires avant l'audit (`ckAnalyse` vs `genererPrez`) · scan des outils du site ajouté au pré-audit (gratuit). |
+| **v398** | Le lien sortant compté comme outil installé · `parLien` pour les canaux de contact · bouton « ✋ Je le vois sur la fiche ». |
+| **v399** | Signature réelle du webchat SoConnect (les précédentes étaient inventées) · détection par conteneur · critères par catégorie et non par nom d'éditeur · `deja_equipe_sofy`. |
+| **v400** | Vérification que le webchat installé sur sofy.fr est bien détecté · doublon de badge. |
+| **v401** | Statut client lu dans **HubSpot** au lieu d'être deviné · alerte avant dépense · critère « outil d'avis » adossé au taux de réponse observable. |
+| **v402** | `REVISION` / `TECHNO_REV` : le scan repart quand les signatures changent · le bouton « ✋ » fonctionne enfin depuis Ma journée (plus de `return` muet). |
+| **v403** | Mode **expansion** · la phrase « rien derrière votre WhatsApp » (dictée par le prompt, et morte dans le code) · règle 1 ter sur le champ « ce que ça coûte ». |
+
+### Reste à faire sur ce sujet
+
+1. **URL d'embarquement du widget Soview** — n'existe probablement pas (piloté depuis
+   `app.sofy.fr`). Si une propriété HubSpot listait les **modules souscrits**, elle serait lue dans
+   le même appel et le badge « ❔ Soview : à vérifier avec lui » deviendrait une vraie mesure.
+2. **Argument « aucune description » perdu volontairement.** Rétablissable si un diagnostic montre
+   que SerpApi la rend habituellement — mais **ne pas le supposer**.
+3. Relire les libellés du scorer avec Didier : ils portent l'argumentaire commercial, et deux
+   d'entre eux affirmaient encore ce qu'on ne mesure pas.
+
 ## 🏪 21 août 2026 — Le modèle multi-enseignes + barre d'actions ramenée à 5 boutons (v394)
 
 **Ce qui a changé dans le MODÈLE.** On pensait « 1 établissement = plusieurs contacts ». On pense
@@ -114,6 +248,16 @@ conséquences dans le code, à ne pas défaire :
    document signé Sofy est indéfendable.
 3. **Aucun échec silencieux.** Un relevé raté est affiché avec sa conséquence réelle. La fenêtre
    ne BLOQUE que si le SDR a un choix à faire (aucune source, ou clé SerpApi HS) ; sinon toast.
+4. **🛑 UNE ABSENCE DE MESURE N'EST PAS UNE ABSENCE.** Ajouté le 21/08 après que l'audit de notre
+   propre fiche a produit **sept affirmations fausses** — site web « absent » alors que sofy.fr y
+   figure, « aucune description » alors qu'elle existe, « aucune photo publiée par vous » sur
+   **toutes** les fiches du monde, « aucun bouton WhatsApp » alors qu'il est là, « outil détecté :
+   Guest Suite » à propos d'un lien vers leur blog, « aucun dispositif SMS » invisible par
+   construction, et un agent RCS présenté comme non déclaré alors que Sofy EST l'agrégateur.
+   Un critère ne vaut « faible » que sur une absence **constatée** ; sinon `inconnu`, noté sur 0,
+   et son libellé dit ce qu'on n'a pas pu vérifier. Détail complet et liste de ce qui n'est
+   structurellement pas mesurable : section **🛑 « Ne jamais affirmer ce qu'on n'a pas mesuré »**
+   en tête de ce fichier. **Ne pas défaire sans avoir lu cette section.**
 
 ## Chaîne de génération
 
@@ -159,12 +303,14 @@ exactement la classe de bug qu'on a passé trois jours à éliminer.
 
 | Fichier | Rôle |
 |---|---|
-| `api/prez.js` | génération, éditeur (`CHAMPS`/`VERROUS`), destinataires nommés, `trajectoire()` |
-| `api/p.js` | rendu de la page publique, comptage, alertes Slack, PDF |
+| `api/prez.js` | génération, éditeur (`CHAMPS`/`VERROUS`), destinataires nommés, `trajectoire()`, `scorer()`, `m.mode` prospection/expansion |
+| `api/p.js` | rendu de la page publique, comptage, alertes Slack, PDF. Les critères `inconnu` sont sortis de la carte notée et regroupés sous « Non vérifiable depuis l'extérieur » |
+| `api/techno.js` | détection des outils du site. `REVISION` + `urlsDuDocument()` → `{charge, liens, marqueurs}` |
+| `api/hubspot-check.js` | `emails` **et** `domaines` → statut CLIENT (`lifecyclestage`). La seule source qui voie Soview et SoReach |
 | `api/kb-sales.js` | base de connaissance (blocs sourcés, `lien` du témoignage) |
 | `api/kb-visuels.js` | bibliothèque d'images (photos SDR, logos clients, ambiance) |
 | `api/rcs-prospect.js` | envoi : rich-card RCS `mode:'prez'` + repli SMS |
-| `api/avis-reponses.js` `api/fiche-audit.js` `api/ai-visibilite.js` `api/apple-plans.js` | les relevés |
+| `api/avis-reponses.js` `api/fiche-audit.js` `api/ai-visibilite.js` `api/apple-plans.js` | les relevés. `fiche_audit.revision` ≥ 2 = photos/description fiables |
 
 ## Pièges — chacun a coûté une livraison ratée
 
@@ -186,6 +332,24 @@ exactement la classe de bug qu'on a passé trois jours à éliminer.
    recherche de fiche par nom doit l'indexer explicitement (sinon « aucun contact nominatif »).
 8. **Un diagnostic non affiché ne sert à rien.** J'ai ajouté deux fois des champs d'erreur côté
    API que l'écran jetait : deux causes différentes donnaient le même message.
+9. **Un cache rend une correction invisible.** `fiche_audit` garde 30 jours, `e.technos` reste sur
+   la fiche indéfiniment, une requête erronée stockée est relue en priorité. Trois fois le même
+   piège le 21/08 : corriger la détection **sans se demander si la correction atteint l'existant**.
+   → tout champ dont la sémantique change doit porter une **révision** (`fiche_audit.revision`,
+   `techno REVISION` / `TECHNO_REV`), et la révision doit voyager **dans l'objet rendu**, pas
+   seulement en base.
+10. **Un bouton qui ne peut pas agir ne doit pas être affiché.** `relevesHtml` est appelé avec
+   `i = -1` depuis « Ma journée » : le garde-fou `i != null` laissait passer, et `REAL[-1]` sortait
+   par un `return` muet. Vérifier les DEUX chemins (fiche complète / Ma journée) pour toute action
+   posée dans un bloc partagé — ils n'ont ni le même contexte, ni les mêmes données chargées.
+11. **Une instruction du prompt pèse plus qu'une consigne contradictoire.** Le document a servi
+   « rien derrière votre WhatsApp » à un client SoConnect parce qu'une instruction la dictait mot
+   pour mot, alors que `deja_equipe_sofy` disait l'inverse dans la même charge utile. Quand deux
+   informations se contredisent, le modèle suit la plus **précise** — donc c'est la source qu'il
+   faut corriger, pas ajouter une consigne par-dessus.
+12. **Une liste de noms d'éditeurs codée en dur se périme.** `/crisp|intercom|zendesk|…/` ne
+   contenait pas notre propre webchat : un client SoConnect lisait « aucune messagerie web
+   détectée ». Raisonner par **catégorie** portée par la signature, jamais par nom.
 
 ## Réglages (variables Vercel, aucun code à toucher)
 
@@ -209,17 +373,38 @@ exactement la classe de bug qu'on a passé trois jours à éliminer.
 - **Le module se choisit** avant la génération (Soview / SoConnect / SoReach / Générique).
 - **Alertes Slack plafonnées** : 1ʳᵉ ouverture, puis 1 alerte/4 h, jamais au-delà du 3ᵉ lecteur ;
   les aperçus de lien (Slack, Gmail, WhatsApp) ne comptent pas comme lecteurs.
+- **Sur un client, le document CHANGE DE NATURE** (21/08, option b choisie parmi trois) : mode
+  `expansion`, planches « LEVIER » au lieu de « PROBLÈME », « Ce qui reste à gagner » au lieu de
+  « Ce que ça coûte ». L'alerte avant génération reste **informative**, pas bloquante : le SDR
+  assume, mais il est prévenu **avant** le choix du module.
+- **Le constat d'un SDR est une source valide**, à condition d'être daté, signé et présenté comme
+  tel dans le document (« constaté sur la fiche, pas relevé automatiquement »). Un fait vu par un
+  humain n'est pas moins solide qu'un fait relevé par une API — il est d'une autre nature, et ça
+  doit se voir. C'est ce qui débloque le bouton WhatsApp de la fiche Google.
+- **Un critère non vérifiable ne se supprime pas, il se déplace** : hors de la carte notée, sous
+  « Non vérifiable depuis l'extérieur — à regarder ensemble ». Une puce dans une carte notée est un
+  reproche, quelle que soit sa couleur.
 
 ## Backlog de cette brique
 
-1. **Compteur SerpApi + garde-fou à 230/mois** (le plus urgent, cf. plus haut).
-2. Envoi d'email **serveur** : aujourd'hui `mailto:` pré-rempli depuis la messagerie du SDR
+1. ✅ **Compteur SerpApi + garde-fou à 230/mois** — fait (`api/serpapi.js`, écran Maintenance).
+2. **Propriété HubSpot « modules souscrits »** (nouveau, 21/08) : HubSpot dit « client », pas quels
+   modules. Avec cette propriété, le badge « ❔ Soview : à vérifier avec lui » devient une mesure, et
+   le mode expansion sait exactement de quoi parler. Lecture dans le même appel, coût nul.
+   **→ à trancher avec Didier : la propriété existe-t-elle dans HubSpot ?**
+3. Envoi d'email **serveur** : aujourd'hui `mailto:` pré-rempli depuis la messagerie du SDR
    (aucun expéditeur transactionnel configuré). Nécessite un fournisseur + une clé.
-3. Rythme de collecte réel par secteur : `PREZ_AVIS_MOIS_PAR_FICHE` s'appuie sur un seul client
+4. Rythme de collecte réel par secteur : `PREZ_AVIS_MOIS_PAR_FICHE` s'appuie sur un seul client
    mesuré (retail). Un rythme de déménageur / garagiste rendrait la courbe plus juste.
-4. Variante « après démo » du document (aujourd'hui pensé pour l'avant-vente).
-5. Exploiter les decks Partoo pour l'objection « on a déjà Partoo ».
-6. Rotation du mot de passe Neon (collé dans une session ancienne, toujours actif) ; supprimer
+5. Variante « après démo » du document (aujourd'hui pensé pour l'avant-vente) — le mode `expansion`
+   en pose la moitié : il reste à décider si « après démo » est un troisième mode ou une variante.
+6. Exploiter les decks Partoo pour l'objection « on a déjà Partoo ».
+7. **Apple Business Connect** (nouveau, 21/08) : SerpApi ne publie RIEN, c'est un lecteur. Le canal
+   officiel pour créer / tenir à jour un établissement sur Apple Plans est Apple Business Connect
+   (gratuit, API, mode multi-établissements pour les prestataires). Vraie piste produit Sofy.
+   ⚠️ Conditions d'accès et délai de validation **à confirmer auprès d'Apple** avant d'en faire une
+   promesse client. SerpApi garde le rôle de **vérification** après publication (`api/apple-plans.js`).
+8. Rotation du mot de passe Neon (collé dans une session ancienne, toujours actif) ; supprimer
    les branches `recuperation-alicia*`.
 
 ## 🐛 BUGS EN COURS (priorité de reprise)
