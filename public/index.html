@@ -2159,7 +2159,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v390';
+const VERSION='v391';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4771,7 +4771,11 @@ function relevesHtml(e,i,compact){
  }
  if(ap)li('🍎','Apple Plans',
   ap.present?('présent'+(ap.position?' en '+ap.position+'ᵉ':'')+(ap.note!=null?' · '+String(ap.note).replace('.',',')+'★':' · sans note'))
-  :'<b style="color:#B91C1C">absent</b> des '+(ap.total_resultats||0)+' résultats');
+  // « absent des 0 résultats » ne veut rien dire : zéro résultat, c'est la REQUÊTE qui est en cause,
+  // pas la présence du prospect. Ne pas confondre « il n'y est pas » et « on n'a pas su chercher ».
+  :((ap.total_resultats||0)===0
+    ? 'aucun résultat sur cette requête — trop vague pour conclure quoi que ce soit'
+    : '<b style="color:#B91C1C">absent</b> des '+ap.total_resultats+' résultats'));
  const fort=[
   (e.technos_fait&&!(e.technos||[]).some(t=>t&&t.cat==='chat'))&&'aucune messagerie sur le site',
   (a&&a.whatsapp_sur_fiche)&&'WhatsApp actif sur la fiche Google, sans outil derrière',
@@ -6957,15 +6961,21 @@ async function completerMesures(i){
   // requeteLocale() lit d'abord la requête retenue par l'audit ci-dessus : elle vient de la
   // catégorie Google de la fiche, donc elle existe même quand la fiche Sofy est vide.
   let req=requeteLocale(e);
+  // La requête DÉDUITE subit le même contrôle que celle saisie à la main : trop courte, elle
+  // sera refusée par l'API et fera échouer les trois relevés qui en dépendent.
+  if(req&&req.length<6)req='';
   // Dernier recours : on DEMANDE au SDR plutôt que de renoncer à la meilleure page du document.
   if(!req){
-   const saisie=prompt('Que taperait un client pour trouver ce métier, sans connaître le nom de l\'enseigne ?\n\n'
-    +'Exemple : « restaurant ailes de poulet Paris ».\n\n'
-    +'Cette fiche n\'a ni activité ni ville, et sa fiche Google n\'a pas rendu de catégorie.',
-    (enseigneDe(e)||e.nom||'')+' '+(e.ville||''));
+   const saisie=prompt('Que taperait un client pour trouver ce MÉTIER, sans connaître le nom de l\'enseigne ?\n\n'
+    +'Il faut une activité, pas seulement une ville : « logiciel avis clients Paris », pas « Paris ».\n\n'
+    +'Cette fiche n\'a pas d\'activité renseignée, et sa fiche Google n\'a pas rendu de catégorie.',
+    (e.activite||'')+(e.ville?' '+e.ville:''));
    req=String(saisie||'').trim();
-   if(req.length<6){ if(req)erreurs.push('aperçu IA : requête trop courte (6 caractères minimum)');
-    else erreurs.push('aperçu IA : requête non renseignée'); req=''; }
+   if(req.length<6){
+    erreurs.push(req?('position locale et aperçu IA : « '+req+' » est trop court pour être une requête (6 caractères minimum, et il faut un métier)')
+      :'position locale et aperçu IA : aucune requête — renseigne l\'activité de la fiche, ou lance ↻ Analyser pour que Google donne sa catégorie');
+    req='';
+   }
   }
   if(req){
    // Requête saisie à la main alors que l'audit n'en avait pas : on relance l'audit avec elle,
@@ -7057,7 +7067,11 @@ function requeteLocale(e){
  const act=String(e.activite||e.secteur_rb2b||au.categorie||g.categorie||'').split(/[,;(]/)[0]
   .replace(/\b(autres?|divers|activités?|services? (de|d'))\b/gi,'').trim();
  const ville=e.ville||au.ville||villeDeAdresse(f.adresse)||'';
- if(!act&&!ville)return '';
+ // ⚠️ UNE VILLE SEULE N'EST PAS UNE REQUÊTE. Sur la fiche SOFY France (activité vide, ville
+ // « Paris »), la fonction renvoyait « Paris » : 5 caractères, refusés par l'API, et Apple
+ // répondait « 0 résultat » parce que la question ne décrivait aucun métier. On ne cherche pas
+ // « qui est à Paris », on cherche « qui fait CE MÉTIER à Paris ».
+ if(!act)return '';
  return [act,ville].filter(Boolean).join(' ').slice(0,90);
 }
 
@@ -7187,12 +7201,18 @@ async function genererPrez(i){
     toast('⚠️ Relevé incomplet : '+rel.erreurs.map(x=>String(x).split(' : ')[0]).join(', ')+' — la planche se fait avec le reste');
     console.warn('Relevés non aboutis :\n· '+rel.erreurs.join('\n· '));
    }else{
+    // Le remède dépend de la cause : accuser la clé SerpApi quand c'est la requête qui manque
+    // envoyait chercher au mauvais endroit (constat Didier sur la fiche Sofy, 21/08).
+    const causeRequete=rel.erreurs.some(x=>/requête|requete/i.test(x));
     const suite=plancheOk
      ? 'La planche « ce que trouve un client qui vous cherche » sera quand même créée avec ce qui a été relevé — mais une clé SerpApi absente ou épuisée coûte TOUTES les mesures des prochaines analyses.'
      : 'Conséquence : la planche « ce que trouve un client qui vous cherche » ne sera PAS créée, aucune de ses sources n\'a répondu.';
+    const remede=causeRequete
+     ? 'Ce n\'est PAS un problème de clé : il manque la requête qu\'un client taperait pour trouver ce métier. Renseigne l\'activité sur la fiche (✏️), ou lance ↻ Analyser pour que Google donne sa catégorie — puis relance.'
+     : 'Corrige la clé dans Vercel puis relance si c\'est le cas.';
     if(!await confirmSofy('Des relevés n\'ont pas abouti',
      'Ces mesures manqueront au document :\n· '+rel.erreurs.join('\n· ')+
-     '\n\n'+suite+'\n\nCorrige la clé dans Vercel puis relance si c\'est le cas.',
+     '\n\n'+suite+'\n\n'+remede,
      plancheOk?'Générer quand même':'Générer sans ces mesures'))return;
    }
   }

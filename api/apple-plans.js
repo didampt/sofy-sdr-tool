@@ -196,6 +196,8 @@ export default async function handler(req, res) {
       : (apple.present
         ? `Présent sur Apple Plans en ${apple.position}ᵉ position${apple.note != null ? `, ${String(apple.note).replace('.', ',')}★` : ', sans note'}${apple.avis != null ? ` (${apple.avis} avis)` : ''}.`
         : `ABSENT des ${lieux.length} résultats Apple Plans sur « ${requete} » — sur iPhone, ce client ne le trouve pas.`),
+    // Zéro résultat ne prouve rien sur le prospect : c'est la requête qui n'a pas fonctionné.
+    requete_inexploitable: !lieux.length || null,
     budget_serpapi: budget ? { conso: budget.conso, plafond: budget.plafond, alerte: budget.alerte } : null,
     cout_estime_usd: 0.01
   });

@@ -240,8 +240,10 @@ export default async function handler(req, res) {
   // Si le front n'a pas su deviner la requête (fiche sans activité ni ville), on la déduit ICI :
   // la fiche Google que nous venons de lire porte sa catégorie et son adresse. C'est la seule
   // place où l'information existe à coup sûr.
+  // Même règle que côté front : sans CATÉGORIE, une ville seule ne fait pas une requête — elle
+  // renvoie « 0 résultat » et fait croire que le prospect est absent (constat fiche Sofy, 21/08).
   const requete = String(b.requete || '').trim()
-    || [audit.categorie, audit.ville].filter(Boolean).join(' ').trim();
+    || (audit.categorie ? [audit.categorie, audit.ville].filter(Boolean).join(' ').trim() : '');
   // Les fiches analysées avant août 2026 n'ont pas de coordonnées stockées : SerpApi vient de nous
   // rendre celles de la fiche, on s'en sert plutôt que de renoncer à la position locale.
   const gps = fiche.gps_coordinates || {};
