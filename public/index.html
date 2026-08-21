@@ -2158,7 +2158,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v375';
+const VERSION='v376';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4618,6 +4618,14 @@ function poidsEngagement(e){
  if(g){const x=new Date(g.ts).getTime();if(isFinite(x))ts.push(x);}
  const dv=e.date_visite||(e.signal&&e.signal.date);
  if(dv){const x=new Date(dv).getTime();if(isFinite(x))ts.push(x);}
+ // Une analyse lue compte comme événement chaud : sans ça, la fiche d'un prospect en train de
+ // lire son analyse restait derrière un email ouvert d'il y a trois jours.
+ const L=(e._prezToutes&&e._prezToutes.length)?e._prezToutes:(e._prez?[e._prez]:[]);
+ for(const p of L){
+  if(!p||!p.ouvertures)continue;
+  const x=new Date(p.derniere_ouverture||p.derniere||0).getTime();
+  if(isFinite(x)&&x>0)ts.push(x);
+ }
  return ts.length?Math.max(...ts):0;
 }
 function ordreFiches(){const w=REAL.map(poidsEngagement);return REAL.map((x,k)=>k).sort(function(a,b){return w[b]-w[a];});}
@@ -4633,6 +4641,30 @@ function statutTagHtml(e){
  return '<span class="badge b-statut '+cls+'" title="Statut (bloc-notes)">'+emoji+' '+escapeHtml(v)+'</span>';
 }
 function badgeEngagement(e){const g=engagementDe(e);if(!g)return '';return '<span class="badge" title="Réaction Lemlist" style="background:#FEF2F2;border-color:#FECACA;color:#B91C1C;font-weight:700">🔥 '+escapeHtml(g.titre)+' · '+tempsRelEngag(g.ts)+'</span>';}
+
+// L'analyse lue est un signal d'ACHAT, pas une réaction d'email : le prospect a cliqué et lu deux
+// minutes sur sa propre situation. Il avait pourtant le même intitulé qu'un « email ouvert »
+// Lemlist — donc invisible dans la file (retour Didier, 21/08). Badge dédié, plus fort, et qui
+// NOMME le lecteur quand le lien était nominatif.
+function badgePrezLue(e){
+ const L=(e._prezToutes&&e._prezToutes.length)?e._prezToutes:(e._prez?[e._prez]:[]);
+ let mieux=null;
+ for(const p of L){
+  if(!p||!p.ouvertures)continue;
+  const ts=p.derniere_ouverture||p.derniere||null;
+  if(!mieux||(ts&&new Date(ts)>new Date(mieux.ts||0)))mieux={p:p,ts:ts};
+ }
+ if(!mieux)return '';
+ const p=mieux.p;
+ const lecteurs=(p.destinataires||[]).filter(d=>d&&(d.ouvertures||0)>0).map(d=>d.nom||d.email||d.tel);
+ const qui=lecteurs.length?' par '+lecteurs.slice(0,2).join(' et ')+(lecteurs.length>2?' +'+(lecteurs.length-2):''):'';
+ const nb=p.ouvertures>1?(' · '+p.ouvertures+' fois'):'';
+ const circule=(p.lecteurs_distincts>1)||(lecteurs.length>1);
+ return '<span class="badge" title="Le prospect a ouvert la page d\'analyse que tu lui as envoyée — signal plus fort qu\'un email ouvert"'
+  +' style="background:#F5F3FF;border-color:#C4B5FD;color:#6D28D9;font-weight:700">🎨 Analyse lue'
+  +escapeHtml(qui)+nb+(mieux.ts?' · '+tempsRelEngag(mieux.ts):'')+'</span>'
+  +(circule?'<span class="badge" title="Une deuxième personne a ouvert le document : il circule en interne" style="background:#FEF2F2;border-color:#FECACA;color:#B91C1C;font-weight:700">🔥 ça circule en interne</span>':'');
+}
 async function chargerAppelsRingover(){
  if(!REAL.length)return;
  const key=state.savedId||state.listeNom||'?';
@@ -6355,7 +6387,7 @@ function ficheReal(e,i){
     <div class="lead-meta">${(!estHL&&contacts.length&&contacts[0].nom)?e.nom+' · ':''}${e.enseigne&&e.enseigne!==e.nom?'Enseigne : '+e.enseigne+' · ':''}${e.persona_ia?'🎯 '+e.persona_ia+' · ':''}${e.naf||''}${e.nb_etablissements?' · '+e.nb_etablissements+' établissement'+(e.nb_etablissements>1?'s':''):''}${e.effectif?' · '+String(e.effectif).replace(/ salariés?$/i,'')+' salariés':''}${ca?' · CA '+ca:''}${(e.ville||e.region)?' · '+(e.ville||e.region):''}</div>
     <div class="badges">
      ${statutTagHtml(e)}
-     ${badgeEngagement(e)}
+     ${badgePrezLue(e)}${badgeEngagement(e)}
      ${e.gmb&&e.gmb.trouve&&typeof e.gmb.note_moyenne==='number'?`<span class="badge b-gmb">GMB ${String(e.gmb.note_moyenne).replace('.',',')} ★ (${e.gmb.total_avis} avis)</span>`:''}
      ${technosHtml(e)}
      ${e.signal_gmb&&(Date.now()-new Date(e.signal_gmb.date).getTime())<45*24*3600*1000?`<span class="badge b-signal" title="Veille e-réputation (cron mensuel) : la note Google décroche — signal d'achat Soview, appelle pendant que ça fait mal">📉 Note ${String(e.signal_gmb.avant).replace('.',',')}★ → ${String(e.signal_gmb.apres).replace('.',',')}★${e.signal_gmb.nouveaux_avis?' (+'+e.signal_gmb.nouveaux_avis+' avis)':''}</span>`:''}
