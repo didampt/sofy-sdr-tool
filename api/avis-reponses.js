@@ -18,6 +18,7 @@
 // masse, et le résultat est réutilisé pendant 30 jours.
 
 import { verifierToken, sql } from './db.js';
+import { appelSerpApi } from './serpapi.js';
 
 export const config = { maxDuration: 60 };
 
@@ -105,12 +106,12 @@ export default async function handler(req, res) {
   // SerpApi accepte place_id OU data_id, mais le place_id de l'API Places n'est pas toujours
   // reconnu tel quel. Repli : on récupère le data_id de la fiche puis on relance. Un appel de
   // plus, seulement quand c'est nécessaire.
+  // Chaque appel passe par le compteur : le plafond de 230/mois doit être connu AVANT de partir.
+  let budget = null;
   const lire = async (params) => {
-    const u = 'https://serpapi.com/search.json?' + new URLSearchParams(
-      { ...params, hl: 'fr', api_key: cle }).toString();
-    const r = await fetch(u, { signal: AbortSignal.timeout(25000) });
-    const d = await r.json().catch(() => ({}));
-    return { ok: r.ok, status: r.status, d };
+    const r = await appelSerpApi({ ...params, hl: 'fr' }, { qui: user.nom, motif: 'réponses aux avis' });
+    budget = r;
+    return { ok: r.ok, status: r.status, d: r.d };
   };
 
   let avis = [], via = 'place_id', titre = null;
@@ -149,6 +150,7 @@ export default async function handler(req, res) {
   } catch (e) {
     return res.status(502).json({ erreur: 'SerpApi injoignable', detail: String((e && e.message) || e).slice(0, 160) });
   }
+  if (budget && budget.refuse) return res.status(429).json({ erreur: budget.d.error, plafond_atteint: true, conso: budget.conso, plafond: budget.plafond });
   if (!avis.length) {
     return res.status(200).json({
       ok: true, vide: true,
@@ -205,6 +207,7 @@ export default async function handler(req, res) {
     : (d < 48 ? `${d} h` : `${Math.round(d / 24)} jours`);
   return res.status(200).json({
     ok: true, cache: false, mesure, via,
+    budget_serpapi: budget ? { conso: budget.conso, plafond: budget.plafond, alerte: budget.alerte } : null,
     resume: mesure.taux === 0
       ? `Aucun des ${mesure.analyses} avis les plus récents n'a reçu de réponse publique.`
       : `${mesure.repondus} des ${mesure.analyses} avis récents ont une réponse publique (${mesure.taux} %)${lisible ? `, avec un délai médian de ${lisible}` : ''}.`,

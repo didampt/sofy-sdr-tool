@@ -1324,6 +1324,10 @@ Spot-Hit</textarea>
           <span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">À lancer une fois après une mise à jour, pour pré-calculer les statistiques des anciennes listes.</span>
         </div>
         <div class="save-bar" style="justify-content:flex-start;margin-top:10px">
+          <button class="btn" style="background:var(--paper)" id="btn-budget-serpapi" onclick="budgetSerpApi()" title="230 relevés par mois pour toute l'équipe — voir ce qui reste et qui consomme">🎚️ Budget des relevés (SerpApi)</button>
+          <span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">Chaque analyse client consomme 6 à 10 relevés. Le plafond de l'abonnement est de 230 par mois : au-delà, les mesures s'arrêtent proprement au lieu de se dégrader en silence.</span>
+        </div>
+        <div class="save-bar" style="justify-content:flex-start;margin-top:10px">
           <button class="btn" style="background:var(--paper)" id="btn-diag-enrich" onclick="diagEnrich()">📊 Rendement de l'enrichissement</button>
           <button class="btn" style="background:var(--paper)" onclick="ouEstLaFiche()" title="Retrouver une entreprise dans toutes les listes, tous les statuts, tous les SDR">🔎 Où est passée cette fiche ?</button>
           <button class="btn" style="background:var(--paper)" onclick="appelsDuJour()" title="Reconstituer une journée de travail à partir des appels Ringover — survit à la perte d'une liste">📞 Reconstituer une journée</button>
@@ -2154,7 +2158,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v374';
+const VERSION='v375';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2410,6 +2414,8 @@ async function apercuRcsPrez(jeton,client){
    +'<b'+(trop?' style="color:#B91C1C"':'')+'>'+(d.repli_longueur||'?')+'/'+(d.repli_max||129)+' caract\u00e8res</b>'
    +(trop?' \u2014 au-del\u00e0, l\'API refuse la rich-card et tout partirait en SMS':'')+' :<br>'
    +'<span style="font-family:ui-monospace,Menlo,monospace">'+htmlSafe(d.repli_sms||'')+'</span>'
+   +(d.repli_note?'<div style="margin-top:6px">'+htmlSafe(d.repli_note)+'</div>':'')
+   +(d.sms_direct?'<div style="margin-top:7px;padding-top:6px;border-top:1px dashed var(--line)"><b>Si le RCS \u00e9choue compl\u00e8tement</b>, c\'est ce SMS qui part, avec le lien ('+(d.sms_direct_longueur||'?')+' car.) :<br><span style="font-family:ui-monospace,Menlo,monospace">'+htmlSafe(d.sms_direct)+'</span></div>':'')
    +((d.rcs_configure===false)?'<br><b style="color:#B45309">\u26a0\ufe0f Aucun agent RCS configur\u00e9 (SOFY_API_KEY_V2 / SOFY_RCS_SENDER_ID) \u2014 l\'envoi partira en SMS.</b>':'')
    +'</div>';
  }catch(err){z.innerHTML='<div style="font-size:12px;color:#B91C1C">Aper\u00e7u RCS : '+htmlSafe(err.message)+'</div>';}
@@ -6193,6 +6199,41 @@ function oublierPrez(j){
  });
 }
 
+// 🎚️ Le budget des relevés : combien reste-t-il, et qui consomme. Sans cet écran, un plafond de
+// 230 appels par mois n'est pas un plafond mais une surprise en fin de mois.
+async function budgetSerpApi(){
+ const b=document.getElementById('btn-budget-serpapi');
+ if(b){b.disabled=true;b.textContent='⏳…';}
+ try{
+  const d=await (await api('/api/serpapi?etat=1&mois=6')).json();
+  if(d.erreur){toast(d.erreur);return;}
+  const coul=d.etat==='plafond atteint'?'#B91C1C':(d.etat==='bientôt atteint'?'#B45309':'#0F7B4F');
+  document.getElementById('info-titre').textContent='🎚️ Budget des relevés — '+d.mois;
+  document.getElementById('info-corps').innerHTML=`
+   <div style="display:flex;gap:16px;align-items:baseline;flex-wrap:wrap;margin-bottom:10px">
+    <div style="font-size:34px;font-weight:800;color:${coul};line-height:1">${d.appels}<span style="font-size:18px;color:var(--ink-soft)"> / ${d.plafond}</span></div>
+    <div style="font-size:13px;line-height:1.5">
+     <b style="color:${coul}">${htmlSafe(d.etat)}</b> · ${d.restants} relevé(s) restant(s)<br>
+     soit environ <b>${d.analyses_restantes} analyse(s) client</b> d'ici la fin du mois
+    </div>
+   </div>
+   <div style="height:9px;border-radius:5px;background:var(--line);overflow:hidden;margin-bottom:14px">
+    <div style="height:100%;width:${Math.min(100,d.pct)}%;background:${coul}"></div></div>
+   ${d.echecs_du_mois?`<div style="font-size:12.5px;color:#B45309;margin-bottom:10px">⚠️ ${d.echecs_du_mois} appel(s) en échec ce mois-ci — ils consomment le quota sans rien rapporter. À regarder si le nombre grimpe.</div>`:''}
+   <div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">
+    <div><div style="font-size:11.5px;font-weight:800;letter-spacing:.05em;color:var(--ink-soft);margin-bottom:5px">PAR TYPE DE RELEVÉ</div>
+     ${(d.par_motif||[]).map(x=>`<div style="font-size:13px;display:flex;justify-content:space-between;gap:10px;padding:2px 0"><span>${htmlSafe(x.motif||'(sans motif)')}</span><b>${x.n}</b></div>`).join('')||'<div style="font-size:12.5px;color:var(--ink-soft)">aucun relevé ce mois-ci</div>'}</div>
+    <div><div style="font-size:11.5px;font-weight:800;letter-spacing:.05em;color:var(--ink-soft);margin-bottom:5px">PAR PERSONNE</div>
+     ${(d.par_personne||[]).map(x=>`<div style="font-size:13px;display:flex;justify-content:space-between;gap:10px;padding:2px 0"><span>${htmlSafe(x.qui||'?')}</span><b>${x.n}</b></div>`).join('')||'<div style="font-size:12.5px;color:var(--ink-soft)">—</div>'}</div>
+    <div><div style="font-size:11.5px;font-weight:800;letter-spacing:.05em;color:var(--ink-soft);margin-bottom:5px">MOIS PRÉCÉDENTS</div>
+     ${(d.historique||[]).map(x=>`<div style="font-size:13px;display:flex;justify-content:space-between;gap:10px;padding:2px 0"><span>${htmlSafe(x.mois)}</span><b>${x.n}</b></div>`).join('')}</div>
+   </div>
+   <div style="font-size:12px;color:var(--ink-soft);margin-top:14px;line-height:1.5">${htmlSafe(d.note||'')}</div>`;
+  document.getElementById('info-modal').style.display='flex';
+ }catch(e){toast('Budget : '+e.message);}
+ finally{if(b){b.disabled=false;b.textContent='🎚️ Budget des relevés (SerpApi)';}}
+}
+
 // ── Mes présentations ─────────────────────────────────────────────────────
 async function chargerMesPrez(){
  const c=document.getElementById('mes-prez');
@@ -6656,12 +6697,18 @@ async function completerMesures(i){
  const faits=[], erreurs=[];
  // Un relevé raté ne doit JAMAIS être silencieux : c'est ce qui a fait croire le 20/08 que la
  // planche « position locale » n'existait pas, alors que le relevé avait échoué sans le dire.
- const rater=(quoi,d)=>erreurs.push(quoi+' : '+String((d&&(d.erreur||d.info))||'réponse inattendue')
+ let plafondAtteint=null, alerteBudget=null;
+ const budget=(d)=>{
+  if(d&&d.plafond_atteint)plafondAtteint=d.erreur||'Plafond SerpApi atteint';
+  const b=d&&d.budget_serpapi;
+  if(b&&b.alerte)alerteBudget=b.alerte;
+ };
+ const rater=(quoi,d)=>(budget(d),erreurs.push(quoi+' : '+String((d&&(d.erreur||d.info))||'réponse inattendue')
   +((d&&d.detail)?' ('+String(d.detail).slice(0,120)+')':'')
   // Les champs de diagnostic envoyés par l'API (paramètres réellement transmis, valeurs reçues)
   // doivent apparaître : sans eux, deux causes différentes donnent le même message à l'écran.
   +((d&&d.parametres_envoyes)?' [envoyé : '+[].concat(d.parametres_envoyes).join(' | ')+']':'')
-  +((d&&d.recu)?' [reçu : '+JSON.stringify(d.recu)+']':''));
+  +((d&&d.recu)?' [reçu : '+JSON.stringify(d.recu)+']':'')));
  // Sans identifiant de fiche Google, TROIS relevés sur quatre sont impossibles : autant le dire
  // avec le geste qui débloque, plutôt que d'énumérer trois échecs.
  if(!pid){
@@ -6674,6 +6721,7 @@ async function completerMesures(i){
    const r=await api('/api/avis-reponses',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({place_id:pid,nom:f.nom||e.nom})});
    const d=await r.json();
+   budget(d);
    if(d.ok&&d.mesure){e.gmb=Object.assign({},e.gmb||{},{reponses:{taux:d.mesure.taux,repondus:d.mesure.repondus,
      analyses:d.mesure.analyses,delai_median_h:d.mesure.delai_median_h,delai_max_h:d.mesure.delai_max_h}});
     faits.push('réponses aux avis');}
@@ -6688,6 +6736,7 @@ async function completerMesures(i){
     body:JSON.stringify({place_id:pid,nom:f.nom||e.nom,requete:req,
      ll:(f.lat&&f.lng)?('@'+f.lat+','+f.lng+',13z'):''})});
    const d=await r.json();
+   budget(d);
    if(d.ok&&d.audit){
     e.gmb=Object.assign({},e.gmb||{},{audit:d.audit});faits.push('audit de fiche');
     // La position locale est LA donnée de la planche « ce que trouve un client » : si elle
@@ -6730,6 +6779,7 @@ async function completerMesures(i){
     const r=await api('/api/ai-visibilite',{method:'POST',headers:{'Content-Type':'application/json'},
      body:JSON.stringify({requete:req,domaine:domaineDe(e),nom:enseigneDe(e)||e.nom})});
     const d=await r.json();
+    budget(d);
     if(d.ok&&d.mesure){e.gmb=Object.assign({},e.gmb||{},{ia_visibilite:d.mesure});faits.push('visibilité IA');}
     else rater('aperçu IA',d);
    }catch(err){rater('aperçu IA',{erreur:err.message});}
@@ -6769,6 +6819,7 @@ async function completerMesures(i){
     const r=await api('/api/apple-plans',{method:'POST',headers:{'Content-Type':'application/json'},
      body:JSON.stringify({requete:req,nom:enseigneDe(e)||e.nom,ll:ll,lieu:lieu})});
     const d=await r.json();
+    budget(d);
     if(d.ok&&d.apple){e.gmb=Object.assign({},e.gmb||{},{apple:d.apple});faits.push('Apple Plans');}
     else rater('Apple Plans',d);
    }catch(err){rater('Apple Plans',{erreur:err.message});}
@@ -6778,7 +6829,7 @@ async function completerMesures(i){
  // de 400 ms non attendu, la rédaction partait sans les relevés qu'on venait de payer — c'est
  // pour ça que les planches « position locale » et « aperçu IA » manquaient le 20/08.
  if(faits.length){ try{ await persisterMaintenant(); }catch(_){ erreurs.push('sauvegarde des relevés : échec — la rédaction risque de les ignorer'); } rerender(i); }
- return {faits,erreurs};
+ return {faits,erreurs,plafondAtteint,alerteBudget};
 }
 
 // La requête locale : ce qu'un client tape pour trouver le SERVICE, sans connaître le nom de
@@ -6875,6 +6926,14 @@ async function genererPrez(i){
   try{ rel=await completerMesures(i);
    if(rel.faits.length)toast('✅ Mesuré : '+rel.faits.join(', '));
   }finally{ v0.fermer(); }
+  // Plafond mensuel atteint : ce n'est pas un incident technique mais une limite d'abonnement.
+  // On le dit une fois, clairement, avec ce qui reste possible — et on laisse le choix.
+  if(rel.plafondAtteint){
+   if(!await confirmSofy('🎚️ Plafond des relevés atteint',
+    rel.plafondAtteint+'\n\nLe document sera rédigé sur les mesures déjà en base (fiche Google, technos, scoring), sans les relevés du mois : ni position locale, ni aperçu IA, ni Apple Plans.\n\nRegarde 🔧 Maintenance › Budget des relevés pour voir la consommation.',
+    'Générer sans les relevés'))return;
+  }
+  else if(rel.alerteBudget)toast('🎚️ '+rel.alerteBudget);
   // Un relevé raté change le document : sans position locale, la planche « ce que trouve un
   // client qui vous cherche » n'existe pas. Le SDR doit le savoir AVANT de payer la rédaction.
   if(rel.erreurs.length){

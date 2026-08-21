@@ -24,6 +24,25 @@ const BASE_PUB = () => process.env.SOFY_BASE_PUBLIQUE || 'https://www.sofyscrap.
 // ⚠️ fallback.text est plafonné à 129 caractères par l'API v2 : au-delà, la rich-card est
 // refusée (400) et l'envoi retombe en SMS. Limite constatée au test du 06/08.
 const MAX_FALLBACK = 129;
+
+// ── CE QUE LE REPLI SMS DOIT CONTENIR ──────────────────────────────────────────────────────────
+// Constat du 21/08, sur un SMS réellement reçu (+590) :
+//
+//   « Sofy : votre analyse de visibilite locale est prete. https://…/p/ckVlkBxwRLN9?d=1...
+//     ur9.fr/?uoL  ·  STOP 36789  ·  ur9.fr/?uoL »
+//
+// La plateforme Sofy fait TROIS choses à notre texte, qu'aucune documentation n'annonçait :
+//   1. elle héberge la rich-card sur une page web et ajoute SON lien court (ur9.fr/…) — c'est
+//      cette page qui montre le visuel RCS au destinataire ;
+//   2. elle ajoute elle-même la mention « STOP 36789 » (donc inutile d'en mettre une) ;
+//   3. elle TRONQUE notre texte pour faire tenir ses ajouts — et c'est notre URL qui a été
+//      coupée (« ?d=1... »), donc rendue inutilisable, alors qu'un lien court valide était déjà
+//      présent juste après.
+//
+// Conséquence : mettre notre URL dans le repli est contre-productif. Le texte se contente
+// d'annoncer, la plateforme fournit le lien vers la page qui porte le visuel ET le bouton.
+// Si un jour la plateforme cesse d'ajouter son lien, remettre le nôtre : une seule variable.
+const REPLI_AVEC_LIEN = String(process.env.SOFY_RCS_FALLBACK_AVEC_LIEN || '') === '1';
 // Mention STOP : retirée sur décision de Didier (21/08) — « nous avons les accords ». Miroir de
 // SMS_AJOUTER_STOP dans db.js : les deux se remettent ensemble si le cadre change.
 const MENTION_STOP = false;
@@ -171,13 +190,26 @@ export default async function handler(req, res) {
     //    documentée dans rcs-rdv-cron.js depuis le test du 06/08). Mon repli faisait 135
     //    caractères : le RCS était donc rejeté à chaque envoi, et le SMS v1 prenait le relais.
     const queue = MENTION_STOP ? ' STOP pour ne plus etre contacte.' : '';
-    let repli = gsmifier(`Sofy : votre analyse de visibilite locale est prete. ${url}${queue}`);
-    if (repli.length > MAX_FALLBACK) repli = gsmifier(`Sofy : votre analyse est prete. ${url}`).slice(0, MAX_FALLBACK);
+    // Court exprès : la plateforme ajoute son lien court et sa mention STOP, et tronque au besoin.
+    // Moins nous écrivons, moins il y a de matière à couper — et rien d'essentiel n'est perdu.
+    let repli = gsmifier(REPLI_AVEC_LIEN
+      ? `Sofy : votre analyse de visibilite locale est prete. ${url}${queue}`
+      : `Sofy : votre analyse de visibilite locale est prete, ouvrez le lien ci-dessous.${queue}`);
+    if (repli.length > MAX_FALLBACK) repli = repli.slice(0, MAX_FALLBACK);
+    // ⚠️ DEUX textes, à ne pas confondre :
+    //  · `repli` part dans fallback.text — la plateforme y ajoutera SON lien court ;
+    //  · `smsDirect` sert quand NOUS envoyons le SMS nous-mêmes (rich-card refusée) : là, aucune
+    //    page n'est hébergée, donc notre URL est indispensable. L'oublier enverrait un SMS qui
+    //    annonce une analyse sans donner le moyen de l'ouvrir.
+    const smsDirect = gsmifier(`Sofy : votre analyse de visibilite locale est prete. ${url}${queue}`);
     const diag = analyserSms(repli);
 
     if (b.apercu) {
       return res.status(200).json({ ok: true, apercu: true, texte: txt, url, visuel: VISUEL_PREZ,
         bouton: '📊 Voir mon analyse', repli_sms: repli, segments_sms: diag.segments, alphabet: diag.alphabet,
+        sms_direct: smsDirect, sms_direct_longueur: smsDirect.length,
+        repli_note: REPLI_AVEC_LIEN ? null
+          : 'La plateforme Sofy ajoute son propre lien court vers la page qui porte le visuel RCS, plus la mention STOP. Notre URL n\'est donc pas répétée ici : elle serait tronquée.',
         // La longueur est affichée à l'écran : au-delà de 129, l'API v2 refuse la rich-card et
         // tout partirait en SMS. Le bug du 20/08 aurait été visible avant l'envoi.
         repli_longueur: repli.length, repli_max: MAX_FALLBACK,
@@ -212,7 +244,7 @@ export default async function handler(req, res) {
     // la v2 puis la v1 et dit par où il est passé : un seul point d'entrée pour tous les SMS de
     // l'application, donc un seul endroit à corriger le jour où une route change.
     if (!envoi || envoi.erreur) {
-      const sms = await envoyerSmsSofy({ to: tel, message: repli, user: user.nom, liste_id: b.liste_id || null, transactionnel: false });
+      const sms = await envoyerSmsSofy({ to: tel, message: smsDirect, user: user.nom, liste_id: b.liste_id || null, transactionnel: false });
       if (sms.ok) envoi = { canal: 'sms (' + (sms.via || '?') + ')', id: sms.id || null, rcs_echec: envoi && envoi.erreur };
       else return res.status(502).json({ erreur: 'Envoi refusé', detail: (envoi && envoi.erreur) || sms.detail });
     }
@@ -268,7 +300,11 @@ export default async function handler(req, res) {
   const titre = '💬 Découvrez le futur du SMS avec le RCS';
   // Mention légale prospection B2B (droit d'opposition) — jamais retirée du repli SMS non plus
   const stop = ' Pour ne plus recevoir de message : répondez STOP.';
-  const replicourt = `Sofy : ce message est un RCS de démonstration. 15 min pour en parler ? ${LIEN_DEMO}`.slice(0, 129);
+  // Même règle que pour l'analyse : la plateforme ajoute son lien court vers la page de la
+  // rich-card. Y remettre le nôtre ferait tronquer l'un des deux.
+  const replicourt = (REPLI_AVEC_LIEN
+    ? `Sofy : ce message est un RCS de demonstration. 15 min pour en parler ? ${LIEN_DEMO}`
+    : `Sofy : ce message est un RCS de demonstration. 15 min pour en parler ? Lien ci-dessous.`).slice(0, MAX_FALLBACK);
 
   try {
     let envoi = null;

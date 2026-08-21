@@ -17,6 +17,7 @@
 // à l'autre. SERPAPI_KEY requise (Vercel › Environment Variables).
 
 import { verifierToken, sql } from './db.js';
+import { appelSerpApi } from './serpapi.js';
 
 export const config = { maxDuration: 45 };
 const CACHE_JOURS = 30;
@@ -103,7 +104,7 @@ export default async function handler(req, res) {
     });
   }
 
-  let lieux = [], envoye = null;
+  let lieux = [], envoye = null, budget = null;
   // Deux tentatives au plus : les coordonnées d'abord (précises), la ville ensuite. Un « location »
   // qu'Apple ne reconnaît pas ne doit pas coûter la mesure quand on a des coordonnées, et
   // réciproquement.
@@ -118,11 +119,11 @@ export default async function handler(req, res) {
   let derniereErreur = null;
   for (const geo of tentatives) {
     try {
-      const p = { engine: 'apple_maps', query: requete, ...geo, api_key: cle };
-      const u = 'https://serpapi.com/search.json?' + new URLSearchParams(p).toString();
-      const r = await fetch(u, { signal: AbortSignal.timeout(30000) });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok || (d && d.error)) {
+      const r = await appelSerpApi({ engine: 'apple_maps', query: requete, ...geo }, { qui: user.nom, motif: 'Apple Plans' });
+      budget = r;
+      if (r.refuse) return res.status(429).json({ erreur: r.d.error, plafond_atteint: true, conso: r.conso, plafond: r.plafond });
+      const d = r.d;
+      if (!r.ok) {
         derniereErreur = { http: r.status, message: String((d && d.error) || 'HTTP ' + r.status).slice(0, 200), envoye: geo };
         continue;
       }
@@ -189,6 +190,7 @@ export default async function handler(req, res) {
       : (apple.present
         ? `Présent sur Apple Plans en ${apple.position}ᵉ position${apple.note != null ? `, ${String(apple.note).replace('.', ',')}★` : ', sans note'}${apple.avis != null ? ` (${apple.avis} avis)` : ''}.`
         : `ABSENT des ${lieux.length} résultats Apple Plans sur « ${requete} » — sur iPhone, ce client ne le trouve pas.`),
+    budget_serpapi: budget ? { conso: budget.conso, plafond: budget.plafond, alerte: budget.alerte } : null,
     cout_estime_usd: 0.01
   });
 }

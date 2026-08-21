@@ -14,6 +14,7 @@
 // lui-même si Google le renvoie séparément. Environ 0,01 $ chacun.
 
 import { verifierToken, sql } from './db.js';
+import { appelSerpApi } from './serpapi.js';
 
 export const config = { maxDuration: 60 };
 const CACHE_JOURS = 21;   // les réponses de l'IA bougent plus vite qu'une fiche
@@ -100,15 +101,17 @@ export default async function handler(req, res) {
     } catch (_) { }
   }
 
+  let budget = null;
   const lire = async (params) => {
-    const u = 'https://serpapi.com/search.json?' + new URLSearchParams({ ...params, hl: 'fr', gl: 'fr', api_key: cle }).toString();
-    const r = await fetch(u, { signal: AbortSignal.timeout(30000) });
-    return { ok: r.ok, status: r.status, d: await r.json().catch(() => ({})) };
+    const r = await appelSerpApi({ ...params, hl: 'fr', gl: 'fr' }, { qui: user.nom, motif: 'aperçu IA + annonces' });
+    budget = r;
+    return { ok: r.ok, status: r.status, d: r.d };
   };
 
   let apercu = null, annonces = [];
   try {
     const rep = await lire({ engine: 'google', q: requete });
+    if (budget && budget.refuse) return res.status(429).json({ erreur: budget.d.error, plafond_atteint: true, conso: budget.conso, plafond: budget.plafond });
     if (!rep.ok) return res.status(502).json({ erreur: 'SerpApi ' + rep.status, detail: String((rep.d && rep.d.error) || '').slice(0, 200) });
     annonces = annoncesDe(rep.d);
     apercu = rep.d.ai_overview || null;
@@ -192,6 +195,7 @@ export default async function handler(req, res) {
     resume: mesure.cite
       ? `Cité par l'aperçu IA de Google sur « ${requete} », en source n°${mesure.rang_citation}.`
       : `PAS cité par l'aperçu IA de Google sur « ${requete} »${mesure.entreprises_citees.length ? ` — l'IA renvoie vers ${mesure.entreprises_citees.slice(0, 3).join(', ')}` : ''}.`,
+    budget_serpapi: budget ? { conso: budget.conso, plafond: budget.plafond, alerte: budget.alerte } : null,
     cout_estime_usd: 0.02
   });
 }

@@ -14,6 +14,7 @@
 // SERPAPI_KEY requise (Vercel › Environment Variables).
 
 import { verifierToken, sql } from './db.js';
+import { appelSerpApi } from './serpapi.js';
 
 export const config = { maxDuration: 60 };
 const CACHE_JOURS = 30;
@@ -80,16 +81,20 @@ export default async function handler(req, res) {
     } catch (_) { }
   }
 
+  let budget = null;
   const lire = async (params) => {
-    const u = 'https://serpapi.com/search.json?' + new URLSearchParams({ ...params, hl: 'fr', api_key: cle }).toString();
-    const r = await fetch(u, { signal: AbortSignal.timeout(25000) });
-    return { ok: r.ok, status: r.status, d: await r.json().catch(() => ({})) };
+    const r = await appelSerpApi({ ...params, hl: 'fr' }, { qui: user.nom, motif: 'audit de fiche' });
+    budget = r;
+    return { ok: r.ok, status: r.status, d: r.d };
   };
 
   // ── 1. La fiche elle-même : photos, description, horaires, attributs ──
   let fiche = null;
   try {
     const rep = await lire({ engine: 'google_maps', type: 'place', place_id: placeId });
+    if (rep.status === 429 && budget && budget.refuse) {
+      return res.status(429).json({ erreur: budget.d.error, plafond_atteint: true, conso: budget.conso, plafond: budget.plafond });
+    }
     fiche = rep.d && rep.d.place_results;
     if (!fiche) {
       return res.status(502).json({
@@ -187,6 +192,7 @@ export default async function handler(req, res) {
 
   return res.status(200).json({
     ok: true, cache: false, audit,
+    budget_serpapi: budget ? { conso: budget.conso, plafond: budget.plafond, alerte: budget.alerte } : null,
     resume: manques.length ? 'Fiche incomplète : ' + manques.join(', ') + '.' : 'Fiche complète sur les points mesurables.',
     position: audit.position_locale
       ? `${audit.position_locale}ᵉ sur « ${audit.requete} »`
