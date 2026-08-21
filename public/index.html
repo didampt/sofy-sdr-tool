@@ -2158,7 +2158,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v378';
+const VERSION='v379';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2653,6 +2653,8 @@ async function importerLikers(){
      const grp={};dt.exclus.forEach(x=>{const k=(x.nom||'')+'§'+(x.raison||'');grp[k]=grp[k]||{nom:x.nom,raison:x.raison,n:0};grp[k].n++;});
      const gs=Object.values(grp).sort((a,b)=>b.n-a.n);
      h+='<div style="margin-top:6px">🚫 <b>Exclus :</b><br>'+gs.map(x=>'· '+esc(x.nom)+(x.n>1?' <b>×'+x.n+'</b>':'')+' — <i>'+esc(x.raison)+'</i>').join('<br>')+'</div>';
+     // Exclusion totale : on le dit avant la liste, sinon le SDR conclut que le post ne valait rien.
+     if(d.alerte_filtre)h+='<div style="margin-top:8px;background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;padding:8px 10px;color:#92400E">⚠️ <b>'+esc(d.alerte_filtre)+'</b></div>';
      const pire=gs[0];
      if(pire&&pire.n>=3&&d.importes>=5&&pire.n>=Math.ceil(d.importes*0.5))
       h+='<div style="margin-top:8px;background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:8px 10px;color:#B91C1C">⚠️ <b>Extraction douteuse :</b> le même profil revient '+pire.n+' fois sur '+d.importes+' lus. LinkedIn a probablement changé sa structure — recharge la page du post, réouvre la fenêtre des réactions et relance le mini-extracteur (il annonce maintenant le nombre de noms distincts).</div>';

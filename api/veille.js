@@ -191,7 +191,13 @@ export default async function handler(req, res) {
       const etatI = await sql`SELECT deja_vus FROM veille_etat WHERE cle = 'import'`;
       const dejaVusI = new Set(etatI.length ? etatI[0].deja_vus : []);
       const forcerI = req.body && req.body.forcer === true; // ♻️ repêchage : ré-analyse aussi les déjà vus
-      const nouveauxI = forcerI ? profilsImp : profilsImp.filter(p => !dejaVusI.has(p.cle));
+      // ── SIMULATION ({ simuler:true }) ──────────────────────────────────────────────────────
+      // Régler un filtre à l'aveugle coûte des Hot Leads pollués ou des leads perdus. En mode
+      // simulation, on qualifie et on RÉPOND, sans rien créer ni marquer « déjà vu ». C'est ce
+      // qui manquait le 21/08 pour comprendre pourquoi les 22 likers d'un post BMW étaient tous
+      // écartés. Coût : un appel IA par lot de 25 (≈ 0,01 €).
+      const simuler = req.body && req.body.simuler === true;
+      const nouveauxI = (forcerI || simuler) ? profilsImp : profilsImp.filter(p => !dejaVusI.has(p.cle));
       // Seuls les profils GARDÉS (hot lead créé/déjà présent, ou match liste en veille) sont marqués
       // « vus » — les exclus du filtre restent repêchables si le filtre s'améliore (cas Justine T., 05/08).
       const clesVuesI = [];
@@ -234,9 +240,63 @@ export default async function handler(req, res) {
       // le JSON arrivait tronqué et le repli « tout garder » polluait les Hot Leads (07/08).
       let garderIA = new Set();
       let socIA = {};        // indice → société extraite de la tagline par l'IA
+      let raisonsIA = {};    // indice → pourquoi ce profil a été écarté (sinon le rejet est muet)
       const nonAnalyses = new Set(); // lot dont l'IA a échoué → exclus (repêchables avec ♻️)
-      const CONSIGNES = `Tu qualifies des profils LinkedIn ayant réagi à un post sur le marketing local / les avis clients. Nos produits (pilotage de fiches Google & avis, centralisation des conversations clients, campagnes SMS) ciblent les DÉCIDEURS — dirigeant, DG, gérant, directeur ou responsable marketing / communication / digital / commercial / relation client / réseau-franchise-retail — d'entreprises B2C : commerces, retail, franchises, restauration/CHR, automobile, beauté/santé, services locaux, grandes marques.
-À EXCLURE : étudiants et alternants (même en marketing), chercheurs/scientifiques, freelances/consultants/agences (growth, SEO, com...), profils RH/tech/finance/juridique, **chefs de projet / project managers / product managers / product owners, formateurs, responsables pédagogiques, coachs, designers, développeurs**, employés d'éditeurs de logiciels (concurrents ou non), et TOUT profil travaillant chez l'entreprise qui a publié le post${societePost ? ` (« ${societePost} »)` : ''}. EXCLURE AUSSI les profils institutionnels et corporate SANS points de vente : fédérations/syndicats professionnels (Medef, Apec, Syntec...), présidents d'associations/fondations, cabinets de conseil/audit/expertise, banque/assurance corporate, collectivités — notre cible a des BOUTIQUES, AGENCES ou CLIENTS GRAND PUBLIC. EXCLURE AUSSI les vendeurs EXÉCUTANTS sans entreprise B2C cible identifiable : Inside Sales, Sales/Account Executive, Account Manager, SDR/BDR, Business Developer, Customer Success — un vendeur qui prospecte n'est PAS un décideur qui achète (seuls les DIRECTEURS/RESPONSABLES commerciaux d'entreprises B2C restent dans la cible). Fonction vide = GARDER ; fonction prestigieuse mais hors commerce B2C = EXCLURE. Tagline en simple liste de mots-clés d'un secteur B2C SANS employeur identifiable, SANS marqueur freelance/agence/consultant et SANS intitulé de vendeur exécutant = AMBIGUË → GARDER, le SDR tranchera. Dans le doute sur un intitulé NON commercial (projet, produit, tech, formation, RH) : EXCLURE.`;
+      // ── LE FILTRE DE QUALIFICATION ──────────────────────────────────────────────────────────
+      // Refondu le 21/08 après un cas net : un post BMW Guadeloupe (présentation d'un iX3) a vu
+      // ses 22 likers TOUS exclus, dont « Gérant principal chez Man Nettoyage », « Traiteur
+      // entreprises en Martinique », deux « Chef d'entreprise » et un « Président chez GEM » —
+      // c'est-à-dire le cœur de la cible Sofy.
+      //
+      // Deux défauts de conception, pas un réglage trop strict :
+      //  1. la consigne AFFIRMAIT que le post parlait « de marketing local / d'avis clients ».
+      //     Faux ici. Le modèle en déduisait que personne n'avait de lien avec notre sujet, donc
+      //     excluait tout le monde. Le thème du post est un CONTEXTE, jamais le critère.
+      //  2. dix lignes d'exclusions puis deux mots sur ce qu'il faut garder : à ce dosage, le
+      //     doute penche toujours du côté du rejet.
+      //
+      // Nouvelle structure : ce qu'on GARDE d'abord et pourquoi, les exclusions ensuite, et une
+      // RAISON par profil écarté — un rejet muet est indiagnosticable (« tous exclus » ne dit
+      // rien de ce qu'il faut corriger).
+      const CONSIGNES = `Tu qualifies des profils LinkedIn ayant réagi à un post. Sofy vend à des
+DÉCIDEURS d'entreprises qui ont des CLIENTS GRAND PUBLIC ou des points de vente : commerces,
+retail, franchises, restauration/CHR, automobile, beauté/santé, artisanat et services locaux
+(nettoyage, déménagement, travaux, traiteur, garages, stations, agences de voyage, cabinets de
+soins…), et les grandes marques à réseau. Les Antilles-Guyane-Réunion sont un territoire
+prioritaire : une PME locale y est une cible aussi sérieuse qu'un réseau national.
+
+⚠️ LE SUJET DU POST N'EST PAS LE CRITÈRE. Il donne le contexte de l'accroche, rien de plus. Un
+post de voiture, d'inauguration ou de recrutement peut très bien être liké par le gérant d'un
+commerce local : c'est QUI EST LA PERSONNE qui décide, pas ce qu'elle a liké.
+
+GARDER (dans cet ordre de certitude) :
+1. Toute personne qui DIRIGE une entreprise : chef d'entreprise, dirigeant, gérant, président,
+   PDG, CEO, DG, fondateur, propriétaire, patron, exploitant — même sans employeur nommé, même
+   sans secteur précisé. C'est le profil qui signe chez nous.
+2. Un directeur ou responsable marketing / communication / digital / commercial / relation client
+   / réseau / franchise / retail / e-réputation / point de vente.
+3. Une personne dont la tagline nomme une ENTREPRISE LOCALE ou un métier de proximité, quel que
+   soit son intitulé (« Traiteur entreprises en Martinique », « Man Nettoyage », « SG Travaux »,
+   « Ostéopathe », « Azur Boat Location »). L'activité prime sur le titre.
+4. Fonction VIDE ou illisible → GARDER. Le SDR tranchera en trente secondes ; nous, nous ne
+   pouvons pas récupérer un lead jeté.
+5. Doute entre garder et exclure → GARDER, sauf si le profil tombe dans une exclusion ci-dessous.
+
+EXCLURE, et seulement pour ces raisons :
+· travaille chez l'entreprise qui a publié le post${societePost ? ` (« ${societePost} »)` : ''} — y compris ses vendeurs et ses managers ;
+· étudiant, alternant, stagiaire, en recherche d'emploi ;
+· métier de PRESTATION vendue à d'autres entreprises et sans clientèle grand public propre :
+  freelance, agence (com, growth, SEO, web), consultant, cabinet de conseil/audit/expertise,
+  éditeur de logiciel, coach, formateur ;
+· fonction support sans pouvoir d'achat sur notre sujet : RH, informatique/dev, finance,
+  comptabilité, juridique, chef de projet / product manager / product owner, designer,
+  logistique, assistant, chercheur ;
+· vendeur exécutant sans entreprise cible identifiable : SDR, BDR, business developer, account
+  executive/manager, inside sales, customer success ;
+· structure sans clientèle grand public : fédération, syndicat professionnel, association,
+  fondation, collectivité, banque ou assurance corporate.
+⚠️ « Président » ou « CEO » d'une ENTREPRISE reste à GARDER : seules les associations, fédérations
+et fondations sont exclues. Ne confonds pas un sigle d'entreprise avec un nom d'association.`;
       if (process.env.ANTHROPIC_API_KEY && nouveauxI.length) {
         const TAILLE = 25;
         for (let d = 0; d < nouveauxI.length; d += TAILLE) {
@@ -251,7 +311,7 @@ export default async function handler(req, res) {
                 model: (process.env.MODELE_FILTRE_LIKERS || 'claude-sonnet-5') /* filtre de qualification des likers : la QUALITÉ prime (un faux positif pollue les Hot Leads, un faux négatif perd un lead). Sonnet 5 en test depuis le 07/08 — plus capable ET tarif d'introduction inférieur à Sonnet 4.6 jusqu'au 31/08/2026. Repli immédiat sans redéploiement : variable Vercel MODELE_FILTRE_LIKERS = claude-sonnet-4-6 */, max_tokens: 2000,
                 messages: [{ role: 'user', content: `${CONSIGNES}
 Profils : ${JSON.stringify(lot)}
-${veutAccroche ? `Texte du post (publié par « ${societePost || 'inconnu'} »${moduleDuPost ? `, concurrent de notre module ${MODULES_CONC[moduleDuPost]}` : ''}) : «${postTexte.slice(0, 800)}»\n` : ''}Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"garder":[indices des profils à garder],"societes":{"<indice>":"nom de l'entreprise UNIQUEMENT si la fonction du profil la mentionne (ex : Head of sales @ Décathlon → Décathlon) — omets l'indice sinon, n'invente jamais"}${veutAccroche ? `,"accroche":"1 phrase d'ouverture d'appel pour le SDR, 40 mots MAXIMUM et complète : « J'ai vu que vous avez réagi au post de ${societePost || 'X'} sur [le sujet RÉEL du texte ci-dessus — INTERDICTION d'évoquer un thème absent du post] », puis un pont naturel vers ${moduleDuPost ? 'notre terrain : ' + MODULES_CONC[moduleDuPost] : 'le module Sofy le plus proche du sujet du post (Soview=avis Google/visibilité locale, SoConnect=messagerie client, SoReach=SMS/RCS)'}"` : ''}}` }]
+${veutAccroche ? `Texte du post (publié par « ${societePost || 'inconnu'} »${moduleDuPost ? `, concurrent de notre module ${MODULES_CONC[moduleDuPost]}` : ''}) : «${postTexte.slice(0, 800)}»\n` : ''}Réponds UNIQUEMENT avec un objet JSON, sans texte autour : {"garder":[indices des profils à garder],"raisons":{"<indice d'un profil ÉCARTÉ>":"la raison, en 3 à 6 mots, reprise de la liste des exclusions (ex : « agence de communication », « employé de l'entreprise du post », « chef de projet »)"},"societes":{"<indice>":"nom de l'entreprise UNIQUEMENT si la fonction du profil la mentionne (ex : Head of sales @ Décathlon → Décathlon) — omets l'indice sinon, n'invente jamais"}${veutAccroche ? `,"accroche":"1 phrase d'ouverture d'appel pour le SDR, 40 mots MAXIMUM et complète : « J'ai vu que vous avez réagi au post de ${societePost || 'X'} sur [le sujet RÉEL du texte ci-dessus — INTERDICTION d'évoquer un thème absent du post] », puis un pont naturel vers ${moduleDuPost ? 'notre terrain : ' + MODULES_CONC[moduleDuPost] : 'le module Sofy le plus proche du sujet du post (Soview=avis Google/visibilité locale, SoConnect=messagerie client, SoReach=SMS/RCS)'}"` : ''}}` }]
               })
             });
             const dIA = await rIA.json().catch(() => null);
@@ -264,6 +324,7 @@ ${veutAccroche ? `Texte du post (publié par « ${societePost || 'inconnu'} »${
               }
               if (pIA.accroche) resImp.accroche = String(pIA.accroche).slice(0, 450);
               if (pIA.societes && typeof pIA.societes === 'object') Object.assign(socIA, pIA.societes);
+              if (pIA.raisons && typeof pIA.raisons === 'object') Object.assign(raisonsIA, pIA.raisons);
             }
           } catch (_) {}
           // Lot non qualifié (IA en erreur / réponse illisible) : on N'ajoute PAS ces profils aux Hot
@@ -273,6 +334,32 @@ ${veutAccroche ? `Texte du post (publié par « ${societePost || 'inconnu'} »${
         resImp.ia_lots = Math.ceil(nouveauxI.length / TAILLE);
         resImp.ia_modele = process.env.MODELE_FILTRE_LIKERS || 'claude-sonnet-5';
         if (nonAnalyses.size) resImp.ia_non_analyses = nonAnalyses.size;
+        // Zéro profil gardé sur un lot entier : c'est presque toujours le filtre qui se trompe,
+        // pas la réalité (cas BMW Guadeloupe du 21/08). On le dit au SDR au lieu de le laisser
+        // conclure que le post ne valait rien.
+        if (simuler) {
+          const detail = nouveauxI.map((p, k) => ({
+            nom: p.nom, fonction: (p.occupation || '').slice(0, 90),
+            garde: garderIA.has(k),
+            raison: garderIA.has(k) ? null : (raisonsIA[k] || raisonsIA[String(k)] || '(aucune raison donnée)'),
+            societe: socIA[k] || socIA[String(k)] || null
+          }));
+          return res.status(200).json({
+            ok: true, simulation: true, analyses: nouveauxI.length,
+            gardes: detail.filter(x => x.garde).length,
+            ecartes: detail.filter(x => !x.garde).length,
+            non_analyses: nonAnalyses.size,
+            modele: process.env.MODELE_FILTRE_LIKERS || 'claude-sonnet-5',
+            profils: detail,
+            accroche: resImp.accroche || null,
+            note: 'Simulation : aucun Hot Lead créé, aucun profil marqué « déjà vu ».'
+          });
+        }
+        if (nouveauxI.length >= 5 && garderIA.size === 0 && !nonAnalyses.size) {
+          resImp.alerte_filtre = `Le filtre a écarté les ${nouveauxI.length} profils, sans exception. `
+            + `C'est rare et généralement anormal : regarde les raisons ci-dessous. Si des dirigeants ou `
+            + `des commerces locaux y figurent, signale-le — le filtre est à corriger, pas le post.`;
+        }
       } else {
         nouveauxI.forEach((_, i) => garderIA.add(i)); // pas de clé IA : comportement d'avant (tout garder)
       }
@@ -289,7 +376,16 @@ ${veutAccroche ? `Texte du post (publié par « ${societePost || 'inconnu'} »${
           const empl = exclusEmployeurs.find(c => { const n = String(c).replace(/[\s\-]/g, ''); return n.length >= 3 && (occN.includes(n) || urlN.includes(n)); });
           if (empl) { resImp.exclus_employeur++; resImp.detail.exclus.push({ nom: p.nom, raison: 'employé « ' + empl + ' »' + (occN.includes(String(empl).replace(/[\s\-]/g, '')) ? '' : ' (URL du profil)') }); continue; }
           if (nonAnalyses.has(iP)) { resImp.exclus_ia++; resImp.detail.exclus.push({ nom: p.nom, raison: '⚠️ non analysé (filtre IA indisponible sur ce lot) — relance avec ♻️' }); continue; }
-          if (!garderIA.has(iP)) { resImp.exclus_ia++; resImp.detail.exclus.push({ nom: p.nom, raison: 'hors cible (filtre IA)' + (p.occupation ? ' — ' + p.occupation.slice(0, 60) : '') }); continue; }
+          if (!garderIA.has(iP)) {
+            resImp.exclus_ia++;
+            const pq = raisonsIA[iP] || raisonsIA[String(iP)] || null;
+            resImp.detail.exclus.push({
+              nom: p.nom,
+              raison: (pq ? String(pq).slice(0, 70) : 'hors cible (filtre IA, sans raison donnée)')
+                + (p.occupation ? ' — ' + p.occupation.slice(0, 60) : '')
+            });
+            continue;
+          }
           const sigT = typerSignal(nomAgentI, p);
           const r2 = await ajouterHotLead({
             nom_complet: p.nom, email: null,
