@@ -55,6 +55,12 @@ async function ensureAudit() {
   // source ne peut pas suffire à affirmer une absence dans un document client.
   try { await sql`ALTER TABLE fiche_audit ADD COLUMN IF NOT EXISTS site_declare TEXT`; } catch (_) {}
   try { await sql`ALTER TABLE fiche_audit ADD COLUMN IF NOT EXISTS telephone_declare TEXT`; } catch (_) {}
+  // ⚠️ MARQUEUR DE RÉVISION — sans lui, une correction de code n'atteint aucune fiche déjà auditée.
+  // Le cache dure 30 jours et la ligne est rendue telle quelle. Les lignes écrites avant le 21/08
+  // portent deux valeurs qu'on sait maintenant fausses : photos_enseigne = 0 (le filtre cherchait
+  // des champs que SerpApi ne rend pas → 0 sur TOUTES les fiches) et description_presente = false
+  // (le champ absent était lu comme une absence). Ces deux-là sont neutralisées à la lecture.
+  try { await sql`ALTER TABLE fiche_audit ADD COLUMN IF NOT EXISTS revision INTEGER`; } catch (_) {}
   pret = true;
 }
 
@@ -152,7 +158,14 @@ export default async function handler(req, res) {
     try {
       const [c] = await sql`SELECT * FROM fiche_audit WHERE place_id = ${placeId}
         AND mesure_le > NOW() - (${CACHE_JOURS} || ' days')::interval`;
-      if (c) return res.status(200).json({ ok: true, cache: true, audit: c });
+      if (c) {
+        // Une ligne d'avant la révision 2 ne peut pas être servie telle quelle : ses deux champs
+        // non fiables redeviennent « inconnu », ce qui les empêche de produire une affirmation
+        // fausse. On ne repaie pas le relevé pour autant — le reste de la ligne est bon.
+        const vieux = (c.revision || 0) < 2;
+        if (vieux) { c.photos_enseigne = null; c.description_presente = null; c.revision_ancienne = true; }
+        return res.status(200).json({ ok: true, cache: true, audit: c });
+      }
     } catch (_) { }
   }
 
@@ -225,6 +238,9 @@ export default async function handler(req, res) {
 
   const audit = {
     place_id: placeId,
+    // La révision voyage AVEC l'objet, pas seulement dans la base : le front doit pouvoir
+    // distinguer un relevé fiable d'une copie périmée stockée sur la fiche depuis des semaines.
+    revision: 2,
     nom: b.nom || fiche.title || null,
     photos_total: fiche.photos_count != null ? fiche.photos_count : photos.length,
     photos_enseigne: parEnseigne,
@@ -293,11 +309,11 @@ export default async function handler(req, res) {
   try {
     await sql`INSERT INTO fiche_audit (place_id, nom, photos_total, photos_enseigne,
         site_declare, telephone_declare,
-        description_presente, horaires_presents, nb_categories, nb_attributs,
+        revision, description_presente, horaires_presents, nb_categories, nb_attributs,
         position_locale, requete, concurrents, categorie, ville, lat, lng, whatsapp_sur_fiche, whatsapp_champ, mesure_le, mesure_par)
       VALUES (${audit.place_id}, ${audit.nom}, ${audit.photos_total}, ${audit.photos_enseigne},
               ${audit.site_declare}, ${audit.telephone_declare},
-              ${audit.description_presente}, ${audit.horaires_presents}, ${audit.nb_categories},
+              2, ${audit.description_presente}, ${audit.horaires_presents}, ${audit.nb_categories},
               ${audit.nb_attributs}, ${audit.position_locale}, ${audit.requete},
               ${JSON.stringify(audit.concurrents)}::jsonb, ${audit.categorie}, ${audit.ville},
               ${audit.lat}, ${audit.lng}, ${audit.whatsapp_sur_fiche}, ${audit.whatsapp_champ}, NOW(), ${user.nom})
@@ -310,6 +326,7 @@ export default async function handler(req, res) {
         lat = EXCLUDED.lat, lng = EXCLUDED.lng, whatsapp_sur_fiche = EXCLUDED.whatsapp_sur_fiche,
         whatsapp_champ = EXCLUDED.whatsapp_champ,
         site_declare = EXCLUDED.site_declare, telephone_declare = EXCLUDED.telephone_declare,
+        revision = EXCLUDED.revision,
         mesure_le = NOW(), mesure_par = EXCLUDED.mesure_par`;
   } catch (eCache) {
     // Un cache non écrit n'est pas anodin : la prochaine analyse REPAYERA ces appels, sur un

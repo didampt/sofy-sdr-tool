@@ -61,6 +61,20 @@ async function ensurePrez() {
 const NOM_MODULE = { soview: 'Soview', soconnect: 'SoConnect', soreach: 'SoReach', tous: 'la suite Sofy' };
 
 // Tout ce que Sofy Scrap sait déjà du prospect — c'est la matière de la planche 2
+/* Une requête locale n'en est une que si elle décrit un MÉTIER. « Paris » n'en est pas une : la
+   recherche rend zéro résultat, et ce zéro ne dit RIEN du prospect — il dit que nous n'avons pas su
+   poser la question. Tant que ce contrôle n'existait pas, le document annonçait « votre fiche
+   n'apparaît pas dans les résultats locaux sur Paris » et « absent d'Apple Plans » à un prospect
+   parfaitement présent sur les deux (constat sur notre propre fiche, 21/08).
+   Notre échec de mesure ne devient jamais son manque. */
+function requeteValable(q, ville) {
+  const s = String(q || '').trim();
+  if (s.length < 6) return false;
+  const n = x => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ').trim();
+  return n(s) !== n(ville);
+}
+
 function mesures(e) {
   const g = e.gmb || {};
   const m = {
@@ -114,10 +128,10 @@ function mesures(e) {
         // fiche » — un encart rouge affiché sur la fiche SOFY France, qui porte une description
         // complète. Ces deux champs sont désormais tri-état, et la valeur null est nommée pour
         // qu'aucune rédaction ne puisse la lire comme une absence.
-        photos_publiees_par_lenseigne: typeof g.audit.photos_enseigne === 'number'
+        photos_publiees_par_lenseigne: ((g.audit.revision || 0) >= 2 && typeof g.audit.photos_enseigne === 'number')
           ? g.audit.photos_enseigne : 'NON MESURABLE — ne rien en conclure, ne pas en parler',
-        description: g.audit.description_presente === true ? true
-          : (g.audit.description_presente === false ? false
+        description: ((g.audit.revision || 0) >= 2 && g.audit.description_presente === true) ? true
+          : (((g.audit.revision || 0) >= 2 && g.audit.description_presente === false) ? false
             : 'NON MESURABLE par ce relevé — ne pas écrire qu\'elle est absente'),
         horaires: !!g.audit.horaires_presents,
         position_locale: g.audit.position_locale, requete_testee: g.audit.requete,
@@ -247,7 +261,7 @@ function mesures(e) {
         d.push('Votre fiche Google propose WhatsApp : vos clients vous écrivent déjà, sur un mobile — '
           + 'sans historique partagé, sans transfert possible, et sans trace de ce qui a été promis.');
       }
-      if (a2.requete && a2.position_locale == null) {
+      if (requeteValable(a2.requete, e.ville || a2.ville) && a2.position_locale == null) {
         d.push(`Sur « ${a2.requete} », votre fiche n'apparaît pas dans les résultats locaux : un client qui cherche le service, et non votre nom, ne vous voit pas.`);
       } else if (a2.position_locale && a2.position_locale > 3 && (a2.concurrents || []).length) {
         const c1 = a2.concurrents[0];
@@ -487,15 +501,18 @@ function scorer(e) {
     // cherchait des champs que SerpApi ne rend pas : le compte valait 0 sur toutes les fiches du
     // monde, et la phrase s'affichait partout — y compris sur la fiche SOFY France, dont la plupart
     // des photos sont les nôtres. photos_enseigne vaut désormais null quand on ne sait pas.
-    const attrLue = typeof au.photos_enseigne === 'number';
+    // Même garde-fou que côté front : un audit d'avant la révision 2 porte des valeurs qu'on sait
+    // fausses, et il peut rester stocké sur la fiche pendant des semaines.
+    const fiable = (au.revision || 0) >= 2;
+    const attrLue = fiable && typeof au.photos_enseigne === 'number';
     v.push(crit('Photos de la fiche', ph >= 20 ? 'ok' : (ph >= 8 ? 'moyen' : 'faible'),
       ph >= 20 ? 12 : (ph >= 8 ? 7 : 2), 12,
       `${ph} photo(s)${attrLue && au.photos_enseigne === 0 && ph > 0 ? ' — aucune publiée par vous : vos clients seuls racontent votre lieu' : ''}`));
     // Description : TRI-ÉTAT. true = vue · null = cette voie ne l'expose pas. La fiche SOFY France
     // porte une description complète que le relevé n'a pas rendue : on ne peut donc pas conclure.
     // Le critère ne porte plus que sur ce qui est constatable, et le dit.
-    const descVue = au.description_presente === true;
-    const descInconnue = au.description_presente == null;
+    const descVue = fiable && au.description_presente === true;
+    const descInconnue = !fiable || au.description_presente == null;
     const sur = descInconnue ? 6 : 12;
     const pts = (descVue ? 6 : 0) + (au.horaires_presents ? 6 : 0);
     v.push(crit('Complétude de la fiche',
@@ -504,13 +521,18 @@ function scorer(e) {
        au.horaires_presents ? 'horaires renseignés' : 'aucun horaire'
       ].filter(Boolean).join(', ')
       + (descInconnue ? ' · la description du propriétaire n\'est pas lisible par ce relevé — à regarder ensemble' : '')));
+    // Une position mesurée sur une requête sans métier ne se note pas : zéro résultat sur « Paris »
+    // n'est pas une absence du prospect, c'est une question mal posée.
+    const reqOk = requeteValable(au.requete, e.ville || au.ville);
     if (au.position_locale != null || au.requete) {
       v.push(crit('Position sur les recherches locales',
-        au.position_locale == null ? 'faible' : (au.position_locale <= 3 ? 'ok' : (au.position_locale <= 10 ? 'moyen' : 'faible')),
-        au.position_locale == null ? 0 : (au.position_locale <= 3 ? 18 : (au.position_locale <= 10 ? 9 : 3)), 18,
-        au.position_locale == null
-          ? `absent des résultats locaux sur « ${au.requete} »`
-          : `${au.position_locale}ᵉ sur « ${au.requete} »`));
+        au.position_locale != null ? (au.position_locale <= 3 ? 'ok' : (au.position_locale <= 10 ? 'moyen' : 'faible'))
+          : (reqOk ? 'faible' : 'inconnu'),
+        au.position_locale == null ? 0 : (au.position_locale <= 3 ? 18 : (au.position_locale <= 10 ? 9 : 3)),
+        (au.position_locale != null || reqOk) ? 18 : 0,
+        au.position_locale != null ? `${au.position_locale}ᵉ sur « ${au.requete} »`
+          : (reqOk ? `absent des résultats locaux sur « ${au.requete} »`
+                   : `la requête testée (« ${au.requete || '—'} ») ne décrit aucun métier : le résultat ne permet rien de conclure`)));
     }
   } else {
     v.push(crit('Photos et complétude', 'inconnu', 0, 0, 'non mesuré — un audit de fiche dédié est nécessaire'));
@@ -1034,7 +1056,7 @@ function assembler(cadre, duelsBruts, mes, blocs) {
   const ap0 = (mes.google && mes.google.apple_plans) || null;
   const mkOk = ((au0 && (au0.position_locale != null || (au0.trois_premiers || []).length))
     || (iv0 && (iv0.apercu_ia_affiche || (iv0.concurrents_qui_paient || []).length))
-    || (ap0 && ap0.total_resultats));
+    || (ap0 && (ap0.present || (ap0.total_resultats || 0) > 0)));
   if (mkOk && ((au0 && au0.requete_testee) || (iv0 && iv0.requete_testee))) {
     pl.push({
       role: 'marche', eyebrow: 'CE QUE TROUVE UN CLIENT QUI VOUS CHERCHE',
@@ -1049,7 +1071,11 @@ function assembler(cadre, duelsBruts, mes, blocs) {
         // Trois façons d'arriver devant le prospect : le référencement, l'achat d'espace, et
         // l'autre carte (Apple). Les trois sont mesurées, aucune n'est affirmée.
         ads: (iv0 && (iv0.concurrents_qui_paient || []).length) ? iv0.concurrents_qui_paient.slice(0, 5) : null,
-        apple: ap0 || null
+        // ⚠️ Apple n'est cité QUE si le relevé veut dire quelque chose : présent, ou absent d'une
+        // liste qui contenait bien des résultats. Sur zéro résultat, la page écrivait « Absent des
+        // 0 résultats » — une phrase qui n'accuse pas le prospect mais notre propre requête, et qui
+        // était fausse sur la fiche SOFY France, présente sur Apple Plans (constat Didier, 21/08).
+        apple: (ap0 && (ap0.present || (ap0.total_resultats || 0) > 0)) ? ap0 : null
       }
     });
   }

@@ -2159,7 +2159,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v395';
+const VERSION='v396';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -5020,8 +5020,15 @@ function relevesHtml(e,i,compact){
  }
  if(a&&(a.photos_total!=null||a.description_presente!=null)){
   const m=[];
-  if(a.photos_total!=null)m.push(a.photos_total+' photo(s)'+(a.photos_enseigne===0&&a.photos_total>0?' <b style="color:#B45309">dont aucune de l\'enseigne</b>':''));
-  if(a.description_presente===false)m.push('<b style="color:#B45309">pas de description</b>');
+  // ⚠️ DEUX CHAMPS À NE CROIRE QUE SUR UN RELEVÉ RÉVISÉ (21/08). Les audits écrits avant cette
+  // date portent photos_enseigne=0 — le filtre cherchait des champs que SerpApi ne rend pas, donc
+  // 0 sur TOUTES les fiches — et description_presente=false, où le champ absent était lu comme une
+  // absence. Ces copies périmées restent stockées sur la fiche : sans ce garde-fou, elles
+  // continuaient d'afficher « dont aucune de l'enseigne · pas de description » sur la fiche SOFY
+  // France, où les deux sont faux. Un relevé fiable porte revision >= 2.
+  const fiable=(a.revision||0)>=2;
+  if(a.photos_total!=null)m.push(a.photos_total+' photo(s)'+(fiable&&a.photos_enseigne===0&&a.photos_total>0?' <b style="color:#B45309">dont aucune de l\'enseigne</b>':''));
+  if(fiable&&a.description_presente===false)m.push('<b style="color:#B45309">pas de description</b>');
   if(a.horaires_presents===false)m.push('<b style="color:#B45309">pas d\'horaires</b>');
   if(m.length)li('🖼','Complétude de la fiche',m.join(' · '));
  }
@@ -5075,9 +5082,12 @@ function relevesHtml(e,i,compact){
   (e.technos_fait&&!(e.technos||[]).some(t=>t&&t.cat==='chat'))&&'aucune messagerie sur le site',
   (a&&a.whatsapp_sur_fiche)&&'WhatsApp actif sur la fiche Google, sans outil derrière',
   r&&r.taux===0&&'aucune réponse aux avis',
-  a&&a.position_locale==null&&a.requete&&'absent du local',
+  // « absent du local » et « absent d'Apple Plans » ne valent que si la question posée en valait
+  // une. Sur une requête vide de métier (« Paris »), zéro résultat ne dit rien du prospect : il
+  // dit que nous n'avons pas su chercher. Ne jamais transformer notre échec en son manque.
+  a&&a.position_locale==null&&requeteValable(a.requete,e.ville||a.ville)&&'absent du local',
   iv&&iv.apercu_present&&!iv.cite&&'non cité par l\'IA',
-  ap&&!ap.present&&'absent d\'Apple Plans'
+  ap&&!ap.present&&(ap.total_resultats||0)>0&&'absent d\'Apple Plans'
  ].filter(Boolean);
  if(compact)return '<div style="margin-bottom:8px"><div style="font-size:11px;font-weight:800;letter-spacing:.05em;color:var(--ink-soft);margin-bottom:2px">🔍 RELEVÉS TERRAIN</div>'+L.join('')+'</div>';
  return bloc('releves','🔍 Relevés terrain',
@@ -7336,6 +7346,47 @@ async function completerMesures(i){
   erreurs.push('aucune fiche Google rattachée : ni réponses aux avis, ni photos, ni position locale ne sont mesurables. Lance « ↻ Analyser » sur la fiche, ou rattache-la avec « ➕ Rattacher une enseigne » (menu ⋯).');
  }
 
+ /* ── 0. LA CATÉGORIE GOOGLE, AVANT TOUT LE RESTE (correction du 21/08) ──────────────────────────
+    Trois relevés sur quatre ont besoin d'une requête décrivant le MÉTIER du prospect. Quand la
+    fiche n'a pas d'activité renseignée, cette requête ne peut venir que de la catégorie Google.
+    Or ce rafraîchissement était placé à l'ÉTAPE 4 (Apple Plans) : l'étape 3 ouvrait donc une boîte
+    de dialogue avant lui, en annonçant « sa fiche Google n'a pas rendu de catégorie » — alors
+    qu'on ne l'avait simplement jamais demandée. Sur la fiche SOFY France, dont Google connaît
+    parfaitement la catégorie (« Entreprise de logiciels »), le SDR se retrouvait à saisir « Paris »
+    à la main. On ne peut pas demander au SDR ce que Google nous donne gratuitement.
+    Coût : 1 à 2 relevés, UNE FOIS par fiche (le résultat est ensuite en cache 30 jours). */
+ const auD=(e.gmb||{}).audit||null;
+ const villeRef=e.ville||(auD&&auD.ville)||'';
+ // Deux situations, et deux seulement, où l'audit en cache ne peut pas servir :
+ //  · il a été MESURÉ SUR UNE REQUÊTE QUI N'EN EST PAS UNE (« Paris ») : sa position locale ne veut
+ //    rien dire, et la relire perpétue l'erreur pendant les 30 jours du cache ;
+ //  · il ne porte pas la catégorie Google et la fiche n'a pas d'activité : aucune requête possible.
+ // Quand il n'y a PAS d'audit du tout, on ne touche à rien : l'étape 2 s'en charge, et le serveur
+ // sait déjà déduire la requête de la catégorie qu'il vient de lire — un seul appel suffit.
+ const auditCasse=!!(auD&&auD.requete&&!requeteValable(auD.requete,villeRef));
+ const auditSansMetier=!!(auD&&!auD.categorie&&!e.activite&&!e.secteur_rb2b);
+ if(pid&&(auditCasse||auditSansMetier)){
+  try{
+   // forcer:true — sans lui on relirait le cache, c'est-à-dire exactement la ligne incomplète
+   // (ou la mauvaise requête) qui nous a amenés ici.
+   const r0=await api('/api/fiche-audit',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({place_id:pid,nom:f.nom||e.nom,forcer:true})});
+   const d0=await r0.json();
+   budget(d0);
+   if(d0.ok&&d0.audit){
+    e.gmb=Object.assign({},e.gmb||{},{audit:d0.audit});
+    // Cet appel rend TOUT : catégorie, coordonnées, requête déduite et position locale. On le note
+    // comme un audit de fiche, pas comme un relevé à part — c'en est un.
+    faits.push(d0.audit.categorie
+      ? 'audit de fiche · catégorie Google « '+d0.audit.categorie+' »'
+      : 'audit de fiche');
+    if(auditCasse)faits.push('requête locale corrigée'+(d0.audit.requete?' → « '+d0.audit.requete+' »':''));
+    if(!d0.audit.categorie&&!e.activite&&!e.secteur_rb2b)
+     erreurs.push('la fiche Google de ce prospect ne déclare aucune catégorie (vérifié à l\'instant) : sans savoir de quel métier il s\'agit, ni la position locale, ni l\'aperçu IA, ni Apple Plans ne peuvent être testés — renseigne l\'activité sur la fiche (✏️)');
+   }else if(d0.erreur)erreurs.push('catégorie Google : '+String(d0.erreur).slice(0,140));
+  }catch(err){erreurs.push('catégorie Google : '+String(err.message||err).slice(0,120));}
+ }
+
  // 1. Réponses aux avis et délai réel (l'API Google ne les expose pas)
  if(pid&&!g.reponses){
   try{
@@ -7378,10 +7429,21 @@ async function completerMesures(i){
   if(req&&req.length<6)req='';
   // Dernier recours : on DEMANDE au SDR plutôt que de renoncer à la meilleure page du document.
   if(!req){
+   // ⚠️ CE MESSAGE AFFIRMAIT CE QU'ON N'AVAIT PAS VÉRIFIÉ (21/08). Il annonçait « sa fiche Google
+   // n'a pas rendu de catégorie » alors qu'on ne l'avait jamais demandée — l'audit venait du cache,
+   // écrit avant que la colonne existe. Sur la fiche SOFY France, dont Google connaît la catégorie
+   // (« Entreprise de logiciels »), le SDR se retrouvait à taper « Paris » à la main.
+   // L'étape 0 va désormais chercher la catégorie AVANT d'arriver ici : si cette boîte s'ouvre
+   // encore, c'est que Google lui-même n'en déclare aucune, et on peut le dire.
+   // La valeur par défaut ne propose plus la ville seule : elle serait refusée à coup sûr.
+   const auQ=(e.gmb||{}).audit||{};
+   const defaut=(e.activite||e.secteur_rb2b||auQ.categorie||'').trim();
    const saisie=prompt('Que taperait un client pour trouver ce MÉTIER, sans connaître le nom de l\'enseigne ?\n\n'
     +'Il faut une activité, pas seulement une ville : « logiciel avis clients Paris », pas « Paris ».\n\n'
-    +'Cette fiche n\'a pas d\'activité renseignée, et sa fiche Google n\'a pas rendu de catégorie.',
-    (e.activite||'')+(e.ville?' '+e.ville:''));
+    +(auQ.categorie
+      ? 'Catégorie relevée sur sa fiche Google : « '+auQ.categorie+' ».'
+      : 'Sa fiche Google ne déclare aucune catégorie (vérifié à l\'instant), et la fiche Sofy Scrap n\'a pas d\'activité renseignée.'),
+    defaut?(defaut+(e.ville?' '+e.ville:'')):'');
    req=String(saisie||'').trim();
    if(req.length<6){
     erreurs.push(req?('position locale et aperçu IA : « '+req+' » est trop court pour être une requête (6 caractères minimum, et il faut un métier)')
@@ -7531,10 +7593,25 @@ function villeDeAdresse(ad){
  const b=a.split(',').map(x=>x.trim()).filter(Boolean);
  return b.length>=2?b[b.length-2].replace(/\b\d{5}\b/,'').trim():'';
 }
+// Une requête est valable si elle décrit un MÉTIER, pas seulement un lieu. « Paris » n'est pas une
+// requête : c'est ce qui a fait répondre « 0 résultat » à Apple sur la fiche SOFY France.
+function requeteValable(q,ville){
+ const s=String(q||'').trim();
+ if(s.length<6)return false;
+ const n=x=>String(x||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+ return n(s)!==n(ville); // la ville seule, même longue (« Baie-Mahault »), ne décrit aucun métier
+}
 function requeteLocale(e){
  const g=e.gmb||{}, au=g.audit||{}, f=(g.fiches||[])[0]||g.pire_fiche||{};
- // Une requête déjà retenue par l'audit fait autorité : elle vient de la fiche Google elle-même.
- if(au.requete)return String(au.requete).slice(0,90);
+ const villeRef=e.ville||au.ville||villeDeAdresse(f.adresse)||'';
+ // ⚠️ LA REQUÊTE STOCKÉE NE FAIT AUTORITÉ QUE SI C'EN EST UNE (21/08).
+ // Cette ligne retournait `au.requete` sans le moindre contrôle, AVANT même de regarder la
+ // catégorie Google. Un audit lancé plus tôt avec « Paris » avait donc stocké requete='Paris' en
+ // base, et chaque relance relisait « Paris » — y compris quand la catégorie était parfaitement
+ // connue (« Entreprise de logiciels »). L'erreur s'auto-entretenait à travers le cache de 30
+ // jours : le SDR reprenait l'audit, retombait sur la même mauvaise requête, et Apple répondait
+ // encore « 0 résultat ». Une valeur qu'on a nous-mêmes écrite par erreur ne fait pas autorité.
+ if(requeteValable(au.requete,villeRef))return String(au.requete).trim().slice(0,90);
  const act=String(e.activite||e.secteur_rb2b||au.categorie||g.categorie||'').split(/[,;(]/)[0]
   .replace(/\b(autres?|divers|activités?|services? (de|d'))\b/gi,'').trim();
  const ville=e.ville||au.ville||villeDeAdresse(f.adresse)||'';
