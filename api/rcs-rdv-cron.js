@@ -90,25 +90,19 @@ async function envoyerSofy(tel, titre, texte, bouton, replicourt, sauterV2) {
       return { ok: false, erreur: 'sms: ' + (v1.detail || v1.status) };
     } catch (e) { return { ok: false, erreur: 'v1: ' + e.message }; }
   }
-  // « from » alphanumérique : uniquement s'il est déclaré côté Sofy (SOFY_SMS_FROM) — sinon
-  // expéditeur par défaut du compte v2. ⚠️ Constaté le 07/08 : le défaut est le code court DOM
-  // 36789 → rejeté vers un +33 métropole ; il faut un expéditeur adapté dans SOFY_SMS_FROM.
-  // Corps = repli COURT sans émojis (le texte long UCS-2 partait en 5 segments).
-  const corpsSms = { to: tel, body: fbk, isTransactional: true };
-  if (process.env.SOFY_SMS_FROM) corpsSms.from = process.env.SOFY_SMS_FROM;
-  const r2 = await fetch('https://api.sofy.fr/v2/sms', {
-    method: 'POST', headers,
-    body: JSON.stringify(corpsSms)
-  });
-  const d2 = await r2.json().catch(() => ({}));
-  if (r2.ok && d2.id) return { ok: true, canal: 'sms', id: d2.id, statut: d2.status || null, rcs_echec: typeof rcsEchec !== 'undefined' ? rcsEchec : null };
-  // 3) Dernier étage : l'API v1 (celle des SMS SoReach quotidiens, éprouvée) — la route SMS de la
-  //    clé v2 est « rejected by provider » toutes destinations (constat 07/08, à régler côté produit)
+  // ⚠️ CE FICHIER AVAIT SON PROPRE ÉTAGE /v2/sms, et il posait `from` UNIQUEMENT si
+  // SOFY_SMS_FROM était défini dans Vercel. Sans cette variable, le compte utilisait son
+  // expéditeur par défaut — le code court DOM 36789, rejeté vers la métropole (incident du
+  // 07/08). Et comme cet étage passait AVANT envoyerSmsSofy(), le chemin cassé gagnait.
+  // Il est supprimé : tous les SMS de l'application passent par envoyerSmsSofy(), qui tente la
+  // v2 avec l'expéditeur « SOFY » puis retombe sur la v1. Un seul chemin, un seul correctif.
   try {
-    const v1 = await envoyerSmsSofy({ to: tel, message: fbk, user: 'rcs-rdv', liste_id: null, transactionnel: true });
-    if (v1.ok) return { ok: true, canal: 'sms (' + (v1.via || '?') + ')', id: v1.id || null, rcs_echec: typeof rcsEchec !== 'undefined' ? rcsEchec : null, sms_v2_echec: JSON.stringify(d2).slice(0, 150) };
-  } catch (_) {}
-  return { ok: false, erreur: JSON.stringify(d2).slice(0, 200), rcs_echec: typeof rcsEchec !== 'undefined' ? rcsEchec : null };
+    const sms = await envoyerSmsSofy({ to: tel, message: fbk, user: 'rcs-rdv', liste_id: null, transactionnel: true });
+    if (sms.ok) return { ok: true, canal: 'sms (' + (sms.via || '?') + ')', id: sms.id || null, statut: sms.statut || null, rcs_echec: typeof rcsEchec !== 'undefined' ? rcsEchec : null };
+    return { ok: false, erreur: String(sms.detail || sms.status || 'envoi refusé').slice(0, 200), rcs_echec: typeof rcsEchec !== 'undefined' ? rcsEchec : null };
+  } catch (e) {
+    return { ok: false, erreur: String((e && e.message) || e).slice(0, 200), rcs_echec: typeof rcsEchec !== 'undefined' ? rcsEchec : null };
+  }
 }
 
 export default async function handler(req, res) {
