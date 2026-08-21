@@ -2159,7 +2159,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v392';
+const VERSION='v393';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4803,6 +4803,19 @@ function relevesHtml(e,i,compact){
    resume:fort.length?('⚠️ '+fort.join(' · ')+' — déplier pour les chiffres'):'Déplier pour les mesures détaillées.'});
 }
 
+// Fermeture de la fenêtre de correction — au clic sur le fond, sur « Fermer », ou par Échap.
+function fermerEdit(i){
+ const b=document.getElementById('edit'+(i==null?'':i));
+ if(b)b.style.display='none';
+ else document.querySelectorAll('[id^="edit"]').forEach(x=>{if(/^edit\d+$/.test(x.id))x.style.display='none';});
+}
+document.addEventListener('keydown',ev=>{
+ if(ev.key!=='Escape')return;
+ document.querySelectorAll('[id^="edit"]').forEach(x=>{
+  if(/^edit\d+$/.test(x.id)&&x.style.display!=='none')x.style.display='none';
+ });
+});
+
 function statutTagHtml(e){
  var v=e.statut_appel;
  if(!v && (e.tags_sdr||[]).includes('🤝 RDV pris')) v='RDV pris';
@@ -5543,7 +5556,7 @@ function ouvrirEdition(i){
   return;
  }
  REAL[i]._open=true;rerender(i);
- setTimeout(()=>{const b=document.getElementById('edit'+i);if(b){b.style.display='block';b.scrollIntoView({behavior:'smooth',block:'center'});}},80);
+ setTimeout(()=>{const b=document.getElementById('edit'+i);if(b)b.style.display='block';},80);
 }
 function copierEmail(i){
  const m=REAL[i].score&&REAL[i].score.email;
@@ -6595,8 +6608,16 @@ function ficheReal(e,i){
    <div class="fiche-chev">${open?'▾':'▸'}</div>
   </div>
   <div class="fiche-body" style="display:${open?'block':'none'}">
-   <div id="edit${i}" style="display:none;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:12px">
-    <div class="map-sub" style="margin-top:0">✏️ Corriger la fiche (le SDR connaît son terrain mieux que les bases)</div>
+   <div id="edit${i}" style="display:none">
+    <!-- Le formulaire de correction s'ouvrait en bloc dans le flux de la fiche : selon la position
+         de défilement, il apparaissait hors écran et le SDR ne le voyait pas (retour Didier,
+         21/08). Il est désormais présenté en fenêtre, au centre, avec son propre défilement. -->
+    <div onclick="if(event.target===this)fermerEdit(${i})" style="position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:905;display:flex;align-items:center;justify-content:center;padding:16px">
+     <div style="background:var(--card,#fff);border-radius:14px;padding:20px 22px;width:min(680px,96vw);max-height:88vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.3)">
+    <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px">
+     <div class="map-sub" style="margin:0;flex:1">✏️ Corriger la fiche (le SDR connaît son terrain mieux que les bases)</div>
+     <button class="act" style="padding:2px 9px;font-size:11.5px" onclick="fermerEdit(${i})">Fermer</button>
+    </div>
     <label style="display:block;font-size:12.5px;font-weight:600;margin:8px 0 5px">🔍 Rechercher sur Google <span style="font-weight:400;color:var(--ink-soft)">(facultatif — met à jour les champs)</span></label>
     <div style="position:relative;margin-bottom:14px">
      <input class="field" id="edit-google${i}" placeholder="Ex : Garage Dupont Bordeaux…" style="width:100%" autocomplete="off" oninput="rechercheGoogleEdit(${i},this.value)">
@@ -6629,6 +6650,8 @@ function ficheReal(e,i){
      <div style="display:flex;gap:8px">
       <button class="act act-export" onclick="reinitFiche(${i})">♻️ Réinitialiser + re-analyser</button>
       <button class="btn btn-primary" onclick="majFicheComplet(${i})">💾 Tout enregistrer</button>
+     </div>
+    </div>
      </div>
     </div>
    </div>
@@ -7015,7 +7038,7 @@ async function completerMesures(i){
  // 4. Apple Plans : la moitié du parc mobile français cherche là, et le NAP Sofy le promet
  //    depuis toujours sans jamais l'avoir mesuré.
  if(!(e.gmb||{}).apple){
-  const req=requeteLocale(e);
+  let req=requeteLocale(e);
   const au=(e.gmb||{}).audit||{};
   const ville=e.ville||au.ville||'';
   // Les coordonnées, dans l'ordre de fiabilité : celles relevées par l'audit de fiche (elles
@@ -7026,7 +7049,12 @@ async function completerMesures(i){
   // Les audits faits avant le 21/08 sont en cache SANS coordonnées (colonne ajoutée après) :
   // plutôt que de se rabattre sur la ville et risquer un 400, on relance l'audit une fois pour
   // les obtenir. Un centime, une seule fois par fiche — c'est ce qui a bloqué AGS deux jours.
-  if(pid&&!(Number.isFinite(Number(lat))&&Number.isFinite(Number(lng)))){
+  // ⚠️ Les audits mis en cache AVANT le 21/08 n'ont ni coordonnées ni catégorie : deux colonnes
+  // ajoutées après. Sans catégorie, la requête retombe sur la ville seule et Apple répond « 0
+  // résultat » — alors que SOFY France y est bel et bien (capture Didier, 21/08). On rafraîchit
+  // donc l'audit quand l'UN OU L'AUTRE manque, pas seulement les coordonnées.
+  const auManque=!au.categorie||!(Number.isFinite(Number(au.lat))&&Number.isFinite(Number(au.lng)));
+  if(pid&&auManque&&!(Number.isFinite(Number(lat))&&Number.isFinite(Number(lng))&&(e.activite||au.categorie))){
    try{
     const rr=await api('/api/fiche-audit',{method:'POST',headers:{'Content-Type':'application/json'},
      body:JSON.stringify({place_id:pid,nom:f.nom||e.nom,requete:req,forcer:true})});
@@ -7034,7 +7062,12 @@ async function completerMesures(i){
     if(dd.ok&&dd.audit){
      e.gmb=Object.assign({},e.gmb||{},{audit:dd.audit});
      lat=dd.audit.lat; lng=dd.audit.lng;
-     if(!faits.includes('audit de fiche'))faits.push('coordonnées de la fiche');
+     // La catégorie fraîchement relevée redonne une requête exploitable (« Agence de marketing
+     // Paris » au lieu de « Paris »), donc Apple et l'aperçu IA peuvent enfin répondre.
+     // On REMPLACE la requête, même si elle existait : celle de l'audit vient de la catégorie
+     // Google de la fiche, elle est toujours meilleure qu'une déduction côté front.
+     if(dd.audit.requete)req=dd.audit.requete;
+     if(!faits.includes('audit de fiche'))faits.push('coordonnées et catégorie de la fiche');
     }
    }catch(_){}
   }

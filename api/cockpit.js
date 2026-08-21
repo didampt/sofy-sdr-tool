@@ -377,6 +377,27 @@ export default async function handler(req, res) {
             }))
           });
         }
+        // ── Doublons DÉJÀ EN BASE ──────────────────────────────────────────────────────────
+        // Le correctif de dédup (db.js) empêche d'en créer de nouveaux, il ne nettoie pas ceux qui
+        // existent : « optima france » restait affiché deux fois (constat Didier, 21/08). On les
+        // regroupe À L'AFFICHAGE, en gardant la ligne la mieux renseignée — celle qui a un
+        // téléphone, un email, des contacts. Rien n'est supprimé en base ; le SDR voit UNE ligne
+        // par entreprise, ce qui est ce qu'il veut pour appeler.
+        const parSociete = new Map();
+        for (const h of hot) {
+          const k = normCk(h.nom);
+          if (!k) continue;
+          const garde = parSociete.get(k);
+          const poids = x => (x.tel ? 4 : 0) + (x.email_cle ? 2 : 0) + ((x.contacts_detail || []).length ? 1 : 0);
+          if (!garde) { parSociete.set(k, h); continue; }
+          const [gagnant, perdant] = poids(h) > poids(garde) ? [h, garde] : [garde, h];
+          gagnant.fiches_fusionnees = (gagnant.fiches_fusionnees || 1) + 1;
+          // On mémorise les contacts de la ligne écartée : ils ne doivent pas disparaître.
+          gagnant.contacts_detail = [...(gagnant.contacts_detail || []), ...(perdant.contacts_detail || [])]
+            .filter((c, i, t) => c && c.nom && t.findIndex(x => x.nom === c.nom) === i).slice(0, 6);
+          parSociete.set(k, gagnant);
+        }
+        hot = [...parSociete.values()];
         hot.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
         // Plafond d'AFFICHAGE (le total réel part dans hot_total pour la tuile — un plafond de 12
         // laissait croire qu'il n'y avait que 12 hot leads, constat Didier 07/08)
