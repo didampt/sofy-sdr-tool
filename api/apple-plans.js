@@ -58,6 +58,7 @@ function memeEnseigne(a, b) {
 }
 
 export default async function handler(req, res) {
+  let erreurCache = null;   // échec d'écriture du cache : coûte un relevé de plus au prochain appel
   const user = verifierToken(req);
   if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
   if (req.method !== 'POST') return res.status(405).json({ erreur: 'POST uniquement' });
@@ -181,10 +182,15 @@ export default async function handler(req, res) {
         site_declare = EXCLUDED.site_declare, telephone_declare = EXCLUDED.telephone_declare,
         trois_premiers = EXCLUDED.trois_premiers, total_resultats = EXCLUDED.total_resultats,
         mesure_le = NOW(), mesure_par = EXCLUDED.mesure_par`;
-  } catch (_) { }
+  } catch (eCache) {
+    // Un cache non écrit n'est pas anodin : la prochaine analyse REPAYERA ces appels, sur un
+    // budget de 230 par mois. On le remonte au lieu de le taire.
+    erreurCache = String((eCache && eCache.message) || eCache).slice(0, 180);
+  }
 
   return res.status(200).json({
     ok: true, cache: false, apple,
+    cache_erreur: erreurCache,
     resume: !lieux.length
       ? `Apple Plans ne rend aucun résultat sur « ${requete} » — requête trop étroite ou zone mal cadrée.`
       : (apple.present

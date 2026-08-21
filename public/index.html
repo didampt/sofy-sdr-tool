@@ -2159,7 +2159,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v382';
+const VERSION='v383';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4744,10 +4744,30 @@ function relevesHtml(e,i){
    iv.annonceurs.slice(0,3).map(x=>htmlSafe(x.nom||'')+(x.note!=null?' ('+String(x.note).replace('.',',')+'★)':'')).join(' · ')
    +(iv.annonceurs.length>3?' +'+(iv.annonceurs.length-3):''));
  }
+ // ── Messagerie client : l'argument SoConnect ──
+ // Deux sources, et deux niveaux de certitude à ne pas mélanger :
+ //  · le SITE — la détection de technos cherche wa.me / api.whatsapp.com et les widgets de chat.
+ //    C'est une MESURE : le bouton est là ou il n'est pas là.
+ //  · la FICHE Google — Google n'a pas de bouton WhatsApp (sa fonction « Chat » a été arrêtée en
+ //    juillet 2024). On ne peut donc que repérer un lien wa.me placé dans le champ site web ou
+ //    réservation. Présent, c'est un signal fort ; absent, ça ne prouve rien.
+ const tec=e.technos||[];
+ const wa=tec.find(t=>t&&t.id==='whatsapp');
+ const chats=tec.filter(t=>t&&t.cat==='chat'&&t.id!=='whatsapp');
+ if(e.technos_fait||wa||chats.length){
+  const bouts=[];
+  if(wa)bouts.push('<b style="color:#0F7B4F">bouton WhatsApp sur le site</b>');
+  if(chats.length)bouts.push('chat : '+chats.map(t=>htmlSafe(t.nom)).join(', '));
+  if(!wa&&!chats.length)bouts.push('<b style="color:#B45309">aucun canal de messagerie sur le site</b> — ni WhatsApp, ni chat');
+  if(a&&a.whatsapp_sur_fiche)bouts.push('<b>lien WhatsApp sur la fiche Google</b> — vos clients écrivent déjà, sans historique ni suivi');
+  li('💬','Messagerie client',bouts.join(' · '));
+ }
  if(ap)li('🍎','Apple Plans',
   ap.present?('présent'+(ap.position?' en '+ap.position+'ᵉ':'')+(ap.note!=null?' · '+String(ap.note).replace('.',',')+'★':' · sans note'))
   :'<b style="color:#B91C1C">absent</b> des '+(ap.total_resultats||0)+' résultats');
  const fort=[
+  (e.technos_fait&&!(e.technos||[]).some(t=>t&&t.cat==='chat'))&&'aucune messagerie sur le site',
+  (a&&a.whatsapp_sur_fiche)&&'WhatsApp bricolé sur la fiche Google',
   r&&r.taux===0&&'aucune réponse aux avis',
   a&&a.position_locale==null&&a.requete&&'absent du local',
   iv&&iv.apercu_present&&!iv.cite&&'non cité par l\'IA',
@@ -6875,6 +6895,10 @@ async function completerMesures(i){
   if(d&&d.plafond_atteint)plafondAtteint=d.erreur||'Plafond SerpApi atteint';
   const b=d&&d.budget_serpapi;
   if(b&&b.alerte)alerteBudget=b.alerte;
+  // Un relevé obtenu mais NON mis en cache sera repayé au prochain appel, sur un budget de 230
+  // par mois. C'est le genre d'échec qui ne se voit jamais — donc il doit crier.
+  if(d&&d.cache_erreur)erreurs.push('mise en cache du relevé impossible : '+String(d.cache_erreur).slice(0,120)
+   +' — ce relevé sera REPAYÉ à la prochaine analyse');
  };
  const rater=(quoi,d)=>(budget(d),erreurs.push(quoi+' : '+String((d&&(d.erreur||d.info))||'réponse inattendue')
   +((d&&d.detail)?' ('+String(d.detail).slice(0,120)+')':'')

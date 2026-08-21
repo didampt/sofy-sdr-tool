@@ -49,8 +49,11 @@ export async function consoDuMois(mois) {
   await ensureConso();
   const m = mois || moisCourant();
   try {
+    // Pas de filtre sur depuis_cache : appelSerpApi() n'est jamais invoqué pour une lecture de
+    // cache — chaque ligne de cette table EST un appel réseau facturé. La colonne reste pour
+    // compatibilité mais ne filtre rien (relevé à la relecture du 21/08).
     const [r] = await sql`SELECT COUNT(*)::int AS n FROM serpapi_conso
-      WHERE mois = ${m} AND ok IS NOT FALSE AND depuis_cache = FALSE`;
+      WHERE mois = ${m} AND ok IS NOT FALSE`;
     return (r && r.n) || 0;
   } catch (_) { return 0; }
 }
@@ -121,9 +124,9 @@ export default async function handler(req, res) {
     const n = await consoDuMois(mois);
     // Le détail sert à trancher « qui consomme » sans accuser personne au hasard.
     const parMotif = await sql`SELECT motif, COUNT(*)::int AS n FROM serpapi_conso
-      WHERE mois = ${mois} AND depuis_cache = FALSE GROUP BY motif ORDER BY n DESC`;
+      WHERE mois = ${mois} GROUP BY motif ORDER BY n DESC`;
     const parQui = await sql`SELECT qui, COUNT(*)::int AS n FROM serpapi_conso
-      WHERE mois = ${mois} AND depuis_cache = FALSE GROUP BY qui ORDER BY n DESC`;
+      WHERE mois = ${mois} GROUP BY qui ORDER BY n DESC`;
     const echecs = await sql`SELECT COUNT(*)::int AS n FROM serpapi_conso
       WHERE mois = ${mois} AND ok = FALSE`;
     const histo = await sql`SELECT mois, COUNT(*)::int AS n FROM serpapi_conso

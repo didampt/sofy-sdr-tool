@@ -37,6 +37,7 @@ async function ensureAudit() {
     ville TEXT,
     lat NUMERIC,
     lng NUMERIC,
+    whatsapp_sur_fiche TEXT,
     concurrents JSONB,
     mesure_le TIMESTAMPTZ DEFAULT NOW(),
     mesure_par TEXT
@@ -46,6 +47,7 @@ async function ensureAudit() {
   try { await sql`ALTER TABLE fiche_audit ADD COLUMN IF NOT EXISTS ville TEXT`; } catch (_) {}
   try { await sql`ALTER TABLE fiche_audit ADD COLUMN IF NOT EXISTS lat NUMERIC`; } catch (_) {}
   try { await sql`ALTER TABLE fiche_audit ADD COLUMN IF NOT EXISTS lng NUMERIC`; } catch (_) {}
+  try { await sql`ALTER TABLE fiche_audit ADD COLUMN IF NOT EXISTS whatsapp_sur_fiche TEXT`; } catch (_) {}
   pret = true;
 }
 
@@ -61,6 +63,7 @@ function villeDe(adresse) {
 }
 
 export default async function handler(req, res) {
+  let erreurCache = null;   // échec d'écriture du cache : coûte un relevé de plus au prochain appel
   const user = verifierToken(req);
   if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
   if (req.method !== 'POST') return res.status(405).json({ erreur: 'POST uniquement' });
@@ -133,6 +136,20 @@ export default async function handler(req, res) {
     // un repère géographique, et les fiches analysées avant août 2026 n'en ont aucun côté GMB.
     lat: (fiche.gps_coordinates && fiche.gps_coordinates.latitude != null) ? fiche.gps_coordinates.latitude : null,
     lng: (fiche.gps_coordinates && fiche.gps_coordinates.longitude != null) ? fiche.gps_coordinates.longitude : null,
+    // ── WhatsApp sur la fiche Google ──
+    // Google n'a PAS de bouton WhatsApp : sa fonction « Chat » a été arrêtée en juillet 2024, et
+    // aucun champ SerpApi n'expose de messagerie. Ce qui existe et se mesure : certaines enseignes
+    // mettent un lien wa.me dans le champ site web, le lien de réservation ou de commande. Quand
+    // c'est le cas, c'est un signal SoConnect en or (« vous envoyez déjà vos clients sur WhatsApp,
+    // sans historique ni suivi »). Quand ce n'est pas le cas, on ne conclut rien : c'est l'absence
+    // d'un usage détourné, pas l'absence de WhatsApp.
+    whatsapp_sur_fiche: (() => {
+      const cands = [fiche.website, fiche.booking_link, fiche.order_online,
+        ...(fiche.links ? Object.values(fiche.links) : [])]
+        .filter(x => typeof x === 'string');
+      const t = cands.find(u => /wa\.me\/|api\.whatsapp\.com|chat\.whatsapp\.com/i.test(u));
+      return t ? t.slice(0, 200) : null;
+    })(),
     concurrents: null
   };
   if (audit.categorie) audit.categorie = String(audit.categorie).slice(0, 80);
@@ -168,21 +185,25 @@ export default async function handler(req, res) {
   try {
     await sql`INSERT INTO fiche_audit (place_id, nom, photos_total, photos_enseigne,
         description_presente, horaires_presents, nb_categories, nb_attributs,
-        position_locale, requete, concurrents, categorie, ville, lat, lng, mesure_le, mesure_par)
+        position_locale, requete, concurrents, categorie, ville, lat, lng, whatsapp_sur_fiche, mesure_le, mesure_par)
       VALUES (${audit.place_id}, ${audit.nom}, ${audit.photos_total}, ${audit.photos_enseigne},
               ${audit.description_presente}, ${audit.horaires_presents}, ${audit.nb_categories},
               ${audit.nb_attributs}, ${audit.position_locale}, ${audit.requete},
               ${JSON.stringify(audit.concurrents)}::jsonb, ${audit.categorie}, ${audit.ville},
-              ${audit.lat}, ${audit.lng}, NOW(), ${user.nom})
+              ${audit.lat}, ${audit.lng}, ${audit.whatsapp_sur_fiche}, NOW(), ${user.nom})
       ON CONFLICT (place_id) DO UPDATE SET nom = EXCLUDED.nom, photos_total = EXCLUDED.photos_total,
         photos_enseigne = EXCLUDED.photos_enseigne, description_presente = EXCLUDED.description_presente,
         horaires_presents = EXCLUDED.horaires_presents, nb_categories = EXCLUDED.nb_categories,
         nb_attributs = EXCLUDED.nb_attributs, position_locale = EXCLUDED.position_locale,
         requete = EXCLUDED.requete, concurrents = EXCLUDED.concurrents,
         categorie = EXCLUDED.categorie, ville = EXCLUDED.ville,
-        lat = EXCLUDED.lat, lng = EXCLUDED.lng,
+        lat = EXCLUDED.lat, lng = EXCLUDED.lng, whatsapp_sur_fiche = EXCLUDED.whatsapp_sur_fiche,
         mesure_le = NOW(), mesure_par = EXCLUDED.mesure_par`;
-  } catch (_) { }
+  } catch (eCache) {
+    // Un cache non écrit n'est pas anodin : la prochaine analyse REPAYERA ces appels, sur un
+    // budget de 230 par mois. On le remonte au lieu de le taire.
+    erreurCache = String((eCache && eCache.message) || eCache).slice(0, 180);
+  }
 
   const manques = [];
   if (!audit.description_presente) manques.push('aucune description');
@@ -192,6 +213,7 @@ export default async function handler(req, res) {
 
   return res.status(200).json({
     ok: true, cache: false, audit,
+    cache_erreur: erreurCache,
     budget_serpapi: budget ? { conso: budget.conso, plafond: budget.plafond, alerte: budget.alerte } : null,
     resume: manques.length ? 'Fiche incomplète : ' + manques.join(', ') + '.' : 'Fiche complète sur les points mesurables.',
     position: audit.position_locale

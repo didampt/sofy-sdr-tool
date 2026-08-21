@@ -77,6 +77,7 @@ const median = arr => {
 };
 
 export default async function handler(req, res) {
+  let erreurCache = null;   // échec d'écriture du cache : coûte un relevé de plus au prochain appel
   const user = verifierToken(req);
   if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
   if (req.method !== 'POST') return res.status(405).json({ erreur: 'POST uniquement' });
@@ -121,9 +122,16 @@ export default async function handler(req, res) {
     let rep = await lire({ ...base, place_id: placeId });
     let jeton = null;
 
+    // Le refus de quota doit être vu AVANT le message d'erreur générique : sinon le SDR lit
+    // « SerpApi n'a pas rendu les avis » et cherche un problème de fiche, alors que le plafond
+    // mensuel est simplement atteint (bug trouvé à la relecture du 21/08).
+    if (budget && budget.refuse) {
+      return res.status(429).json({ erreur: budget.d.error, plafond_atteint: true, conso: budget.conso, plafond: budget.plafond });
+    }
     if (!rep.ok || (rep.d && rep.d.error) || !Array.isArray(rep.d.reviews)) {
-      // Repli : retrouver le data_id de la fiche, que SerpApi reconnaît toujours.
-      const pl = await lire({ engine: 'google_maps', type: 'place', place_id: placeId });
+      // Repli : retrouver le data_id de la fiche, que SerpApi reconnaît toujours. Inutile de le
+      // tenter si le plafond est atteint — ce serait un appel de plus pour rien.
+      const pl = budget && budget.refuse ? { d: {} } : await lire({ engine: 'google_maps', type: 'place', place_id: placeId });
       const did = pl.d && ((pl.d.place_results && pl.d.place_results.data_id) || (pl.d.search_metadata || {}).data_id);
       if (did) { via = 'data_id'; rep = await lire({ ...base, data_id: did }); }
       if (!rep.ok || (rep.d && rep.d.error) || !Array.isArray(rep.d.reviews)) {
@@ -199,7 +207,11 @@ export default async function handler(req, res) {
         delai_max_h = EXCLUDED.delai_max_h, plus_vieux_sans_reponse = EXCLUDED.plus_vieux_sans_reponse,
         rythme_par_mois = EXCLUDED.rythme_par_mois, fenetre_mois = EXCLUDED.fenetre_mois,
         mesure_le = NOW(), mesure_par = EXCLUDED.mesure_par`;
-  } catch (_) { }
+  } catch (eCache) {
+    // Un cache non écrit n'est pas anodin : la prochaine analyse REPAYERA ces appels, sur un
+    // budget de 230 par mois. On le remonte au lieu de le taire.
+    erreurCache = String((eCache && eCache.message) || eCache).slice(0, 180);
+  }
 
   // Une phrase prête à lire, formulée sur le seul échantillon mesuré — jamais généralisée.
   const d = mesure.delai_median_h;
@@ -207,6 +219,7 @@ export default async function handler(req, res) {
     : (d < 48 ? `${d} h` : `${Math.round(d / 24)} jours`);
   return res.status(200).json({
     ok: true, cache: false, mesure, via,
+    cache_erreur: erreurCache,
     budget_serpapi: budget ? { conso: budget.conso, plafond: budget.plafond, alerte: budget.alerte } : null,
     resume: mesure.taux === 0
       ? `Aucun des ${mesure.analyses} avis les plus récents n'a reçu de réponse publique.`

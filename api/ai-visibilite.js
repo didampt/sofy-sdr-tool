@@ -78,6 +78,7 @@ const domaineDe = u => {
 };
 
 export default async function handler(req, res) {
+  let erreurCache = null;   // échec d'écriture du cache : coûte un relevé de plus au prochain appel
   const user = verifierToken(req);
   if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
   if (req.method !== 'POST') return res.status(405).json({ erreur: 'POST uniquement' });
@@ -137,9 +138,10 @@ export default async function handler(req, res) {
                 ${JSON.stringify(annonces)}::jsonb, ${annonces.length}, NOW(), ${user.nom})
         ON CONFLICT (cle) DO UPDATE SET apercu_present = FALSE, cite = FALSE,
           annonceurs = EXCLUDED.annonceurs, nb_annonces = EXCLUDED.nb_annonces, mesure_le = NOW()`;
-    } catch (_) { }
+    } catch (eC) { erreurCache = String((eC && eC.message) || eC).slice(0, 180); }
     return res.status(200).json({
-      ok: true, mesure,
+      ok: true, mesure, cache_erreur: erreurCache,
+      budget_serpapi: budget ? { conso: budget.conso, plafond: budget.plafond, alerte: budget.alerte } : null,
       resume: `Google n'affiche pas encore d'aperçu IA sur « ${requete} ». Ce n'est pas un point faible du prospect : la requête n'en déclenche pas.`
     });
   }
@@ -188,10 +190,15 @@ export default async function handler(req, res) {
         entreprises_citees = EXCLUDED.entreprises_citees, extrait = EXCLUDED.extrait,
         annonceurs = EXCLUDED.annonceurs, nb_annonces = EXCLUDED.nb_annonces,
         mesure_le = NOW(), mesure_par = EXCLUDED.mesure_par`;
-  } catch (_) { }
+  } catch (eCache) {
+    // Un cache non écrit n'est pas anodin : la prochaine analyse REPAYERA ces appels, sur un
+    // budget de 230 par mois. On le remonte au lieu de le taire.
+    erreurCache = String((eCache && eCache.message) || eCache).slice(0, 180);
+  }
 
   return res.status(200).json({
     ok: true, cache: false, mesure,
+    cache_erreur: erreurCache,
     resume: mesure.cite
       ? `Cité par l'aperçu IA de Google sur « ${requete} », en source n°${mesure.rang_citation}.`
       : `PAS cité par l'aperçu IA de Google sur « ${requete} »${mesure.entreprises_citees.length ? ` — l'IA renvoie vers ${mesure.entreprises_citees.slice(0, 3).join(', ')}` : ''}.`,
