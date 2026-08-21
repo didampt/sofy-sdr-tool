@@ -2159,7 +2159,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v387';
+const VERSION='v388';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -7091,6 +7091,27 @@ function choisirModule(suggere){
  });
 }
 
+// Compléter la fiche AU LIEU DE LA RÉCLAMER (idée de Didier, 21/08).
+// L'ancien comportement affichait « lance ↻ Analyser puis ↻ Re-scorer » : le SDR devait sortir,
+// cliquer deux boutons, revenir. Or ces trois étapes sont automatisables et leur coût est connu.
+// On les enchaîne, on annonce le coût, et on ne demande son avis qu'une fois.
+async function completerFiche(i){
+ const e=REAL[i];const faits=[];
+ if(!(e.gmb&&e.gmb.trouve)){
+  const v=voileTravail('⭐ Fiche Google',(enseigneDe(e)||e.nom)+'\nRecherche de la fiche, des avis et des concurrents locaux.');
+  try{ await analyserGmb(i); if(e.gmb&&e.gmb.trouve)faits.push('fiche Google'); }catch(_){ }finally{ v.fermer(); }
+ }
+ if(!e.technos_fait&&!e.technos_tente){
+  const v=voileTravail('🔎 Outils du site','Détection des outils d\'avis, de chat et de SMS sur son site — gratuit.');
+  try{ await detecterTechnos(i); if(e.technos_fait)faits.push('outils du site'); }catch(_){ }finally{ v.fermer(); }
+ }
+ if(!e.score||!e.score.scores){
+  const v=voileTravail('🎯 Scoring des 3 axes','Visibilité, relation client, communication mobile — plus la synthèse d\'appel et l\'email.');
+  try{ await lancerScore(i,true,true); if(e.score&&e.score.scores)faits.push('scoring et synthèse'); }catch(_){ }finally{ v.fermer(); }
+ }
+ return faits;
+}
+
 async function genererPrez(i){
  const e=REAL[i];if(!e)return;
  if(!state.savedId){toast('Ouvre la fiche depuis une liste enregistrée');return;}
@@ -7111,16 +7132,26 @@ async function genererPrez(i){
  // Pré-vol (idée de Didier) : une analyse ne vaut que ce qu'on a mesuré. On liste ce qui manque
  // AVANT de payer une rédaction, et on propose de le compléter — c'est là que la personnalisation
  // se gagne, pas dans la rédaction.
- const manque=[];
- if(!(e.gmb&&e.gmb.trouve))manque.push({q:'la fiche Google (note, avis, établissements)',f:'gmb'});
- if(!e.technos_fait)manque.push({q:'les outils détectés sur son site (chat, avis, SMS)',f:'technos'});
- if(estVisiteSite(e)&&!e._radarLu)manque.push({q:'le contexte presse récent',f:'radar'});
- if(manque.length){
-  const ok2=await confirmSofy('Il manque des mesures pour '+(enseigneDe(e)||e.nom),
-   'Sans elles, le document restera générique :\n· '+manque.map(x=>x.q).join('\n· ')+
-   '\n\nLe scoring des trois axes (visibilité, relation client, communication) s\'appuie précisément là-dessus.\n\nComplète d\'abord la fiche : ↻ Analyser pour la fiche Google et les technos, 📰 Chercher le contexte pour la presse.',
-   'Générer quand même');
-  if(!ok2)return;
+ // Ce qui manque et qu'on peut FAIRE tout seul : on le fait, après un seul accord.
+ const aFaire=[];
+ if(!(e.gmb&&e.gmb.trouve))aFaire.push('la fiche Google (note, avis, concurrents locaux)');
+ if(!e.technos_fait&&!e.technos_tente)aFaire.push('les outils de son site (avis, chat, SMS) — gratuit');
+ if(!e.score||!e.score.scores)aFaire.push('le scoring des 3 axes + la synthèse d\'appel (≈ 0,02 €)');
+ if(aFaire.length){
+  if(!await confirmSofy('Compléter la fiche de '+(enseigneDe(e)||e.nom)+' avant l\'audit ?',
+   'Il manque des mesures, et le document en dépend directement :\n· '+aFaire.join('\n· ')+
+   '\n\nJe les lance maintenant, puis je génère l\'audit. Tu n\'as rien d\'autre à cliquer.',
+   'Compléter puis générer'))return;
+  const faits=await completerFiche(i);
+  if(faits.length)toast('✅ Complété : '+faits.join(', '));
+  // Si la fiche Google manque toujours, le document sera pauvre : là, le SDR doit trancher.
+  if(!(e.gmb&&e.gmb.trouve)){
+   if(!await confirmSofy('Aucune fiche Google trouvée pour '+(enseigneDe(e)||e.nom),
+    'La moitié du document s\'appuie sur la fiche Google : note, avis, défauts, position locale.\n\n'
+    +'Sans elle, l\'audit tiendra surtout sur son site et son secteur. Tu peux rattacher la fiche à la main '
+    +'(➕ Ajouter une fiche par son lien Maps) puis relancer — c\'est ce qui change le plus le résultat.',
+    'Générer quand même'))return;
+  }
  }
  // Les relevés SerpApi (réponses aux avis, photos, position locale, aperçu IA) se lancent seuls :
  // le SDR n'a pas à enchaîner trois boutons avant de rédiger.
@@ -7499,16 +7530,31 @@ function lancerKaspr(i,j){
 
 /* ───────── SCORING + SYNTHÈSE D'APPEL + EMAIL (IA) ───────── */
 // Détection des technologies du site (outil d'avis concurrent, chat, marketing) — gratuit, 1 fetch serveur
+// ⚠️ Deux drapeaux, et la distinction est le correctif du 21/08 :
+//   · technos_fait  = le site a VRAIMENT été lu (on peut donc conclure « aucun outil détecté ») ;
+//   · technos_tente = on a essayé, quel qu'ait été le résultat.
+// Avant, une fiche sans site web ou au site injoignable ressortait indéfiniment comme
+// « incomplète » : le SDR de NORAUTO voyait l'avertissement même après avoir analysé, sans aucun
+// moyen de le faire taire. Une impossibilité doit être ENREGISTRÉE, pas répétée.
 async function detecterTechnos(i){
  const e=REAL[i];
  const site=domaineDe(e);
- if(!site)return false;
+ e.technos_tente=true;
+ if(!site){
+  e.technos_echec='aucun site web sur la fiche — rien à analyser';
+  rerender(i);persister();return false;
+ }
  try{
   const r=await api('/api/techno',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({site})});
   const d=await r.json();
-  if(d&&d.ok){e.technos=d.technos||[];if(d.scanne)e.technos_fait=true;rerender(i);persister();}
+  if(d&&d.ok){
+   e.technos=d.technos||[];
+   if(d.scanne){e.technos_fait=true;delete e.technos_echec;}
+   else e.technos_echec='site injoignable'+(d.detail?' ('+String(d.detail).slice(0,60)+')':'');
+   rerender(i);persister();
+  }
   return true;
- }catch(_){return false;}
+ }catch(err){e.technos_echec='scan impossible : '+String(err.message||err).slice(0,60);persister();return false;}
 }
 function technosHtml(e){
  if(!e.technos_fait)return '';
@@ -9633,16 +9679,38 @@ async function preAudit(i){
  rerender(i);
 }
 
-// 🔍 Pré-audit depuis « Ma journée » : les relevés servent l'APPEL, et c'est ici qu'on appelle.
-// Comme pour l'audit, la mesure travaille sur la fiche chargée : on ouvre la liste, on retrouve la
-// fiche, puis on lance le même chemin que depuis la fiche complète.
+// Charge une liste en mémoire SANS quitter l'écran courant. ouvrirListe() fait la même chose
+// mais appelle showRealResults(), qui bascule la vue : depuis « Ma journée », le SDR se retrouvait
+// éjecté sur la fiche complète et devait revenir à la main (retour Didier, 21/08).
+async function chargerListeEnSilence(id){
+ const r=await api('/api/listes?id='+id);
+ const l=await r.json();
+ if(l.erreur)throw new Error(l.erreur);
+ REAL=l.entreprises||[];
+ state.savedId=l.id;state.listeNom=l.nom;state.sdr=l.sdr;
+ return l;
+}
+
+// 🔍 Pré-audit depuis « Ma journée », SANS quitter Ma journée.
+// Les relevés servent l'appel, et c'est ici qu'on appelle : sortir de l'écran pour y revenir était
+// un aller-retour inutile. La liste est chargée en arrière-plan, la fiche mesurée, la sauvegarde
+// attendue, puis la file se rafraîchit avec les relevés dedans.
 async function ckPreAudit(rid){
  const it=CK_ITEMS[rid]||{};
  if(!it.liste_id||!it.cle){toast('Fiche non localisable — ouvre la fiche complète');return;}
- await ouvrirListe(it.liste_id, it.cle);
- const i=REAL.findIndex(e=>cleSignal(e)===it.cle);
- if(i<0){toast('Fiche introuvable dans sa liste');return;}
- await preAudit(i);
+ const b=document.querySelector(`[onclick="ckPreAudit('${rid}')"]`);
+ const lbl=b?b.textContent:'';
+ if(b){b.disabled=true;b.textContent='⏳…';}
+ try{
+  await chargerListeEnSilence(it.liste_id);
+  const i=REAL.findIndex(e=>cleSignal(e)===it.cle);
+  if(i<0){toast('Fiche introuvable dans sa liste');return;}
+  await preAudit(i);
+  // ⚠️ rendreCockpit() ne redessine que l'objet CK en mémoire — il ne rappelle pas le serveur.
+  // Pour voir les relevés qu'on vient d'écrire, il faut recharger les données.
+  await chargerCockpit();
+ }catch(e){toast('Pré-audit : '+e.message);}
+ finally{if(b){b.disabled=false;b.textContent=lbl;}}
 }
 
 // 🎨 Audit client depuis « Ma journée ». La génération travaille sur la fiche chargée : on
@@ -9652,7 +9720,10 @@ async function ckPreAudit(rid){
 async function ckAnalyse(rid){
  const it=CK_ITEMS[rid]||{};
  if(!it.liste_id||!it.cle){toast('Fiche non localisable — ouvre la fiche complète');return;}
- await ouvrirListe(it.liste_id, it.cle);
+ // Même principe que le pré-audit : on charge la liste en arrière-plan, sans éjecter le SDR de
+ // « Ma journée ». La génération se fait depuis ici, et le lien apparaît dans la fenêtre habituelle.
+ try{ await chargerListeEnSilence(it.liste_id); }
+ catch(err){ toast('Liste illisible : '+err.message); return; }
  const i=REAL.findIndex(e=>cleSignal(e)===it.cle);
  if(i<0){toast('Fiche introuvable dans sa liste');return;}
  const e=REAL[i];
@@ -9660,19 +9731,18 @@ async function ckAnalyse(rid){
  const manque=[];
  if(!(e.gmb&&e.gmb.trouve))manque.push('la fiche Google (note, avis, établissements) — c\'est la matière de la moitié du document');
  if(!e.score||!e.score.scores)manque.push('le scoring des 3 axes — sans lui, pas de bilan chiffré ni de choix de module');
- if(!e.technos_fait)manque.push('les outils détectés sur son site (avis, chat, SMS)');
+ if(!e.technos_fait&&!e.technos_tente)manque.push('les outils détectés sur son site (avis, chat, SMS)');
  if(manque.length){
   const ok=await confirmSofy('Cette fiche n\'est pas complètement mesurée',
    'Il manque :\n· '+manque.join('\n· ')+
    '\n\nLance « ↻ Analyser » puis « ↻ Re-scorer » sur la fiche avant de générer : c\'est ce relevé qui rend le document personnalisé. Sans lui, tu paieras 0,30 € pour une plaquette.',
    'Générer quand même');
-  if(!ok){
-   // On laisse le SDR sur la fiche ouverte, prête à être analysée : le geste suivant est là.
-   toast('Fiche ouverte — lance ↻ Analyser puis ↻ Re-scorer, puis 🎨 Audit client');
-   return;
-  }
+  if(!ok)return;
  }
- genererPrez(i);
+ await genererPrez(i);
+ // La file reflète l'état réel : l'audit généré, et les relevés s'ils ont été faits au passage.
+ // chargerCockpit() et non rendreCockpit() : le second ne fait que redessiner la mémoire.
+ try{ await chargerCockpit(); }catch(_){}
 }
 
 /* 👥 Personas depuis « Ma journée » : même waterfall que la fiche (Basile → agent IA),
