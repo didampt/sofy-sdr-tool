@@ -2159,7 +2159,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v393';
+const VERSION='v394';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4704,6 +4704,289 @@ function bloc(id,titre,contenu,opts){
 }
 
 
+/* ── LES ENSEIGNES DU GROUPE ────────────────────────────────────────────────────────────────────
+   Le modèle était « 1 établissement = plusieurs contacts ». Il devient « 1 fiche = un groupe de
+   contacts ET un groupe d'enseignes » (demande Didier 21/08, cas Groupe TBF).
+
+   POURQUOI ON NE POUVAIT PAS S'EN SORTIR SANS ÇA. api/gmb.js sait déjà rattacher plusieurs fiches
+   Google à une entreprise — c'est ce qui fonctionne pour NORAUTO ×3 — mais il les retrouve PAR
+   RESSEMBLANCE DE NOM (nomCorrespond). « Grain d'Or », « Carat » et « Swarovski » ne ressembleront
+   jamais à « Groupe TBF » : aucun réglage du matching ne rattrapera ça, il faut pouvoir le
+   déclarer à la main.
+
+   Les cases à cocher ne sont pas un raffinement : le pré-audit coûte 6 à 10 relevés PAR ENSEIGNE,
+   soit 40 sur un groupe de quatre — un sixième du mois en un clic. */
+function enseignesDe(e){ return (((e||{}).gmb||{}).fiches||[]).filter(f=>f&&f.place_id); }
+function enseigneOff(e,pid){ return ((e.enseignes_off||[]).indexOf(pid)>=0); }
+function enseignesCochees(e){ return enseignesDe(e).filter(f=>!enseigneOff(e,f.place_id)); }
+function nomEnseigne(f){ return f.nom||f.adresse||f.place_id; }
+function basculerEnseigne(i,pid){
+ const e=REAL[i];
+ const off=(e.enseignes_off||[]).slice();
+ const k=off.indexOf(pid);
+ if(k>=0)off.splice(k,1); else off.push(pid);
+ // Jamais zéro enseigne cochée : le pré-audit et l'audit client n'auraient plus rien à mesurer,
+ // et le SDR verrait un bouton actif qui ne fait rien.
+ e.enseignes_off=off;
+ if(!enseignesCochees(e).length){e.enseignes_off=off.filter(x=>x!==pid);toast('Au moins une enseigne doit rester cochée');}
+ rerender(i);persister();
+}
+async function detacherEnseigne(i,pid){
+ const e=REAL[i];
+ const f=enseignesDe(e).find(x=>x.place_id===pid);
+ if(!f)return;
+ if(!await confirmSofy('Détacher « '+nomEnseigne(f)+' » ?',
+  'Cette enseigne ne sera plus comptée dans la note du groupe ni dans l\'audit client.'
+  +(((e.gmb||{}).par_enseigne||{})[pid]?'\n\n⚠️ Des relevés payants y sont attachés : ils seront perdus.':''),
+  'Détacher'))return;
+ const g=Object.assign({},e.gmb);
+ g.fiches=(g.fiches||[]).filter(x=>x.place_id!==pid);
+ if(g.par_enseigne){g.par_enseigne=Object.assign({},g.par_enseigne);delete g.par_enseigne[pid];}
+ e.gmb=recalculerAgregats(g);
+ e.enseignes_off=(e.enseignes_off||[]).filter(x=>x!==pid);
+ rerender(i);persister();
+ toast('Enseigne détachée — note du groupe recalculée');
+}
+// Note du groupe = moyenne PONDÉRÉE par le volume d'avis. Sinon une enseigne à 5★ avec 2 avis
+// remonterait artificiellement l'ensemble, et le chiffre annoncé au prospect serait faux.
+function recalculerAgregats(g){
+ const fiches=g.fiches||[];
+ const avec=fiches.filter(f=>typeof f.note==='number'&&f.nb_avis>0);
+ const total=avec.reduce((s,f)=>s+f.nb_avis,0);
+ const moy=total?Math.round((avec.reduce((s,f)=>s+f.note*f.nb_avis,0)/total)*10)/10:null;
+ const signif=avec.filter(f=>f.nb_avis>=3);
+ const pire=(signif.length?signif:avec).slice().sort((a,b)=>a.note-b.note)[0]||null;
+ return Object.assign({},g,{nb_fiches:fiches.length,total_avis:total||g.total_avis,
+  note_moyenne:moy!=null?moy:g.note_moyenne,pire_fiche:pire||g.pire_fiche,
+  trouve:fiches.length>0||!!g.trouve});
+}
+function enseignesHtml(e,i){
+ const fs=enseignesDe(e);
+ if(!fs.length)return '';
+ const pe=(e.gmb||{}).par_enseigne||{};
+ const principal=fs[0].place_id;
+ const lignes=fs.map(f=>{
+  const off=enseigneOff(e,f.place_id);
+  const rel=(f.place_id===principal)?(e.gmb||{}):(pe[f.place_id]||{});
+  const rep=rel.reponses;
+  return `<div style="display:flex;gap:9px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--line)">
+   <span onclick="basculerEnseigne(${i},'${jsArg(f.place_id)}')" title="${off?'Inclure':'Exclure'} cette enseigne du pré-audit et de l'audit client"
+     style="flex:none;margin-top:3px;width:15px;height:15px;border-radius:4px;cursor:pointer;display:inline-block;
+     border:1.5px solid ${off?'var(--line)':'#5B4FE9'};background:${off?'transparent':'#5B4FE9'};
+     color:#fff;font-size:10px;line-height:12px;text-align:center;font-weight:900">${off?'':'✓'}</span>
+   <span style="flex:1;min-width:0">
+    <span style="font-size:13.5px;font-weight:680;${off?'opacity:.5':''}">${f.lien?`<a href="${f.lien}" target="_blank" style="color:inherit">${htmlSafe(nomEnseigne(f))}</a>`:htmlSafe(nomEnseigne(f))}</span>
+    <span style="display:block;font-size:11.5px;color:var(--ink-soft);margin-top:1px">
+     ${f.place_id===principal?'<span class="badge b-gmb">principale</span> ':''}
+     ${f.ajout_manuel?'<span class="badge b-new">rattachée à la main</span> ':''}
+     ${f.adresse?htmlSafe(String(f.adresse).split(',')[0]):''}
+    </span>
+   </span>
+   <span style="flex:none;text-align:right;font-size:11.5px;color:var(--ink-soft);line-height:1.5;font-variant-numeric:tabular-nums">
+    ${typeof f.note==='number'?String(f.note).replace('.',',')+' ★ · '+(f.nb_avis||0)+' avis':'pas de note'}
+    ${rep?`<br><b style="color:${rep.taux===0?'#B91C1C':(rep.taux<30?'#B45309':'#15803D')}">${rep.taux===0?'aucune réponse':rep.taux+' % de réponses'}</b>`:''}
+   </span>
+   <span onclick="detacherEnseigne(${i},'${jsArg(f.place_id)}')" title="Détacher cette enseigne de la fiche"
+     style="flex:none;cursor:pointer;color:var(--ink-soft);font-size:12px;padding:2px 4px">✕</span>
+  </div>`;
+ }).join('');
+ const nbOk=enseignesCochees(e).length;
+ return bloc('enseignes','🏪 Enseignes du groupe',
+  lignes+`<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+   <button class="act act-copy" onclick="ouvrirRattacher(${i})">➕ Rattacher une enseigne</button>
+   ${fs.length>1?`<span class="hint" style="margin:0">Le pré-audit et l'audit client ne portent que sur les enseignes cochées — ${nbOk} sur ${fs.length}, soit ≈${nbOk*8} relevés sur les 230 du mois.</span>`:''}
+  </div>`,
+  {defaut:fs.length>1,compteur:fs.length+' enseigne'+(fs.length>1?'s':''),
+   resume:fs.length>1?fs.length+' enseignes rattachées — '+nbOk+' cochée(s) pour le pré-audit.':'1 enseigne — ➕ en rattacher d\'autres si le groupe exploite plusieurs marques.'});
+}
+
+/* ── FUSIONNER DEUX FICHES DU MÊME PROSPECT ─────────────────────────────────────────────────────
+   Cas Sabine WYBO : trois lignes dans « Ma journée » — Groupe TBF, aucune société, Bijouterie
+   Grain d'Or Milenis. La déduplication de v389 empêche d'en CRÉER de nouvelles ; elle ne nettoie
+   pas celles déjà en base.
+
+   La fusion ne supprime AUCUNE donnée : les contacts et les enseignes de la ligne écartée sont
+   déplacés sur celle qu'on garde, et sa clé est envoyée en suppression pour qu'un nouveau scrap
+   LinkedIn ne la recrée pas. Ce qu'elle NE PEUT PAS déplacer, on le dit : l'historique d'activité
+   (appels, notes, séquences) est rangé en base par clé de fiche, il reste sur la ligne écartée. */
+function ouvrirFusionFiche(i){
+ const e=REAL[i];
+ const moi=(x)=>(enseigneDe(x)||x.nom||'').toLowerCase();
+ const cible=moi(e);
+ // Les plus vraisemblables d'abord. Le signal le plus FORT n'est pas la ressemblance des noms —
+ // « Groupe TBF » et « Bijouterie Grain d'Or » n'ont rien en commun — c'est le CONTACT PARTAGÉ :
+ // si la même personne figure sur deux lignes, c'est le même prospect. C'est exactement ce qui
+ // caractérise le cas Sabine WYBO, et un tri par nom l'aurait manqué.
+ const nrm=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim();
+ const idsDe=x=>new Set(contactsDe(x).flatMap(c=>[nrm((c.enrich&&c.enrich.email)||''),nrm(c.prenom+' '+c.nom)])
+  .filter(v=>v&&v.length>3));
+ const idsMoi=idsDe(e), pidsMoi=new Set(enseignesDe(e).map(f=>f.place_id));
+ const autres=REAL.map((x,k)=>({x,k}))
+  .filter(o=>o.k!==i)
+  .map(o=>{
+   const n=moi(o.x);
+   let p=0, pourquoi=[];
+   if([...idsDe(o.x)].some(v=>idsMoi.has(v))){p+=4;pourquoi.push('même contact');}
+   if(enseignesDe(o.x).some(f=>pidsMoi.has(f.place_id))){p+=4;pourquoi.push('même fiche Google');}
+   if(domaineDe(o.x)&&domaineDe(e)&&domaineDe(o.x)===domaineDe(e)){p+=2;pourquoi.push('même site');}
+   const mots=n.split(/[^a-zà-ÿ0-9]+/).filter(t=>t.length>=4);
+   if(mots.some(t=>cible.indexOf(t)>=0)){p+=1;pourquoi.push('nom proche');}
+   return Object.assign(o,{poids:p,pourquoi:pourquoi.join(' · ')});
+  })
+  .sort((a,b)=>b.poids-a.poids||moi(a.x).localeCompare(moi(b.x)));
+ if(!autres.length){toast('Aucune autre fiche dans cette liste');return;}
+ document.getElementById('info-titre').textContent='↔ Fusionner avec — '+(enseigneDe(e)||e.nom);
+ document.getElementById('info-corps').innerHTML=`
+  <div class="hint" style="margin:8px 0 12px">La fiche choisie sera <b>absorbée dans « ${htmlSafe(enseigneDe(e)||e.nom)} »</b> : ses contacts et ses enseignes Google y sont déplacés, puis elle disparaît de la liste. Rien n'est effacé en base — mais l'historique d'appels et de notes, rangé par fiche, reste sur la ligne absorbée.</div>
+  <div style="max-height:340px;overflow-y:auto;border:1px solid var(--line);border-radius:10px">
+  ${autres.map(o=>{
+   const x=o.x, cs=contactsDe(x).filter(c=>c.nom).length, ens=enseignesDe(x).length;
+   return `<div onclick="fusionnerFiches(${i},${o.k})" style="padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer"
+     onmouseover="this.style.background='var(--paper,#F5F3FF)'" onmouseout="this.style.background=''">
+     <div style="font-size:13.5px;font-weight:680">${htmlSafe(enseigneDe(x)||x.nom||'(sans nom)')}${o.poids>=4?` <span class="badge b-new">${htmlSafe(o.pourquoi)}</span>`:(o.poids?` <span class="badge b-gmb">${htmlSafe(o.pourquoi)}</span>`:'')}</div>
+     <div style="font-size:11.5px;color:var(--ink-soft);margin-top:1px">${[x.ville,cs?cs+' contact'+(cs>1?'s':''):'aucun contact',ens?ens+' enseigne'+(ens>1?'s':''):'aucune fiche Google',domaineDe(x)].filter(Boolean).join(' · ')}</div>
+    </div>`;}).join('')}
+  </div>`;
+ document.getElementById('info-modal').style.display='flex';
+}
+async function fusionnerFiches(iGarde,iAbsorbe){
+ const g=REAL[iGarde], a=REAL[iAbsorbe];
+ if(!g||!a||iGarde===iAbsorbe)return;
+ const nomG=enseigneDe(g)||g.nom, nomA=enseigneDe(a)||a.nom;
+ if(!await confirmSofy('↔ Fusionner « '+nomA+' » dans « '+nomG+' » ?',
+  'Ce qui est déplacé : les contacts, les enseignes Google, et les champs vides de « '+nomG+' » (site, téléphone, ville, LinkedIn) seront complétés depuis « '+nomA+' ».\n\n'
+  +'Ce qui ne l\'est PAS : l\'historique d\'appels et de notes est rangé en base par fiche — il reste attaché à « '+nomA+' ». Relis-le avant si tu en as besoin.\n\n'
+  +'« '+nomA+' » disparaît de la liste et ne sera pas recréée par un prochain scrap.',
+  '↔ Fusionner'))return;
+ document.getElementById('info-modal').style.display='none';
+ // 1. Contacts — dédoublonnés sur TOUTES les identités, pas une seule.
+ // Une clé unique par contact (email, sinon nom) ne suffit pas : sur le cas Sabine WYBO, une ligne
+ // la porte avec son email et une autre sans, donc les deux clés diffèrent et la même personne
+ // serait ajoutée deux fois. Même erreur que la déduplication des hot leads, qui comparait UNE
+ // identité par fiche. On compare l'email ET le nom, et un doublon complète l'existant au lieu
+ // d'être jeté : c'est souvent lui qui apporte l'email ou le mobile manquant.
+ const norm=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim();
+ const emailDe=c=>norm((c.enrich&&c.enrich.email)||'');
+ const nomDe=c=>norm(c.prenom+' '+c.nom);
+ const gardes=contactsDe(g).slice();
+ let ajoutC=0, completes=0;
+ contactsDe(a).forEach(c=>{
+  const em=emailDe(c), nm=nomDe(c);
+  const k=gardes.findIndex(x=>(em&&emailDe(x)===em)||(nm&&nm.length>3&&nomDe(x)===nm));
+  if(k<0){gardes.push(c);ajoutC++;return;}
+  const av=gardes[k], en=Object.assign({},av.enrich||{});
+  let gain=false;
+  ['email','telephone','telephone_fixe','linkedin'].forEach(f=>{
+   if(!en[f]&&c.enrich&&c.enrich[f]){en[f]=c.enrich[f];gain=true;}
+  });
+  gardes[k]=Object.assign({},av,{enrich:en,fonction:av.fonction||c.fonction,portee:av.portee||c.portee});
+  if(gain)completes++;
+ });
+ g.contacts=gardes;
+ // 2. Enseignes Google — marquées « à la main » : une recherche par le nom de la fiche gardée ne
+ //    les retrouvera jamais (c'est tout le problème du cas Groupe TBF), elles doivent survivre
+ //    aux ré-analyses.
+ const ensA=enseignesDe(a);
+ let ajoutE=0;
+ if(ensA.length){
+  const dejaLa=new Set(enseignesDe(g).map(f=>f.place_id));
+  const neuves=ensA.filter(f=>!dejaLa.has(f.place_id)).map(f=>Object.assign({},f,{ajout_manuel:true}));
+  if(neuves.length){
+   if(!(g.gmb&&g.gmb.trouve))g.gmb=Object.assign({},a.gmb||{},{fiches:neuves});
+   else g.gmb=recalculerAgregats(Object.assign({},g.gmb,{fiches:enseignesDe(g).concat(neuves)}));
+   ajoutE=neuves.length;
+  }
+  // Relevés payants déjà faits sur les enseignes absorbées : ils ont coûté du budget, ils suivent.
+  if((a.gmb||{}).par_enseigne)g.gmb.par_enseigne=Object.assign({},(g.gmb||{}).par_enseigne||{},a.gmb.par_enseigne);
+ }
+ // 3. Champs vides complétés — jamais écrasés : la fiche gardée fait autorité.
+ ['site_web','ville','code_postal','adresse','naf','siren','effectif','activite','chiffre_affaires',
+  'linkedin_entreprise','enseigne_ia','telephone_google','place_id','secteur_rb2b'].forEach(k=>{
+  if(!g[k]&&a[k])g[k]=a[k];
+ });
+ if(!g.score&&a.score){g.score=a.score;g.score_le=a.score_le;}
+ if(!g.ia&&a.ia)g.ia=a.ia;
+ if(!g.technos&&a.technos){g.technos=a.technos;g.technos_fait=a.technos_fait;}
+ g.fusion_de=(g.fusion_de||[]).concat([nomA]); // trace : le SDR doit pouvoir savoir d'où ça vient
+ // 4. Retirer la ligne absorbée, en interdisant sa résurrection côté serveur.
+ const cleSupp=cleSignal(a);
+ REAL.splice(iAbsorbe,1);
+ document.getElementById('fiches').innerHTML=REAL.map((x,k)=>ficheReal(x,k)).join('');
+ const kt=document.getElementById('k-total');if(kt)kt.textContent=REAL.length;
+ majKpisReal();
+ persister([cleSupp]);
+ toast('↔ Fusionné sur '+nomG+' : '+(ajoutC?'+'+ajoutC+' contact(s)':'aucun nouveau contact')
+  +(completes?', '+completes+' complété(s)':'')+(ajoutE?', +'+ajoutE+' enseigne(s)':''));
+}
+
+/* Rattacher une enseigne : par autocomplétion Google (le chemin normal, 1 appel Google, aucun
+   risque de coller un mauvais identifiant) ou par lien Maps (repli pour les fiches maigres des
+   DOM que l'autocomplétion ne remonte pas). */
+function ouvrirRattacher(i){
+ const e=REAL[i];
+ document.getElementById('info-titre').textContent='➕ Rattacher une enseigne — '+(enseigneDe(e)||e.nom);
+ document.getElementById('info-corps').innerHTML=`
+  <div class="hint" style="margin:8px 0 12px">Pour un groupe qui exploite plusieurs marques : chaque enseigne garde sa propre note et ses propres relevés, et la note du groupe devient une moyenne pondérée par le volume d'avis.</div>
+  <label style="display:block;font-size:12.5px;font-weight:600;margin-bottom:5px">🔍 Chercher l'établissement sur Google</label>
+  <div style="position:relative;margin-bottom:14px">
+   <input class="field" id="rat-q" placeholder="Ex : Carat Destreland, Baie-Mahault…" style="width:100%" autocomplete="off" oninput="rechercheRattacher(${i},this.value)">
+   <div id="rat-res" style="display:none;position:absolute;left:0;right:0;top:40px;background:var(--card,#fff);border:1px solid var(--line);border-radius:10px;z-index:10;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.12);max-height:240px;overflow-y:auto"></div>
+  </div>
+  <label style="display:block;font-size:12.5px;font-weight:600;margin-bottom:5px">📍 …ou coller un lien Google Maps <span style="font-weight:400;color:var(--ink-soft)">(si la recherche ne trouve pas — utile pour les DOM)</span></label>
+  <div style="display:flex;gap:8px"><input class="field" id="rat-url" placeholder="https://maps.app.goo.gl/…" style="flex:1" autocomplete="off">
+   <button class="btn" onclick="rattacherParLien(${i})" style="background:var(--paper);white-space:nowrap">📍 Rattacher</button></div>
+  <div id="rat-msg" style="font-size:12.5px;color:var(--ink-soft);margin-top:10px"></div>`;
+ document.getElementById('info-modal').style.display='flex';
+ setTimeout(()=>{const q=document.getElementById('rat-q');if(q)q.focus();},60);
+}
+let ratT=null;
+function rechercheRattacher(i,q){
+ clearTimeout(ratT);
+ const box=document.getElementById('rat-res');
+ if(!box)return;
+ if(!q||q.trim().length<3){box.style.display='none';return;}
+ ratT=setTimeout(async()=>{
+  try{
+   const r=await api('/api/places-autocomplete?q='+encodeURIComponent(q.trim()));
+   const d=await r.json();
+   const li=d.resultats||d.etablissements||d.suggestions||[];
+   if(!li.length){box.innerHTML='<div style="padding:10px;font-size:12.5px;color:var(--ink-soft)">Aucun établissement — essaie le lien Maps ci-dessous.</div>';box.style.display='block';return;}
+   box.innerHTML=li.slice(0,8).map(x=>`<div onclick="rattacherParId(${i},'${jsArg(x.place_id)}')" style="padding:9px 11px;cursor:pointer;border-bottom:1px solid var(--line);font-size:13px"
+     onmouseover="this.style.background='var(--paper,#F5F3FF)'" onmouseout="this.style.background=''">
+     <b>${htmlSafe(x.nom||'')}</b><div style="font-size:11.5px;color:var(--ink-soft)">${htmlSafe(x.adresse||'')}</div></div>`).join('');
+   box.style.display='block';
+  }catch(err){box.innerHTML='<div style="padding:10px;font-size:12.5px;color:#B91C1C">Recherche : '+htmlSafe(err.message)+'</div>';box.style.display='block';}
+ },260);
+}
+function rattacherParId(i,pid){ rattacher(i,'place_id='+encodeURIComponent(pid)); }
+function rattacherParLien(i){
+ const v=((document.getElementById('rat-url')||{}).value||'').trim();
+ if(!/^https?:\/\//i.test(v)){document.getElementById('rat-msg').innerHTML='<span style="color:#B91C1C">Lien Maps invalide.</span>';return;}
+ rattacher(i,'url='+encodeURIComponent(v));
+}
+async function rattacher(i,qs){
+ const e=REAL[i];
+ const msg=document.getElementById('rat-msg');
+ const box=document.getElementById('rat-res');if(box)box.style.display='none';
+ if(msg)msg.textContent='⏳ Lecture de la fiche Google…';
+ try{
+  const r=await api('/api/gmb-url?'+qs+'&liste_id='+(state.savedId||''));
+  const d=await r.json();
+  if(!r.ok||d.erreur){if(msg)msg.innerHTML='<span style="color:#B91C1C">'+htmlSafe(d.erreur||('erreur '+r.status))+'</span>';return;}
+  if(!d.gmb){if(msg)msg.innerHTML='<span style="color:#B91C1C">Cette fiche n\'a pas de note Google exploitable.</span>';return;}
+  const avant=enseignesDe(e).length;
+  e.gmb=fusionnerGmb(e.gmb,d.gmb,{manuel:true});
+  e.gmb._sig=enseigneDe(e)+'|'+domaineDe(e);
+  persister();rerender(i);
+  const nf=(d.gmb.fiches||[])[0]||{};
+  const apres=enseignesDe(e).length;
+  if(msg)msg.innerHTML=avant===apres
+   ? '↻ <b>'+htmlSafe(nf.nom||'')+'</b> était déjà rattachée — mise à jour.'
+   : '✅ <b>'+htmlSafe(nf.nom||'')+'</b> rattachée. '+apres+' enseignes, note du groupe '+String(e.gmb.note_moyenne).replace('.',',')+'★ (moyenne pondérée par le volume d\'avis).';
+  const q=document.getElementById('rat-q');if(q)q.value='';
+ }catch(err){if(msg)msg.innerHTML='<span style="color:#B91C1C">'+htmlSafe(err.message)+'</span>';}
+}
+
 // ── LES RELEVÉS TERRAIN, SUR LA FICHE ──────────────────────────────────────────────────────────
 // Ils ne servaient qu'à rédiger l'audit client, alors que ce sont les faits les plus utiles AVANT
 // de décrocher : chaque ligne est vérifiable par le prospect pendant l'appel. Une ligne n'apparaît
@@ -5476,6 +5759,31 @@ function gmbHtml(g,i){
  return bloc('gmb',titreGmb,corpsGmb,{resume:resumeGmb||'Déplier pour la fiche, les jauges et l\'avis négatif.'});
 }
 
+/* ── PORTÉE D'UN CONTACT ────────────────────────────────────────────────────────────────────────
+   Le renversement demandé le 21/08 : on pensait « 1 établissement = plusieurs contacts », il faut
+   penser « 1 ou plusieurs contacts = 1 ou plusieurs établissements ». Sabine WYBO est Directrice
+   Marketing du GROUPE : elle couvre les quatre enseignes, et l'affaire se négocie à son niveau. Le
+   responsable de Grain d'Or ne couvre que la sienne — l'appeler pour un contrat groupe est une
+   perte de temps pour lui comme pour le SDR.
+   `c.portee` : '' = tout le groupe (défaut), sinon le place_id de son enseigne.
+   Rien ne s'affiche quand la fiche n'a qu'une enseigne : ce serait un choix sans objet. */
+function porteeBadge(e,c){
+ if(!e)return '';
+ const fs=enseignesDe(e);
+ if(fs.length<2)return '';
+ if(!c.portee)return ' <span class="badge b-new" title="Ce contact couvre toutes les enseignes du groupe">🏪 tout le groupe</span>';
+ const f=fs.find(x=>x.place_id===c.portee);
+ return f?' <span class="badge b-gmb" title="Ce contact ne couvre que cette enseigne">🏪 '+htmlSafe(nomEnseigne(f))+'</span>':'';
+}
+function porteeSelect(e,i,j,c){
+ const fs=enseignesDe(e);
+ if(fs.length<2)return '';
+ return `<label style="display:block;font-size:11.5px;font-weight:600;color:var(--ink-soft);margin:8px 0 3px">🏪 Ce contact couvre</label>
+  <select class="field" id="ec-portee${i}-${j}" style="width:100%;font-size:12.5px">
+   <option value=""${!c.portee?' selected':''}>Tout le groupe (${fs.length} enseignes)</option>
+   ${fs.map(f=>`<option value="${jsArg(f.place_id)}"${c.portee===f.place_id?' selected':''}>${htmlSafe(nomEnseigne(f))} seulement</option>`).join('')}
+  </select>`;
+}
 function contactHtml(c,i,j){
  const en=c.enrich;
  // Profil LinkedIn capté via Lemlist (photo miniature, poste) — voir linkedin_profils
@@ -5486,7 +5794,7 @@ function contactHtml(c,i,j){
  return `<div style="border-top:1px dashed var(--line);padding:10px 0 4px;margin-top:10px">
   ${c.signal?`<div class="contact-line" style="color:var(--danger);font-weight:700">${c.signal.type==='manuel'?'➕':'🔥'} ${c.signal.type==='manuel'?'':(c.signal.emoji||'💙')+' '}${c.signal.interaction||(c.signal.type==='manuel'?('ajouté manuellement'+(c.signal.source?' — '+String(c.signal.source).replace(/^manuel\s*—\s*/i,''):'')):'a réagi')}${c.signal.concurrent?` sur un post <b>${c.signal.concurrent}</b>`:''}${c.signal.post?` <a href="${c.signal.post}" target="_blank" style="font-weight:600">→ voir le post</a>`:''}${c.signal.linkedin?` <a href="${c.signal.linkedin}" target="_blank" style="font-weight:600">→ voir le profil</a>`:''} · ${new Date(c.signal.date).toLocaleDateString('fr-FR')}</div>`:''}
   ${(function(){var ent=(typeof REAL!=='undefined'&&REAL[i])||{};var a=c.signal?accrocheSig(c.signal):(ent.signal?accrocheSig(ent.signal):'');return a?`<div class="contact-line" style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:8px 10px;margin:6px 0;font-size:13px;line-height:1.45">🗣 <b>Accroche d'appel (tirée du post)&nbsp;:</b> ${escapeHtml(a)}</div>`:'';})()}
-  <div class="contact-line" style="display:flex;align-items:center;gap:8px">${photo}<span><b>${(c.prenom+' '+c.nom).trim()}</b> — ${fonctionAff} <span class="badge b-gmb">${c.source}</span>${(prof&&prof.company_size)?` <span class="badge b-gmb" title="Taille d'entreprise (LinkedIn)">${prof.company_size}</span>`:''}</span></div>
+  <div class="contact-line" style="display:flex;align-items:center;gap:8px">${photo}<span><b>${(c.prenom+' '+c.nom).trim()}</b> — ${fonctionAff} <span class="badge b-gmb">${c.source}</span>${(prof&&prof.company_size)?` <span class="badge b-gmb" title="Taille d'entreprise (LinkedIn)">${prof.company_size}</span>`:''}${porteeBadge(REAL[i],c)}</span></div>
   ${en?`
    ${en.email?`<div class="contact-line">✉️ <b>${en.email}</b> <a class="act act-call" style="padding:4px 10px;font-size:12px" href="mailto:${en.email}" title="Écrire un email">📧</a> <button class="act act-copy" style="padding:4px 10px;font-size:12px" onclick="navigator.clipboard.writeText('${en.email}');toast('Email copié ✓')" title="Copier l'adresse">📋</button>${en.email_qualification?` <span class="badge b-new">${en.email_qualification}</span>`:''}</div>`:'<div class="contact-line" style="color:var(--ink-soft)">✉️ Email non trouvé (Dropcontact) — repli FullEnrich à venir</div>'}
    ${en.telephone?`<div class="contact-line">${estMobile(en.telephone)?'📱':'☎️'} <b>${en.telephone}</b>${telBtns(en.telephone,i,(c.prenom+' '+c.nom).trim())}${(function(){var so=en.tel_source||en.telephone_source;return so?' <span class="badge b-gmb">'+(({fullenrich:'FullEnrich',kaspr:'Kaspr',lemlist:'Lemlist'})[so]||so)+'</span>':'';})()}</div>`:''}${(en.telephone_fixe&&en.telephone_fixe!==en.telephone)?`<div class="contact-line">☎️ <b>${en.telephone_fixe}</b> <span class="badge b-gmb">fixe</span>${telBtns(en.telephone_fixe,i,(c.prenom+' '+c.nom).trim())}</div>`:''}
@@ -5546,6 +5854,7 @@ function ligneEditContacts(e,i){
     <input class="field" id="ec-tel${i}-${j}" placeholder="📱 Téléphone" value="${esc(en.telephone)}" style="flex:1">
    </div>
    <input class="field" id="ec-linkedin${i}-${j}" placeholder="🔗 LinkedIn du contact" value="${esc(en.linkedin)}" style="width:100%">
+   ${porteeSelect(e,i,j,c)}
   </div>`;
  }).join('');
 }
@@ -6683,6 +6992,7 @@ function ficheReal(e,i){
       <button class="btn-cta" id="rcsdemo${i}" style="background:#7A5AF8;color:#fff" onclick="ouvrirRcsProspectFiche(${i})" title="Rich-card RCS Sofy (visuel + bouton « Réserver ma démo ») — la meilleure démonstration du produit. Un seul envoi par lead.">💬 RCS démo</button>
      </div>
      ${gmbHtml(e.gmb,i)}
+     ${enseignesHtml(e,i)}
      ${relevesHtml(e,i)}
      ${e.score?bloc('synthese',"Synthèse pour l'appel",`
      <div class="review-box" style="background:#F4F6FF;border-color:#D9DEFF;color:var(--ink)">
@@ -6743,17 +7053,17 @@ function ficheReal(e,i){
     </div>
     <div id="acttl${i}" style="max-height:300px;overflow-y:auto;margin-top:2px">${timelineHtml(e,i)}</div>
    </div>
+   ${/* La barre passe de 10 boutons sur 2 lignes à 5 + un menu (21/08). La règle : reste visible
+        ce qui COÛTE (Pré-audit consomme le budget de 230, Audit client part chez le client) ou ce
+        qui demande un CHOIX (Personas fait choisir les fonctions ciblées). Part au menu ce qui
+        n'agit pas sur ce prospect (Lookalike crée une liste ailleurs) et ce qui sert rarement. */''}
    <div class="act-row" style="border-top:1px solid var(--line);padding-top:12px;margin-top:16px">
-    <button class="act act-call" onclick="lancerFiche(${i})" title="Pipeline complet sur cette fiche">🚀 Fiche</button>
-    <button class="act act-export" id="gmbbtn${i}" onclick="analyserFiche(${i})">${!e.gmb?'⭐ Analyser (GMB + IA)':'↻ Analyser'}</button>
+    <button class="act act-call" onclick="lancerFiche(${i})" title="Le pipeline entier : fiche Google → IA site/enseigne → technos → Personas → emails → mobiles → synthèse. Ne re-paie jamais ce qui est déjà obtenu.">🚀 Tout enrichir</button>
+    <button class="act act-export" id="gmbbtn${i}" onclick="analyserFiche(${i})" title="Fiche Google (note, avis, pire établissement, avis négatif, concurrents), puis réécriture de la synthèse d'appel et de l'email avec les nouveaux chiffres — les deux sont solidaires.">${!e.gmb?'⭐ Analyser (GMB + IA)':'↻ Analyser'} <span style="opacity:.65;font-weight:500">+ synthèse</span></button>
     <button class="act act-copy" onclick="if(REAL[${i}]._busy){toast('Analyse en cours ⏳');}else{ouvrirChoixPersonas(${i});}" title="Chercher des fonctions ciblées (LinkedIn) — la fenêtre de choix s'ouvre toujours">👥 Personas</button>
-    <button class="act act-copy" onclick="creerLookalike(${i})" title="Créer une liste d'entreprises similaires à cette fiche (Liste intelligente préremplie avec l'activité, le NAF, l'effectif et la zone réels)">👯 Lookalike</button>
-    <button class="act ${e.score?'act-copy':'act-call'}" onclick="lancerScore(${i})">${e.score?'↻ Re-scorer':'🎯 Scorer + synthèse'}</button>
-    <button class="act" style="background:#F5F3FF;border-color:#C4B5FD;color:#6D28D9;font-weight:700" onclick="preAudit(${i})" title="Relever ce que Google, l'IA de Google et Apple disent de ce prospect — puis reprendre la synthèse d'appel et l'email avec ces mesures. 6 à 10 relevés sur les 230 du mois.">🔍 Pré-audit${(e.gmb&&(e.gmb.reponses||e.gmb.audit||e.gmb.ia_visibilite||e.gmb.apple))?' ✓':''}</button>
+    <button class="act" style="background:#F5F3FF;border-color:#C4B5FD;color:#6D28D9;font-weight:700" onclick="preAudit(${i})" title="Relever ce que Google, l'IA de Google et Apple disent de ce prospect — puis reprendre la synthèse d'appel et l'email avec ces mesures. 6 à 10 relevés sur les 230 du mois, par enseigne cochée.">🔍 Pré-audit${coutPreAudit(e)}</button>
     <button class="act" style="background:#5B4FE9;border-color:#5B4FE9;color:#fff" onclick="genererPrez(${i})" title="Analyse personnalisée en 7 planches à partir des vraies données de ce prospect (note Google, pire fiche, avis, concurrents) — page web privée avec suivi d'ouverture">🎨 Audit client</button>
-    <button class="act act-copy" onclick="ouvrirInfo(${i})">ℹ️</button>
-    <button class="act act-copy" onclick="document.getElementById('edit${i}').style.display=document.getElementById('edit${i}').style.display==='none'?'block':'none'">✏️</button>
-    <button class="act act-export" onclick="exclure(${i})">🗑</button>
+    <button class="act act-copy" style="font-weight:800;letter-spacing:1px" onclick="ouvrirMenuFiche(${i},event)" title="Réécrire la synthèse seule · Lookalike · Rattacher une enseigne · Fusionner · Détails · Corriger · Exclure">⋯</button>
    </div>
   </div>
  </div>`;
@@ -6766,6 +7076,71 @@ function rerender(i){
  const el=document.getElementById('fr'+i);
  if(el)el.outerHTML=ficheReal(REAL[i],i);
  majKpisReal();
+ fermerMenuFiche(); // le menu ⋯ pointait vers un bouton qui n'existe plus après ré-affichage
+}
+
+/* ───────── Le menu ⋯ de la fiche ─────────
+   Attaché au <body> en position fixe, pas à l'intérieur de la fiche : rerender() remplace le
+   HTML de la fiche entière, un menu enfant disparaîtrait au premier rafraîchissement. */
+function fermerMenuFiche(){
+ const m=document.getElementById('menu-fiche');
+ if(m)m.remove();
+ document.removeEventListener('click',fermerMenuFicheDehors,true);
+}
+function fermerMenuFicheDehors(ev){
+ const m=document.getElementById('menu-fiche');
+ if(m&&!m.contains(ev.target))fermerMenuFiche();
+}
+function ouvrirMenuFiche(i,ev){
+ if(ev)ev.stopPropagation();
+ const deja=document.getElementById('menu-fiche');
+ if(deja&&deja.dataset.i===String(i)){fermerMenuFiche();return;} // re-clic sur le même bouton = fermer
+ fermerMenuFiche();
+ const e=REAL[i];
+ const nbEns=((e.gmb||{}).fiches||[]).length;
+ const lignes=[
+  e.score?['↻ Réécrire la synthèse seule','sans re-payer la fiche Google (≈0,02 €)',`lancerScore(${i})`]
+        :['🎯 Rédiger la synthèse d\'appel','score + synthèse + email (≈0,02 €)',`lancerScore(${i})`],
+  ['➕ Rattacher une enseigne',nbEns?nbEns+' déjà rattachée'+(nbEns>1?'s':''):'pour un groupe qui exploite plusieurs marques',`ouvrirRattacher(${i})`],
+  ['↔ Fusionner avec une autre fiche','regrouper deux lignes du même prospect',`ouvrirFusionFiche(${i})`],
+  ['👯 Créer une liste Lookalike','n\'agit pas sur ce prospect : crée une liste ailleurs',`creerLookalike(${i})`],
+  ['ℹ️ Détails de la fiche','',`ouvrirInfo(${i})`],
+  ['✏️ Corriger la fiche','nom, enseigne, ville, contacts',`ouvrirEdit(${i})`],
+  ['🗑 Exclure de la liste','',`exclure(${i})`]
+ ];
+ const d=document.createElement('div');
+ d.id='menu-fiche';d.dataset.i=String(i);
+ const r=(ev&&ev.currentTarget)?ev.currentTarget.getBoundingClientRect():{left:40,bottom:80};
+ // Recalé pour rester dans la fenêtre : ouvert en bas de page, un menu de 300 px sortait de l'écran.
+ const larg=310, haut=Math.min(lignes.length*46+16,420);
+ const x=Math.max(8,Math.min(r.left,window.innerWidth-larg-8));
+ const y=(r.bottom+haut+8>window.innerHeight)?Math.max(8,r.top-haut-6):r.bottom+6;
+ d.style.cssText=`position:fixed;left:${x}px;top:${y}px;width:${larg}px;z-index:906;background:var(--card,#fff);border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 44px rgba(0,0,0,.22);padding:6px;max-height:${haut}px;overflow-y:auto`;
+ d.innerHTML=lignes.map(([t,s,fn])=>
+  `<div onclick="fermerMenuFiche();${fn}" style="padding:8px 10px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:650"
+        onmouseover="this.style.background='var(--paper,#F5F3FF)'" onmouseout="this.style.background=''">
+    ${t}${s?`<div style="font-size:11.5px;font-weight:400;color:var(--ink-soft);margin-top:1px">${htmlSafe(s)}</div>`:''}
+   </div>`).join('');
+ document.body.appendChild(d);
+ setTimeout(()=>document.addEventListener('click',fermerMenuFicheDehors,true),0);
+}
+// Le formulaire de correction est une fenêtre : on l'ouvre par une fonction, pas par un toggle de
+// style écrit dans le onclick — le menu ⋯ comme la fiche doivent passer par le même chemin.
+function ouvrirEdit(i){
+ const b=document.getElementById('edit'+i);
+ if(b)b.style.display='block';
+}
+// Le coût affiché AVANT le clic. Le pré-audit consomme 6 à 10 relevés PAR ENSEIGNE : sur un groupe
+// de quatre enseignes, un clic emporte un sixième du mois. Le budget doit être lisible avant, pas
+// constaté après.
+function coutPreAudit(e){
+ const g=e.gmb||{};
+ const fait=!!(g.reponses||g.audit||g.ia_visibilite||g.apple);
+ const n=enseignesCochees(e).length;
+ // 8 relevés pour l'enseigne principale, 4 par enseigne supplémentaire (l'aperçu IA et Apple
+ // répondent à une requête, pas à un établissement : ils ne sont relevés qu'une fois).
+ if(n>1)return ` · ${n} enseignes <span style="opacity:.7;font-weight:500">≈${8+4*(n-1)}/230</span>`;
+ return fait?' ✓':'';
 }
 async function majFiche(i){
  const e=REAL[i];
@@ -6823,7 +7198,9 @@ async function majFicheComplet(i){
    const en=Object.assign({},ancien.enrich||{});
    en.email=email||undefined; en.telephone=tel||undefined; en.linkedin=linkedin||undefined;
    if(email){en.email_source='sdr';} 
-   nouveaux.push(Object.assign({},ancien,{prenom,nom,fonction,enrich:en,source:ancien.source||'sdr'}));
+   const selP=document.getElementById('ec-portee'+i+'-'+j);
+   const portee=selP?selP.value:(ancien.portee||'');
+   nouveaux.push(Object.assign({},ancien,{prenom,nom,fonction,enrich:en,source:ancien.source||'sdr',portee}));
   });
   e.contacts=nouveaux;
  }
@@ -6956,7 +7333,7 @@ async function completerMesures(i){
  // Sans identifiant de fiche Google, TROIS relevés sur quatre sont impossibles : autant le dire
  // avec le geste qui débloque, plutôt que d'énumérer trois échecs.
  if(!pid){
-  erreurs.push('aucune fiche Google rattachée : ni réponses aux avis, ni photos, ni position locale ne sont mesurables. Lance « ↻ Analyser » sur la fiche, ou rattache-la par son lien Maps (➕ Ajouter une fiche).');
+  erreurs.push('aucune fiche Google rattachée : ni réponses aux avis, ni photos, ni position locale ne sont mesurables. Lance « ↻ Analyser » sur la fiche, ou rattache-la avec « ➕ Rattacher une enseigne » (menu ⋯).');
  }
 
  // 1. Réponses aux avis et délai réel (l'API Google ne les expose pas)
@@ -7089,6 +7466,55 @@ async function completerMesures(i){
  // de 400 ms non attendu, la rédaction partait sans les relevés qu'on venait de payer — c'est
  // pour ça que les planches « position locale » et « aperçu IA » manquaient le 20/08.
  if(faits.length){ try{ await persisterMaintenant(); }catch(_){ erreurs.push('sauvegarde des relevés : échec — la rédaction risque de les ignorer'); } rerender(i); }
+ return {faits,erreurs,plafondAtteint,alerteBudget};
+}
+
+/* Relevés des enseignes SECONDAIRES d'un groupe (Carat, Swarovski… sur Groupe TBF).
+   ON N'Y REFAIT PAS LES QUATRE RELEVÉS, et ce n'est pas une économie de façade :
+   · les réponses aux avis et l'audit de fiche sont propres à UN établissement → à relever ;
+   · l'aperçu IA et Apple Plans répondent à une REQUÊTE (« bijouterie Les Abymes »), pas à un
+     établissement : les redemander pour chaque enseigne du même métier paierait quatre fois la
+     même réponse.
+   Coût réel : ~8 relevés pour la principale, ~4 par enseigne supplémentaire. */
+async function completerMesuresEnseigne(i,f){
+ const e=REAL[i];
+ const faits=[], erreurs=[];
+ let plafondAtteint=null, alerteBudget=null;
+ const pid=f.place_id;
+ const dejaG=((e.gmb||{}).par_enseigne||{})[pid]||{};
+ const garder=(cle,val)=>{
+  const g=Object.assign({},e.gmb||{});
+  g.par_enseigne=Object.assign({},g.par_enseigne||{});
+  g.par_enseigne[pid]=Object.assign({},g.par_enseigne[pid]||{},{[cle]:val,nom:nomEnseigne(f)});
+  e.gmb=g;
+ };
+ const budget=(d)=>{
+  if(d&&d.plafond_atteint)plafondAtteint=d.erreur||'Plafond SerpApi atteint';
+  if(d&&d.budget_serpapi&&d.budget_serpapi.alerte)alerteBudget=d.budget_serpapi.alerte;
+  if(d&&d.cache_erreur)erreurs.push(nomEnseigne(f)+' : mise en cache impossible — ce relevé sera REPAYÉ');
+ };
+ if(!dejaG.reponses){
+  try{
+   const r=await api('/api/avis-reponses',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({place_id:pid,nom:f.nom||''})});
+   const d=await r.json();budget(d);
+   if(d.ok&&d.mesure){garder('reponses',{taux:d.mesure.taux,repondus:d.mesure.repondus,analyses:d.mesure.analyses,
+     delai_median_h:d.mesure.delai_median_h,rythme_par_mois:d.mesure.rythme_par_mois});
+    faits.push(nomEnseigne(f)+' · réponses aux avis');}
+   else erreurs.push(nomEnseigne(f)+' · réponses aux avis : '+String((d&&(d.erreur||d.info))||'réponse inattendue'));
+  }catch(err){erreurs.push(nomEnseigne(f)+' · réponses aux avis : '+err.message);}
+ }
+ if(!dejaG.audit){
+  const req=requeteLocale(e);
+  try{
+   const r=await api('/api/fiche-audit',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({place_id:pid,nom:f.nom||'',requete:req,
+     ll:(f.lat&&f.lng)?('@'+f.lat+','+f.lng+',13z'):''})});
+   const d=await r.json();budget(d);
+   if(d.ok&&d.audit){garder('audit',d.audit);faits.push(nomEnseigne(f)+' · audit de fiche');}
+   else erreurs.push(nomEnseigne(f)+' · audit de fiche : '+String((d&&(d.erreur||d.info))||'réponse inattendue'));
+  }catch(err){erreurs.push(nomEnseigne(f)+' · audit de fiche : '+err.message);}
+ }
  return {faits,erreurs,plafondAtteint,alerteBudget};
 }
 
@@ -7331,8 +7757,8 @@ function ouvrirInfo(i){
   sec.push(`<h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-soft);margin:14px 0 6px">⭐ Fiches Google matchées (${e.gmb.nb_fiches}${att?' / '+att+' établissement(s) déclaré(s)':''})</h3>${fl}`
    +(manquantes?`<div style="background:#FEF6E7;border:1px solid #E9C88B;border-radius:9px;padding:10px 12px;margin-top:8px;font-size:12.5px;line-height:1.5;color:#7A4E12">
       <b>${manquantes} établissement(s) sans fiche rattachée.</b> Un réseau national n'a pas toutes ses fiches dans la ville du siège. Ouvre la fiche manquante dans Google Maps, copie son lien, et ajoute-la : elle entrera dans la note du réseau et dans le scoring.
-      <div style="margin-top:8px"><button class="act act-call" style="padding:3px 10px;font-size:12px" onclick="ajouterFicheGmb(${i})">➕ Ajouter une fiche par son lien Maps</button></div></div>`
-    :`<div style="margin-top:8px"><button class="act act-copy" style="padding:3px 10px;font-size:12px" onclick="ajouterFicheGmb(${i})">➕ Ajouter une fiche</button></div>`)
+      <div style="margin-top:8px"><button class="act act-call" style="padding:3px 10px;font-size:12px" onclick="ouvrirRattacher(${i})">➕ Rattacher la fiche manquante</button></div></div>`
+    :`<div style="margin-top:8px"><button class="act act-copy" style="padding:3px 10px;font-size:12px" onclick="ouvrirRattacher(${i})">➕ Rattacher une enseigne</button></div>`)
    +`<div style="margin-top:8px">
       <button class="act act-call" style="padding:3px 10px;font-size:12px" onclick="mesurerReponsesAvis(${i})" title="Taux de réponse aux avis et délai réel — l'API Google ne les expose pas (≈ 0,01 $)">⭐ Mesurer les réponses aux avis</button>
       <button class="act act-call" style="padding:3px 10px;font-size:12px;margin-left:6px" onclick="auditerFiche(${i})" title="Photos, description, horaires et position dans les résultats locaux (≈ 0,02 $)">🔍 Auditer la fiche</button>
@@ -7360,13 +7786,23 @@ function verrou(e,i){
 function deverrou(e,i){e._busy=false;rerender(i);}
 
 /* Analyse unifiée : GMB → si échec/pas de domaine → IA → re-GMB. UN SEUL clic pour le SDR. */
+// ⚠️ Analyser ET réécrire la synthèse, dans le même geste (21/08).
+// Le score, la synthèse d'appel et l'email sont CALCULÉS À PARTIR de la fiche Google. Or jusqu'ici
+// cette fonction ne rappelait jamais le scoring, et le pipeline ne score que `if(!e.score)` : une
+// ré-analyse laissait donc en place une synthèse calculée sur les données d'AVANT. Concrètement,
+// sur la fiche Sofy : la note passe de 3,3 à 4,5★ après correction, et la synthèse d'appel continue
+// d'annoncer 3,3 — le SDR appelle avec un chiffre faux, sans qu'aucun message ne le signale.
+// Une analyse qui ne réécrit pas sa synthèse est une analyse à moitié faite : les deux sont
+// solidaires, ce n'est donc pas seulement un bouton en moins.
 async function analyserFiche(i,opts){
  const e=REAL[i];
  if(verrou(e,i))return;
  if(!(opts&&opts.force)&&(e.gmb||e.ia)&&frais(e.analyse_le,30)){
-  if(!confirm('Fiche déjà analysée il y a '+depuisJours(e.analyse_le)+' jour(s).\nRe-analyser relance des recherches web payantes (≈0,05 €).\n\nRe-analyser quand même ?'))return;
+  if(!confirm('Fiche déjà analysée il y a '+depuisJours(e.analyse_le)+' jour(s).\nRe-analyser relance des recherches web payantes (≈0,05 €) puis réécrit la synthèse d\'appel et l\'email avec les nouveaux chiffres (≈0,02 €).\n\nRe-analyser quand même ?'))return;
  }
+ let avait=null;
  try{
+ avait=e.gmb?JSON.stringify([e.gmb.note_moyenne,e.gmb.total_avis,e.gmb.nb_fiches,(e.gmb.pire_fiche||{}).place_id]):null;
  e.analyse_le=new Date().toISOString(); // anti-recalcul (analyse GMB + recherches web)
  await analyserGmb(i);
  if(!(e.gmb&&e.gmb.trouve)||!domaineDe(e)){
@@ -7381,6 +7817,14 @@ async function analyserFiche(i,opts){
   }
  }
  }finally{deverrou(e,i);}
+ // Synthèse : on la réécrit si elle est ABSENTE, ou si les chiffres dont elle est tirée ont bougé.
+ // Pas de second confirm() — le coût a été annoncé au-dessus, et re-scorer à l'identique pour rien
+ // serait payer 0,02 € pour réécrire le même texte.
+ if(!(e.gmb||e.ia))return;
+ const apres=e.gmb?JSON.stringify([e.gmb.note_moyenne,e.gmb.total_avis,e.gmb.nb_fiches,(e.gmb.pire_fiche||{}).place_id]):null;
+ if(e.score&&avait===apres){toast('↻ Analyse à jour — chiffres inchangés, synthèse conservée');return;}
+ toast(e.score?'🎯 Chiffres modifiés → réécriture de la synthèse et de l\'email…':'🎯 Rédaction de la synthèse d\'appel…');
+ await lancerScore(i,true,true);
 }
 
 function exclure(i){
@@ -7820,53 +8264,31 @@ async function enrichirFE(i,j){
 // Fusionner une fiche récupérée à la main avec celles déjà trouvées. Sans ça, coller un lien
 // Maps ÉCRASAIT tout le relevé pour ne garder qu'une fiche — et le document annonçait « 1 fiche »
 // à un prospect qui en a douze.
-function fusionnerGmb(ancien, nouveau){
- const nf=(nouveau.fiches||[])[0];
+// `opts.manuel` marque la fiche d'un `ajout_manuel` — indispensable : analyserGmb() remplace
+// e.gmb par le résultat d'une recherche PAR NOM, qui ne retrouvera jamais une enseigne d'un autre
+// nom (« Carat » sur « Groupe TBF »). Sans ce marqueur, chaque ré-analyse effaçait le travail de
+// rattachement. C'est exactement le piège qui avait détruit les relevés payants le 21/08.
+function fusionnerGmb(ancien, nouveau, opts){
+ let nf=(nouveau.fiches||[])[0];
  if(!nf)return ancien||nouveau;
- if(!ancien||!ancien.trouve)return nouveau;
+ if(opts&&opts.manuel)nf=Object.assign({},nf,{ajout_manuel:true});
+ if(!ancien||!ancien.trouve)return Object.assign({},nouveau,{fiches:[nf],pire_fiche:nf});
  const fiches=(ancien.fiches||[]).slice();
  // Déjà présente ? On met à jour au lieu de dupliquer.
  const idx=fiches.findIndex(f=>(f.place_id&&nf.place_id&&f.place_id===nf.place_id));
  if(idx>=0)fiches[idx]=Object.assign({},fiches[idx],nf); else fiches.push(nf);
- // Agrégats recalculés : la note du réseau est une moyenne PONDÉRÉE par le volume d'avis,
- // sinon une fiche à 5★ avec 2 avis remonterait artificiellement l'ensemble.
- const avec=fiches.filter(f=>typeof f.note==='number'&&f.nb_avis>0);
- const total=avec.reduce((s,f)=>s+f.nb_avis,0);
- const moy=total?Math.round((avec.reduce((s,f)=>s+f.note*f.nb_avis,0)/total)*10)/10:null;
- const signif=avec.filter(f=>f.nb_avis>=3);
- const pire=(signif.length?signif:avec).slice().sort((a,b)=>a.note-b.note)[0]||null;
- return Object.assign({},ancien,{
-  trouve:true, fiches:fiches, nb_fiches:fiches.length,
-  total_avis:total||ancien.total_avis, note_moyenne:moy!=null?moy:ancien.note_moyenne,
-  pire_fiche:pire||ancien.pire_fiche,
+ return recalculerAgregats(Object.assign({},ancien,{
+  trouve:true, fiches:fiches,
   telephone:ancien.telephone||nouveau.telephone||null,
   site_web:ancien.site_web||nouveau.site_web||null,
   avis_negatif:ancien.avis_negatif||nouveau.avis_negatif||null,
   reseau_incomplet:(ancien.reseau_attendu&&fiches.length<ancien.reseau_attendu)
     ? ancien.reseau_attendu-fiches.length : null
- });
+ }));
 }
-
-async function ajouterFicheGmb(i){
- const e=REAL[i];
- const lien=prompt('Colle le lien Google Maps de l\'établissement à ajouter :\n\n(ouvre la fiche dans Maps, bouton Partager, Copier le lien)');
- if(!lien||!/^https?:\/\//i.test(lien.trim())){if(lien)toast('Lien Maps invalide');return;}
- toast('⏳ Lecture de la fiche…');
- try{
-  const r=await api('/api/gmb-url?url='+encodeURIComponent(lien.trim())+'&liste_id='+(state.savedId||''));
-  const d=await r.json();
-  if(!r.ok||d.erreur){toast('Fiche : '+(d.erreur||('erreur '+r.status)));return;}
-  if(!d.gmb){toast('Cette fiche n\'a pas de note Google exploitable');return;}
-  const avant=(e.gmb&&e.gmb.nb_fiches)||0;
-  e.gmb=fusionnerGmb(e.gmb,d.gmb);
-  e.gmb._sig=enseigneDe(e)+'|'+domaineDe(e);
-  persister();rerender(i);
-  const nf=(d.gmb.fiches||[])[0]||{};
-  toast(avant===e.gmb.nb_fiches
-   ? '↻ Fiche déjà présente, mise à jour : '+(nf.nom||'')
-   : '✅ '+(nf.nom||'Fiche')+' ajoutée — '+e.gmb.nb_fiches+' fiche(s), note du réseau '+String(e.gmb.note_moyenne).replace('.',',')+'★');
- }catch(err){toast('Fiche : '+err.message);}
-}
+// Conservé pour les anciens appels : le rattachement passe désormais par une fenêtre avec
+// l'autocomplétion Google (1 appel Google au lieu de 3 à 6, et pas de lien à aller chercher).
+function ajouterFicheGmb(i){ ouvrirRattacher(i); }
 
 // Taux de réponse aux avis et délai réel : l'API Google ne les expose pas, on passe par un
 // relevé dédié (SerpApi). Mesure à la demande, réutilisée 30 jours, ~0,01 $ la fiche.
@@ -7956,6 +8378,22 @@ async function analyserGmb(i){
   if(avait.length){
    if(memeFiche||!pidApres){ releves.forEach(k=>{if(ancien[k])e.gmb[k]=ancien[k];}); }
    else toast('⚠️ Fiche Google différente : les relevés précédents ('+avait.join(', ')+') ne s\'y appliquent plus');
+  }
+  // ⚠️ LES ENSEIGNES RATTACHÉES À LA MAIN SURVIVENT (21/08).
+  // Cette recherche se fait PAR NOM : « Carat » et « Swarovski » ne ressembleront jamais à
+  // « Groupe TBF », donc elle ne peut structurellement pas les retrouver. Sans ce recollage, la
+  // première relance d'analyse effaçait tout le travail de rattachement du SDR — et avec lui les
+  // relevés payants attachés à ces enseignes.
+  const manuelles=(ancien.fiches||[]).filter(f=>f&&f.ajout_manuel&&f.place_id);
+  if(manuelles.length){
+   const vues=new Set((e.gmb.fiches||[]).map(f=>f.place_id));
+   const ajout=manuelles.filter(f=>!vues.has(f.place_id));
+   if(ajout.length){
+    e.gmb.fiches=(e.gmb.fiches||[]).concat(ajout);
+    e.gmb=recalculerAgregats(e.gmb);
+    toast('🏪 '+ajout.length+' enseigne'+(ajout.length>1?'s':'')+' rattachée'+(ajout.length>1?'s':'')+' à la main conservée'+(ajout.length>1?'s':''));
+   }
+   if(ancien.par_enseigne)e.gmb.par_enseigne=ancien.par_enseigne; // relevés payants par enseigne
   }
   e.gmb._sig=enseigneDe(e)+'|'+domaineDe(e);
   rerender(i);persister();
@@ -9741,9 +10179,15 @@ async function preAudit(i){
  if(!(e.gmb&&e.gmb.trouve)){
   toast('Lance d\'abord ↻ Analyser : sans fiche Google, il n\'y a presque rien à relever');return;
  }
+ // Enseignes cochées : la principale porte les 4 relevés, chaque enseigne supplémentaire en porte 2
+ // (réponses + audit). Le SDR voit le coût AVANT de cliquer, parce que 4 enseignes = un sixième du
+ // budget mensuel en un geste.
+ const cochees=enseignesCochees(e);
+ const principal=(enseignesDe(e)[0]||{}).place_id;
+ const secondaires=cochees.filter(f=>f.place_id!==principal);
  const dejaLa=[e.gmb.reponses&&'réponses aux avis',e.gmb.audit&&'audit de fiche',
    e.gmb.ia_visibilite&&'aperçu IA',e.gmb.apple&&'Apple Plans'].filter(Boolean);
- if(dejaLa.length===4){
+ if(dejaLa.length===4&&!secondaires.some(f=>!((e.gmb.par_enseigne||{})[f.place_id]||{}).audit)){
   if(!await confirmSofy('Les relevés sont déjà là',
    'Tout est déjà mesuré sur cette fiche : '+dejaLa.join(', ')+'.\n\nRelancer ne consommerait rien de plus (les relevés sont réutilisés jusqu\'à 30 jours), mais ne changerait rien non plus. En revanche, reprendre la synthèse et l\'email avec ces mesures coûte un appel IA (≈ 0,02 €).',
    'Reprendre la synthèse et l\'email'))return;
@@ -9755,18 +10199,39 @@ async function preAudit(i){
    +'· les concurrents qui PAIENT pour passer devant\n'
    +'· si l\'IA de Google le cite, et s\'il existe sur Apple Plans\n\n'
    +'Puis la synthèse d\'appel et l\'email seront repris avec ces mesures.\n\n'
-   +'Coût : 6 à 10 relevés sur les 230 du mois'+(dejaLa.length?' (moins, '+dejaLa.length+' sont déjà en cache)':'')
-   +', plus un appel IA (≈ 0,02 €).\n\n'
+   +(secondaires.length
+     ? 'Coût : ≈'+(8+4*secondaires.length)+' relevés sur les 230 du mois — 8 pour '
+       +nomEnseigne(enseignesDe(e)[0])+', 4 par enseigne supplémentaire ('+secondaires.length+').\n'
+       +'L\'aperçu IA et Apple Plans répondent à une requête, pas à un établissement : ils ne sont relevés qu\'une fois pour tout le groupe.\n\n'
+     : 'Coût : 6 à 10 relevés sur les 230 du mois'+(dejaLa.length?' (moins, '+dejaLa.length+' sont déjà en cache)':'')+'.\n\n')
+   +'Plus un appel IA (≈ 0,02 €) pour reprendre la synthèse.\n\n'
    +'⚠️ Ces mesures rendront GRATUITE la génération de l\'audit client ensuite.',
-   '🔍 Relever'))return;
+   '🔍 Relever'+(secondaires.length?' '+cochees.length+' enseignes':'')))return;
  }
  const v=voileTravail('🔍 Pré-audit — relevés terrain',
-  (enseigneDe(e)||e.nom)+'\nGoogle, aperçu IA, annonces payantes, Apple Plans.');
+  (enseigneDe(e)||e.nom)+(secondaires.length?'\n'+cochees.length+' enseignes cochées.':'')
+  +'\nGoogle, aperçu IA, annonces payantes, Apple Plans.');
  let rel={faits:[],erreurs:[]};
- try{ rel=await completerMesures(i); }finally{ v.fermer(); }
+ try{
+  rel=await completerMesures(i);
+  // Les enseignes supplémentaires, une par une : si le plafond tombe au milieu, on s'arrête net
+  // au lieu d'enchaîner des échecs qui coûtent quand même un appel.
+  for(const f of secondaires){
+   if(rel.plafondAtteint)break;
+   const r2=await completerMesuresEnseigne(i,f);
+   rel.faits=rel.faits.concat(r2.faits);
+   rel.erreurs=rel.erreurs.concat(r2.erreurs);
+   if(r2.plafondAtteint)rel.plafondAtteint=r2.plafondAtteint;
+   if(r2.alerteBudget)rel.alerteBudget=r2.alerteBudget;
+  }
+  if(secondaires.length&&rel.faits.length){
+   try{ await persisterMaintenant(); }catch(_){ rel.erreurs.push('sauvegarde des relevés par enseigne : échec'); }
+  }
+ }finally{ v.fermer(); }
  if(rel.plafondAtteint){toast('🎚️ '+rel.plafondAtteint);return;}
  if(rel.faits.length)toast('✅ Relevé : '+rel.faits.join(', '));
  else if(rel.erreurs.length){toast('Aucun relevé n\'a abouti — voir la console');console.warn(rel.erreurs.join('\n'));return;}
+ if(rel.erreurs.length){console.warn('Pré-audit — relevés en échec :\n'+rel.erreurs.join('\n'));}
  if(rel.alerteBudget)toast('🎚️ '+rel.alerteBudget);
  // Le scoring relit la fiche entière : les relevés qu'on vient d'ajouter entrent dans le prompt,
  // donc la synthèse et l'email se réécrivent dessus.

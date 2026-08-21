@@ -19,6 +19,38 @@ function parseAdresse(r) {
 }
 const CHAMPS = 'name,formatted_address,formatted_phone_number,website,address_components,rating,user_ratings_total,reviews,business_status,url,geometry';
 
+// Mise en forme commune aux DEUX chemins d'entrée (lien Maps collé, identifiant d'autocomplétion).
+// Factorisée pour qu'ils ne puissent pas divergier : une fiche rattachée par autocomplétion doit
+// porter exactement les mêmes champs, sinon la fusion côté front en perd la moitié.
+function reponseFiche(chosen, chosenId, lat, lng, comment) {
+  const ad = parseAdresse(chosen);
+  const note = (typeof chosen.rating === 'number') ? chosen.rating : null;
+  const avis = chosen.user_ratings_total || 0;
+  const loc = (chosen.geometry || {}).location || {};
+  const fiche = {
+    nom: chosen.name, note, nb_avis: avis, adresse: chosen.formatted_address || '', place_id: chosenId,
+    lat: loc.lat != null ? loc.lat : (lat ? +lat : null),
+    lng: loc.lng != null ? loc.lng : (lng ? +lng : null),
+    match: comment || 'lien Maps (CID vérifié)',
+    lien: `https://www.google.com/maps/place/?q=place_id:${chosenId}`
+  };
+  let avisNeg = null;
+  const negs = (chosen.reviews || []).filter(x => x.rating <= 3 && (x.text || '').length > 20).sort((a, b) => (b.time || 0) - (a.time || 0));
+  if (negs.length) {
+    const a = negs[0];
+    avisNeg = { texte: a.text.length > 220 ? a.text.slice(0, 220) + '…' : a.text, note: a.rating,
+      date: a.relative_time_description || '', lien: `https://search.google.com/local/reviews?placeid=${chosenId}` };
+  }
+  return {
+    ok: true, sans_note: note === null,
+    prefill: { nom: chosen.name || '', adresse: ad.adresse, ville: ad.ville, code_postal: ad.code_postal,
+      telephone: chosen.formatted_phone_number || '', site_web: chosen.website || '', place_id: chosenId },
+    gmb: { trouve: true, manuel: true, telephone: chosen.formatted_phone_number || null,
+      site_web: chosen.website || null, note_moyenne: note, total_avis: avis, nb_fiches: 1,
+      fiches: [fiche], pire_fiche: fiche, avis_negatif: avisNeg, concurrents: null }
+  };
+}
+
 export default async function handler(req, res) {
   const user = verifierToken(req);
   if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
@@ -29,6 +61,27 @@ export default async function handler(req, res) {
   if (!key) return res.status(500).json({ erreur: 'GOOGLE_PLACES_API_KEY manquante dans Vercel' });
 
   const url = (req.query.url || '').trim();
+  // Rattacher par IDENTIFIANT plutôt que par lien. L'autocomplétion Google rend déjà un place_id
+  // exact : passer par un lien Maps obligerait le SDR à ouvrir Maps, partager, copier — et le
+  // chemin par lien coûte 3 à 6 appels Google pour retrouver ce qu'on a déjà. Ici : 1 appel.
+  // Un place_id Google fait ~27 caractères et commence par ChI/GhI/Ei ; les identifiants courts
+  // des liens maps.app.goo.gl (« 4Pp9ndnj4CS5gubM7 ») N'EN SONT PAS et faisaient un 502 après
+  // avoir consommé un appel (incident du 20/08) — on les refuse avant de payer.
+  const pidDirect = (req.query.place_id || '').trim();
+  if (pidDirect) {
+    if (!/^[A-Za-z0-9_-]{20,}$/.test(pidDirect)) {
+      return res.status(400).json({ erreur: "Ce n'est pas un identifiant de fiche Google (« " + pidDirect.slice(0, 30) + " »). Les identifiants courts d'un lien maps.app.goo.gl n'en sont pas : colle le lien complet dans le champ prévu." });
+    }
+    try {
+      const d = await g(`https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(pidDirect)}&fields=${CHAMPS}&language=fr&key=${key}`);
+      const r = d.result;
+      await loggerConso(user, 'google_places', NB, req.query.liste_id);
+      if (!r) return res.status(404).json({ erreur: "Google ne rend aucune fiche pour cet identifiant", detail: d.status || '' });
+      return res.status(200).json(reponseFiche(r, pidDirect, null, null));
+    } catch (err) {
+      return res.status(500).json({ erreur: 'Erreur Google', detail: String(err.message || err).slice(0, 200) });
+    }
+  }
   if (!url || !/^https?:\/\//.test(url)) return res.status(400).json({ erreur: 'Lien Google Maps manquant ou invalide' });
 
   const diag = [];
@@ -97,22 +150,8 @@ export default async function handler(req, res) {
     }
 
     // 5) Construire la réponse (note/avis seulement s'ils existent réellement)
-    const ad = parseAdresse(chosen);
-    const note = (typeof chosen.rating === 'number') ? chosen.rating : null;
-    const avis = chosen.user_ratings_total || 0;
-    const fiche = { nom: chosen.name, note, nb_avis: avis, adresse: chosen.formatted_address || '', place_id: chosenId,
-      lat: ((chosen.geometry || {}).location || {}).lat != null ? ((chosen.geometry || {}).location || {}).lat : (lat ? +lat : null),
-      lng: ((chosen.geometry || {}).location || {}).lng != null ? ((chosen.geometry || {}).location || {}).lng : (lng ? +lng : null),
-      match: 'lien Maps (CID vérifié)', lien: `https://www.google.com/maps/place/?q=place_id:${chosenId}` };
-    let avisNeg = null;
-    const negs = (chosen.reviews || []).filter(x => x.rating <= 3 && (x.text || '').length > 20).sort((a, b) => (b.time || 0) - (a.time || 0));
-    if (negs.length) { const a = negs[0]; avisNeg = { texte: a.text.length > 220 ? a.text.slice(0, 220) + '…' : a.text, note: a.rating, date: a.relative_time_description || '', lien: `https://search.google.com/local/reviews?placeid=${chosenId}` }; }
-
-    const gmb = { trouve: true, manuel: true, telephone: chosen.formatted_phone_number || null, site_web: chosen.website || null, note_moyenne: note, total_avis: avis, nb_fiches: 1, fiches: [fiche], pire_fiche: fiche, avis_negatif: avisNeg, concurrents: null };
-    const prefill = { nom: chosen.name || '', adresse: ad.adresse, ville: ad.ville, code_postal: ad.code_postal, telephone: chosen.formatted_phone_number || '', site_web: chosen.website || '', place_id: chosenId };
-
     await loggerConso(user, 'google_places', NB, req.query.liste_id);
-    return res.status(200).json({ ok: true, prefill, gmb, sans_note: note === null });
+    return res.status(200).json(reponseFiche(chosen, chosenId, lat, lng));
   } catch (err) {
     return res.status(500).json({ erreur: 'Erreur Google', detail: (diag.join(' · ') + ' | ' + String(err.message || err)).slice(0, 300) });
   }

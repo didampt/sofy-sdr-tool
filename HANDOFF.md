@@ -1,5 +1,63 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 21 août 2026)
 
+## 🏪 21 août 2026 — Le modèle multi-enseignes + barre d'actions ramenée à 5 boutons (v394)
+
+**Ce qui a changé dans le MODÈLE.** On pensait « 1 établissement = plusieurs contacts ». On pense
+maintenant **« 1 fiche = un groupe de contacts ET un groupe d'enseignes »**. Cas déclencheur :
+Groupe TBF exploite Grain d'Or, Carat, Swarovski — trois marques, trois fiches Google, un seul
+décideur (Sabine WYBO, Directrice Marketing du groupe).
+
+**Pourquoi aucun réglage ne pouvait suffire.** `api/gmb.js` sait déjà rattacher plusieurs fiches
+Google à une entreprise — c'est ce qui fonctionne pour NORAUTO ×3 — mais il les retrouve **par
+ressemblance de nom** (`nomCorrespond`). « Carat » ne ressemblera jamais à « Groupe TBF » : il
+faut pouvoir le **déclarer à la main**, et surtout que la déclaration **survive** aux ré-analyses.
+
+### Ce qui a été livré
+
+| Point | Effet |
+|---|---|
+| **↻ Analyser + synthèse** | Fusionnés. Corrige un **chiffre faux** (voir piège ci-dessous). |
+| **Barre à 5 boutons + ⋯** | 10 boutons sur 2 lignes → 5 + menu, sur une ligne. |
+| **➕ Rattacher une enseigne** | Autocomplétion Google (1 appel) ou lien Maps. Marque `ajout_manuel`. |
+| **Pré-audit par enseigne cochée** | Cases à cocher, coût affiché **avant** le clic. |
+| **Portée des contacts** | `c.portee` : `''` = tout le groupe, sinon un `place_id`. |
+| **↔ Fusionner deux fiches** | Regroupe les lignes déjà en base (la dédup v389 ne fait que prévenir). |
+| **`mes.groupe` dans l'audit** | Le document dit « vos 4 enseignes, 131 avis, 3 sans réponse ». |
+
+### Pièges de cette session (chacun était un bug réel, pas une préférence)
+
+1. **↻ Analyser ne recalculait JAMAIS le score.** `analyserFiche()` ne rappelait pas `scorer()`, et
+   le pipeline ne score que `if(!e.score)`. Conséquence mesurée : on corrige la fiche Sofy, la note
+   passe de 3,3 à 4,5★, **et la synthèse d'appel continue d'annoncer 3,3**. Le SDR appelait avec un
+   chiffre périmé, sans aucun message. La synthèse est maintenant réécrite **si et seulement si**
+   `[note, avis, nb_fiches, place_id de la pire fiche]` a bougé — sinon on ne paie pas 0,02 € pour
+   réécrire le même texte.
+2. **`analyserGmb` détruisait les enseignes rattachées à la main.** `e.gmb = g` avec un `g` issu
+   d'une recherche par nom, qui ne peut structurellement pas les retrouver. Même piège que les
+   relevés payants effacés le 21/08 : les fiches `ajout_manuel` sont désormais recollées après
+   coup, et `par_enseigne` (relevés payants) avec elles.
+3. **Le dédoublonnage de contacts à la fusion comparait UNE identité** (email, sinon nom) : sur
+   Sabine WYBO, une ligne la porte avec email et l'autre sans → deux clés différentes → la même
+   personne dupliquée. Exactement l'erreur des hot leads. On compare l'email **ET** le nom, et un
+   doublon **complète** l'existant (c'est souvent lui qui apporte le mobile).
+4. **L'aperçu IA et Apple Plans ne se relèvent PAS par enseigne** : ils répondent à une *requête*
+   (« bijouterie Les Abymes »), pas à un établissement. Les redemander par enseigne paierait 4 fois
+   la même réponse. Coût réel : **~8 relevés pour la principale, ~4 par enseigne supplémentaire**.
+5. **Le classement des candidates à la fusion ne peut pas reposer sur le nom** : « Groupe TBF » et
+   « Bijouterie Grain d'Or » n'ont rien en commun. Le signal fort est le **contact partagé** (+4)
+   ou la **fiche Google partagée** (+4), pas la ressemblance de libellé (+1).
+
+### Ce qui n'est PAS fait, et qu'il faut savoir
+
+- La fusion **ne déplace pas l'historique** d'appels et de notes : il est rangé en base par clé de
+  fiche. C'est dit dans la confirmation, pas caché.
+- **SerpApi ne peut pas publier sur Apple Plans** — c'est un lecteur, jamais un émetteur. Le canal
+  officiel est **Apple Business Connect** (gratuit, API, mode multi-établissements pour les
+  prestataires). Conditions d'accès et délai de validation **à confirmer auprès d'Apple** avant
+  d'en faire une promesse client. SerpApi garde le rôle de **vérification** après publication —
+  c'est la preuve de service, et `api/apple-plans.js` le fait déjà.
+
+
 > Passation depuis les sessions Claude.ai (Didier + Claude, ~23 sessions).
 > Workflow : voir `AGENTS.md` (git pull au début, **validation Didier avant chaque commit+push**, push = déploiement Vercel).
 > Didier : débutant en programmation → guidage **pas-à-pas, une étape à la fois, validation à chaque étape, réponses courtes en français**.

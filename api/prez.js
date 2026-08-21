@@ -145,6 +145,51 @@ function mesures(e) {
       } : null
     };
   } else m.google = { aucune_fiche_trouvee: true };
+
+  // ── LE GROUPE MULTI-ENSEIGNES ────────────────────────────────────────────────────────────────
+  // Un groupe qui exploite plusieurs marques (Groupe TBF : Grain d'Or, Carat, Swarovski) n'a pas
+  // un problème, il en a autant que d'enseignes — et l'affaire se négocie à son niveau, pas
+  // boutique par boutique. Le taux de réponse est relevé PAR ENSEIGNE (e.gmb.par_enseigne) : sans
+  // ce bloc, le document annoncerait le taux de la seule enseigne principale et laisserait croire
+  // que le reste du réseau va bien.
+  // Une enseigne non cochée par le SDR est EXCLUE : il a décidé qu'elle ne relevait pas de
+  // l'affaire, le document ne doit pas la citer.
+  if (g.trouve) {
+    const off = new Set(e.enseignes_off || []);
+    const pe = g.par_enseigne || {};
+    const retenues = (g.fiches || []).filter(f => f && f.place_id && !off.has(f.place_id));
+    if (retenues.length > 1) {
+      const principal = (g.fiches || [])[0] || {};
+      const lignes = retenues.map(f => {
+        const src = (f.place_id === principal.place_id) ? g : (pe[f.place_id] || {});
+        const r = src.reponses || null;
+        return {
+          enseigne: f.nom, ville: (f.adresse || '').split(',').slice(-2, -1)[0] || null,
+          note: f.note, avis: f.nb_avis,
+          taux_de_reponse_pct: r ? r.taux : null,
+          position_locale: (src.audit || {}).position_locale != null ? src.audit.position_locale : null,
+          mesure: r ? true : false
+        };
+      });
+      const mesurees = lignes.filter(l => l.mesure);
+      const muettes = mesurees.filter(l => l.taux_de_reponse_pct === 0);
+      m.groupe = {
+        nb_enseignes: retenues.length,
+        total_avis_du_groupe: retenues.reduce((s, f) => s + (Number(f.nb_avis) || 0), 0),
+        enseignes: lignes,
+        enseignes_mesurees: mesurees.length,
+        // Le chiffre qui porte l'affaire au niveau du groupe. Formulé ici, pas laissé à l'IA :
+        // c'est un décompte, il ne doit pas pouvoir être approximé.
+        enseignes_sans_aucune_reponse: muettes.length,
+        lecture: mesurees.length
+          ? `${retenues.length} enseignes, ${retenues.reduce((s, f) => s + (Number(f.nb_avis) || 0), 0)} avis au total`
+            + (muettes.length ? `, dont ${muettes.length} enseigne(s) sans aucune réponse publique : ${muettes.map(l => l.enseigne).join(', ')}` : ', toutes répondent au moins partiellement')
+          : `${retenues.length} enseignes rattachées, taux de réponse non encore relevé sur les enseignes secondaires`,
+        consigne: 'Le prospect pilote plusieurs enseignes : parler du RÉSEAU (« vos N enseignes »), '
+          + 'jamais d\'un seul point de vente, et nommer les enseignes concernées puisqu\'elles sont mesurées.'
+      };
+    }
+  }
   if (e.technos_fait) {
     m.technos = (e.technos || []).map(t => ({ nom: t.nom, categorie: t.cat, concurrent_sofy: !!t.concurrent }));
     if (!m.technos.length) m.technos = 'aucun outil détecté sur le site';
@@ -522,6 +567,7 @@ ${visuels.slice(0, 25).map(v => `#${v.id} [${v.type}${v.secteur ? ' · ' + v.sec
 3. **Cite un cas client dans TOUS les cas.** Si aucun n'est du même secteur, dis-le en une phrase et explique pourquoi le levier se transpose quand même. N'écris JAMAIS qu'on n'a rien à montrer : ce serait la pire phrase du document.
 4. **Cite le prospect par son nom**, ses vrais chiffres, le vrai nom de son point de vente le plus faible. C'est ce qui prouve qu'on a travaillé pour lui.
 5. Français, deuxième personne du pluriel. Direct, concret, sans flatterie, sans jargon, sans point d'exclamation.
+${mes.groupe ? `6. **Ce prospect exploite ${mes.groupe.nb_enseignes} enseignes** (${mes.groupe.enseignes.map(x => x.enseigne).join(', ')}), ${mes.groupe.total_avis_du_groupe} avis au total. Parle du RÉSEAU, jamais d'un seul point de vente : l'affaire se décide au niveau du groupe. ${mes.groupe.enseignes_sans_aucune_reponse ? `${mes.groupe.enseignes_sans_aucune_reponse} de ces enseignes n'ont AUCUNE réponse publique à leurs avis — nomme-les, c'est mesuré.` : ''} N'invente aucun chiffre par enseigne : n'utilise que ceux de groupe.enseignes, et une enseigne dont taux_de_reponse_pct est null n'a PAS été mesurée — n'en dis rien.` : ''}
 
 ════ CE QUE CE DOCUMENT DOIT FAIRE ════
 Un directeur marketing va le lire. Il connaît déjà ses problèmes : lui répéter sa note Google ne
