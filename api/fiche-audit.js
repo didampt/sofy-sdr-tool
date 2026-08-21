@@ -50,6 +50,11 @@ async function ensureAudit() {
   try { await sql`ALTER TABLE fiche_audit ADD COLUMN IF NOT EXISTS lng NUMERIC`; } catch (_) {}
   try { await sql`ALTER TABLE fiche_audit ADD COLUMN IF NOT EXISTS whatsapp_sur_fiche TEXT`; } catch (_) {}
   try { await sql`ALTER TABLE fiche_audit ADD COLUMN IF NOT EXISTS whatsapp_champ TEXT`; } catch (_) {}
+  // 21/08 : seconde source pour le site et le téléphone affichés par Google. L'API Places peut
+  // rendre un `website` vide sur une fiche qui en porte un (constat sur SOFY France) — une seule
+  // source ne peut pas suffire à affirmer une absence dans un document client.
+  try { await sql`ALTER TABLE fiche_audit ADD COLUMN IF NOT EXISTS site_declare TEXT`; } catch (_) {}
+  try { await sql`ALTER TABLE fiche_audit ADD COLUMN IF NOT EXISTS telephone_declare TEXT`; } catch (_) {}
   pret = true;
 }
 
@@ -204,8 +209,17 @@ export default async function handler(req, res) {
 
   const photos = Array.isArray(fiche.images) ? fiche.images : [];
   // Une photo publiée par l'enseigne montre ce qu'elle veut montrer ; celles des clients, ce
-  // qu'ils ont vu. Le déséquilibre est un argument en soi.
-  const parEnseigne = photos.filter(p => /owner|business|propriétaire/i.test(String(p.source || p.author || ''))).length;
+  // qu'ils ont vu. Le déséquilibre serait un argument en soi — MAIS il faut pouvoir l'établir.
+  //
+  // ⚠️ CORRECTION DU 21/08. Ce filtre cherchait `p.source` / `p.author`, deux champs que SerpApi
+  // ne rend PAS sur les images d'une fiche (elles portent `title` et `thumbnail`). Le compte
+  // valait donc 0 sur TOUTES les fiches du monde, et l'audit affirmait « aucune photo publiée par
+  // vous » à chaque fois — y compris sur la fiche SOFY France où la plupart sont les nôtres.
+  // Une donnée qu'on ne sait pas lire doit valoir « inconnu », jamais « zéro ».
+  const attribution = photos.some(p => p && (p.source || p.author || p.user || p.contributor));
+  const parEnseigne = attribution
+    ? photos.filter(p => /owner|business|propriétaire|propriétaire/i.test(String(p.source || p.author || p.user || p.contributor || ''))).length
+    : null;
   const attributs = fiche.extensions ? Object.keys(fiche.extensions).length
     : (Array.isArray(fiche.service_options) ? fiche.service_options.length : 0);
 
@@ -214,7 +228,17 @@ export default async function handler(req, res) {
     nom: b.nom || fiche.title || null,
     photos_total: fiche.photos_count != null ? fiche.photos_count : photos.length,
     photos_enseigne: parEnseigne,
-    description_presente: !!(fiche.description || fiche.snippet),
+    // ⚠️ TRI-ÉTAT, pas un booléen. La description du propriétaire existe bel et bien sur la fiche
+    // SOFY France (capture Didier 21/08) et SerpApi ne l'a pas rendue : le champ absent ne dit
+    // donc pas « pas de description », il dit « cette voie ne l'expose pas ».
+    // true = vue · null = non exposée par cette voie. Jamais false, qu'on ne peut pas prouver.
+    description_presente: (fiche.description || fiche.snippet) ? true : null,
+    // Le site et le téléphone tels que Google les affiche : SECONDE SOURCE indispensable.
+    // L'audit annonçait « aucun site web déclaré » sur la fiche SOFY France, qui porte sofy.fr —
+    // le champ de l'API Places était vide alors que Google l'affiche. Une seule source ne peut
+    // pas suffire à affirmer une absence.
+    site_declare: fiche.website || null,
+    telephone_declare: fiche.phone || null,
     horaires_presents: !!(fiche.hours || fiche.operating_hours || fiche.open_state),
     nb_categories: Array.isArray(fiche.categories) ? fiche.categories.length : (fiche.type ? 1 : 0),
     nb_attributs: attributs,
@@ -268,9 +292,11 @@ export default async function handler(req, res) {
 
   try {
     await sql`INSERT INTO fiche_audit (place_id, nom, photos_total, photos_enseigne,
+        site_declare, telephone_declare,
         description_presente, horaires_presents, nb_categories, nb_attributs,
         position_locale, requete, concurrents, categorie, ville, lat, lng, whatsapp_sur_fiche, whatsapp_champ, mesure_le, mesure_par)
       VALUES (${audit.place_id}, ${audit.nom}, ${audit.photos_total}, ${audit.photos_enseigne},
+              ${audit.site_declare}, ${audit.telephone_declare},
               ${audit.description_presente}, ${audit.horaires_presents}, ${audit.nb_categories},
               ${audit.nb_attributs}, ${audit.position_locale}, ${audit.requete},
               ${JSON.stringify(audit.concurrents)}::jsonb, ${audit.categorie}, ${audit.ville},
@@ -283,6 +309,7 @@ export default async function handler(req, res) {
         categorie = EXCLUDED.categorie, ville = EXCLUDED.ville,
         lat = EXCLUDED.lat, lng = EXCLUDED.lng, whatsapp_sur_fiche = EXCLUDED.whatsapp_sur_fiche,
         whatsapp_champ = EXCLUDED.whatsapp_champ,
+        site_declare = EXCLUDED.site_declare, telephone_declare = EXCLUDED.telephone_declare,
         mesure_le = NOW(), mesure_par = EXCLUDED.mesure_par`;
   } catch (eCache) {
     // Un cache non écrit n'est pas anodin : la prochaine analyse REPAYERA ces appels, sur un
@@ -290,8 +317,11 @@ export default async function handler(req, res) {
     erreurCache = String((eCache && eCache.message) || eCache).slice(0, 180);
   }
 
+  // Un « manque » n'est un manque que s'il a été CONSTATÉ. Les deux lignes retirées ici
+  // (description, attribution des photos) affirmaient une absence à partir d'un champ que cette
+  // voie n'expose pas : c'est ce qui a produit deux affirmations fausses sur la fiche SOFY France.
   const manques = [];
-  if (!audit.description_presente) manques.push('aucune description');
+  if (audit.description_presente === false) manques.push('aucune description');
   if (!audit.horaires_presents) manques.push('aucun horaire');
   if ((audit.photos_total || 0) < 10) manques.push(`${audit.photos_total || 0} photo(s) seulement`);
   if (audit.photos_enseigne === 0 && (audit.photos_total || 0) > 0) manques.push('aucune photo publiée par l\'enseigne');

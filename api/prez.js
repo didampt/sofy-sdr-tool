@@ -109,8 +109,17 @@ function mesures(e) {
         trois_premiers: g.apple.trois_premiers || null, total_resultats: g.apple.total_resultats
       } : null,
       audit_fiche: g.audit ? {
-        photos: g.audit.photos_total, photos_publiees_par_lenseigne: g.audit.photos_enseigne,
-        description: !!g.audit.description_presente, horaires: !!g.audit.horaires_presents,
+        photos: g.audit.photos_total,
+        // ⚠️ `!!` ÉCRASAIT L'INCONNU EN FAUX, et l'IA écrivait alors « Aucune description sur la
+        // fiche » — un encart rouge affiché sur la fiche SOFY France, qui porte une description
+        // complète. Ces deux champs sont désormais tri-état, et la valeur null est nommée pour
+        // qu'aucune rédaction ne puisse la lire comme une absence.
+        photos_publiees_par_lenseigne: typeof g.audit.photos_enseigne === 'number'
+          ? g.audit.photos_enseigne : 'NON MESURABLE — ne rien en conclure, ne pas en parler',
+        description: g.audit.description_presente === true ? true
+          : (g.audit.description_presente === false ? false
+            : 'NON MESURABLE par ce relevé — ne pas écrire qu\'elle est absente'),
+        horaires: !!g.audit.horaires_presents,
         position_locale: g.audit.position_locale, requete_testee: g.audit.requete,
         trois_premiers: g.audit.concurrents || null,
         // Le bouton WhatsApp de la fiche Google : l'argument SoConnect le plus direct, et il est
@@ -192,7 +201,11 @@ function mesures(e) {
   }
   if (e.technos_fait) {
     m.technos = (e.technos || []).map(t => ({ nom: t.nom, categorie: t.cat, concurrent_sofy: !!t.concurrent }));
-    if (!m.technos.length) m.technos = 'aucun outil détecté sur le site';
+    // Formulation resserrée : « aucun outil détecté » invitait l'IA à écrire que le prospect n'a
+    // aucun outil. Ce qu'on sait est plus étroit : aucune BALISE sur les pages lues. Beaucoup
+    // d'outils (avis, SMS, CRM) se pilotent entièrement hors du site.
+    if (!m.technos.length) m.technos = 'aucune balise d\'outil trouvée sur les pages lues du site — '
+      + 'ne pas en conclure que le prospect n\'a aucun outil : beaucoup se pilotent hors du site';
   }
   const sc = scorer(e); if (sc) m.scoring = sc;
   if (e.signal_gmb) m.alerte_note = { avant: e.signal_gmb.avant, apres: e.signal_gmb.apres, date: e.signal_gmb.date };
@@ -203,8 +216,15 @@ function mesures(e) {
   if (g.trouve) {
     const d = [];
     const fs = g.fiches || [];
-    if (!g.telephone) d.push('Aucun numéro de téléphone sur la fiche Google : un client qui veut joindre le service ne trouve pas de numéro et repart.');
-    if (!g.site_web) d.push('Aucun site web déclaré sur la fiche Google : le trafic que Google vous envoie n\'atterrit nulle part.');
+    // ⚠️ Ces deux constats sont ceux qui ont produit l'encart « Aucun site web déclaré » sur la
+    // fiche SOFY France, qui affiche sofy.fr. Une seule source (l'API Places) suffisait à conclure ;
+    // elle peut rendre le champ vide sur une fiche qui le porte. Il faut désormais que les DEUX
+    // relevés soient d'accord, et qu'un relevé SerpApi ait bien eu lieu.
+    const aud = g.audit || null;
+    const telVu = g.telephone || (aud && aud.telephone_declare);
+    const webVu = g.site_web || (aud && aud.site_declare);
+    if (!telVu && aud) d.push('Aucun numéro de téléphone sur la fiche Google : un client qui veut joindre le service ne trouve pas de numéro et repart.');
+    if (!webVu && aud) d.push('Aucun site web déclaré sur la fiche Google : le trafic que Google vous envoie n\'atterrit nulle part.');
     if (fs.length > 1) {
       const notes = fs.filter(f => typeof f.note === 'number').map(f => f.note);
       if (notes.length > 1) {
@@ -367,13 +387,37 @@ async function logoDe(site) {
 // (taux de réponse aux avis, photos : l'API Places ne les expose pas) n'est pas inventé : il est
 // marqué « à vérifier » et devient un sujet de rendez-vous, ce qui est plus honnête et plus utile
 // qu'un score bricolé. Le calcul est en JS, jamais délégué à l'IA.
+/* ⚠️ LA RÈGLE QUI GOUVERNE CE SCORING (posée le 21/08 après l'audit de notre propre fiche)
+   ────────────────────────────────────────────────────────────────────────────────────────────
+   Didier a fait générer l'audit sur la fiche SOFY France et y a relevé SEPT affirmations fausses :
+   site web « absent » (sofy.fr y figure), « aucune description » (elle existe), « aucune photo
+   publiée par vous » (la plupart sont les nôtres), « aucun bouton WhatsApp » (il est sur la fiche),
+   « outil détecté : Guest Suite » (c'est une page comparative, pas un outil), « aucun dispositif
+   SMS » (nous envoyons par Sofy), et un agent RCS présenté comme non déclaré alors que nous sommes
+   agrégateur.
+
+   Ce ne sont pas sept bugs : c'en est UN SEUL, répété. Le code affirmait une ABSENCE là où il
+   n'avait rien réussi à DÉTECTER. Or ce document sort de l'entreprise, et une affirmation fausse
+   sur la fiche du prospect détruit exactement ce qui fait sa valeur — le fait que tout y soit
+   vérifiable devant lui.
+
+   RÈGLE : un critère ne peut valoir « faible » que sur une absence RÉELLEMENT CONSTATÉE. Faute de
+   quoi il vaut « inconnu », il est noté sur 0 (donc EXCLU du score, ni pénalité ni cadeau), et son
+   libellé dit ce qu'on n'a pas pu vérifier. Un chiffre absent ne se remplace jamais par un zéro. */
 function scorer(e) {
   const g = e.gmb || {};
   if (!g.trouve) return null;
   const fiches = g.fiches || [];
   const nbEtab = e.nb_etablissements || null;
   const technos = (e.technos_fait && Array.isArray(e.technos)) ? e.technos : null;
-  const cherche = (re) => technos ? technos.some(t => re.test(String(t.nom) + ' ' + String(t.cat))) : null;
+  // Seuls les outils RÉELLEMENT CHARGÉS comptent. Les relevés d'avant le 21/08 n'ont pas le
+  // drapeau `charge` : on les accepte tels quels (ils venaient de l'ancienne règle), mais dès
+  // qu'un relevé le porte, une simple mention éditoriale ne vaut plus équipement.
+  const installes = technos ? technos.filter(t => t.charge !== false) : null;
+  const cherche = (re) => installes ? installes.some(t => re.test(String(t.nom) + ' ' + String(t.cat))) : null;
+  // Nos propres outils : sans cette lecture, un client Sofy est vu comme « terrain vierge » et le
+  // document lui propose ce qu'il a déjà.
+  const chezNous = installes ? installes.filter(t => t.nous).map(t => t.nom) : [];
 
   const crit = (libelle, etat, points, sur, detail) => ({ libelle, etat, points, sur, detail });
   const axes = [];
@@ -396,10 +440,21 @@ function scorer(e) {
     v.push(crit('Couverture du réseau', couv >= 0.9 ? 'ok' : (couv >= 0.5 ? 'moyen' : 'faible'),
       Math.round(couv * 20), 20, fiches.length + ' fiche(s) trouvée(s) pour ' + nbEtab + ' établissement(s) déclaré(s)'));
   }
-  v.push(crit('Téléphone sur la fiche', g.telephone ? 'ok' : 'faible', g.telephone ? 10 : 0, 10,
-    g.telephone ? 'renseigné' : 'absent — un client qui veut vous joindre repart'));
-  v.push(crit('Site web sur la fiche', g.site_declare ? 'ok' : 'faible', g.site_declare ? 10 : 0, 10,
-    g.site_declare ? 'renseigné' : 'absent — le trafic Google n\'atterrit nulle part'));
+  // Téléphone et site : DEUX sources, l'API Google Places et le relevé SerpApi. L'API Places a
+  // rendu un `website` vide sur la fiche SOFY France, qui affiche pourtant sofy.fr — une seule
+  // source ne peut donc pas suffire à affirmer une absence dans un document que le prospect lit.
+  const auS = g.audit || null;
+  const tel = g.telephone || (auS && auS.telephone_declare) || null;
+  const web = g.site_web || g.site_declare || (auS && auS.site_declare) || null;
+  const deuxVues = !!auS; // le relevé SerpApi a bien eu lieu : l'absence devient constatable
+  v.push(crit('Téléphone sur la fiche', tel ? 'ok' : (deuxVues ? 'faible' : 'inconnu'),
+    tel ? 10 : 0, tel || deuxVues ? 10 : 0,
+    tel ? 'renseigné' : (deuxVues ? 'absent des deux relevés — un client qui veut vous joindre repart'
+                                  : 'non vérifié — un seul relevé, pas de quoi conclure')));
+  v.push(crit('Site web sur la fiche', web ? 'ok' : (deuxVues ? 'faible' : 'inconnu'),
+    web ? 10 : 0, web || deuxVues ? 10 : 0,
+    web ? 'renseigné' : (deuxVues ? 'absent des deux relevés — le trafic Google n\'atterrit nulle part'
+                                  : 'non vérifié — un seul relevé, pas de quoi conclure')));
   if (fiches.length > 1) {
     const notes = fiches.filter(f => typeof f.note === 'number').map(f => f.note);
     const ecart = notes.length > 1 ? Math.round((Math.max(...notes) - Math.min(...notes)) * 10) / 10 : 0;
@@ -428,14 +483,27 @@ function scorer(e) {
   const au = g.audit || null;
   if (au) {
     const ph = au.photos_total || 0;
+    // « aucune publiée par vous » n'est écrit QUE si l'attribution a réellement été lue. Le filtre
+    // cherchait des champs que SerpApi ne rend pas : le compte valait 0 sur toutes les fiches du
+    // monde, et la phrase s'affichait partout — y compris sur la fiche SOFY France, dont la plupart
+    // des photos sont les nôtres. photos_enseigne vaut désormais null quand on ne sait pas.
+    const attrLue = typeof au.photos_enseigne === 'number';
     v.push(crit('Photos de la fiche', ph >= 20 ? 'ok' : (ph >= 8 ? 'moyen' : 'faible'),
       ph >= 20 ? 12 : (ph >= 8 ? 7 : 2), 12,
-      `${ph} photo(s)${au.photos_enseigne === 0 && ph > 0 ? ' — aucune publiée par vous : vos clients seuls racontent votre lieu' : ''}`));
-    const complet = (au.description_presente ? 1 : 0) + (au.horaires_presents ? 1 : 0);
-    v.push(crit('Complétude de la fiche', complet === 2 ? 'ok' : (complet === 1 ? 'moyen' : 'faible'),
-      complet * 6, 12,
-      [au.description_presente ? null : 'aucune description', au.horaires_presents ? null : 'aucun horaire']
-        .filter(Boolean).join(', ') || 'description et horaires renseignés'));
+      `${ph} photo(s)${attrLue && au.photos_enseigne === 0 && ph > 0 ? ' — aucune publiée par vous : vos clients seuls racontent votre lieu' : ''}`));
+    // Description : TRI-ÉTAT. true = vue · null = cette voie ne l'expose pas. La fiche SOFY France
+    // porte une description complète que le relevé n'a pas rendue : on ne peut donc pas conclure.
+    // Le critère ne porte plus que sur ce qui est constatable, et le dit.
+    const descVue = au.description_presente === true;
+    const descInconnue = au.description_presente == null;
+    const sur = descInconnue ? 6 : 12;
+    const pts = (descVue ? 6 : 0) + (au.horaires_presents ? 6 : 0);
+    v.push(crit('Complétude de la fiche',
+      pts === sur ? 'ok' : (pts > 0 ? 'moyen' : 'faible'), pts, sur,
+      [descVue ? 'description renseignée' : (descInconnue ? null : 'aucune description'),
+       au.horaires_presents ? 'horaires renseignés' : 'aucun horaire'
+      ].filter(Boolean).join(', ')
+      + (descInconnue ? ' · la description du propriétaire n\'est pas lisible par ce relevé — à regarder ensemble' : '')));
     if (au.position_locale != null || au.requete) {
       v.push(crit('Position sur les recherches locales',
         au.position_locale == null ? 'faible' : (au.position_locale <= 3 ? 'ok' : (au.position_locale <= 10 ? 'moyen' : 'faible')),
@@ -463,29 +531,39 @@ function scorer(e) {
   // permet de rattacher un numéro WhatsApp. Le score ne change pas de sens — l'avoir vaut mieux
   // que ne pas l'avoir — mais le libellé dit OÙ il est, parce que l'angle de vente n'est pas le
   // même : sur la fiche, le canal existe déjà et c'est ce qu'il y a derrière qui manque.
+  // ⚠️ LE BOUTON WHATSAPP DE LA FICHE GOOGLE N'EST PAS DÉTECTABLE, et je l'avais pourtant établi.
+  // Le diagnostic ?champs=1 du 21/08 a rendu les 34 clés de la fiche : aucune ne porte WhatsApp,
+  // alors que la fiche SOFY France l'affiche (capture Didier). SerpApi ne l'expose pas, point.
+  // J'ai malgré tout laissé le code écrire « aucun bouton WhatsApp, ni sur le site ni sur votre
+  // fiche Google » — une affirmation que nos propres relevés ne pouvaient pas soutenir, et qui est
+  // fausse chez le premier prospect qui l'a lue : nous.
+  // Le trouver PROUVE qu'il existe ; ne pas le trouver ne prouve RIEN. Donc jamais « faible ».
   const waFiche = !!((au && au.whatsapp_sur_fiche)
     || (g.ia_visibilite && g.ia_visibilite.whatsapp_google));
   const waQqPart = waFiche || wa === true;
-  const waEtat = (wa === null && !waFiche) ? 'inconnu' : (waQqPart ? 'ok' : 'faible');
-  // Le libellé doit dire CE QUI A ÉTÉ VÉRIFIÉ. « site non analysé » seul laissait croire qu'on
-  // n'avait rien regardé, alors que la fiche Google avait bien été contrôlée (retour Didier, 21/08).
-  const ficheVue = !!au;
-  r.push(crit('Bouton WhatsApp', waEtat, waQqPart ? 20 : 0, 20,
+  r.push(crit('Bouton WhatsApp', waQqPart ? 'ok' : 'inconnu', waQqPart ? 20 : 0, waQqPart ? 20 : 0,
     waFiche && wa === true ? 'WhatsApp sur le site ET sur la fiche Google — le canal est en place, reste à savoir ce qu\'il y a derrière'
     : waFiche ? 'WhatsApp actif sur la fiche Google : vos clients écrivent déjà, sur un mobile, sans historique ni suivi partagé'
     : wa === true ? 'lien WhatsApp détecté sur le site'
-    : (wa === null && ficheVue) ? 'aucun WhatsApp sur votre fiche Google (vérifié) — le site, lui, n\'a pas encore été analysé'
-    : (wa === null) ? 'site non analysé et fiche non relevée — rien n\'a pu être vérifié'
-    : ficheVue ? 'aucun bouton WhatsApp, ni sur le site ni sur votre fiche Google : le canal préféré de vos clients est absent'
-    : 'aucun bouton WhatsApp sur le site ; la fiche Google n\'a pas été relevée'));
-  r.push(crit('Chat sur le site', chatWeb === null ? 'inconnu' : (chatWeb ? 'ok' : 'faible'), chatWeb ? 20 : 0, 20,
-    detail(chatWeb, 'outil de chat détecté', 'aucune messagerie web détectée')));
-  r.push(crit('Messenger ou réseaux sociaux', msgr === null ? 'inconnu' : (msgr ? 'ok' : 'moyen'), msgr ? 10 : 0, 10,
+    : 'aucun lien WhatsApp trouvé sur le site ; sur la fiche Google, le bouton n\'est pas lisible depuis l\'extérieur — à ouvrir ensemble'));
+  r.push(crit('Chat sur le site', chatWeb === null ? 'inconnu' : (chatWeb ? 'ok' : 'faible'),
+    chatWeb ? 20 : 0, chatWeb === null ? 0 : 20,
+    detail(chatWeb, 'outil de chat détecté', 'aucune messagerie web détectée sur les pages lues')));
+  r.push(crit('Messenger ou réseaux sociaux', msgr === null ? 'inconnu' : (msgr ? 'ok' : 'moyen'),
+    msgr ? 10 : 0, msgr === null ? 0 : 10,
     detail(msgr, 'plugin Messenger détecté', 'aucun canal social branché sur le site')));
-  r.push(crit('Outil de collecte ou de réponse aux avis', avisOutil === null ? 'inconnu' : (avisOutil ? 'ok' : 'faible'),
-    avisOutil ? 25 : 0, 25, detail(avisOutil, 'outil détecté : ' + nomsTechnos.slice(0, 60), 'aucun outil détecté : la réputation subit')));
-  r.push(crit('Joignabilité téléphonique affichée', g.telephone ? 'ok' : 'faible', g.telephone ? 25 : 0, 25,
-    g.telephone ? 'numéro public sur la fiche' : 'aucun numéro sur la fiche'));
+  // Un outil d'avis se voit s'il est chargé sur le site — mais beaucoup se pilotent entièrement
+  // hors du site (tableau de bord, emails, SMS) sans y déposer la moindre balise. L'absence de
+  // balise ne vaut donc pas absence d'outil : on ne pénalise pas, on le dit.
+  r.push(crit('Outil de collecte ou de réponse aux avis',
+    avisOutil === null ? 'inconnu' : (avisOutil ? 'ok' : 'inconnu'),
+    avisOutil ? 25 : 0, avisOutil ? 25 : 0,
+    avisOutil ? (chezNous.length ? `${chezNous.join(', ')} en place` : 'outil chargé sur le site : ' + nomsTechnos.slice(0, 60))
+      : (avisOutil === null ? 'site non analysé'
+        : 'aucune balise d\'outil d\'avis sur vos pages — beaucoup se pilotent hors du site, cela ne dit pas que vous n\'en avez pas')));
+  r.push(crit('Joignabilité téléphonique affichée', tel ? 'ok' : (deuxVues ? 'faible' : 'inconnu'),
+    tel ? 25 : 0, tel || deuxVues ? 25 : 0,
+    tel ? 'numéro public sur la fiche' : (deuxVues ? 'aucun numéro sur la fiche' : 'non vérifié')));
   r.push(crit('Délai de première réponse', 'inconnu', 0, 0, 'non mesurable depuis l\'extérieur — à chronométrer ensemble'));
   axes.push({ nom: 'Relation client', module: 'SoConnect', criteres: r });
 
@@ -497,30 +575,57 @@ function scorer(e) {
   const sms = cherche(/\bsms\b|\brcs\b|twilio|attentive|smsmode|esendex|smsfactor|octopush|vonage/i);
   const mkt = cherche(/brevo|sendinblue|mailjet|mailchimp|klaviyo|salesforce|emarsys|braze|actito|selligent|hubspot/i);
   const nomsMkt = technos ? technos.filter(t => /marketing|sms|rcs/i.test(String(t.cat))).map(t => t.nom).join(', ') : '';
-  c.push(crit('Outil d\'envoi SMS ou RCS sur le site', sms === null ? 'inconnu' : (sms ? 'ok' : 'faible'),
-    sms ? 45 : 0, 45,
-    sms === null ? 'site non analysé'
-      : (sms ? 'balise d\'un outil SMS/RCS trouvée sur vos pages'
-             : 'aucune balise d\'outil SMS ou RCS sur vos pages — nous ne voyons donc pas de dispositif mobile en place')));
-  c.push(crit('Plateforme de communication client', mkt === null ? 'inconnu' : (mkt ? 'ok' : 'faible'),
-    mkt ? 35 : 0, 35,
+  // ⚠️ UNE PLATEFORME D'ENVOI SMS NE LAISSE AUCUNE TRACE SUR UN SITE WEB. Les envois partent d'un
+  // tableau de bord, pas du navigateur du visiteur. Écrire « aucune balise → nous ne voyons pas de
+  // dispositif mobile en place » revenait donc à déduire une absence d'un endroit où la chose ne
+  // s'affiche jamais. C'est faux par construction, et ça l'était pour nous (nous envoyons par Sofy).
+  // Le trouver est un signal ; ne pas le trouver n'en est pas un. Jamais de pénalité.
+  c.push(crit('Outil d\'envoi SMS ou RCS', sms ? 'ok' : 'inconnu', sms ? 45 : 0, sms ? 45 : 0,
+    sms ? (chezNous.length ? `${chezNous.join(', ')} en place` : 'balise d\'un outil SMS/RCS trouvée sur vos pages')
+      : 'une plateforme d\'envoi SMS ne laisse aucune trace sur un site web : ce point ne se vérifie pas de l\'extérieur, seul votre historique d\'envois le dit'));
+  c.push(crit('Plateforme de communication client', mkt === null ? 'inconnu' : (mkt ? 'ok' : 'inconnu'),
+    mkt ? 35 : 0, mkt ? 35 : 0,
     mkt === null ? 'site non analysé'
       : (mkt ? `${nomsMkt.slice(0, 60)} détecté${/,/.test(nomsMkt) ? 's' : ''} : le budget relation client existe déjà`
-             : 'aucune plateforme détectée : les envois, s\'il y en a, ne passent par aucun outil visible')));
-  // Ce qui n'est PAS mesurable depuis l'extérieur, dit franchement : un agent RCS de marque
-  // n'est pas déclaré publiquement, et un historique de campagnes ne se lit pas sur un site.
+             : 'aucune plateforme chargée sur vos pages — la plupart se pilotent hors du site, cela ne dit pas qu\'il n\'y en a pas')));
+  // Ce qui n'est PAS mesurable depuis l'extérieur, dit franchement : un historique de campagnes ne
+  // se lit pas sur un site, et un agent RCS de marque n'est pas publié dans un annuaire.
   c.push(crit('Campagnes déjà envoyées', 'inconnu', 0, 0,
     'invisible depuis l\'extérieur — seul votre historique d\'envois le dit'));
-  c.push(crit('Agent RCS de marque déclaré', 'inconnu', 0, 0,
-    'les agents RCS ne figurent dans aucun annuaire public — à vérifier avec vos opérateurs'));
+  // ⚠️ Formulation revue le 21/08. « les agents RCS ne figurent dans aucun annuaire public — à
+  // vérifier avec vos opérateurs » se lisait comme un reproche, et adressait le prospect à ses
+  // opérateurs alors que Sofy est agrégateur : c'est nous qui déclarons l'agent. Sur notre propre
+  // fiche, la phrase était à la fois fausse et contraire à ce qu'on vend.
+  c.push(crit('Agent RCS de marque', 'inconnu', 0, 0,
+    'un agent RCS de marque n\'est pas publié dans un annuaire : il se déclare auprès des opérateurs, '
+    + 'et c\'est Sofy qui le fait pour vous en tant qu\'agrégateur. Rien à vérifier de votre côté'));
   axes.push({ nom: 'Communication mobile', module: 'SoReach', criteres: c });
 
+  /* ⚠️ UN AXE TROP PEU MESURÉ NE SE NOTE PAS.
+     En excluant du calcul tout ce qui n'est pas vérifiable, l'axe « Communication mobile » n'a
+     plus gardé qu'un seul critère chez nous — HubSpot, présent — et affichait donc 100/100
+     « solide ». C'est l'exact miroir du défaut qu'on vient de corriger : une note flatteuse tirée
+     de rien vaut aussi peu qu'un reproche tiré de rien, et elle détruirait l'angle SoReach.
+     Un axe n'est noté que si au moins deux critères sont mesurés ET qu'ils couvrent au moins 40 %
+     des points de l'axe. Sinon il est « non évalué » et DIT pourquoi — ce qui est précisément ce
+     qui justifie le rendez-vous. */
   axes.forEach(a => {
     const notes = a.criteres.filter(x => x.sur > 0);
     const obtenus = notes.reduce((s2, x) => s2 + x.points, 0);
     const total = notes.reduce((s2, x) => s2 + x.sur, 0);
-    a.score = total ? Math.round((obtenus / total) * 100) : null;
-    a.verdict = a.score == null ? 'non évalué' : (a.score >= 70 ? 'solide' : (a.score >= 45 ? 'à renforcer' : 'critique'));
+    const nonVerif = a.criteres.length - notes.length;
+    const assez = notes.length >= 2 && (notes.length / Math.max(1, a.criteres.length)) >= 0.4;
+    a.score = (total && assez) ? Math.round((obtenus / total) * 100) : null;
+    a.criteres_mesures = notes.length;
+    a.criteres_non_verifiables = nonVerif;
+    a.verdict = a.score != null
+      ? (a.score >= 70 ? 'solide' : (a.score >= 45 ? 'à renforcer' : 'critique'))
+      : 'non évalué';
+    if (a.score == null) {
+      a.pourquoi_non_note = nonVerif
+        ? `${nonVerif} des ${a.criteres.length} points de cet axe ne se vérifient pas depuis l'extérieur : le noter sur ce qui reste donnerait un chiffre trompeur, dans un sens comme dans l'autre.`
+        : 'pas assez de mesures pour noter cet axe.';
+    }
   });
 
   return {
@@ -563,6 +668,7 @@ ${visuels.slice(0, 25).map(v => `#${v.id} [${v.type}${v.secteur ? ' · ' + v.sec
 ` : ''}
 ════ RÈGLES ABSOLUES ════
 1. **Aucun chiffre inventé.** Tu ne peux écrire un chiffre que s'il vient (a) des mesures du prospect ci-dessus, ou (b) d'un bloc de la base avec sa source. Interdiction formelle d'inventer une statistique de marché, un pourcentage de gain ou une promesse de résultat. Ce document sort de l'entreprise et engage la parole de Sofy.
+1 bis. **UNE ABSENCE DE MESURE N'EST PAS UNE ABSENCE.** C'est la règle la plus importante de ce document. Un champ absent, nul, vide, ou portant la mention « NON MESURABLE » ne t'autorise **jamais** à écrire que la chose n'existe pas. Tu ne peux affirmer un manque que si une mesure le CONSTATE explicitement. Le 21/08, ce document a annoncé à un prospect « aucun site web déclaré », « aucune description », « aucune photo publiée par vous » et « aucun bouton WhatsApp » — les quatre étaient faux, et le prospect a pu le vérifier en trois secondes sur sa propre fiche. Une seule affirmation fausse détruit la crédibilité des vingt qui sont justes. En cas de doute : n'en parle pas du tout. Un document plus court est infiniment préférable à un document contestable.
 2. **Ne promets aucun résultat.** Tu peux montrer ce qu'un autre client a obtenu (cas clients, avec la source) ; tu ne peux pas affirmer que ce prospect obtiendra la même chose. Formule la trajectoire comme un objectif de travail, jamais comme un engagement.
 3. **Cite un cas client dans TOUS les cas.** Si aucun n'est du même secteur, dis-le en une phrase et explique pourquoi le levier se transpose quand même. N'écris JAMAIS qu'on n'a rien à montrer : ce serait la pire phrase du document.
 4. **Cite le prospect par son nom**, ses vrais chiffres, le vrai nom de son point de vente le plus faible. C'est ce qui prouve qu'on a travaillé pour lui.

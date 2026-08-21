@@ -2159,7 +2159,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v394';
+const VERSION='v395';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -8058,6 +8058,9 @@ async function detecterTechnos(i){
   const d=await r.json();
   if(d&&d.ok){
    e.technos=d.technos||[];
+   // Les simples mentions textuelles sont rangées à part : elles ne valent pas équipement et ne
+   // doivent jamais entrer dans le scoring ni dans l'audit client (cf. Guest Suite sur sofy.fr).
+   e.technos_mentions=d.mentions||[];
    if(d.scanne){e.technos_fait=true;delete e.technos_echec;}
    else e.technos_echec='site injoignable'+(d.detail?' ('+String(d.detail).slice(0,60)+')':'');
    rerender(i);persister();
@@ -8069,10 +8072,23 @@ function technosHtml(e){
  if(!e.technos_fait)return '';
  const t=e.technos||[];
  let h='';
- for(const x of t.filter(x=>x.cat==='avis'))h+=`<span class="badge b-signal" title="Outil d'avis détecté sur le site — angle switch : ils investissent déjà dans leur e-réputation">⚔️ Équipé : ${x.nom}</span>`;
- if(!t.some(x=>x.cat==='avis'))h+=`<span class="badge b-new" title="Aucun outil de gestion d'avis détecté sur le site — terrain vierge pour Soview">🟢 Aucun outil d'avis</span>`;
+ // ⚠️ NOS PROPRES OUTILS D'ABORD. Ils n'avaient aucune signature : un client Sofy s'affichait donc
+ // « 🟢 Aucun outil d'avis — terrain vierge pour Soview », et le SDR lui proposait ce qu'il a déjà.
+ // Constaté le 21/08 en auditant notre propre fiche.
+ const nous=t.filter(x=>x.nous);
+ if(nous.length)h+=`<span class="badge b-gmb" style="background:#EDE9FE;border-color:#C4B5FD;color:#5B21B6" title="Outil Sofy détecté sur le site — c'est un CLIENT : ne pas lui vendre ce qu'il a déjà, regarder ce qui manque">💜 Client Sofy : ${nous.map(x=>x.nom).join(', ')}</span>`;
+ for(const x of t.filter(x=>x.cat==='avis'&&!x.nous))h+=`<span class="badge b-signal" title="Outil d'avis chargé sur le site — angle switch : ils investissent déjà dans leur e-réputation">⚔️ Équipé : ${x.nom}</span>`;
+ // « Aucun outil détecté » ≠ « aucun outil ». Beaucoup se pilotent entièrement hors du site.
+ // Le libellé dit ce qui a été regardé, pour que le SDR n'ouvre pas l'appel sur une erreur.
+ if(!t.some(x=>x.cat==='avis'))h+=`<span class="badge b-new" title="Aucune balise d'outil d'avis sur les pages lues. Beaucoup d'outils se pilotent hors du site : à confirmer pendant l'appel, ne pas l'affirmer.">🟢 Aucune balise d'outil d'avis</span>`;
  for(const x of t.filter(x=>x.cat==='chat'))h+=`<span class="badge b-source" title="Messagerie web détectée — ils gèrent déjà des conversations clients : angle SoConnect (centralisation + agent IA Budy)">💬 ${x.nom}</span>`;
+ for(const x of t.filter(x=>x.cat==='sms'&&!x.nous))h+=`<span class="badge b-source" title="Outil SMS/RCS chargé sur le site">📲 ${x.nom}</span>`;
  for(const x of t.filter(x=>x.cat==='marketing'))h+=`<span class="badge b-source" title="Outil marketing détecté — l'entreprise investit déjà dans la relation client">📣 ${x.nom}</span>`;
+ // Simplement NOMMÉ dans une page (comparatif, article), sans ressource chargée : ce n'est pas un
+ // équipement. Affiché à part et jamais compté — c'est ce qui faisait dire « outil détecté : Guest
+ // Suite » à propos de sofy.fr, qui vend contre Guest Suite et le nomme dans ses pages.
+ const m=(e.technos_mentions||[]).filter(x=>!x.nous);
+ if(m.length)h+=`<span class="badge" title="Ces noms apparaissent dans le TEXTE du site (page comparative, article), sans qu'aucun widget soit chargé. Ce n'est pas un équipement — à ne pas présenter comme tel.">📝 cité sans être installé : ${m.map(x=>x.nom).join(', ')}</span>`;
  return h;
 }
 function donneesPourScore(e){

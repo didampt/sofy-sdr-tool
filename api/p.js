@@ -415,12 +415,28 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
           </div>
           <div class="ax-t">${md(a.nom)}</div>
           <div class="ax-m">${esc(a.module)} · <span class="ax-vd ${cls}">${esc(a.verdict)}</span></div>
+          ${a.pourquoi_non_note ? `<div class="ax-pq">${md(a.pourquoi_non_note)}</div>` : ''}
+          ${/* Les critères NON VÉRIFIABLES sont sortis de la liste notée et regroupés en bas, sous
+                leur propre intitulé. Mélangés aux autres, ils se lisaient comme des manques : sur
+                la fiche SOFY France, « agent RCS de marque » apparaissait comme une puce de la
+                carte « Communication mobile · CRITIQUE » alors que Sofy EST l'agrégateur qui le
+                déclare (retour Didier, 21/08). Une puce dans une carte notée est un reproche, quelle
+                que soit sa couleur. */''}
           <div class="ax-c">
-            ${(a.criteres || []).map(x => `<div class="ax-l ${esc(x.etat)}">
+            ${(a.criteres || []).filter(x => x.etat !== 'inconnu').map(x => `<div class="ax-l ${esc(x.etat)}">
               <span class="ax-p"></span>
               <span><b>${md(x.libelle)}</b>${x.detail ? ` — ${md(x.detail)}` : ''}</span>
             </div>`).join('')}
           </div>
+          ${(() => {
+            const nv = (a.criteres || []).filter(x => x.etat === 'inconnu');
+            if (!nv.length) return '';
+            return `<div class="ax-nv">
+              <div class="ax-nv-t">Non vérifiable depuis l'extérieur — à regarder ensemble</div>
+              ${nv.map(x => `<div class="ax-l inconnu"><span class="ax-p"></span>
+                <span><b>${md(x.libelle)}</b>${x.detail ? ` — ${md(x.detail)}` : ''}</span></div>`).join('')}
+            </div>`;
+          })()}
         </div>`;
       }).join('')}
     </div>
@@ -910,6 +926,15 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .ax-l.ok .ax-p{background:#0F9D6E} .ax-l.moyen .ax-p{background:#E0A253}
 .ax-l.faible .ax-p{background:var(--r)} .ax-l.inconnu .ax-p{background:none;border:1.5px dashed #B9B2E0}
 .ax-l.inconnu{opacity:.72}
+/* Le bloc des points non vérifiables : séparé, sourd, sans code couleur d'évaluation. Il doit se
+   lire comme une liste de sujets à ouvrir en rendez-vous, pas comme une suite de manques. */
+/* Pourquoi un axe n'est pas noté : dit sous le verdict, pas dans une note de bas de page. Un « — »
+   sans explication se lit comme un oubli ; expliqué, il devient la raison d'ouvrir le sujet. */
+.ax-pq{font-size:11.5px;line-height:1.45;opacity:.6;margin-top:6px;text-align:center}
+.ax-nv{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);display:flex;flex-direction:column;gap:7px}
+.ax-nv-t{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;font-weight:650;opacity:.55;margin-bottom:1px}
+.ax-nv .ax-l{opacity:.6}
+.ax-nv .ax-l .ax-p{background:none;border:1.5px dashed currentColor;opacity:.5}
 .ax-w{font-size:12.5px;line-height:1.5;margin-top:16px;padding:12px 15px;border-radius:10px}
 .pl.light .ax-w{background:#FEF6E7;border:1px solid #E9C88B;color:#7A4E12}
 .pl.dark .ax-w{background:rgba(224,162,83,.12);border:1px solid rgba(224,162,83,.34);color:#E9C88B}
