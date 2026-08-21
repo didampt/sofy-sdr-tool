@@ -2159,7 +2159,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v399';
+const VERSION='v400';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -8211,8 +8211,16 @@ function technosHtml(e){
  for(const x of t.filter(x=>x.cat==='avis'&&!x.nous))h+=`<span class="badge b-signal" title="Outil d'avis chargé sur le site — angle switch : ils investissent déjà dans leur e-réputation">⚔️ Équipé : ${x.nom}</span>`;
  // « Aucun outil détecté » ≠ « aucun outil ». Beaucoup se pilotent entièrement hors du site.
  // Le libellé dit ce qui a été regardé, pour que le SDR n'ouvre pas l'appel sur une erreur.
- if(!t.some(x=>x.cat==='avis'))h+=`<span class="badge b-new" title="Aucune balise d'outil d'avis sur les pages lues. Beaucoup d'outils se pilotent hors du site : à confirmer pendant l'appel, ne pas l'affirmer.">🟢 Aucune balise d'outil d'avis</span>`;
- for(const x of t.filter(x=>x.cat==='chat'))h+=`<span class="badge b-source" title="Messagerie web détectée — ils gèrent déjà des conversations clients : angle SoConnect (centralisation + agent IA Budy)">💬 ${x.nom}</span>`;
+ // Sur un client Sofy, « aucune balise d'outil d'avis » se lisait comme « terrain vierge pour
+ // Soview » — alors qu'il est peut-être déjà équipé Soview, piloté hors du site (nous ne
+ // connaissons pas encore la signature du widget Soview). Le badge doit orienter l'appel, pas le
+ // fausser.
+ if(!t.some(x=>x.cat==='avis'))h+=nous.length
+  ? `<span class="badge b-gmb" title="Aucune balise d'outil d'avis sur les pages lues — mais ce prospect est déjà client Sofy : demande-lui s'il a Soview avant de le lui proposer.">❔ Soview : à vérifier avec lui</span>`
+  : `<span class="badge b-new" title="Aucune balise d'outil d'avis sur les pages lues. Beaucoup d'outils se pilotent hors du site : à confirmer pendant l'appel, ne pas l'affirmer.">🟢 Aucune balise d'outil d'avis</span>`;
+ // `!x.nous` : nos outils sont déjà nommés dans le badge « Client Sofy » juste au-dessus — les
+ // répéter faisait apparaître le webchat deux fois de suite sur la même ligne.
+ for(const x of t.filter(x=>x.cat==='chat'&&!x.nous))h+=`<span class="badge b-source" title="Messagerie web détectée — ils gèrent déjà des conversations clients : angle SoConnect (centralisation + agent IA Budy)">💬 ${x.nom}</span>`;
  for(const x of t.filter(x=>x.cat==='sms'&&!x.nous))h+=`<span class="badge b-source" title="Outil SMS/RCS chargé sur le site">📲 ${x.nom}</span>`;
  for(const x of t.filter(x=>x.cat==='marketing'))h+=`<span class="badge b-source" title="Outil marketing détecté — l'entreprise investit déjà dans la relation client">📣 ${x.nom}</span>`;
  // Simplement NOMMÉ dans une page (comparatif, article), sans ressource chargée : ce n'est pas un
