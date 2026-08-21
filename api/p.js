@@ -1209,13 +1209,19 @@ export default async function handler(req, res) {
     if (!dejaVu && compte) res.setHeader('Set-Cookie', `sl=${lecteur}; Path=/p; Max-Age=7776000; HttpOnly; Secure; SameSite=Lax`);
     const connus = Array.isArray(row.lecteurs) ? row.lecteurs : [];
     const nouveauLecteur = compte && !connus.includes(lecteur);
+    // Le compteur d'ouvertures EST le signal d'achat : s'il n'écrit pas, le SDR ne saura jamais
+    // que son prospect a lu. On ne casse évidemment pas la page pour autant (le prospect est en
+    // train de la lire), mais la panne est tracée, et l'alerte Slack part quand même — elle est
+    // calculée avant et ne dépend pas de cette écriture.
     if (compte) try {
       await sql`UPDATE prez SET ouvertures = COALESCE(ouvertures,0) + 1, derniere_ouverture = NOW(),
         premiere_ouverture = COALESCE(premiere_ouverture, NOW()),
         lecteurs = CASE WHEN COALESCE(lecteurs,'[]'::jsonb) @> ${JSON.stringify([lecteur])}::jsonb
                         THEN lecteurs ELSE COALESCE(lecteurs,'[]'::jsonb) || ${JSON.stringify([lecteur])}::jsonb END
         WHERE jeton = ${jeton}`;
-    } catch (_) {}
+    } catch (e) {
+      console.error('[ouverture NON comptée]', 'jeton=' + jeton, String((e && e.message) || e).slice(0, 160));
+    }
 
     // Première ouverture = signal d'achat. C'est plus fort qu'un email ouvert : le prospect a
     // cliqué, il lit une analyse de SA situation. Le SDR doit le savoir tout de suite.

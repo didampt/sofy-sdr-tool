@@ -246,12 +246,23 @@ export function verifierToken(req) {
 }
 
 // ── Suivi des consommations + limites mensuelles ──
+// ⚠️ C'EST LE GRAND LIVRE. Chaque euro dépensé (Pappers, FullEnrich, Kaspr, Lemlist, SerpApi,
+// Claude, SoReach) passe par ici, et c'est lui que limiteAtteinte() interroge. Une écriture perdue
+// en silence, c'est une dépense invisible ET un plafond qui ne se déclenche jamais.
+// La fonction ne LÈVE toujours pas d'exception — un échec de journalisation ne doit jamais faire
+// rater l'action que le SDR vient de lancer — mais elle le DIT : trace dans les logs Vercel, et
+// valeur de retour exploitable par l'appelant qui veut en informer l'utilisateur.
 export async function loggerConso(user, api, quantite, listeId) {
-  if (!sql || !quantite) return;
+  if (!sql || !quantite) return { ok: false, ignore: true };
   try {
     await sql`INSERT INTO consommations (sdr, api, quantite, liste_id)
       VALUES (${user?.nom || '?'}, ${api}, ${quantite}, ${listeId ? parseInt(listeId) : null})`;
-  } catch (_) {}
+    return { ok: true };
+  } catch (e) {
+    const detail = String((e && e.message) || e).slice(0, 200);
+    console.error('[conso NON journalisée]', api, quantite, 'sdr=' + (user?.nom || '?'), detail);
+    return { ok: false, detail };
+  }
 }
 // Coach d'appels : table créée PARESSEUSEMENT (hors migration — voir note SCHEMA_VERSION)
 let coachPret = false;

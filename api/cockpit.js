@@ -111,6 +111,35 @@ function infoFiche(e, listeId, listeNom) {
     accroche: (e.score && e.score.accroche) || null,
     synthese: (e.score && e.score.synthese) || null,
     contacts_detail: contactsDetail,
+    // Les relevés terrain, en version compacte : ce sont les faits les plus utiles AVANT l'appel,
+    // et « Ma journée » est justement l'écran d'où l'on appelle. On n'envoie que les champs que le
+    // bloc affiche — la charge utile reste petite sur une liste de 50 fiches.
+    releves: (gV.reponses || gV.audit || gV.ia_visibilite || gV.apple) ? {
+      reponses: gV.reponses ? {
+        taux: gV.reponses.taux, repondus: gV.reponses.repondus, analyses: gV.reponses.analyses,
+        delai_median_h: gV.reponses.delai_median_h, rythme_par_mois: gV.reponses.rythme_par_mois
+      } : null,
+      audit: gV.audit ? {
+        requete: gV.audit.requete, position_locale: gV.audit.position_locale,
+        concurrents: (gV.audit.concurrents || []).slice(0, 1),
+        photos_total: gV.audit.photos_total, photos_enseigne: gV.audit.photos_enseigne,
+        description_presente: gV.audit.description_presente, horaires_presents: gV.audit.horaires_presents,
+        whatsapp_sur_fiche: gV.audit.whatsapp_sur_fiche || null
+      } : null,
+      ia_visibilite: gV.ia_visibilite ? {
+        apercu_present: gV.ia_visibilite.apercu_present, cite: gV.ia_visibilite.cite,
+        rang_citation: gV.ia_visibilite.rang_citation,
+        entreprises_citees: (gV.ia_visibilite.entreprises_citees || []).slice(0, 3),
+        annonceurs: (gV.ia_visibilite.annonceurs || []).slice(0, 3)
+      } : null,
+      apple: gV.apple ? { present: gV.apple.present, position: gV.apple.position,
+        note: gV.apple.note, total_resultats: gV.apple.total_resultats } : null
+    } : null,
+    // Le pré-audit a-t-il été fait, et la messagerie du site est-elle connue ?
+    releves_faits: !!(gV.reponses || gV.audit || gV.ia_visibilite || gV.apple),
+    gmb_trouve: !!gV.trouve,
+    technos: (e.technos || []).filter(t => t && t.cat === 'chat').map(t => ({ id: t.id, nom: t.nom, cat: t.cat })),
+    technos_fait: !!e.technos_fait,
     vars: varsLem,
     produit_dominant: (prodV && prodV[1]) ? prodV[0] : null
   };

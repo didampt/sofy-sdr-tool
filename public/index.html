@@ -2159,7 +2159,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v383';
+const VERSION='v384';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4703,7 +4703,9 @@ function bloc(id,titre,contenu,opts){
 // Ils ne servaient qu'à rédiger l'audit client, alors que ce sont les faits les plus utiles AVANT
 // de décrocher : chaque ligne est vérifiable par le prospect pendant l'appel. Une ligne n'apparaît
 // que si la mesure existe — jamais « non mesuré », qui n'apprend rien.
-function relevesHtml(e,i){
+// `compact` : rendu sans repliage, pour « Ma journée » — là, le panneau est injecté dans un div
+// qui ne se re-rend pas, donc un chevron cliquable ne servirait à rien.
+function relevesHtml(e,i,compact){
  const g=e.gmb||{}, r=g.reponses||null, a=g.audit||null, iv=g.ia_visibilite||null, ap=g.apple||null;
  if(!r&&!a&&!iv&&!ap){
   if(!(g&&g.trouve))return '';
@@ -4773,6 +4775,7 @@ function relevesHtml(e,i){
   iv&&iv.apercu_present&&!iv.cite&&'non cité par l\'IA',
   ap&&!ap.present&&'absent d\'Apple Plans'
  ].filter(Boolean);
+ if(compact)return '<div style="margin-bottom:8px"><div style="font-size:11px;font-weight:800;letter-spacing:.05em;color:var(--ink-soft);margin-bottom:2px">🔍 RELEVÉS TERRAIN</div>'+L.join('')+'</div>';
  return bloc('releves','🔍 Relevés terrain',
   '<div style="margin-bottom:10px">'+L.join('')+'</div>',
   {compteur:L.length+' mesure(s)',
@@ -9460,6 +9463,10 @@ function ckDetailHtml(it,rid){
  if(it.type!=='linkedin'&&it.type!=='manuel'&&it.type!=='signup')h+=`<div id="${rid}-radar" style="margin-bottom:8px"></div>`;
  if(it.accroche)h+=`<div style="font-size:12.5px;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-bottom:8px">\ud83c\udfaf <b>Accroche :</b> ${htmlSafe(it.accroche)}</div>`;
  if(it.synthese)h+=`<div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;line-height:1.5">${htmlSafe(it.synthese)}</div>`;
+ // Les relevés terrain, juste avant les contacts : c'est ce qu'on lit dans les secondes qui
+ // précèdent l'appel. Rendu compact (pas de repliage : ce panneau ne se re-rend pas).
+ if(it.releves)h+=relevesHtml({gmb:it.releves,technos:it.technos||[],technos_fait:!!it.technos_fait},-1,true);
+ else if(it.gmb_trouve&&it.liste_id&&it.cle)h+=`<div class="hint" style="margin-bottom:8px">🔍 Aucun relevé sur ce prospect — <b>Pré-audit</b> mesure ses réponses aux avis, sa position locale et sa visibilité IA, puis reprend l'accroche et l'email avec ces chiffres.</div>`;
  const cs=it.contacts_detail||[];
  if(cs.length)h+=cs.map((c,ci)=>ckContactLigne(c,it,rid,ci)).join('');
  else if(!it.cle)h+='<p style="font-size:12px;color:var(--ink-soft);margin:4px 0">Fiche non retrouv\u00e9e dans tes listes actives (liste en nurturing ou archiv\u00e9e) \u2014 marque le rappel \u00ab Fait \u00bb apr\u00e8s l\u2019appel, ou retrouve la fiche via la recherche de l\u2019Historique.</p>';
@@ -9473,7 +9480,7 @@ function ckDetailHtml(it,rid){
    <button class="act act-copy" onclick="ckAjouterNote('${rid}')">Ajouter</button>
   </div></div>`;
  const aEmail=(it.contacts_detail||[]).some(c=>c&&c.email);
- h+=`<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">${aEmail&&!it.statut?`<button class="act act-call" onclick="ouvrirCkSequence('${rid}')" title="Pousser un contact de la fiche en s\u00e9quence Lemlist (m\u00eames variables que depuis la fiche)">\u2708\ufe0f S\u00e9quence Lemlist\u2026</button>`:''}${cs.length&&it.liste_id&&it.cle?(it.societe_ok===false?`<button class="act act-copy" disabled style="opacity:.5;cursor:not-allowed" title="Entreprise inconnue sur cette fiche (liker sans soci\u00e9t\u00e9) \u2014 enrichis d'abord le contact ou ouvre la fiche compl\u00e8te">\ud83d\udc65 Personas</button>`:`<button class="act act-copy" onclick="ckPersonas('${rid}')" title="Chercher d'autres d\u00e9cideurs LinkedIn (Basile \u2192 IA) et les ajouter \u00e0 la fiche">\ud83d\udc65 Personas</button>`):''}${it.liste_id&&it.cle?`<button class="act" style="background:#F5F3FF;border-color:#C4B5FD;color:#6D28D9;font-weight:700" onclick="ckAnalyse('${rid}')" title="G\u00e9n\u00e9rer la page d'analyse personnalis\u00e9e de ce prospect (ouvre la fiche puis lance)">\ud83c\udfa8 Analyse</button>`:''}${it.liste_id?`<button class="act act-copy" onclick="ouvrirListe(${it.liste_id}${it.cle?`,decodeURIComponent('${jsArg(it.cle)}')`:',null'})" title="Bloc-notes, SMS SoReach, email Lemlist, enrichissement\u2026">Ouvrir la fiche compl\u00e8te \u2192</button>`:''}</div>`;
+ h+=`<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">${aEmail&&!it.statut?`<button class="act act-call" onclick="ouvrirCkSequence('${rid}')" title="Pousser un contact de la fiche en s\u00e9quence Lemlist (m\u00eames variables que depuis la fiche)">\u2708\ufe0f S\u00e9quence Lemlist\u2026</button>`:''}${cs.length&&it.liste_id&&it.cle?(it.societe_ok===false?`<button class="act act-copy" disabled style="opacity:.5;cursor:not-allowed" title="Entreprise inconnue sur cette fiche (liker sans soci\u00e9t\u00e9) \u2014 enrichis d'abord le contact ou ouvre la fiche compl\u00e8te">\ud83d\udc65 Personas</button>`:`<button class="act act-copy" onclick="ckPersonas('${rid}')" title="Chercher d'autres d\u00e9cideurs LinkedIn (Basile \u2192 IA) et les ajouter \u00e0 la fiche">\ud83d\udc65 Personas</button>`):''}${(it.liste_id&&it.cle&&it.gmb_trouve)?`<button class="act act-copy" onclick="ckPreAudit('${rid}')" title="Relever ce que Google, l'IA de Google et Apple disent de ce prospect, puis reprendre l'accroche et l'email avec ces mesures. 6 à 10 relevés sur les 230 du mois.">\ud83d\udd0d Pré-audit${it.releves_faits?' ✓':''}</button>`:''}${it.liste_id&&it.cle?`<button class="act" style="background:#F5F3FF;border-color:#C4B5FD;color:#6D28D9;font-weight:700" onclick="ckAnalyse('${rid}')" title="G\u00e9n\u00e9rer la page d'analyse personnalis\u00e9e de ce prospect (ouvre la fiche puis lance)">\ud83c\udfa8 Analyse</button>`:''}${it.liste_id?`<button class="act act-copy" onclick="ouvrirListe(${it.liste_id}${it.cle?`,decodeURIComponent('${jsArg(it.cle)}')`:',null'})" title="Bloc-notes, SMS SoReach, email Lemlist, enrichissement\u2026">Ouvrir la fiche compl\u00e8te \u2192</button>`:''}</div>`;
  return h+'</div>';
 }
 let CKSEQ_CTX=null;
@@ -9619,6 +9626,18 @@ async function preAudit(i){
   'Avec les mesures qu\'on vient de relever : position locale, réponses aux avis, aperçu IA.');
  try{ await lancerScore(i,true,true); }finally{ v2.fermer(); }
  rerender(i);
+}
+
+// 🔍 Pré-audit depuis « Ma journée » : les relevés servent l'APPEL, et c'est ici qu'on appelle.
+// Comme pour l'audit, la mesure travaille sur la fiche chargée : on ouvre la liste, on retrouve la
+// fiche, puis on lance le même chemin que depuis la fiche complète.
+async function ckPreAudit(rid){
+ const it=CK_ITEMS[rid]||{};
+ if(!it.liste_id||!it.cle){toast('Fiche non localisable — ouvre la fiche complète');return;}
+ await ouvrirListe(it.liste_id, it.cle);
+ const i=REAL.findIndex(e=>cleSignal(e)===it.cle);
+ if(i<0){toast('Fiche introuvable dans sa liste');return;}
+ await preAudit(i);
 }
 
 // 🎨 Audit client depuis « Ma journée ». La génération travaille sur la fiche chargée : on

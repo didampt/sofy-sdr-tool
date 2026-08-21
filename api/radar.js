@@ -283,16 +283,26 @@ export async function radarEntreprise(e, user, opts = {}) {
   };
 
   // Succès : on écrit le résultat, on lève le verrou et on remet le compteur d'échecs à zéro
+  let cacheErreur = null;
   try {
     await sql`INSERT INTO radar_cache (cle, entreprise, resultat, signaux_n, modele, maj_le, echecs, dernier_echec, motif_echec, en_cours_depuis)
       VALUES (${cle}, ${nom0}, ${JSON.stringify(radar)}::jsonb, ${signaux.length}, ${MODELE()}, NOW(), 0, NULL, NULL, NULL)
       ON CONFLICT (cle) DO UPDATE SET resultat = EXCLUDED.resultat, signaux_n = EXCLUDED.signaux_n,
         modele = EXCLUDED.modele, entreprise = EXCLUDED.entreprise, maj_le = NOW(),
         echecs = 0, dernier_echec = NULL, motif_echec = NULL, en_cours_depuis = NULL`;
-  } catch (_) {}
-  try { await loggerConso(user || { nom: 'système' }, 'ia_claude', 1, opts.liste_id || null); } catch (_) {}
+  } catch (e) {
+    // Le radar vient de coûter un appel Claude. S'il n'est pas mis en cache, le prochain le
+    // REPAIERA. On ne fait pas échouer la réponse — le résultat est bon et il part au SDR — mais
+    // ça se voit dans les logs et dans la réponse.
+    cacheErreur = String((e && e.message) || e).slice(0, 180);
+    console.error('[radar cache NON écrit]', cle, cacheErreur);
+  }
+  const journal = await loggerConso(user || { nom: 'système' }, 'ia_claude', 1, opts.liste_id || null)
+    .catch(e => ({ ok: false, detail: String((e && e.message) || e).slice(0, 160) }));
 
   const out = { ok: true, radar, cache: false };
+  if (cacheErreur) out.cache_erreur = cacheErreur;
+  if (journal && journal.ok === false && !journal.ignore) out.conso_non_journalisee = journal.detail || true;
   if (opts.debug) out.debug = {
     modele: MODELE(),
     recherches_lancees: recherches,          // les requêtes réellement envoyées au web

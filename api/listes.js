@@ -399,14 +399,21 @@ export default async function handler(req, res) {
       const rows = await sql`INSERT INTO listes (nom, sdr, createur, criteres, criteres_hash, entreprises, total, credits_estimes, stats)
         VALUES (${nom}, ${sdr}, ${user.nom}, ${JSON.stringify(criteres)}, ${h}, ${JSON.stringify(entreprises)}, ${entreprises.length}, ${credits_estimes || 0}, ${JSON.stringify(statsInit)})
         RETURNING id, created_at`;
-      // Rattache les crédits Pappers consommés à l'instant (extraction avant sauvegarde) à cette liste
+      // Rattache les crédits Pappers consommés à l'instant (extraction avant sauvegarde) à cette
+      // liste. Si ce rattachement échoue, la liste s'affichera à « 0 € consommés » alors qu'elle a
+      // bien coûté : le chiffre serait FAUX, et c'est celui sur lequel on juge la rentabilité.
+      let creditsRattaches = true;
       try {
         await sql`UPDATE consommations SET liste_id = ${rows[0].id}
                   WHERE sdr = ${user.nom} AND liste_id IS NULL AND api = 'pappers'
                     AND created_at > NOW() - INTERVAL '10 minutes'`;
-      } catch (_) {}
+      } catch (e) {
+        creditsRattaches = false;
+        console.error('[crédits Pappers non rattachés]', 'liste=' + rows[0].id, String((e && e.message) || e).slice(0, 160));
+      }
       return res.status(200).json({
         ok: true, id: rows[0].id, created_at: rows[0].created_at,
+        credits_non_rattaches: creditsRattaches ? undefined : true,
         avertissement: avertissementListes || undefined
       });
     }

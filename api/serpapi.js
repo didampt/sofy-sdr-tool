@@ -97,16 +97,25 @@ export async function appelSerpApi(params, { qui, motif } = {}) {
 
   // On journalise TOUS les appels, réussis ou non : un quota se consomme même sur une erreur de
   // paramètre, et c'est précisément ce qu'on veut voir venir.
+  // Si cette écriture échoue, le compteur SOUS-ESTIME la consommation : on dépasserait les 230
+  // sans que rien ne s'allume. On ne bloque pas l'appel pour autant — il est déjà parti et payé —
+  // mais on marque le compteur comme non fiable, et l'écran du budget le dira.
+  let compteurFiable = true;
   try {
     await sql`INSERT INTO serpapi_conso (mois, moteur, motif, qui, ok)
       VALUES (${mois}, ${String(params.engine || '?').slice(0, 40)}, ${String(motif || '').slice(0, 60)},
               ${String(qui || 'système').slice(0, 60)}, ${ok})`;
-  } catch (_) { }
+  } catch (e) {
+    compteurFiable = false;
+    console.error('[SerpApi conso NON journalisée]', params.engine, motif, String((e && e.message) || e).slice(0, 160));
+  }
 
   const n = conso + 1;
   return {
-    ok, status, d, conso: n, plafond,
-    alerte: n >= Math.floor(plafond * SEUIL_ALERTE)
+    ok, status, d, conso: n, plafond, compteur_fiable: compteurFiable,
+    alerte: !compteurFiable
+      ? `⚠️ Le compteur SerpApi n'a pas pu enregistrer cet appel : la consommation affichée est SOUS-ESTIMÉE. Vérifie 🔧 Maintenance › Budget des relevés.`
+      : n >= Math.floor(plafond * SEUIL_ALERTE)
       ? `Budget SerpApi : ${n}/${plafond} relevés ce mois-ci — il reste de quoi faire environ ${Math.max(0, Math.floor((plafond - n) / 7))} analyse(s).`
       : null
   };
