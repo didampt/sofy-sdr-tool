@@ -1066,7 +1066,7 @@ Spot-Hit</textarea>
       <!-- ── Générateur ── -->
       <div id="pz-gen">
         <div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;max-width:820px">
-          <p style="margin:0 0 12px;font-size:14.5px;line-height:1.6">L'analyse se lance depuis la fiche du prospect : c'est là que se trouvent les mesures qu'elle utilise (note Google, pire point de vente, avis réel, concurrents, technos). Ouvre une liste, déplie la fiche, puis <strong>🎨 Analyse client</strong>.</p>
+          <p style="margin:0 0 12px;font-size:14.5px;line-height:1.6">L'analyse se lance depuis la fiche du prospect : c'est là que se trouvent les mesures qu'elle utilise (note Google, pire point de vente, avis réel, concurrents, technos). Ouvre une liste, déplie la fiche, puis <strong>🎨 Audit client</strong>.</p>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn btn-primary" onclick="nav('history',null);chargerHistorique()">🗂 Ouvrir une liste</button>
             <button class="btn" style="background:var(--paper)" onclick="nav('cockpit',null);chargerCockpit()">☀️ Voir mes hot leads</button>
@@ -2158,7 +2158,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v377';
+const VERSION='v378';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -4630,6 +4630,97 @@ function poidsEngagement(e){
 }
 function ordreFiches(){const w=REAL.map(poidsEngagement);return REAL.map((x,k)=>k).sort(function(a,b){return w[b]-w[a];});}
 function tempsRelEngag(ts){const d=new Date(ts),x=(Date.now()-d.getTime())/1000;if(x<60)return 'à l’instant';if(x<3600)return 'il y a '+Math.floor(x/60)+' min';if(x<86400)return 'il y a '+Math.floor(x/3600)+' h';return 'il y a '+Math.floor(x/86400)+' j';}
+
+// ── BLOCS REPLIABLES DE LA FICHE ───────────────────────────────────────────────────────────────
+// La fiche a grossi : synthèse d'appel, email personnalisé, avis négatif, relevés, bloc-notes.
+// Tout déplié, l'essentiel est noyé. Chaque bloc porte donc son bouton, et le choix est retenu
+// par personne (localStorage) : celui qui ne lit jamais l'email le replie une fois, définitivement.
+// Le titre reste TOUJOURS visible, avec un résumé d'une ligne quand c'est replié — replier ne doit
+// jamais faire oublier qu'il y a quelque chose là.
+const PLI_CLE='sofy_plis_fiche';
+let PLIS=(function(){try{return JSON.parse(localStorage.getItem(PLI_CLE)||'{}')||{};}catch(_){return {};}})();
+function pliOuvert(id,defaut){ return PLIS[id]===undefined?(defaut!==false):!!PLIS[id]; }
+function basculerPli(id,defaut){
+ PLIS[id]=!pliOuvert(id,defaut);
+ try{localStorage.setItem(PLI_CLE,JSON.stringify(PLIS));}catch(_){}
+ // On rend à nouveau la fiche ouverte : le pli est une préférence d'affichage, pas un état de données.
+ const i=REAL.findIndex(x=>x&&x._open);
+ if(i>=0)rerender(i); else rerender_all();
+}
+// titre repliable + contenu. `resume` s'affiche à la place du contenu quand c'est replié.
+function bloc(id,titre,contenu,opts){
+ const o=opts||{};
+ const ouvert=pliOuvert(id,o.defaut);
+ return `<div class="col-title" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none"
+   onclick="basculerPli('${id}',${o.defaut===false?'false':'true'})" title="${ouvert?'Replier':'Déplier'} ce bloc — le choix est retenu">
+   <span style="font-size:10px;transition:transform .15s ease;display:inline-block;transform:rotate(${ouvert?90:0}deg)">▶</span>
+   <span style="flex:1">${titre}</span>
+   ${o.compteur?`<span style="font-weight:400;text-transform:none;letter-spacing:0">${o.compteur}</span>`:''}
+  </div>
+  ${ouvert?contenu:(o.resume?`<div class="hint" style="margin:0 0 10px;padding-left:18px">${o.resume}</div>`:'')}`;
+}
+
+
+// ── LES RELEVÉS TERRAIN, SUR LA FICHE ──────────────────────────────────────────────────────────
+// Ils ne servaient qu'à rédiger l'audit client, alors que ce sont les faits les plus utiles AVANT
+// de décrocher : chaque ligne est vérifiable par le prospect pendant l'appel. Une ligne n'apparaît
+// que si la mesure existe — jamais « non mesuré », qui n'apprend rien.
+function relevesHtml(e,i){
+ const g=e.gmb||{}, r=g.reponses||null, a=g.audit||null, iv=g.ia_visibilite||null, ap=g.apple||null;
+ if(!r&&!a&&!iv&&!ap){
+  if(!(g&&g.trouve))return '';
+  return bloc('releves','🔍 Relevés terrain',
+   `<div class="hint" style="margin-bottom:10px">Rien n'a encore été relevé sur ce prospect. Le <b>🔍 Pré-audit</b> mesure son taux de réponse aux avis, sa position quand un client cherche son métier, les concurrents qui paient pour passer devant, et sa présence sur Apple Plans — puis reprend la synthèse d'appel et l'email avec ces chiffres.</div>`,
+   {defaut:false,resume:'Non relevé — lance 🔍 Pré-audit pour des arguments vérifiables.'});
+ }
+ const L=[];
+ const li=(emo,t,x)=>L.push(`<div style="display:flex;gap:8px;padding:5px 0;border-top:1px solid var(--line);font-size:13px;line-height:1.45">
+   <span style="flex:none">${emo}</span><span><b>${t}</b>${x?' — '+x:''}</span></div>`);
+ if(r){
+  const d=r.delai_median_h;
+  const lis=d==null?null:(d<48?d+' h':Math.round(d/24)+' j');
+  li('⭐','Réponses aux avis',
+   (r.taux===0?'<b style="color:#B91C1C">aucune réponse</b>':r.repondus+'/'+r.analyses+' avis récents ont une réponse ('+r.taux+' %)')
+   +(lis?' · délai médian '+lis:'')
+   +(r.rythme_par_mois!=null?' · collecte <b>'+String(r.rythme_par_mois).replace('.',',')+' avis/mois</b>':''));
+ }
+ if(a&&(a.position_locale!=null||(a.concurrents||[]).length)){
+  const c1=(a.concurrents||[])[0];
+  li('📍','Position locale'+(a.requete?' sur « '+htmlSafe(a.requete)+' »':''),
+   (a.position_locale!=null?'<b>'+a.position_locale+'ᵉ</b>':'<b style="color:#B91C1C">absent</b>')
+   +(c1?' · 1er : '+htmlSafe(c1.nom||'')+(c1.note!=null?' ('+String(c1.note).replace('.',',')+'★)':''):''));
+ }
+ if(a&&(a.photos_total!=null||a.description_presente!=null)){
+  const m=[];
+  if(a.photos_total!=null)m.push(a.photos_total+' photo(s)'+(a.photos_enseigne===0&&a.photos_total>0?' <b style="color:#B45309">dont aucune de l\'enseigne</b>':''));
+  if(a.description_presente===false)m.push('<b style="color:#B45309">pas de description</b>');
+  if(a.horaires_presents===false)m.push('<b style="color:#B45309">pas d\'horaires</b>');
+  if(m.length)li('🖼','Complétude de la fiche',m.join(' · '));
+ }
+ if(iv){
+  if(iv.apercu_present)li('🤖','Aperçu IA de Google',
+   iv.cite?('<b style="color:#0F7B4F">cité</b> en source n°'+(iv.rang_citation||1))
+   :('<b style="color:#B91C1C">non cité</b>'+((iv.entreprises_citees||[]).length?' · l\'IA renvoie vers '+(iv.entreprises_citees||[]).slice(0,3).map(htmlSafe).join(', '):'')));
+  else li('🤖','Aperçu IA de Google','pas d\'aperçu sur cette requête — fenêtre ouverte');
+  if((iv.annonceurs||[]).length)li('💰','Concurrents qui paient',
+   iv.annonceurs.slice(0,3).map(x=>htmlSafe(x.nom||'')+(x.note!=null?' ('+String(x.note).replace('.',',')+'★)':'')).join(' · ')
+   +(iv.annonceurs.length>3?' +'+(iv.annonceurs.length-3):''));
+ }
+ if(ap)li('🍎','Apple Plans',
+  ap.present?('présent'+(ap.position?' en '+ap.position+'ᵉ':'')+(ap.note!=null?' · '+String(ap.note).replace('.',',')+'★':' · sans note'))
+  :'<b style="color:#B91C1C">absent</b> des '+(ap.total_resultats||0)+' résultats');
+ const fort=[
+  r&&r.taux===0&&'aucune réponse aux avis',
+  a&&a.position_locale==null&&a.requete&&'absent du local',
+  iv&&iv.apercu_present&&!iv.cite&&'non cité par l\'IA',
+  ap&&!ap.present&&'absent d\'Apple Plans'
+ ].filter(Boolean);
+ return bloc('releves','🔍 Relevés terrain',
+  '<div style="margin-bottom:10px">'+L.join('')+'</div>',
+  {compteur:L.length+' mesure(s)',
+   resume:fort.length?('⚠️ '+fort.join(' · ')+' — déplier pour les chiffres'):'Déplier pour les mesures détaillées.'});
+}
+
 function statutTagHtml(e){
  var v=e.statut_appel;
  if(!v && (e.tags_sdr||[]).includes('🤝 RDV pris')) v='RDV pris';
@@ -4661,7 +4752,7 @@ function badgePrezLue(e){
  const nb=p.ouvertures>1?(' · '+p.ouvertures+' fois'):'';
  const circule=(p.lecteurs_distincts>1)||(lecteurs.length>1);
  return '<span class="badge" title="Le prospect a ouvert la page d\'analyse que tu lui as envoyée — signal plus fort qu\'un email ouvert"'
-  +' style="background:#F5F3FF;border-color:#C4B5FD;color:#6D28D9;font-weight:700">🎨 Analyse lue'
+  +' style="background:#F5F3FF;border-color:#C4B5FD;color:#6D28D9;font-weight:700">🎨 Audit lu'
   +escapeHtml(qui)+nb+(mieux.ts?' · '+tempsRelEngag(mieux.ts):'')+'</span>'
   +(circule?'<span class="badge" title="Une deuxième personne a ouvert le document : il circule en interne" style="background:#FEF2F2;border-color:#FECACA;color:#B91C1C;font-weight:700">🔥 ça circule en interne</span>':'');
 }
@@ -6326,7 +6417,7 @@ function prezCarte(e,i,p,rang,total){
  const quand=p.derniere_ouverture?('dernière lecture '+tempsRelEngag(p.derniere_ouverture)):'';
  return `<div style="background:var(--card);border:1px solid var(--line);border-left:3px solid #7C3AED;border-radius:0 10px 10px 0;padding:12px 14px;margin-top:10px">
   <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
-   <span style="font-size:13.5px;font-weight:800">🎨 Analyse client${total>1?' '+rang+'/'+total:''}</span>
+   <span style="font-size:13.5px;font-weight:800">🎨 Audit client${total>1?' '+rang+'/'+total:''}</span>
    <span class="badge">${htmlSafe(nomModule(p.module))}</span>
    ${etat}
    <span style="margin-left:auto;font-size:11.5px;color:var(--ink-soft)">${p.expiree?'':(jr!=null?(jr<=3?'<span style="color:#B45309;font-weight:700">expire dans '+jr+' j</span>':'valable '+jr+' j encore'):'')}</span>
@@ -6478,22 +6569,24 @@ function ficheReal(e,i){
       <button class="btn-cta" id="rcsdemo${i}" style="background:#7A5AF8;color:#fff" onclick="ouvrirRcsProspectFiche(${i})" title="Rich-card RCS Sofy (visuel + bouton « Réserver ma démo ») — la meilleure démonstration du produit. Un seul envoi par lead.">💬 RCS démo</button>
      </div>
      ${gmbHtml(e.gmb,i)}
-     ${e.score?`
-     <div class="col-title">Synthèse pour l'appel</div>
+     ${relevesHtml(e,i)}
+     ${e.score?bloc('synthese',"Synthèse pour l'appel",`
      <div class="review-box" style="background:#F4F6FF;border-color:#D9DEFF;color:var(--ink)">
       ${e.score.synthese}
       ${e.score.accroche?`<div style="margin-top:10px"><b>🗣 Accroche :</b> « ${e.score.accroche} »</div>`:''}
       ${(e.score.signaux||[]).length?`<div class="badges" style="margin-top:10px">${e.score.signaux.map(x=>`<span class="badge b-new">🔥 ${x}</span>`).join('')}</div>`:''}
       <span class="who" style="color:var(--ink-soft)">Synthèse d'appel IA · score global ${e.score.scores.global}/100</span>
-     </div>`:''}
+     </div>`,{compteur:'score '+e.score.scores.global+'/100',
+       resume:e.score.accroche?('🗣 « '+String(e.score.accroche).slice(0,110)+(String(e.score.accroche).length>110?'… »':' »')+' — déplier pour la synthèse complète'):'Déplier pour la synthèse et l\'accroche d\'appel.'}):''}
     </div>
     <div>
-     <div class="col-title">Email personnalisé ${e.score&&e.score.email?'· '+nomModule(e.angle||produitDominant(e)||'generique'):''}</div>
-     ${e.score&&e.score.email?`
+     ${(e.score&&e.score.email)?bloc('email',"Email personnalisé"+(' · '+nomModule(e.angle||produitDominant(e)||'generique')),`
      <div class="email-box">
       <div><b>Objet :</b> ${e.score.email.objet}</div>
       <div style="white-space:pre-wrap;margin-top:12px">${e.score.email.corps}</div>
-     </div>
+     </div>`,{resume:'✉️ « '+String(e.score.email.objet||'').slice(0,80)+' » — déplier pour lire le corps'})
+     :`<div class="col-title">Email personnalisé</div>`}
+     ${(e.score&&e.score.email)?`
      ${tagsAngleHtml(e,i)}
      <div class="cta-row">
       <button class="btn-cta btn-cta-dark" onclick="copierEmail(${i})">Copier l'email</button>
@@ -6542,7 +6635,8 @@ function ficheReal(e,i){
     <button class="act act-copy" onclick="if(REAL[${i}]._busy){toast('Analyse en cours ⏳');}else{ouvrirChoixPersonas(${i});}" title="Chercher des fonctions ciblées (LinkedIn) — la fenêtre de choix s'ouvre toujours">👥 Personas</button>
     <button class="act act-copy" onclick="creerLookalike(${i})" title="Créer une liste d'entreprises similaires à cette fiche (Liste intelligente préremplie avec l'activité, le NAF, l'effectif et la zone réels)">👯 Lookalike</button>
     <button class="act ${e.score?'act-copy':'act-call'}" onclick="lancerScore(${i})">${e.score?'↻ Re-scorer':'🎯 Scorer + synthèse'}</button>
-    <button class="act" style="background:#5B4FE9;border-color:#5B4FE9;color:#fff" onclick="genererPrez(${i})" title="Analyse personnalisée en 7 planches à partir des vraies données de ce prospect (note Google, pire fiche, avis, concurrents) — page web privée avec suivi d'ouverture">🎨 Analyse client</button>
+    <button class="act" style="background:#F5F3FF;border-color:#C4B5FD;color:#6D28D9;font-weight:700" onclick="preAudit(${i})" title="Relever ce que Google, l'IA de Google et Apple disent de ce prospect — puis reprendre la synthèse d'appel et l'email avec ces mesures. 6 à 10 relevés sur les 230 du mois.">🔍 Pré-audit${(e.gmb&&(e.gmb.reponses||e.gmb.audit||e.gmb.ia_visibilite||e.gmb.apple))?' ✓':''}</button>
+    <button class="act" style="background:#5B4FE9;border-color:#5B4FE9;color:#fff" onclick="genererPrez(${i})" title="Analyse personnalisée en 7 planches à partir des vraies données de ce prospect (note Google, pire fiche, avis, concurrents) — page web privée avec suivi d'ouverture">🎨 Audit client</button>
     <button class="act act-copy" onclick="ouvrirInfo(${i})">ℹ️</button>
     <button class="act act-copy" onclick="document.getElementById('edit${i}').style.display=document.getElementById('edit${i}').style.display==='none'?'block':'none'">✏️</button>
     <button class="act act-export" onclick="exclure(${i})">🗑</button>
@@ -6674,7 +6768,7 @@ async function reinitFiche(i){
  await analyserFiche(i,{force:true});
 }
 
-/* ───────── 🎨 Analyse client : la présentation personnalisée du prospect ─────────
+/* ───────── 🎨 Audit client : la présentation personnalisée du prospect ─────────
    Un clic depuis la fiche : plus besoin de connaître l'ID de la liste ni la clé de la fiche —
    l'app les connaît déjà (state.savedId et la fiche courante). Le document se compose à partir
    des VRAIES données du prospect (note Google, pire fiche nommée, avis réel, concurrents) et
@@ -7018,7 +7112,7 @@ async function genererPrez(i){
   const d=await lireJson(r);
   if(d.erreur){toast('Analyse : '+d.erreur+(d.detail?' — '+String(d.detail).slice(0,80):''));return;}
   const ctx=d.contexte_utilise||{};
-  document.getElementById('info-titre').textContent='🎨 Analyse prête — '+(d.client||'');
+  document.getElementById('info-titre').textContent='🎨 Audit prêt — '+(d.client||'');
   document.getElementById('info-corps').innerHTML=`
    <div style="font-size:13px;color:var(--ink-soft);margin-bottom:12px">${d.planches} planches · module ${htmlSafe(nomModule(d.module))} · ${ctx.blocs_kb||0} bloc(s) de la base${ctx.cas_clients?` dont ${ctx.cas_clients} cas client(s)`:''}${ctx.radar?' · contexte presse du radar inclus':''}</div>
    <div style="background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;word-break:break-all">${htmlSafe(d.url)}</div>
@@ -7033,7 +7127,7 @@ async function genererPrez(i){
   e._prez={jeton:d.jeton,url:d.url,module:d.module,ouvertures:0,lecteurs_distincts:0,
            jours_restants:d.jours_validite||15,expiree:false};
   rerender(i);
-  toast('🎨 Analyse prête — relis-la avant de l\'envoyer');
+  toast('🎨 Audit prêt — relis-la avant de l\'envoyer');
  }catch(err){
   if(v.arrete||err.name==='AbortError'){toast('Génération arrêtée — rien n\'a été enregistré');}
   else toast('Analyse : '+err.message);
@@ -7389,11 +7483,16 @@ async function scorer(i,opts){
   return !!e.score;
  }catch(err){toast('Scoring erreur réseau : '+err.message);return false;}
 }
-function lancerScore(i){
+// `attendre` = le pré-audit a besoin de savoir QUAND la synthèse est réécrite ; l'appel depuis
+// le bouton reste non bloquant comme avant.
+function lancerScore(i,attendre,force){
  const e=REAL[i];
- if(e._busy){toast('Analyse en cours ⏳');return;}
+ if(e._busy){toast('Analyse en cours ⏳');return attendre?Promise.resolve():undefined;}
  e._busy=true;rerender(i);
- (async()=>{try{toast('🎯 Scoring IA en cours…');await scorer(i);}finally{e._busy=false;rerender(i);}})();
+ // force : le pré-audit a déjà demandé confirmation et annoncé le coût — un second confirm()
+ // natif par-dessus le voile de travail serait une friction sans objet.
+ const p=(async()=>{try{if(!attendre)toast('🎯 Scoring IA en cours…');await scorer(i,force?{force:true}:undefined);}finally{e._busy=false;rerender(i);}})();
+ return attendre?p:undefined;
 }
 function voirEmail(i){
  const e=REAL[i];
@@ -9404,7 +9503,54 @@ function ckProgres(rid,txt){
  const t=document.getElementById(rid+'-progtxt');
  if(t)t.textContent=txt;
 }
-// 🎨 Analyse client depuis « Ma journée ». La génération travaille sur la fiche chargée : on
+// 🔍 PRÉ-AUDIT — les relevés terrain AVANT l'appel, pas seulement avant le document.
+// Ces mesures servaient uniquement à rédiger l'audit client. Or elles sont bien plus utiles
+// tôt : la synthèse d'appel et l'email personnalisé s'appuient dessus, et le SDR décroche son
+// téléphone avec « sur cette requête vous êtes 7ᵉ » au lieu d'une généralité sur le digital.
+// Elles sont mises en cache 21 à 30 jours : les relever ici REND GRATUITE la génération de
+// l'audit client ensuite. Même quota, deux usages.
+async function preAudit(i){
+ const e=REAL[i];if(!e)return;
+ if(!state.savedId){toast('Ouvre la fiche depuis une liste enregistrée');return;}
+ if(!(e.gmb&&e.gmb.trouve)){
+  toast('Lance d\'abord ↻ Analyser : sans fiche Google, il n\'y a presque rien à relever');return;
+ }
+ const dejaLa=[e.gmb.reponses&&'réponses aux avis',e.gmb.audit&&'audit de fiche',
+   e.gmb.ia_visibilite&&'aperçu IA',e.gmb.apple&&'Apple Plans'].filter(Boolean);
+ if(dejaLa.length===4){
+  if(!await confirmSofy('Les relevés sont déjà là',
+   'Tout est déjà mesuré sur cette fiche : '+dejaLa.join(', ')+'.\n\nRelancer ne consommerait rien de plus (les relevés sont réutilisés jusqu\'à 30 jours), mais ne changerait rien non plus. En revanche, reprendre la synthèse et l\'email avec ces mesures coûte un appel IA (≈ 0,02 €).',
+   'Reprendre la synthèse et l\'email'))return;
+ }else{
+  if(!await confirmSofy('🔍 Pré-audit de '+(enseigneDe(e)||e.nom),
+   'On va relever ce que Google, l\'IA de Google et Apple disent de ce prospect :\n'
+   +'· le taux de réponse à ses avis, son délai, et son rythme de collecte\n'
+   +'· sa position quand un client cherche son métier, et les 3 concurrents devant lui\n'
+   +'· les concurrents qui PAIENT pour passer devant\n'
+   +'· si l\'IA de Google le cite, et s\'il existe sur Apple Plans\n\n'
+   +'Puis la synthèse d\'appel et l\'email seront repris avec ces mesures.\n\n'
+   +'Coût : 6 à 10 relevés sur les 230 du mois'+(dejaLa.length?' (moins, '+dejaLa.length+' sont déjà en cache)':'')
+   +', plus un appel IA (≈ 0,02 €).\n\n'
+   +'⚠️ Ces mesures rendront GRATUITE la génération de l\'audit client ensuite.',
+   '🔍 Relever'))return;
+ }
+ const v=voileTravail('🔍 Pré-audit — relevés terrain',
+  (enseigneDe(e)||e.nom)+'\nGoogle, aperçu IA, annonces payantes, Apple Plans.');
+ let rel={faits:[],erreurs:[]};
+ try{ rel=await completerMesures(i); }finally{ v.fermer(); }
+ if(rel.plafondAtteint){toast('🎚️ '+rel.plafondAtteint);return;}
+ if(rel.faits.length)toast('✅ Relevé : '+rel.faits.join(', '));
+ else if(rel.erreurs.length){toast('Aucun relevé n\'a abouti — voir la console');console.warn(rel.erreurs.join('\n'));return;}
+ if(rel.alerteBudget)toast('🎚️ '+rel.alerteBudget);
+ // Le scoring relit la fiche entière : les relevés qu'on vient d'ajouter entrent dans le prompt,
+ // donc la synthèse et l'email se réécrivent dessus.
+ const v2=voileTravail('🧠 Synthèse et email repris',
+  'Avec les mesures qu\'on vient de relever : position locale, réponses aux avis, aperçu IA.');
+ try{ await lancerScore(i,true,true); }finally{ v2.fermer(); }
+ rerender(i);
+}
+
+// 🎨 Audit client depuis « Ma journée ». La génération travaille sur la fiche chargée : on
 // ouvre donc la liste, on retrouve la fiche, puis on lance le même chemin que depuis la fiche.
 // ⚠️ Une analyse sans mesures est un document générique qui porte le nom de Sofy : on vérifie
 // AVANT de dépenser quoi que ce soit que la fiche est scorée et que sa fiche Google est connue.
@@ -9427,7 +9573,7 @@ async function ckAnalyse(rid){
    'Générer quand même');
   if(!ok){
    // On laisse le SDR sur la fiche ouverte, prête à être analysée : le geste suivant est là.
-   toast('Fiche ouverte — lance ↻ Analyser puis ↻ Re-scorer, puis 🎨 Analyse client');
+   toast('Fiche ouverte — lance ↻ Analyser puis ↻ Re-scorer, puis 🎨 Audit client');
    return;
   }
  }
@@ -9634,7 +9780,7 @@ function rendreCockpit(sdrAffiche){
   ${tb('promis','\u23f0','RAPPELS PROMIS',promis.length,'#B45309','#FFFBEB','tes engagements client')}
   ${tb('retenter','\ud83d\udd01','\u00c0 RETENTER',retenter.length,'#475569','#F1F5F9','injoignables \u00b7 3\u1d49 \u00e9chec \u2192 s\u00e9quence auto')}
   ${tb('prospect','\ud83d\udccb','MA PROSPECTION',d.restants||0,'#2B4BF2','#EFF6FF',((d.par_liste||[]).filter(x=>x.restantes>0).length)+' liste(s) active(s) \u00b7 tri par score')}
-  ${(d.prez_ouvertes||[]).length?tb('prez','\ud83c\udfa8','ANALYSES LUES',(d.prez_ouvertes||[]).reduce((s,x)=>s+(x.ouvertures||0),0),'#7C3AED','#F5F3FF',(d.prez_ouvertes||[]).length+' analyse(s) ouverte(s) \u00b7 7 derniers jours'):''}
+  ${(d.prez_ouvertes||[]).length?tb('prez','\ud83c\udfa8','AUDITS LUS',(d.prez_ouvertes||[]).reduce((s,x)=>s+(x.ouvertures||0),0),'#7C3AED','#F5F3FF',(d.prez_ouvertes||[]).length+' audit(s) ouvert(s) \u00b7 7 derniers jours'):''}
  </div>`;
  if(tuileSel==='hot'){
   // Filtre par source (le volume LinkedIn noie les visites sofy.fr / signups, plus chauds)
@@ -9683,7 +9829,7 @@ function rendreCockpit(sdrAffiche){
    'border-left:3px solid #94A3B8;border-radius:0 10px 10px 0;',!!(t.liste_id&&t.cle),true);
   }
  }
- // ── ANALYSES LUES : le prospect a ouvert la page faite pour lui ──
+ // ── AUDITS LUS : le prospect a ouvert la page faite pour lui ──
  // Signal plus fort qu'un email ouvert : il a cliqué et lu SA situation. On affiche l'heure de la
  // dernière lecture et le nombre d'appareils distincts. On ne peut pas nommer le lecteur — le lien
  // n'exige aucune identification — donc on rappelle à QUI il a été envoyé, ce qui est vérifiable.

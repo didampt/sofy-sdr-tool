@@ -1,7 +1,11 @@
 // /api/score.js — Scoring multi-produits + synthèse d'appel + email/SMS personnalisés (IA)
 // POST {entreprise:{…toutes les données accumulées…}, sdr:"Romain"} 
 //   → {scores:{soview,soconnect,soreach,global}, signaux:[…], synthese:"…", accroche:"…", email:{objet,corps}, sms:"…"}
-// Pas de recherche web : l'IA travaille sur les données déjà collectées (Pappers, GMB, IA, contacts).
+// Pas de recherche web : l'IA travaille sur les données déjà collectées (Pappers, GMB, IA, contacts)
+// — et depuis le 21/08, sur les RELEVÉS du pré-audit s'ils ont été faits (réponses aux avis,
+// position locale, aperçu IA, annonces payantes, Apple Plans). Ce sont les faits les plus durs
+// dont nous disposons : la synthèse d'appel et l'email doivent s'en servir en priorité.
+// ⚠️ Le prompt est un littéral de gabarit : PAS de backtick dans le texte ajouté.
 
 import { verifierToken } from './db.js';
 
@@ -26,6 +30,31 @@ export default async function handler(req, res) {
 
 Voici TOUTES les données collectées sur ce prospect :
 ${JSON.stringify(entreprise, null, 1)}
+
+════ SI LES RELEVÉS DU PRÉ-AUDIT SONT PRÉSENTS, ILS PRIMENT SUR TOUT LE RESTE ════
+Cherche dans "gmb" les clés suivantes. Chacune est une MESURE opposable, pas une hypothèse : le
+prospect peut la vérifier pendant l'appel. Une seule d'entre elles vaut mieux que trois phrases
+de généralités sur le digital.
+
+ • "gmb.reponses" — taux de réponse aux avis, délai médian, et "rythme_par_mois" (à quelle vitesse
+   il collecte des avis aujourd'hui). « 1 avis sur 28 a une réponse » ou « vous collectez 0,7 avis
+   par mois » sont des ouvertures d'appel imparables. Le délai médian dit s'il répond vite ou jamais.
+ • "gmb.audit" — "position_locale" (son rang quand un client cherche son MÉTIER, requête dans
+   "requete"), "concurrents" (les trois premiers, avec leur note), "photos_total",
+   "photos_enseigne", "description_presente", "horaires_presents". « Sur cette requête vous êtes
+   7ᵉ, et c'est tel concurrent qui est premier » porte plus que n'importe quel argumentaire.
+ • "gmb.ia_visibilite" — "cite" (l'IA de Google le mentionne-t-elle ?), "entreprises_citees"
+   (celles qu'elle cite à sa place), et "annonceurs" (les concurrents qui PAIENT pour passer
+   devant lui, avec leur note et le badge « garanti par Google »). Sujet neuf, qui surprend.
+ • "gmb.apple" — présence, position et note sur Apple Plans. Absent = la moitié du parc mobile
+   français ne le trouve pas, et corriger Google n'y change rien.
+
+Règles d'usage :
+ – la SYNTHÈSE d'appel cite les deux ou trois mesures les plus parlantes, avec leurs chiffres ;
+ – l'ACCROCHE en prend UNE, la plus concrète, et la formule en une phrase vérifiable ;
+ – l'EMAIL en prend une ou deux au maximum : un email qui aligne cinq chiffres n'est pas lu ;
+ – tu ne CALCULES rien et tu n'ARRONDIS rien : tu reprends les valeurs telles quelles ;
+ – une clé absente n'existe pas : ne l'invente pas, et ne dis pas « nous n'avons pas pu mesurer ».
 
 Analyse et produis :
 1. **Scores 0-100 par produit** selon les signaux :

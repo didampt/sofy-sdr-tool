@@ -1315,7 +1315,7 @@ export default async function handler(req, res) {
       try {
         await sql`INSERT INTO activites (fiche_cle, source, type, titre, detail, auteur, ts)
           VALUES (${String(b.cle_fiche).toLowerCase()}, 'prez', 'note',
-            ${'🎨 Analyse client générée (' + (NOM_MODULE[module] || module) + ')'},
+            ${'🎨 Audit client générée (' + (NOM_MODULE[module] || module) + ')'},
             ${BASE_PUB() + '/p/' + jeton + ' — lien valable ' + jours + ' jours'},
             ${user.nom}, NOW())`;
       } catch (_) {}
