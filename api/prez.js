@@ -969,7 +969,11 @@ function plancheGeoIa(mes) {
       const autres = (iv.entreprises_citees_par_lia || [])
         .filter(n => n && !/^(google|maps|google maps|wikip)/i.test(String(n).trim()))
         .slice(0, 3).join(', ');
-      texte = `Sur « ${iv.requete_testee} », l'aperçu IA de Google compose sa réponse${autres ? ` avec ${autres}` : ''} — pas avec vous. Ce que l'IA lit se travaille, et c'est exactement le terrain de Soview.`;
+      // Deux phrases selon que la liste filtrée nomme de vrais concurrents ou non : sans le
+      // second cas, le tiret restait orphelin (« compose sa réponse — pas avec vous », v. YzZAZ1).
+      texte = autres
+        ? `Sur « ${iv.requete_testee} », l'aperçu IA de Google compose sa réponse avec ${autres} — pas avec vous. Ce que l'IA lit se travaille, et c'est exactement le terrain de Soview.`
+        : `Sur « ${iv.requete_testee} », la réponse de l'IA se construit sans vous. Ce que l'IA lit se travaille, et c'est exactement le terrain de Soview.`;
       kpis.push({
         valeur: '0', unite: '',
         legende: `mention de votre enseigne dans la réponse de l'IA sur « ${iv.requete_testee} » — relevée le jour de cette analyse`,
