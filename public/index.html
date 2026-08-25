@@ -356,7 +356,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
  </div>
 </div>
 <div id="estim-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:900;align-items:center;justify-content:center">
- <div style="background:#fff;border-radius:16px;max-width:520px;width:92%;padding:26px 28px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+ <div style="background:#fff;border-radius:16px;max-width:520px;width:92%;max-height:92vh;overflow:auto;padding:26px 28px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
   <div style="font-size:18px;font-weight:700;margin-bottom:3px">📊 Estimation de la liste</div>
   <div id="estim-criteres" style="font-size:13px;color:var(--ink-soft);margin-bottom:20px"></div>
   <div id="estim-loader" style="text-align:center;padding:30px 0;color:var(--ink-soft)">⏳ Comptage en cours…</div>
@@ -373,6 +373,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
      <div style="font-size:12px;color:var(--ink-soft);margin-top:2px">Selon les fiches trouvées</div>
     </div>
    </div>
+   <div id="estim-detail" style="display:none;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:12.5px;line-height:1.6;margin-bottom:14px"></div>
    <div id="estim-solde" style="border-radius:10px;padding:12px 14px;font-size:13px;margin-bottom:20px;display:flex;align-items:flex-start;gap:10px"></div>
    <div style="display:flex;gap:10px;justify-content:flex-end">
     <button class="btn" onclick="document.getElementById('estim-modal').style.display='none'" id="estim-annuler" style="background:var(--bg)">Modifier les critères</button>
@@ -807,6 +808,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
         <div>
           <h1 id="res-title">Aucune liste générée</h1>
           <p class="sub" style="margin:0" id="res-sub">Lance une nouvelle liste pour voir les fiches d'appel ici.</p>
+          <div id="res-exclusions" style="display:none;font-size:12.5px;line-height:1.6;margin-top:6px;color:var(--ink-soft)"></div>
           <span id="etat-sauvegarde" style="font-size:12px;color:var(--ink-soft)" title="État de l'enregistrement en base"></span>
         </div>
         <div class="kpis" id="kpis" style="display:none">
@@ -3932,6 +3934,9 @@ async function estimerListe(){
  }
  const eff=effEnveloppe(c.emp);if(eff[0])p.set('effectif_min',eff[0]);if(eff[1])p.set('effectif_max',eff[1]);
  const ca=CA_MAP[c.ca]||["",""];if(ca[0])p.set('ca_min',ca[0]);if(ca[1])p.set('ca_max',ca[1]);
+ // Filtre établissements : il DOIT partir aussi à l'estimation, sinon on annonce un total
+ // que la génération ne peut pas tenir (bug remonté par Franck sur les déménageurs).
+ {const em=({"2+":"2","5+":"5","10+":"10"})[c.etab];if(em)p.set('nb_etab_min',em);}
  p.set('nb_souhaite',Math.min(parseInt(c.size)||25,500));
  // Affiche la modale en mode chargement
  document.getElementById('estim-criteres').textContent=`${(c.naf||[]).join(', ')} · ${(c.pays||[]).join(' + ')} · ${empLabel(c.emp)} salariés${c.ca&&c.ca!=='Indifférent'?' · CA '+c.ca:''}${c.etab&&c.etab!=='Indifférent'?' · '+c.etab+' établissements':''}`;
@@ -3944,8 +3949,10 @@ async function estimerListe(){
   if(d.erreur){toast('Erreur estimation : '+d.erreur);document.getElementById('estim-modal').style.display='none';return;}
   // Remplit les chiffres
   document.getElementById('estim-total').textContent=(d.total_dispo||0).toLocaleString('fr-FR');
-  document.getElementById('estim-genere').textContent=`Tu vas en générer ${d.nb_genere||0}`;
+  {const a=d.nb_genere_min??d.nb_genere??0,b=d.nb_genere_max??d.nb_genere??0;
+   document.getElementById('estim-genere').textContent=(a>=b)?`Tu vas en générer ${b}`:`Tu vas en générer ${a} à ${b}`;}
   document.getElementById('estim-cout').textContent=`${Math.round(d.cout_min)} – ${Math.round(d.cout_max)} €`;
+  afficherDetailEstimation(d);
   // Bloc solde
   const box=document.getElementById('estim-solde');
   const btnValider=document.getElementById('estim-valider');
@@ -3967,12 +3974,52 @@ async function estimerListe(){
    btnValider.textContent='💳 Demander des crédits';btnValider.onclick=()=>demanderCredits(d);
    btnAnnuler.textContent='Réduire la quantité';
   }
+  if((d.nb_genere||0)===0&&d.assez){
+   const bv=document.getElementById('estim-valider');if(bv)bv.textContent='Générer quand même (0 fiche)';
+   const ba=document.getElementById('estim-annuler');if(ba)ba.textContent='← Modifier les critères';
+  }
   document.getElementById('estim-loader').style.display='none';
   document.getElementById('estim-contenu').style.display='block';
  }catch(e){
   toast('Erreur réseau : '+e.message);
   document.getElementById('estim-modal').style.display='none';
  }
+}
+// Détaille l'écart entre « entreprises trouvées » (comptage Pappers brut) et « générables »
+// (après les filtres que le comptage ignore). Chaque ligne est un chiffre MESURÉ sur les fiches
+// que la génération rapatriera ; ce qui n'est pas mesurable est annoncé comme tel.
+function afficherDetailEstimation(d){
+ const box=document.getElementById('estim-detail');
+ if(!box)return;
+ const l=[];
+ const nbMin=d.nb_genere_min??0,nbMax=d.nb_genere_max??d.nb_genere??0;
+ if(d.deja_extraites>0){
+  const ou=(d.listes_doublons||[]).join(', ');
+  // Depuis que la génération balaie plus loin pour remplacer les doublons, ils n'amputent
+  // plus la liste — SAUF vivier épuisé (nbMax=0), où promettre un remplacement serait faux.
+  l.push(nbMax>0
+   ?`♻️ <b>${d.deja_extraites}</b> déjà extraite(s) par un SDR sur la 1re page${ou?` (${ou})`:''} — la génération ira chercher des fiches fraîches plus loin pour les remplacer${d.balayage_max?` (jusqu'à ${d.balayage_max.toLocaleString('fr-FR')} balayées)`:''}.`
+   :`♻️ <b>${d.deja_extraites}</b> déjà extraite(s) par un SDR${ou?` (${ou})`:''} — et le vivier ne contient plus rien de frais derrière.`);
+ }
+ if(d.sous_seuil_etablissements>0)
+  l.push(`🏬 <b>${d.sous_seuil_etablissements}</b> sous le seuil « ${d.filtre_etablissements_min}+ établissements » — mono-site, écartée(s).`);
+ if(d.filtre_etablissements_min&&d.etab_inconnu>0)
+  l.push(`⚠️ <b>${d.etab_inconnu}</b> fiche(s) sans info d'établissements au comptage : le filtre « ${d.filtre_etablissements_min}+ » s'appliquera à la génération, le nombre final peut baisser d'autant.`);
+ if(d.doublons_mesures===false)
+  l.push(`⚠️ Dédoublonnage inter-listes non vérifiable pour l'instant : des fiches déjà extraites peuvent encore être remplacées ou manquer.`);
+ if(String(d.filtre_effectif||'').startsWith('aucun ('))
+  l.push(`ℹ️ Effectif non renseigné chez Pappers sur ce NAF : le filtre effectif a été élargi, sinon le résultat était vide.`);
+ // Les cessées / procédures collectives ne sont visibles qu'en ouvrant les fiches détaillées :
+ // on ne les devine pas ici, on prévient que le chiffre peut encore baisser un peu.
+ if(nbMax>0)l.push(`ℹ️ Les sociétés cessées ou en liquidation ne se voient qu'à la génération : quelques fiches en moins possible.`);
+ if(nbMin<nbMax)
+  l.push(`ℹ️ Fourchette : <b>${nbMin}</b> mesurées sur la 1re page, jusqu'à <b>${nbMax}</b> selon ce que le balayage trouve au-delà.`);
+ if(!l.length){box.style.display='none';box.innerHTML='';return;}
+ const titre=(nbMax===0)
+  ?`<div style="color:#B91C1C;font-weight:700;margin-bottom:6px">Aucune fiche à générer : tout le vivier a déjà été extrait</div>`
+  :`<div style="font-weight:700;margin-bottom:6px">Ce que la génération fera des ${(d.total_dispo||0).toLocaleString('fr-FR')} trouvées</div>`;
+ box.innerHTML=titre+l.map(x=>`<div>${x}</div>`).join('');
+ box.style.display='block';
 }
 function validerEstimation(){
  document.getElementById('estim-modal').style.display='none';
@@ -4097,7 +4144,8 @@ async function launch(crit,skipCheck){
    return;
   }
   REAL=data.entreprises||[];
-  if(data.doublons_inter_listes>0)setTimeout(()=>toast(`♻️ ${data.doublons_inter_listes} entreprise(s) écartée(s) — déjà extraite(s) dans : ${(data.listes_doublons||[]).join(', ')}`),800);
+  DIAG_GENERATION=data; // compteurs d'exclusion affichés durablement sur l'écran de résultats
+  if(data.doublons_inter_listes>0)setTimeout(()=>toast(`♻️ ${data.doublons_inter_listes} entreprise(s) déjà extraite(s) (${(data.listes_doublons||[]).join(', ')}) — remplacée(s) par des fiches fraîches`),800);
   // Sauvegarde automatique en base. Un échec ICI signifie que tout le travail à venir (statuts,
   // RDV, fiches ajoutées) partirait dans le vide : on le dit, et on réessaie.
   state.savedId=null; state.criteres=c;
@@ -4165,6 +4213,55 @@ function trierReal(){
  });
  document.getElementById('fiches').innerHTML=ordreFiches().map(k=>ficheReal(REAL[k],k)).join('');
 }
+// Écran de résultats : dire NOIR SUR BLANC pourquoi la liste est plus courte que le comptage
+// Pappers. L'API renvoyait déjà ces compteurs, mais seuls les doublons apparaissaient — dans un
+// toast de 5 s. Un SDR voyait « 145 entreprises trouvées » puis 2 fiches, sans explication.
+function afficherExclusions(d,total){
+ const box=document.getElementById('res-exclusions');
+ if(!box)return;
+ const l=[];
+ if(d){
+  if(d.doublons_inter_listes>0){
+   const ou=(d.listes_doublons||[]).join(', ');
+   // « remplacées » : la génération balaie plus loin pour compenser — sauf vivier épuisé,
+   // auquel cas la liste est plus courte que demandé et le cadre « X sur Y » le montre.
+   l.push(`♻️ <b>${d.doublons_inter_listes}</b> déjà extraite(s) — remplacée(s) par des fiches plus loin dans le vivier${ou?` (${ou})`:''}`);
+  }
+  if(d.exclus_sous_seuil_etablissements>0)
+   l.push(`🏬 <b>${d.exclus_sous_seuil_etablissements}</b> sous le seuil « ${d.filtre_etablissements_min}+ établissements »`);
+  if(d.exclues_cessees_ou_liquidation>0)
+   l.push(`⚰️ <b>${d.exclues_cessees_ou_liquidation}</b> cessée(s) ou en procédure collective`);
+ }
+ if(!l.length){box.style.display='none';box.innerHTML='';return;}
+ const demande=d.nb_demande?` sur ${d.nb_demande} demandée(s)`:'';
+ const balaye=d.fiches_balayees?` · ${d.fiches_balayees} fiche(s) balayée(s)`:'';
+ box.innerHTML=`<b>${REAL.length} conservée(s)</b>${demande} — comptage Pappers : ${Number(total||0).toLocaleString('fr-FR')}${balaye} · ${l.join(' · ')}`;
+ box.style.display='block';
+}
+// Liste vide : nommer la vraie cause. L'ancien message envoyait élargir « effectif ou CA », soit
+// les deux seuls filtres qui ne sont presque jamais responsables (l'effectif a même un fallback).
+function messageListeVide(d){
+ const causes=[];const conseils=[];
+ if(d&&d.doublons_inter_listes>0){
+  causes.push(`les ${d.doublons_inter_listes} société(s) balayée(s) étaient déjà extraites dans une autre liste`);
+  conseils.push(`élargis le département ou le code NAF (le vivier actuel est épuisé)`);
+ }
+ if(d&&d.exclus_sous_seuil_etablissements>0){
+  causes.push(`le filtre « ${d.filtre_etablissements_min}+ établissements » a écarté ${d.exclus_sous_seuil_etablissements} société(s) mono-site`);
+  conseils.push(`repasse « Nombre d'établissements » sur « Indifférent »`);
+ }
+ if(d&&d.exclues_cessees_ou_liquidation>0)
+  causes.push(`${d.exclues_cessees_ou_liquidation} société(s) sont cessées ou en liquidation`);
+ const quoi=causes.length
+  ?`Rien à afficher : ${causes.join(' · ')}.`
+  :`Aucune entreprise ne correspond à ces critères.`;
+ const quoiFaire=conseils.length?`Pour en obtenir : ${conseils.join(', ou ')}.`
+  :`Élargis les filtres (effectif, CA ou département).`;
+ return `<p style="color:var(--ink-soft)">${quoi} ${quoiFaire}</p>`;
+}
+// Diagnostic de la dernière génération Pappers (doublons, seuils, cessées). Remis à null quand
+// on rouvre une liste depuis l'historique : les compteurs ne concerneraient plus l'affichage.
+let DIAG_GENERATION=null;
 function showRealResults(total,c){
  c=c||criteresActuels();
  state.criteres=c;
@@ -4179,6 +4276,7 @@ function showRealResults(total,c){
   :c.gmb
   ?`📍 Google Maps · ${c.activite||''}${(c.villes||[]).length?' · '+c.villes.join(', '):''}${c.note_max?' · note ≤ '+c.note_max+' ★':''}${c.note_min?' · note ≥ '+c.note_min+' ★':''} — ${REAL.length} établissement${REAL.length>1?'s':''}${state.savedId?' · Sauvegardée ✓ (#'+state.savedId+')':''}`
   :`${_naf}${_naf?' · ':''}${total} entreprises trouvées (Pappers) · ${empLabel(c.emp)} salariés · CA ${c.ca||'—'}${_pays?' · '+_pays:''}${c.ville?' / '+c.ville:''} — affichage : ${REAL.length}${state.savedId?' · Sauvegardée ✓ (#'+state.savedId+')':''}`;
+ afficherExclusions(estAuto||c.gmb?null:DIAG_GENERATION,total);
  document.getElementById('kpis').style.display='flex';
  // Envoi groupé Lemlist : réservé aux listes Google Maps. Recherche d'emails IA : toutes les listes
  // (sur Pappers/IA, dernier recours quand la cascade nominative n'a rien trouvé).
@@ -4191,7 +4289,7 @@ function showRealResults(total,c){
  document.getElementById('k-new').textContent=REAL.filter(e=>!e.deja_hubspot).length;
  document.getElementById('k-sig').textContent=REAL.filter(e=>e.signal_hot).length||'0';
  const kt=document.getElementById('k-traites');if(kt)kt.textContent=REAL.filter(e=>e.tags_sdr&&e.tags_sdr.length).length;
- document.getElementById('fiches').innerHTML=REAL.length?ordreFiches().map(i=>ficheReal(REAL[i],i)).join(''):'<p style="color:var(--ink-soft)">Aucune entreprise ne correspond à ces critères. Élargis les filtres (effectif ou CA).</p>';
+ document.getElementById('fiches').innerHTML=REAL.length?ordreFiches().map(i=>ficheReal(REAL[i],i)).join(''):messageListeVide(DIAG_GENERATION);
  // Cas B : si une liste est ouverte alors qu'un enrichissement tourne (cet onglet ou un autre),
  // on lance la surveillance qui affichera la barre de progression.
  if(ENRICH_POLL){clearInterval(ENRICH_POLL);ENRICH_POLL=null;}
@@ -11449,6 +11547,7 @@ async function ouvrirListe(id,cibleFiche,termeRecherche){
   if(l.erreur){toast(l.erreur);return;}
   REAL=l.entreprises||[];
   state.savedId=l.id;state.listeNom=l.nom;state.sdr=l.sdr;
+  DIAG_GENERATION=null; // compteurs de la génération d'origine : non rejouables ici
   showRealResults(l.total,l.criteres);
   if((l.criteres||{}).auto!=='hotleads')document.getElementById('res-sub').textContent+=' · Rouverte depuis l\'historique (0 crédit)';
   majCoutListe();

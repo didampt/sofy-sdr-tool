@@ -1,6 +1,14 @@
 // /api/liste.js — Génère une liste complète : recherche Pappers + détail par entreprise
-// Détail récupéré (dirigeants, CA, nb établissements) pour les N premières entreprises (max 25)
-// pour maîtriser la consommation de crédits Pappers (~1 crédit / fiche détaillée).
+// Détail récupéré (dirigeants, CA, nb établissements) pour chaque fiche livrée
+// (~1 crédit Pappers / fiche détaillée).
+//
+// Doublons inter-listes : les SIREN déjà extraits par un SDR sont REMPLACÉS, pas soustraits.
+// Pappers renvoie toujours les résultats dans le même ordre, donc les fiches déjà extraites
+// occupent le début : sans balayage plus loin, relancer les mêmes critères livrait 0-2 fiches
+// (« 145 trouvées » → 2 livrées, remonté par Franck). On filtre donc AVANT la pagination et on
+// continue à balayer (10 pages max) jusqu'à réunir le nombre demandé de fiches fraîches.
+// Le coût ne change pas par fiche livrée : seuls des appels « recherche » s'ajoutent (marginal),
+// le détail n'est payé que pour les fiches réellement livrées.
 
 const FONCTIONS_PRIORITAIRES = ['président', 'directeur général', 'gérant', 'directrice générale', 'présidente', 'gérante'];
 const FONCTIONS_EXCLUES = ['commissaire', 'liquidateur', 'administrateur judiciaire'];
@@ -78,7 +86,7 @@ export default async function handler(req, res) {
     nb_etab_min = '',
     nb = '25'
   } = req.query;
-  const nbDemande = Math.min(parseInt(nb) || 25, 500); // jusqu'à 500 fiches (5 pages Pappers)
+  const nbDemande = Math.min(parseInt(nb) || 25, 500); // jusqu'à 500 fiches livrées
 
   if (!naf) return res.status(400).json({ erreur: "Paramètre 'naf' requis" });
 
@@ -126,39 +134,51 @@ export default async function handler(req, res) {
 
     if (!result.ok) return res.status(result.status).json({ erreur: 'Erreur Pappers', detail: result.data });
 
-    let bruts = result.data.resultats || [];
-    // ── Pagination : pages suivantes (Pappers max 100/page) jusqu'à nb demandé ──
-    const totalDispo = result.data.total || bruts.length;
-    let page = 2;
-    while (bruts.length < Math.min(nbDemande, totalDispo) && page <= 5) {
-      const suite = await call(filtresRetenus || {}, page);
-      const rs = (suite.ok && suite.data.resultats) || [];
-      if (!rs.length) break;
-      bruts = bruts.concat(rs);
-      page++;
-    }
-    bruts = bruts.slice(0, nbDemande);
-
-    // ── Dédoublonnage inter-listes : exclure les SIREN déjà extraits par un SDR (économise les crédits détail) ──
-    let doublonsInterListes = 0;
-    const listesTouchees = new Set();
+    // ── Dédoublonnage inter-listes : SIREN déjà extraits par un SDR, chargés AVANT la
+    //    pagination pour que chaque doublon écarté soit remplacé par une fiche plus loin
+    //    dans le vivier (au lieu d'amputer la liste livrée). ──
+    let sirensConnus = null; // null = base inaccessible → pas de dédoublonnage (comme avant)
     if (sql) {
       try {
         await ensureSchema();
         const existantes = await sql`SELECT nom, sdr, entreprises FROM listes WHERE criteres->>'auto' IS NULL`;
-        const sirensConnus = new Map(); // siren → "liste (sdr)"
+        sirensConnus = new Map(); // siren → "liste (sdr)"
         for (const l of existantes) {
           for (const e of (l.entreprises || [])) {
             if (e.siren) sirensConnus.set(String(e.siren), `${l.nom} (${l.sdr})`);
           }
         }
-        bruts = bruts.filter(e => {
-          const ou = sirensConnus.get(String(e.siren));
-          if (ou) { doublonsInterListes++; listesTouchees.add(ou); return false; }
-          return true;
-        });
-      } catch (_) {}
+      } catch (_) { sirensConnus = null; }
     }
+    let doublonsInterListes = 0;
+    const listesTouchees = new Set();
+    const sansDoublons = (arr) => {
+      if (!sirensConnus) return arr;
+      return arr.filter(e => {
+        const ou = sirensConnus.get(String(e.siren));
+        if (ou) { doublonsInterListes++; listesTouchees.add(ou); return false; }
+        return true;
+      });
+    };
+
+    const premierePage = result.data.resultats || [];
+    const totalDispo = result.data.total || premierePage.length;
+    let bruts = sansDoublons(premierePage);
+    let fichesBalayees = premierePage.length;
+    // ── Pagination : on balaie jusqu'à réunir nbDemande fiches FRAÎCHES.
+    //    10 pages max (contre 5 avant) : la compensation des doublons demande de la marge —
+    //    500 demandées avec 100 doublons = 6 pages. Un appel recherche coûte une fraction
+    //    d'une fiche détaillée, et le détail n'est payé que sur les fiches livrées. ──
+    let page = 2;
+    while (bruts.length < nbDemande && fichesBalayees < totalDispo && page <= 10) {
+      const suite = await call(filtresRetenus || {}, page);
+      const rs = (suite.ok && suite.data.resultats) || [];
+      if (!rs.length) break;
+      fichesBalayees += rs.length;
+      bruts = bruts.concat(sansDoublons(rs));
+      page++;
+    }
+    bruts = bruts.slice(0, nbDemande);
 
     // ── 2. Détail (dirigeants, CA, établissements) — par lots de 5 en parallèle ──
     const nDetail = bruts.length; // toutes les fiches sont détaillées (1 crédit Pappers chacune)
@@ -212,6 +232,8 @@ export default async function handler(req, res) {
       filtre_etablissements_min: etabMinNum || null,
       doublons_inter_listes: doublonsInterListes,
       listes_doublons: [...listesTouchees].slice(0, 5),
+      nb_demande: nbDemande,
+      fiches_balayees: fichesBalayees,
       credits_estimes: nDetail + 1,
       entreprises
     });
