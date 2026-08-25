@@ -131,6 +131,33 @@ const SEED = [
     secteur: 'télécommunications et services numériques', territoire: 'Martinique, Guadeloupe, Guyane, Burkina Faso',
     contenu: "Réseau de 32 établissements sur 4 territoires. **Avant :** 32 fiches Google Business gérées séparément, aucune vision centralisée de l'e-réputation, campagnes mobiles peu coordonnées entre établissements, temps de gestion important et analyse manuelle imprécise. **Modules :** Soview et SoReach SMS (SoConnect prévu). **Résultats en 6 mois :** 436 avis Google collectés · notes d'établissement jusqu'à 4,9/5 · réponse aux avis en 24 heures maximum · campagnes SMS à 85,7 % d'ouverture et 47,14 % de clic · base de contacts centralisée de plus de 11 000 contacts. **Verbatim client :** « La relation client est excellente. Les équipes sont accessibles, réactives et nous accompagnent aussi bien sur la prise en main que sur des problématiques spécifiques. »",
     source: 'Interview client publiée sur le blog Sofy — sofy.fr/articles-de-blog/comment-le-groupe-kiosque-pilote-sa-visibilite-locale-et-son-e-reputation-sur-32-points-de-vente-et-4-territoires-g2835' },
+  // ── Audit v2 (26/08/2026, wireframe validé par Didier) : GEO/aperçus IA, commerce
+  // conversationnel omnicanal, démonstration RCS. Chaque chiffre porte sa source ; les chiffres
+  // externes ont été validés par Didier le 26/08 avant d'entrer ici.
+  { cle_seed: 'geo-apercus-ia-2026', type: 'chiffre_marche', module: 'soview',
+    titre: "Les aperçus IA de Google sont en France depuis le 22 juillet 2026",
+    contenu: "Les aperçus IA (AI Overviews) de Google sont déployés en France depuis le **22 juillet 2026**. Aux États-Unis, **43 % des requêtes** en déclenchaient un en mai 2026 — trois fois plus qu'en janvier 2025 — et quand l'aperçu s'affiche, les clics vers les résultats classiques chutent fortement. L'IA compose sa réponse à partir de ce qu'elle sait lire : fiches d'établissement, avis et leurs réponses, données structurées. Être lisible par l'IA est le même travail que le référencement local, avec un juge plus exigeant.",
+    source: 'Semrush, mai 2026 · déploiement France : 22/07/2026 — chiffres validés Didier 26/08/2026' },
+  { cle_seed: 'whatsapp-france-2025', type: 'chiffre_marche', module: 'soconnect',
+    titre: 'WhatsApp, première messagerie de France : 32 millions d\'utilisateurs par mois',
+    contenu: "WhatsApp est la **première messagerie de France** : environ **32 millions d'utilisateurs mensuels** (Médiamétrie, 2024) et **24 millions de visiteurs uniques chaque jour** (Médiamétrie, oct. 2025), en forte progression pour les échanges courts et conversationnels. Google permet de rattacher un bouton WhatsApp à la fiche d'établissement : un client peut écrire en un geste, là où un numéro se recopie.",
+    source: 'Médiamétrie 2024 et oct. 2025 (via BDM) — validé Didier 26/08/2026' },
+  { cle_seed: 'conversationnel-omnicanal-2025', type: 'chiffre_marche', module: 'soconnect',
+    titre: 'Le marché bascule vers la conversation écrite : 46 % des contacts clients',
+    contenu: "Le marché évolue vers la conversation écrite : l'ensemble des canaux conversationnels en ligne atteint **46 % des contacts clients, contre 42 % en 2024**. Mais WhatsApp n'a **pas remplacé** le téléphone ni l'e-mail : c'est précisément pourquoi la réponse est le **commerce conversationnel omnicanal** — WhatsApp, webchat du site, Facebook/Messenger et RCS ouverts ensemble, et le téléphone dans la même boîte — plutôt qu'un canal de plus à surveiller.",
+    source: 'Observatoire des services clients Ipsos-BVA 2025 — fourni et validé par Didier 26/08/2026' },
+  { cle_seed: 'meca-rcs-puissance', type: 'fonctionnalite', module: 'soreach',
+    titre: 'La puissance du RCS : identité vérifiée, interactivité, conversation',
+    contenu: "**Identité vérifiée de l'émetteur** : nom, logo et badge de vérification — l'agent RCS est déclaré et validé avant tout envoi, le client sait que c'est vous, le canal coupe court au spam et à l'usurpation. **Interactivité native** : boutons cliquables (« Laisser un avis », « Prendre RDV »), carrousels, images haute définition, vidéos — une mini-page dans la messagerie, là où le SMS n'a que 160 caractères. **Conversation** : le client répond dans le même fil, et l'échange atterrit dans SoConnect avec son historique. **Aucun message perdu** : bascule automatique en SMS quand le téléphone ne prend pas le RCS.",
+    source: 'Produit SoReach — démonstration du canal validée Didier 26/08/2026' },
+  { cle_seed: 'rbm-google-partner', type: 'preuve', module: 'soreach',
+    titre: 'Sofy est Google Partner RBM : l\'agent RCS est vérifié par Google',
+    contenu: "Sofy est **Google Partner RBM** (RCS Business Messaging) : l'agent de marque est **vérifié par Google**, et c'est Sofy qui porte le déploiement pour l'enseigne — rien à déclarer soi-même. C'est cette vérification qui donne au RCS son badge d'émetteur authentifié.",
+    source: 'Statut partenaire — formulation validée mot pour mot par Didier, 26/08/2026' },
+  { cle_seed: 'meca-commerce-conversationnel', type: 'fonctionnalite', module: 'soconnect',
+    titre: 'Le commerce conversationnel omnicanal : quatre canaux écrits, une seule boîte',
+    contenu: "SoConnect ouvre les **quatre canaux écrits d'un coup** — WhatsApp (bouton posé sur la fiche Google), webchat sur le site, Facebook/Messenger, RCS — et le **téléphone reste dans la même boîte** : une seule interface, l'historique du client, le contexte de sa commande. **Budy pré-qualifie** chaque demande et propose la réponse ; l'équipe valide. C'est ce qui rend la conversation écrite tenable sans embaucher : un canal de plus n'ajoute pas un écran de plus.",
+    source: 'Produit SoConnect — positionnement omnicanal validé Didier 26/08/2026' },
   { cle_seed: 'tarifs-2026-08', type: 'tarif', module: 'tous',
     titre: 'Grille tarifaire de référence',
     contenu: "Soview à partir de 440 €/mois par établissement. SoConnect 319 €/mois. Frais d'installation et de configuration facturés séparément selon le périmètre.",
@@ -324,9 +351,12 @@ export async function blocsUtilisables(module, secteur) {
   // Marimax est rangé en module « soconnect », l'audit était en « soview », donc le filtre
   // l'écartait AVANT que le modèle le voie. On ne peut pas demander de choisir ce qu'on ne montre
   // pas. Les cas clients sont peu nombreux et racontent tous les trois modules : ils partent tous.
+  // ⚠️ Même famille de piège (constat 26/08) : le module « tous » — le DÉFAUT de génération — ne
+  // matchait que les blocs rangés en « tous », excluant soview/soconnect/soreach... c'est-à-dire
+  // l'essentiel de la base. Quand le module demandé est « tous », tout part.
   const rows = await sql`SELECT id, type, module, titre, contenu, source, secteur, territoire, verifie_le, lien
     FROM kb_sales WHERE actif AND statut = 'valide'
-      AND (type = 'cas_client' OR module = ${module || 'tous'} OR module = 'tous')
+      AND (type = 'cas_client' OR ${(module || 'tous') === 'tous'} OR module = ${module || 'tous'} OR module = 'tous')
       AND verifie_le > CURRENT_DATE - (${PEREMPTION_MOIS} || ' months')::interval
     ORDER BY type, id`;
   // Tri par proximité de secteur : le cas du même métier doit être le PREMIER que le modèle lit.

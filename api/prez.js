@@ -887,6 +887,104 @@ const SCHEMA_DUELS = {
   required: ['duels']
 };
 
+// ── La planche « GEO / aperçu IA » : calculée, jamais rédigée (demande Didier, 26/08) ────────
+// Les aperçus IA de Google sont déployés en France depuis le 22 juillet 2026, et l'outil MESURE
+// déjà si l'IA cite le prospect sur sa requête métier (ia_visibilite). La planche assemble :
+// le constat mesuré (cité / pas cité), pourquoi ça compte (chiffres sourcés de la base), les
+// quatre signaux que les IA lisent, et la trajectoire du score d'audit si Soview est branché.
+// Même contrat d'honnêteté que trajectoire() : la courbe part du score MESURÉ (l'axe Soview du
+// scorer) et ne projette que des critères que des ACTIONS contrôlent — compléter la fiche,
+// répondre aux avis, collecter au plancher observé chez un client équipé. Jamais la note, jamais
+// la position : personne ne les promet. Sans mesure, pas de courbe ; sans matière, pas de planche.
+function plancheGeoIa(mes) {
+  const g = mes.google || {};
+  const iv = g.visibilite_ia || null;
+
+  // ── La courbe : le score de l'axe « Visibilité locale », recalculé jalon par jalon ──
+  let courbe = null;
+  const axe = mes.scoring && (mes.scoring.axes || []).find(a => a.module === 'Soview');
+  if (axe && axe.score != null) {
+    const notes = axe.criteres.filter(x => x.sur > 0);
+    const total = notes.reduce((s2, x) => s2 + x.sur, 0);
+    // L'arithmétique du scorer, rejouée avec les critères qu'une action met au maximum.
+    const projete = (fixes, volume12) => Math.round(notes.reduce((s2, x) => {
+      if (fixes.includes(x.libelle)) return s2 + x.sur;
+      if (volume12 != null && x.libelle === "Volume d'avis par établissement")
+        return s2 + Math.max(x.points, volume12 >= 150 ? 20 : (volume12 >= 50 ? 12 : 5));
+      return s2 + x.points;
+    }, 0) / total * 100);
+    // 3 mois : la fiche mise en ordre et diffusée. 6 mois : les avis répondus (Budy).
+    // 12 mois : le volume recalculé au plancher de collecte de trajectoire() — rythme mesuré
+    // doublé, sinon 2,3 avis/mois/établissement (Groupe Kiosque : 436 avis / 6 mois / 32 fiches).
+    const M3 = ['Téléphone sur la fiche', 'Site web sur la fiche', 'Photos de la fiche', 'Complétude de la fiche'];
+    const M6 = M3.concat(['Réponses aux avis', 'Délai de réponse']);
+    const nbF = Number(g.nb_fiches) || 1;
+    const r = g.reponses_aux_avis && Number(g.reponses_aux_avis.rythme_actuel_avis_par_mois);
+    const parMois = (r && isFinite(r) && r > 0) ? r * 2 : 2.3 * nbF;
+    const vol12 = (typeof g.total_avis === 'number')
+      ? Math.round((g.total_avis + 12 * parMois) / nbF) : null;
+    const s0 = axe.score;
+    const s3 = Math.max(s0, projete(M3, null));
+    const s6 = Math.max(s3, projete(M6, null));
+    const s12 = Math.max(s6, projete(M6, vol12));
+    // Un jalon qui n'ajoute rien ne s'affiche pas : une courbe qui finit à plat se lit comme une
+    // stagnation, alors qu'elle veut dire « ce critère ne bouge pas chez VOUS » (petit volume).
+    const etapes = [{ quand: "aujourd'hui", valeur: s0, jalon: null }];
+    if (s3 > s0) etapes.push({ quand: '3 mois', valeur: s3, jalon: 'fiche complétée et diffusée partout (3 mois)' });
+    if (s6 > s3) etapes.push({ quand: '6 mois', valeur: s6, jalon: '100 % des avis répondus avec Budy (6 mois)' });
+    if (s12 > s6) etapes.push({ quand: '12 mois', valeur: s12, jalon: 'collecte au rythme plancher observé chez un client équipé — Groupe Kiosque, 436 avis en 6 mois sur 32 points de vente (12 mois)' });
+    // Une pente de moins de 5 points ne montre rien : la fiche est déjà en ordre, et on ne
+    // fabrique pas une progression décorative.
+    if (total && etapes.length >= 2 && etapes[etapes.length - 1].valeur - s0 >= 5) courbe = {
+      indicateur: "Score d'audit de votre visibilité locale (sur 100)", unite: '', max: 100,
+      points: etapes.map(x => ({ quand: x.quand, valeur: x.valeur })),
+      appui: 'Jalons : ' + etapes.filter(x => x.jalon).map(x => x.jalon).join(' · ') + '.',
+      hypothese: "Ce score note des actions — compléter, répondre, collecter — jamais la position Google ni la note, que personne ne peut promettre. Point de départ : votre score mesuré aujourd'hui. Objectif de travail, pas un engagement contractuel."
+    };
+  }
+  if (!iv && !courbe) return null;
+
+  // ── Le pourquoi : un chiffre de marché sourcé, un chiffre MESURÉ chez le prospect ──
+  const kpis = [{
+    valeur: '43', unite: ' %',
+    legende: "des requêtes Google déclenchent un aperçu IA aux États-Unis (mai 2026) — trois fois plus qu'en janvier 2025. Déployés en France depuis le 22 juillet 2026.",
+    source: 'Semrush, mai 2026 · déploiement France : 22/07/2026'
+  }];
+  let titre = "Les recherches passent à l'IA — votre fiche est ce qu'elle lit";
+  let texte = "L'aperçu IA compose sa réponse à partir des fiches, des avis et des données structurées qu'il sait lire. Le rendre lisible est le même travail que le référencement local — avec un juge plus exigeant.";
+  if (iv && iv.apercu_ia_affiche) {
+    if (iv.prospect_cite) {
+      titre = "L'IA de Google vous cite déjà — voici comment le rester";
+      texte = `Sur « ${iv.requete_testee} », l'aperçu IA vous cite${iv.rang_de_citation ? ` en source n°${iv.rang_de_citation}` : ''}. Cette place n'est pas acquise : elle repose sur des signaux qui se travaillent en continu.`;
+      if (iv.rang_de_citation) kpis.push({
+        valeur: String(iv.rang_de_citation), unite: '',
+        legende: `votre rang de citation dans la réponse de l'IA sur « ${iv.requete_testee} » — relevé le jour de cette analyse`,
+        source: 'Relevé aperçu IA Google'
+      });
+    } else {
+      titre = "L'aperçu IA répond à vos clients — sans vous citer";
+      const autres = (iv.entreprises_citees_par_lia || []).slice(0, 3).join(', ');
+      texte = `Sur « ${iv.requete_testee} », l'aperçu IA de Google compose sa réponse${autres ? ` avec ${autres}` : ''} — pas avec vous. Ce que l'IA lit se travaille, et c'est exactement le terrain de Soview.`;
+      kpis.push({
+        valeur: '0', unite: '',
+        legende: `mention de votre enseigne dans la réponse de l'IA sur « ${iv.requete_testee} » — relevée le jour de cette analyse`,
+        source: 'Relevé aperçu IA Google'
+      });
+    }
+  }
+  return {
+    role: 'geo_ia', eyebrow: "CE QUE L'IA DE GOOGLE RACONTE DE VOUS",
+    titre, texte, chiffres: kpis,
+    points: [
+      { titre: 'Des données qui concordent partout', texte: "Nom, adresse, téléphone identiques sur Google, Apple Plans, Waze et les annuaires : la première chose que les moteurs et les IA vérifient. Une seule saisie Sofy, diffusée partout.", source: 'Deck Sofy — Levier 1 (cohérence NAP)' },
+      { titre: 'Des données structurées lisibles par les machines', texte: "Store locator avec balisage Schema.org : une page par établissement, au format que les agents IA lisent en priorité.", source: 'Deck Sofy — slide 10 (store locator)' },
+      { titre: 'Des avis récents, avec des réponses', texte: "Le contenu des avis nourrit ce que l'IA raconte de vous. Collecte à chaud Soview, réponses rédigées par Budy et validées par vous.", source: 'Deck Sofy — Levier 2 (réputation)' },
+      { titre: 'Une fiche complète et bien catégorisée', texte: "84 % des recherches qui font découvrir une fiche portent sur une catégorie ou un service — pas sur un nom d'enseigne.", source: 'Étude sectorielle fiches Google · 2025 (deck Sofy, slide 2)' }
+    ],
+    courbe
+  };
+}
+
 // Moitié 2 — le décor : constat, défauts, trajectoire, preuve, conclusion.
 const SCHEMA_CADRE = {
   type: 'object',
@@ -957,7 +1055,19 @@ Pour chaque duel :
 · rcs_titre / rcs_texte / rcs_bouton — UNIQUEMENT sur le duel qui parle de SMS ou de RCS, sinon
   les trois à "". C'est un exemple de message écrit pour SON métier, avec son bouton : pour un
   site de ventes événementielles, l'annonce d'une vente en avant-première, bouton "Avant-première".
-  rcs_titre ≤42 car., rcs_texte ≤150 car., rcs_bouton ≤22 car.`;
+  rcs_titre ≤42 car., rcs_texte ≤150 car., rcs_bouton ≤22 car.
+· Duel SoConnect — l'angle est le COMMERCE CONVERSATIONNEL OMNICANAL, jamais « un canal de plus » :
+  46 % des contacts clients passent par les canaux conversationnels en ligne, contre 42 % en 2024
+  (Observatoire des services clients Ipsos-BVA 2025, bloc en base). WhatsApp est la première
+  messagerie de France et progresse fort sur les échanges courts et conversationnels, MAIS n'a
+  remplacé ni le téléphone ni l'e-mail — c'est l'argument de la boîte unifiée : WhatsApp (bouton
+  posé sur la fiche Google), webchat du site, Facebook/Messenger, RCS, et le téléphone dans la
+  même interface. Reprends les chiffres depuis les blocs, avec leur source.
+· Duel SoReach — nos prospects ne connaissent pas le RCS : DÉMONTRE le canal avant de vendre la
+  campagne. Identité vérifiée de l'émetteur (nom, logo, badge — le canal coupe court au spam et à
+  l'usurpation), boutons cliquables, carrousels, vidéos, et la réponse du client dans le même fil.
+  Sofy est Google Partner RBM : l'agent de marque est vérifié par Google et Sofy porte le
+  déploiement — reprends cette formulation telle quelle, sans l'amplifier.`;
 
 const CONSIGNE_CADRE = `
 Remplis le cadre du document — tout sauf les duels, qui sont rédigés à part.
@@ -1221,6 +1331,10 @@ function assembler(cadre, duelsBruts, mes, blocs) {
       }
     });
   }
+
+  // Planche « GEO / aperçu IA » : calculée comme la trajectoire, jamais rédigée (cf. plancheGeoIa).
+  const geo = plancheGeoIa(mes);
+  if (geo) pl.push(geo);
 
   const df = (c.defauts || []).filter(plein);
   if (df.length) {
