@@ -963,7 +963,12 @@ function plancheGeoIa(mes) {
       });
     } else {
       titre = "L'aperçu IA répond à vos clients — sans vous citer";
-      const autres = (iv.entreprises_citees_par_lia || []).slice(0, 3).join(', ');
+      // Le relevé range parfois « Google » ou « Google Maps » parmi les entités citées : ce sont
+      // des artefacts de la mesure, pas des concurrents — « compose sa réponse avec Google » ne
+      // veut rien dire (vu sur la génération BigMat du 26/08). On ne cite que de vrais noms.
+      const autres = (iv.entreprises_citees_par_lia || [])
+        .filter(n => n && !/^(google|maps|google maps|wikip)/i.test(String(n).trim()))
+        .slice(0, 3).join(', ');
       texte = `Sur « ${iv.requete_testee} », l'aperçu IA de Google compose sa réponse${autres ? ` avec ${autres}` : ''} — pas avec vous. Ce que l'IA lit se travaille, et c'est exactement le terrain de Soview.`;
       kpis.push({
         valeur: '0', unite: '',
@@ -1063,6 +1068,10 @@ Pour chaque duel :
   remplacé ni le téléphone ni l'e-mail — c'est l'argument de la boîte unifiée : WhatsApp (bouton
   posé sur la fiche Google), webchat du site, Facebook/Messenger, RCS, et le téléphone dans la
   même interface. Reprends les chiffres depuis les blocs, avec leur source.
+· Le document contient DÉJÀ une planche dédiée à l'aperçu IA de Google (constat mesuré, mécanisme,
+  trajectoire) : ne consacre PAS un duel entier à l'IA ou à l'aperçu IA — tu peux le mentionner en
+  une phrase dans un duel Soview, jamais en faire le problème central. Garde les duels pour les
+  avis et réponses, le conversationnel et le RCS.
 · Duel SoReach — nos prospects ne connaissent pas le RCS : DÉMONTRE le canal avant de vendre la
   campagne. Identité vérifiée de l'émetteur (nom, logo, badge — le canal coupe court au spam et à
   l'usurpation), boutons cliquables, carrousels, vidéos, et la réponse du client dans le même fil.
