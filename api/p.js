@@ -537,6 +537,43 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
   </section>`;
 }
 
+// ── Impression PDF : règles de mise en page PARTAGÉES entre la feuille @media print et la
+// mesure JavaScript (calcul du facteur de réduction par planche). L'impression pose son
+// viewport à 794 px (largeur A4, marges @page à 0) : les media queries desktop (min-width:900)
+// tombent et chaque clamp(vw) change de valeur — c'est ce qui donnait le PDF en colonne unique,
+// coupé au fil des pages. Ces règles figent la mise en page desktop à 1000 px de large et
+// résolvent chaque clamp à sa valeur d'impression (1 vw = 7,94 px), pour que « mesuré à
+// l'écran » = « imprimé ». SOURCE UNIQUE : toute évolution du responsive (media queries,
+// clamps) doit se répercuter ici, sinon le PDF re-divergera de l'écran.
+const REGLES_IMPRESSION = `
+.pl{width:1000px;min-height:auto;padding:40px 0}
+.wrap{width:940px}
+.pl-h{margin-bottom:32px}
+.pl-t{font-size:43px}
+.pl-couv .pl-t{font-size:59px}
+.pl-x{font-size:16px}
+.pl-f{margin-top:40px}
+.kpi-v{font-size:35px}
+.kpi-v.long{font-size:19px}
+.kpi-v.moyen{font-size:24px}
+.dl-kv{font-size:40px}
+.wrap-couv{gap:32px}
+.fin{grid-template-columns:1.05fr .95fr}
+.df-duo{grid-template-columns:1.02fr .98fr}
+.casc{display:block;padding-left:10px}
+.casc-f{margin-top:calc(var(--i) * -14px);margin-left:calc(var(--i) * 18px);transform:scale(calc(1 - var(--i) * .03));transform-origin:top left}
+.casc-p{margin-left:68px}
+.rcs{grid-template-columns:312px 1fr}
+.wrap-couv{grid-template-columns:1.25fr .75fr}
+.wrap-couv .pl-h{grid-column:1/-1}
+.wrap-couv .pl-f{grid-column:1/-1}
+.wrap-couv .portrait-bloc{grid-row:2/span 6;grid-column:2}
+.mk-duo{grid-template-columns:1.05fr .95fr}
+.ill{max-height:230px}.ill img{max-height:230px}
+.duel{grid-template-columns:1fr 62px 1.12fr}
+.bd{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;position:relative}
+`;
+
 function page(doc, meta, sdr, apercu, images, instit) {
   const pl = Array.isArray(doc.planches) ? doc.planches : [];
   const contact = sdr ? [
@@ -1082,13 +1119,41 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .rule{transform:scaleX(0);transform-origin:left;transition:transform .8s cubic-bezier(.22,.68,.24,1) .15s}
 .on .rule{transform:scaleX(1)}
 @media (prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}}
+@page{size:210mm 297mm;margin:0}
 @media print{
- .tools{display:none} html,body{background:#fff}
- .pl{min-height:auto;page-break-after:always;padding:24px 0;background:#fff!important;color:#14103A!important}
+ ${REGLES_IMPRESSION}
+ .tools,.apercu{display:none!important}
+ html,body{background:#fff!important}
+ /* Les couleurs et fonds sont le document lui-même (chiffres en dégradé, maquettes, badges) :
+    on force leur impression même si « Imprimer les arrière-plans » est décoché. */
+ :root{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+ /* Les ombres portées et text-shadows sortent en pavés gris dans les PDF (Safari surtout). */
+ *{box-shadow:none!important;text-shadow:none!important;animation:none!important;transition:none!important}
+ /* Une planche = une page A4 : posée à 1000 px (mise en page desktop, cf. REGLES_IMPRESSION)
+    puis réduite par zoom pour tenir dans 210×297 mm. --pz est calculé par planche côté client ;
+    .794 = 794/1000, la valeur exacte quand rien ne déborde en hauteur. */
+ .pl{break-after:page;page-break-after:always;background:#fff!important;color:#14103A!important;zoom:var(--pz,.794)}
+ .pl:last-of-type{break-after:auto;page-break-after:auto}
+ /* Thème sombre → clair : le papier est blanc (préparerImpression() bascule aussi les classes,
+    ces règles restent le filet quand l'impression part sans JavaScript). */
  .pl.dark .pl-t,.pl.dark .kpi-l,.pl.dark .pt-x,.pl.dark .pl-x{color:#14103A!important}
  .pl.dark .kpi,.pl.dark .cit{background:#F7F5FE!important;border-color:#E4E0F5!important}
- .pl.dark .logo{color:#5B4FE9!important} .pl.dark .sdr-card a{color:#14103A!important}
+ .pl.dark .logo,.pl.dark .logo-p{filter:none!important;opacity:1!important}
+ .pl.dark .sdr-card a{color:#14103A!important}
+ /* Chiffres en dégradé (background-clip:text) : certains moteurs d'impression ne peignent pas
+    le fond → texte transparent invisible (PDF Safari du 25/08). Couleur pleine à la place. */
+ .kpi-v,.dl-kv,.dl-lab-s,.dl-r span,.rep-i b,.couv-s,.pj-v.goal-v{background:none!important;-webkit-text-fill-color:#5B4FE9!important;color:#5B4FE9!important}
+ /* États FINAUX de tout ce que l'animation retient : sans eux, courbes, barres de projection,
+    donuts et cascades restaient invisibles au-delà du point de défilement atteint. */
  .reveal{opacity:1!important;transform:none!important}
+ .rule{transform:scaleX(1)!important}
+ .crb-l{stroke-dashoffset:0!important}
+ .crb-l2,.crb-a,.crb-pt{opacity:1!important}
+ .pj-bar i{width:var(--w)!important}
+ .ax-v{stroke-dashoffset:var(--o)!important}
+ .casc-f{opacity:1!important}
+ /* Filet : si une planche dépasse malgré le zoom, la coupe passe ENTRE les blocs, jamais dedans. */
+ .kpi,.eq,.bl,.ax,.jl,.pb,.pj,.df,.av,.gmb-w,.tel-cadre,.crb,.mk-pod,.mk-ia,.mk-ads,.mk-ap,.sdr-card,.cit,.itw,.rcs,.dl-k,.portrait-bloc,.ill,.casc{break-inside:avoid;page-break-inside:avoid}
 }
 </style></head><body>
 ${pl.map((p, i) => planche(p, i, pl.length, doc._mes || {}, doc._logo || null, sdr, images, doc._photo || null, instit)).join('')}
@@ -1149,6 +1214,44 @@ setTimeout(function(){
  document.querySelectorAll('.kpi-v[data-n],.dl-kv[data-n],.ax-n b[data-n]').forEach(function(v){anime(v);});
 },3000);
 if(sdrCard=document.getElementById('sdr-card'))sdrCard.innerHTML=${JSON.stringify(contact)};
+// ── PDF : une planche = une page, identique à l'écran ──
+// Mesure chaque planche dans la mise en page d'impression (REGLES_IMPRESSION, la même feuille
+// que @media print) et calcule son facteur de réduction --pz pour tenir dans une page A4.
+// L'injection de style + mesure + retrait se font dans le même tour : rien n'est repeint.
+var REGLES_IMPRESSION=${JSON.stringify(REGLES_IMPRESSION)};
+var A4L=794,A4H=1123; // 210×297 mm en px CSS (96 dpi), marges @page à 0
+function mesurerPlanches(){
+ var st=document.createElement('style');st.textContent=REGLES_IMPRESSION;
+ document.head.appendChild(st);
+ document.querySelectorAll('.pl').forEach(function(p){
+  // −16 px de marge : les arrondis du zoom suffisent à faire déborder une hauteur exacte,
+  // et un débordement d'un pixel fabrique une page blanche entière.
+  var z=Math.min(A4L/1000, (A4H-16)/Math.max(1,p.scrollHeight));
+  // plancher à .42 : au-delà, mieux vaut couper entre les blocs que rendre le texte illisible
+  p.style.setProperty('--pz', String(Math.max(.42, Math.floor(z*1000)/1000)));
+ });
+ st.remove();
+}
+function preparerImpression(){
+ // 1. Tout ce que l'animation retient passe à l'état FINAL (l'état que montre l'écran après 3 s)
+ document.querySelectorAll('.reveal:not(.on)').forEach(function(r){r.classList.add('on');});
+ document.querySelectorAll('.kpi-v[data-n],.dl-kv[data-n],.ax-n b[data-n]').forEach(function(v){
+  var n=parseFloat(v.dataset.n);if(isNaN(n))return; // même garde que anime() : parité écran/PDF
+  var u=v.querySelector('.kpi-u'),dec=Math.min(2,(String(v.dataset.n).split('.')[1]||'').length);
+  v.dataset.fait='1';v.innerHTML=n.toFixed(dec).replace('.',',')+(u?u.outerHTML:'');
+ });
+ // 2. Thème sombre → clair : le papier est blanc, la variante claire du design est complète
+ document.querySelectorAll('.pl.dark').forEach(function(p){p.classList.remove('dark');p.classList.add('light');p.dataset.sombre='1';});
+ mesurerPlanches();
+}
+function apresImpression(){
+ document.querySelectorAll('.pl[data-sombre]').forEach(function(p){p.classList.add('dark');p.classList.remove('light');delete p.dataset.sombre;});
+}
+window.addEventListener('beforeprint',preparerImpression);
+window.addEventListener('afterprint',apresImpression);
+// Impression sans beforeprint (headless, vieux navigateurs) : pré-calcul des --pz au chargement,
+// une fois les images arrivées (elles comptent dans la hauteur mesurée).
+window.addEventListener('load',function(){setTimeout(mesurerPlanches,150);});
 </script></body></html>`;
 }
 
