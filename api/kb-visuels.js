@@ -91,7 +91,18 @@ export async function visuelsInstit() {
     ORDER BY (description ILIKE '%équipe%' OR description ILIKE '%equipe%') DESC, id DESC LIMIT 1`;
   const clients = await sql`SELECT image, description FROM kb_visuels
     WHERE actif AND statut = 'valide' AND type = 'client' ORDER BY id LIMIT 30`;
-  return { equipe: (eq && eq.image) || null, clients };
+  // Le visuel de l'application mobile (description « visuel application mobile sofy ») : le
+  // plus récent s'affiche sur la planche « Pourquoi Sofy ». Le déposer DÉTOURÉ (PNG à fond
+  // transparent) : il se pose sur le fond violet de la carte sans raccord à calibrer.
+  const apps = await sql`SELECT image, description FROM kb_visuels
+    WHERE actif AND statut = 'valide' AND description ILIKE '%application mobile%'
+    ORDER BY id DESC LIMIT 1`;
+  // Le logo symbole Sofy (l'astérisque seul) : l'icône de l'app sur la même planche.
+  // Fallback côté rendu : /logo-symbole.png (recadrage propre du logo-icon).
+  const [symbole] = await sql`SELECT image FROM kb_visuels
+    WHERE actif AND statut = 'valide' AND description ILIKE '%symbole%'
+    ORDER BY id DESC LIMIT 1`;
+  return { equipe: (eq && eq.image) || null, clients, apps, symbole: (symbole && symbole.image) || null };
 }
 
 // Les images pleines des visuels réellement posés dans un document.

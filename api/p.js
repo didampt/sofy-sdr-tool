@@ -33,6 +33,79 @@ const etoiles = n => {
   return [1, 2, 3, 4, 5].map(k => `<span class="et${v >= k ? ' on' : (v > k - 1 ? ' mi' : '')}">★</span>`).join('');
 };
 
+// ── Planche « Pourquoi Sofy » : STATIQUE, injectée au rendu (demande Didier, 26/08) ─────────
+// Insérée avant la planche CTA de TOUS les documents, y compris ceux déjà générés : elle vit ici,
+// pas dans doc.planches — zéro rédaction IA, zéro coût, une seule version en circulation, et une
+// correction de texte se déploie partout d'un push. Les visuels fixes sont dans public/ ; les
+// logos clients viennent de la bibliothèque (instit.clients), comme le bandeau de la planche
+// finale : un logo ajouté ou retiré en base se répercute seul.
+// L'angle (validé sur wireframe v4) : Sofy est moins connu que les grands acteurs métropole —
+// la réassurance passe par l'humain (Cloé, coach dédiée), l'histoire (Optima Group / SunSMS,
+// 14 ans), les habilitations (Google Partner, Partner RBM, ARCEP, agrégateur direct) et les
+// références. Chiffres alignés sur SOFY_REPERES (2012, 5 000+, 20) — ne pas les faire diverger.
+const PLANCHE_POURQUOI = {
+  role: 'pourquoi',
+  eyebrow: 'POURQUOI SOFY',
+  titre: 'Une équipe qui connaît votre réseau — et des enseignes qui nous confient le leur',
+  texte: "Sofy est une marque d'**Optima Group**, éditeur de SunSMS : 14 ans de messagerie d'entreprise et de visibilité locale, depuis la France métropolitaine, La Réunion, la Guadeloupe et Barcelone. Pas de hotline anonyme : **une coach dédiée** qui connaît vos établissements, vos saisons et vos équipes."
+};
+
+// ── Couverture v2 : l'audit se vend avec ses propres mesures (demande Didier, 26/08) ────────
+// Trois tuiles CALCULÉES depuis les mesures du document — position locale, avis, aperçu IA —
+// chacune renvoyant à sa planche. Rien n'est rédigé : s'il manque une mesure, la tuile saute ;
+// à moins de deux tuiles, la couverture reste celle d'origine (pas de bande décorative vide).
+// L'accroche est fixe parce qu'elle est vraie pour toutes les analyses : les trois tests sont
+// toujours faits. La méthodo (couv_texte rédigé) descend en petite ligne grise.
+function couvertureV2(mes, plR, meta) {
+  const g = (mes && mes.google) || {};
+  const au = g.audit_fiche || {};
+  const iv = g.visibilite_ia || null;
+  const num = r => { const i = plR.findIndex(x => x && x.role === r); return i >= 0 ? 'planche ' + String(i + 1).padStart(2, '0') : ''; };
+  const t = [];
+  if (au.position_locale != null && au.requete_testee) {
+    const pos = au.position_locale;
+    const autres = (au.trois_premiers || [])
+      .filter(c => c && c.nom && (c.position || 0) !== pos)
+      .slice(0, 2).map(c => c.nom);
+    t.push({
+      valeur: pos + 'ᵉ',
+      label: `sur « ${au.requete_testee} »${pos === 1 && autres.length ? ` — devant ${autres.join(' et ')}` : ''}`,
+      ou: num('marche')
+    });
+  }
+  if (typeof g.total_avis === 'number' && g.note_moyenne != null) {
+    const rivaux = (au.trois_premiers || []).filter(c => c && c.nom && typeof c.avis === 'number'
+      && (c.position || 0) !== au.position_locale && c.avis > g.total_avis);
+    const rival = rivaux.sort((a, b) => b.avis - a.avis)[0] || null;
+    t.push({
+      valeur: g.total_avis + ' avis',
+      label: `pour porter votre ${String(g.note_moyenne).replace('.', ',')}/5${rival ? ` — ${rival.nom} en affiche ${rival.avis}` : ''}`,
+      ou: num('constat')
+    });
+  }
+  if (iv && iv.apercu_ia_affiche) {
+    t.push(iv.prospect_cite
+      ? { valeur: iv.rang_de_citation ? `n°${iv.rang_de_citation}` : 'cité',
+          label: "votre place dans la réponse de l'IA de Google", ou: num('geo_ia') || num('marche') }
+      : { valeur: '0',
+          label: "mention de votre enseigne dans la réponse de l'IA de Google", ou: num('geo_ia') || num('marche') });
+  }
+  if (t.length < 2) return null;
+  const meta2 = [`${plR.length} planches · ~5 minutes de lecture`];
+  if (meta && meta.cree_le) {
+    try { meta2.push('relevés du ' + new Date(meta.cree_le).toLocaleDateString('fr-FR')); } catch (_) {}
+  }
+  if (meta && meta.expire_le) {
+    const j = Math.ceil((new Date(meta.expire_le).getTime() - Date.now()) / 86400000);
+    if (j > 0) meta2.push(`lien privé, valable ${j} jour${j > 1 ? 's' : ''}`);
+  }
+  return {
+    accroche: "Vos clients vous cherchent de trois façons : Google, les avis, et maintenant l'IA. Nous avons testé les trois **sur votre enseigne** — voici ce qu'ils trouvent.",
+    teasers: t.slice(0, 3),
+    meta: meta2
+  };
+}
+
 // Bandeau institutionnel de la dernière planche. Ces éléments ne dépendent PAS du prospect :
 // les faire rédiger à chaque analyse coûterait des jetons pour un résultat identique, et
 // exposerait une mention réglementée (ARCEP) à une reformulation approximative. Ils sont donc
@@ -455,8 +528,71 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
       <span class="itw-x">témoignage client publié</span>
     </a>` : '';
   const couv = p.role === 'couverture';
-  return `<section class="pl ${sombre ? 'dark' : 'light'}${couv ? ' pl-couv' : ''}" data-s="${i}">
-    <div class="wrap${couv && sdr && sdr.photo ? ' wrap-couv' : ''}">
+  // « Pourquoi Sofy » : toujours sur fond nuit (le design de la planche est pensé sombre), le
+  // reste de l'alternance clair/sombre ne bouge pas.
+  const pq = p.role === 'pourquoi';
+  const pourquoiHtml = pq ? `
+      <aside class="pq-coach reveal">
+        <div class="pq-ch">
+          <img src="/pourquoi-cloe.jpg" alt="Cloé, coach Sofy" loading="lazy">
+          <div><span>Votre coach dédiée, incluse</span><b>Cloé — coach Sofy</b></div>
+        </div>
+        <div class="pq-li"><img src="/hab-whatsapp.png" alt="WhatsApp" loading="lazy"><div><b>Joignable là où vous êtes</b><span>par RCS ou sur un WhatsApp dédié à votre réseau — pas de ticket, pas de file d'attente.</span></div></div>
+        <div class="pq-li"><span class="pq-pt"></span><div><b>Un relevé chaque mois</b><span>note, avis, position locale : ce qui a bougé, ce qu'on fait le mois suivant.</span></div></div>
+        <div class="pq-li"><span class="pq-pt"></span><div><b>Des visios de coaching régulières</b><span>vos fiches en écran partagé — pas un webinaire enregistré.</span></div></div>
+      </aside>
+      <div class="pq-corps">
+        <div class="pq-bande reveal">
+          <figure><img src="/pourquoi-sunsms.jpg" alt="Le stand SunSMS au salon e-marketing" loading="lazy"><figcaption>SunSMS (Optima Group) au salon e-marketing — la messagerie d'entreprise depuis 2012</figcaption></figure>
+          <figure><img src="/pourquoi-coach.jpg" alt="Une coach Sofy en échange client" loading="lazy"></figure>
+        </div>
+        <div class="pq-app reveal${(instit && (instit.apps || []).length) ? ' avec-visuel' : ''}">
+          <div class="pq-app-c">
+            <div class="pq-app-h">
+              <img src="${esc((instit && instit.symbole) || '/logo-symbole.png')}" alt="Application Sofy" loading="lazy">
+              <div><b>L'application mobile Sofy — toute la puissance Sofy dans votre poche</b>
+              <span>iOS &amp; Android, incluse</span>
+              <em class="pq-note">4,9 <i>★★★★★</i></em></div>
+            </div>
+            <ul class="pq-app-l">
+              <li>Répondez à vos clients, où que vous soyez</li>
+              <li>Transférez une conversation à un collaborateur</li>
+              <li>Analysez vos messages</li>
+              <li>Laissez Budy répondre automatiquement</li>
+              <li>Envoyez vos campagnes SMS et RCS</li>
+              <li>Demandez des avis par RCS, SMS ou QR code</li>
+              <li>Audit SEO et GEO</li>
+              <li>Créez vos posts, réels et stories Facebook et Instagram</li>
+              <li>Une alerte à chaque nouvel avis</li>
+            </ul>
+          </div>
+          ${(instit && (instit.apps || []).length) ? `<img class="pq-app-v" src="${esc(instit.apps[0].image)}" alt="${esc(instit.apps[0].description || 'Application mobile Sofy')}" loading="lazy">` : ''}
+        </div>
+        <div class="pq-habs reveal">
+          <div class="pq-hab"><img src="/hab-google.jpg" alt="Google" loading="lazy"><b>Google Partner</b><span>partenaire certifié Google</span></div>
+          <div class="pq-hab"><img src="/hab-messages.png" alt="Google Messages" loading="lazy"><b>Partner RBM</b><span>agents RCS de marque vérifiés par Google, déployés par Sofy</span></div>
+          <div class="pq-hab"><img src="/hab-arcep.jpg" alt="ARCEP" loading="lazy"><b>Déclaré ARCEP</b><span>opérateur de communications électroniques déclaré</span></div>
+          <div class="pq-hab"><span class="pq-ant">((·))</span><b>Agrégateur télécom direct opérateurs</b><span>France métropolitaine &amp; outre-mer : Antilles, Guyane, La Réunion, Mayotte</span></div>
+        </div>
+        <div class="pq-pied reveal">
+          <div class="pq-ks">
+            <div class="pq-k"><b>14 ans</b><span>d'expérience, depuis 2012</span></div>
+            <div class="pq-k"><b>5 000+</b><span>clients accompagnés</span></div>
+            <div class="pq-k"><b>20</b><span>collaborateurs</span></div>
+            <div class="pq-k"><b>4</b><span>implantations : France, La Réunion, Guadeloupe, Barcelone</span></div>
+          </div>
+          ${(instit && (instit.clients || []).length) ? (() => {
+            const cls = instit.clients.slice(0, 24);
+            const un = cls.map(c => `<span class="cli-i"><img src="${esc(c.image)}" alt="${esc(c.description || '')}" loading="lazy"></span>`).join('');
+            return `<div class="pq-refs"><h3>Ils nous confient leurs points de vente</h3>
+              <div class="cli-b" aria-label="Ils nous font confiance">
+                <div class="cli-p" style="--dur:${Math.max(22, cls.length * 2.6).toFixed(0)}s">${un}${un}</div>
+              </div></div>`;
+          })() : ''}
+        </div>
+      </div>` : '';
+  return `<section class="pl ${pq || sombre ? 'dark' : 'light'}${couv ? ' pl-couv' : ''}${pq ? ' pl-pq' : ''}" data-s="${i}">
+    <div class="wrap${couv && sdr && sdr.photo ? ' wrap-couv' : ''}${pq ? ' wrap-pq' : ''}">
       <header class="pl-h">
         <img class="logo" src="/logo-full.png" alt="Sofy" width="96" height="30">
         <span class="pag">${String(i + 1).padStart(2, '0')} / ${String(total).padStart(2, '0')}</span>
@@ -472,7 +608,18 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
       ${p.eyebrow ? `<div class="eyebrow">${esc(p.eyebrow)}</div>` : ''}
       <h2 class="pl-t">${md(p.titre)}</h2>
       <div class="rule"></div>
-      ${p.texte ? `<p class="pl-x">${md(p.texte)}</p>` : ''}
+      ${p.couv2 ? `
+      <p class="couv-acc">${md(p.couv2.accroche)}</p>
+      <div class="tsrs reveal">
+        <div class="tsrs-t">${p.couv2.teasers.length === 3 ? 'Trois' : 'Deux'} mesures de cette analyse</div>
+        <div class="tsr">${p.couv2.teasers.map(x => `
+          <div class="ts">${x.ou ? `<i>${esc(x.ou)}</i>` : ''}<b>${esc(x.valeur)}</b><span>${esc(x.label)}</span></div>`).join('')}
+        </div>
+      </div>
+      ${p.texte ? `<p class="couv-methode">${md(p.texte)}</p>` : ''}
+      <div class="couv-meta">${p.couv2.meta.map(x => `<span>${esc(x)}</span>`).join('')}</div>`
+      : (p.texte ? `<p class="pl-x">${md(p.texte)}</p>` : '')}
+      ${pourquoiHtml}
       ${bilan}
       ${marche}
       ${ficheG}
@@ -497,15 +644,6 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
         <div class="portrait-r">${esc(sdr.poste || 'Votre interlocuteur chez Sofy')}</div>
         ${sdr.bio ? `<div class="portrait-b">${md(sdr.bio)}</div>` : ''}
       </div>` : ''}
-      ${p.role === 'couverture' && sdr && (sdr.photo || sdr.nom) ? `<div class="ae reveal">
-        ${sdr.photo ? `<img class="ae-p" src="${esc(sdr.photo)}" alt="">`
-          : `<span class="ae-i">${esc(String(sdr.nom || '?').trim().charAt(0).toUpperCase())}</span>`}
-        <div><div class="ae-n">${esc(sdr.nom || '')}</div>
-          <div class="ae-r">${esc(sdr.poste || 'Votre interlocuteur chez Sofy')}</div>
-          ${sdr.email ? `<a class="ae-c" href="mailto:${esc(sdr.email)}">${esc(sdr.email)}</a>` : ''}
-          ${sdr.ringover_numero ? `<a class="ae-c" href="tel:${esc(String(sdr.ringover_numero).replace(/\s/g, ''))}">${esc(sdr.ringover_numero)}</a>` : ''}
-        </div>
-      </div>` : ''}
       ${p.role === 'cta' ? `<div class="fin">
         <div class="fin-g">
           <div class="cta-zone">
@@ -514,18 +652,13 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
           </div>
         </div>
         <div class="fin-d">
-          ${(instit && instit.equipe) ? `<figure class="eq"><img src="${esc(instit.equipe)}" alt="L'équipe Sofy" loading="lazy"><img class="eq-l" src="/logo-icon.png" alt=""></figure>` : ''}
-          ${(instit && (instit.clients || []).length) ? (() => {
-            // Au-delà de six logos, une grille fixe force à couper. Un bandeau qui défile les
-            // montre TOUS et anime la planche. La piste est doublée : quand la première copie
-            // sort à gauche, la seconde est déjà en place — le défilement n'a pas de couture.
-            const cls = instit.clients.slice(0, 24);
-            const un = cls.map(c => `<span class="cli-i"><img src="${esc(c.image)}" alt="${esc(c.description || '')}" loading="lazy"></span>`).join('');
-            if (cls.length <= 6) return `<div class="cli">${un}</div>`;
-            return `<div class="cli-b" aria-label="Ils nous font confiance">
-              <div class="cli-p" style="--n:${cls.length};--dur:${Math.max(22, cls.length * 2.6).toFixed(0)}s">${un}${un}</div>
-            </div>`;
-          })() : ''}
+          ${/* La photo du commercial signataire plutôt que la photo d'équipe générique : le
+                prospect termine sur le visage de la personne qu'il va avoir au téléphone
+                (demande Didier, 26/08). La photo d'équipe reste le filet quand le SDR n'en a pas. */''}
+          ${(sdr && sdr.photo) ? `<figure class="eq eq-sdr"><img src="${esc(sdr.photo)}" alt="${esc(sdr.nom || 'Votre interlocuteur Sofy')}" loading="lazy"><img class="eq-l" src="/logo-icon.png" alt=""></figure>`
+            : ((instit && instit.equipe) ? `<figure class="eq"><img src="${esc(instit.equipe)}" alt="L'équipe Sofy" loading="lazy"><img class="eq-l" src="/logo-icon.png" alt=""></figure>` : '')}
+          ${/* Le bandeau de logos clients vivait ici ; il a déménagé sur la planche
+                « Pourquoi Sofy » (26/08) — le garder aux deux endroits était redondant. */''}
         </div>
       </div>
       <div class="rep">
@@ -572,6 +705,18 @@ const REGLES_IMPRESSION = `
 .ill{max-height:230px}.ill img{max-height:230px}
 .duel{grid-template-columns:1fr 62px 1.12fr}
 .bd{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;position:relative}
+.wrap-pq{display:grid;grid-template-columns:1.08fr .92fr;column-gap:32px}
+.wrap-pq .pl-h,.wrap-pq .pq-corps,.wrap-pq .pl-f{grid-column:1/-1}
+.wrap-pq .pq-coach{grid-column:2;grid-row:2/span 4;align-self:start;margin-top:0}
+.pl-pq .pl-t{font-size:40px}
+.pq-bande{grid-template-columns:1.3fr 1fr}
+.pq-habs{grid-template-columns:repeat(4,1fr)}
+.pq-pied{grid-template-columns:1fr}
+.pq-ks{grid-template-columns:repeat(4,1fr)}
+.pq-refs{min-width:0;max-width:100%}
+.pq-app-l{grid-template-columns:repeat(3,1fr)}
+.pq-app.avec-visuel{grid-template-columns:1fr 290px}
+.tsr{grid-template-columns:repeat(3,1fr)}
 `;
 
 function page(doc, meta, sdr, apercu, images, instit) {
@@ -653,6 +798,11 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 @media(min-width:920px){.fin{grid-template-columns:1.05fr .95fr}}
 .eq{margin:0;position:relative;border-radius:16px;overflow:hidden;box-shadow:0 18px 44px rgba(20,16,58,.16)}
 .eq img{width:100%;height:auto;max-height:260px;object-fit:cover;display:block}
+/* Le portrait du SDR est un carré à médaillon (pensé pour la couverture) : en « cover » le
+   cadre le rogne. « contain » sur fond blanc le montre entier. */
+.eq-sdr{background:#fff}
+.eq-sdr .eq-l{display:none}
+.eq-sdr img{max-height:280px;object-fit:contain;padding:10px 0}
 .eq-l{position:absolute;top:12px;right:12px;width:36px;height:36px;max-height:36px;max-width:36px;
  opacity:.95;filter:drop-shadow(0 2px 6px rgba(0,0,0,.35));border-radius:8px;
  background:rgba(255,255,255,.9);padding:4px;box-sizing:border-box}
@@ -1119,6 +1269,83 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 .rule{transform:scaleX(0);transform-origin:left;transition:transform .8s cubic-bezier(.22,.68,.24,1) .15s}
 .on .rule{transform:scaleX(1)}
 @media (prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}}
+/* ── Couverture v2 : accroche + teasers mesurés ── */
+.couv-acc{font-size:clamp(17px,1.8vw,21px);line-height:1.5;max-width:56ch;margin:0;font-weight:600}
+.couv-acc strong{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.tsrs{margin-top:24px}
+.tsrs-t{font-size:12px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#9990C4;margin-bottom:10px}
+.tsr{display:grid;grid-template-columns:1fr;gap:12px;max-width:660px}
+@media(min-width:760px){.tsr{grid-template-columns:repeat(3,1fr)}}
+.ts{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px;position:relative;
+ box-shadow:0 2px 4px rgba(20,16,58,.04),0 14px 30px rgba(20,16,58,.06)}
+.ts b{display:block;font-size:26px;font-weight:800;letter-spacing:-.03em;line-height:1;
+ background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.ts span{display:block;font-size:12px;color:var(--ink-s);margin-top:6px;line-height:1.45}
+.ts i{position:absolute;top:12px;right:14px;font-style:normal;font-size:11px;color:#9990C4}
+.couv-methode{font-size:13px;color:#9990C4;line-height:1.55;max-width:60ch;margin:16px 0 0}
+.couv-meta{display:flex;gap:18px;flex-wrap:wrap;margin-top:22px;font-size:12.5px;color:var(--ink-s)}
+.couv-meta span{display:flex;align-items:center;gap:6px}
+.couv-meta span::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--grad)}
+
+/* ── Planche « Pourquoi Sofy » ── */
+@media(min-width:900px){
+ .wrap-pq{display:grid;grid-template-columns:1.08fr .92fr;column-gap:clamp(22px,3vw,44px)}
+ .wrap-pq .pl-h,.wrap-pq .pq-corps,.wrap-pq .pl-f{grid-column:1/-1}
+ .wrap-pq .pq-coach{grid-column:2;grid-row:2/span 4;align-self:start}
+}
+.pl-pq .pl-t{font-size:clamp(28px,4.1vw,48px);max-width:22ch}
+.pq-coach{background:rgba(255,255,255,.06);border:1px solid var(--line-d);border-radius:18px;padding:22px 24px;margin-top:14px}
+@media(min-width:900px){.pq-coach{margin-top:0}}
+.pq-ch{display:flex;gap:14px;align-items:center;margin-bottom:12px}
+.pq-ch img{width:64px;height:64px;border-radius:50%;object-fit:cover;box-shadow:0 0 0 3px #5B4FE9,0 0 0 5px rgba(240,66,138,.55)}
+.pq-ch b{display:block;font-size:17px;color:#fff}
+.pq-ch span{font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--r);font-weight:700}
+.pq-li{display:flex;gap:11px;align-items:flex-start;padding:9px 0;border-top:1px solid rgba(255,255,255,.08)}
+.pq-li img{width:22px;height:22px;object-fit:contain;flex:none;margin-top:2px;border-radius:5px}
+.pq-li b{display:block;font-size:14.5px;color:#fff}
+.pq-li span{font-size:13px;line-height:1.5;color:var(--ink-ds)}
+.pq-pt{flex:none;width:22px;height:22px;border-radius:50%;background:var(--grad);margin-top:2px}
+.pq-bande{display:grid;grid-template-columns:1fr;gap:10px;margin-top:clamp(18px,2.5vw,26px)}
+@media(min-width:760px){.pq-bande{grid-template-columns:1.3fr 1fr}}
+.pq-bande figure{margin:0;border-radius:14px;overflow:hidden;position:relative;border:1px solid rgba(255,255,255,.14);height:190px}
+.pq-bande img{width:100%;height:100%;object-fit:cover;display:block}
+.pq-bande figcaption{position:absolute;left:0;right:0;bottom:0;padding:20px 12px 8px;font-size:11px;color:#fff;
+ background:linear-gradient(transparent,rgba(15,11,41,.88))}
+/* Le visuel de l'app est un PNG DÉTOURÉ (fond transparent) : il se pose sur le dégradé de la
+   carte sans raccord. Si un visuel non détouré arrive en base, il jurera — le déposer détouré. */
+.pq-app{background:linear-gradient(180deg,#4c1fc2 0%,#4616b0 40%,#52209a 100%);
+ border:1px solid rgba(255,255,255,.16);border-radius:16px;padding:18px 22px;margin-top:clamp(16px,2.5vw,24px)}
+.pq-app.avec-visuel{display:grid;grid-template-columns:1fr;gap:16px;align-items:center}
+@media(min-width:860px){.pq-app.avec-visuel{grid-template-columns:1fr 290px}}
+.pq-app-v{width:100%;max-height:235px;object-fit:contain;justify-self:center}
+.pq-app-h{display:flex;gap:13px;align-items:center;margin-bottom:12px}
+.pq-app-h img{width:44px;height:44px;border-radius:11px;background:#fff;padding:6px;object-fit:contain}
+.pq-app-h b{display:block;font-size:15.5px;color:#fff;letter-spacing:-.01em}
+.pq-app-h span{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--r);font-weight:700}
+/* La note du store (relevée sur la fiche App Store — à rafraîchir à la main quand elle bouge) */
+.pq-note{display:block;font-style:normal;font-size:13.5px;font-weight:750;color:#fff;margin-top:3px}
+.pq-note i{font-style:normal;color:#F5C451;letter-spacing:.06em}
+.pq-app-l{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:1fr;gap:7px 22px;font-size:13px;color:var(--ink-ds)}
+@media(min-width:860px){.pq-app-l{grid-template-columns:repeat(3,1fr)}}
+.pq-app-l li{padding-left:19px;position:relative;line-height:1.45}
+.pq-app-l li::before{content:'';position:absolute;left:0;top:6px;width:9px;height:9px;border-radius:50%;
+ background:var(--grad)}
+.pq-habs{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:clamp(16px,2.5vw,24px)}
+@media(min-width:860px){.pq-habs{grid-template-columns:repeat(4,1fr)}}
+.pq-hab{background:#fff;color:var(--ink);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;min-height:96px}
+.pq-hab img{height:26px;width:auto;align-self:flex-start;object-fit:contain}
+.pq-hab b{font-size:14px;letter-spacing:-.01em}
+.pq-hab span{font-size:11.5px;color:var(--ink-s);line-height:1.4}
+.pq-ant{height:26px;display:flex;align-items:center;font-size:19px;font-weight:800;
+ background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.pq-pied{display:grid;grid-template-columns:1fr;gap:clamp(14px,2vw,20px);margin-top:clamp(16px,2.5vw,24px);align-items:start}
+.pq-ks{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+@media(min-width:860px){.pq-ks{grid-template-columns:repeat(4,1fr)}}
+.pq-k b{display:block;font-size:27px;font-weight:800;letter-spacing:-.03em;line-height:1;white-space:nowrap;
+ background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.pq-k span{display:block;font-size:11.5px;color:var(--ink-ds);margin-top:5px;line-height:1.4;max-width:24ch}
+.pq-refs{min-width:0;max-width:100%}
+.pq-refs h3{margin:0 0 4px;font-size:11.5px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-ds)}
 @page{size:210mm 297mm;margin:0}
 @media print{
  ${REGLES_IMPRESSION}
@@ -1132,7 +1359,7 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
  /* Une planche = une page A4 : posée à 1000 px (mise en page desktop, cf. REGLES_IMPRESSION)
     puis réduite par zoom pour tenir dans 210×297 mm. --pz est calculé par planche côté client ;
     .794 = 794/1000, la valeur exacte quand rien ne déborde en hauteur. */
- .pl{break-after:page;page-break-after:always;background:#fff!important;color:#14103A!important;zoom:var(--pz,.794)}
+ .pl{break-after:page;page-break-after:always;background:#fff!important;color:#14103A!important;zoom:var(--pz,.794);margin-left:auto;margin-right:auto}
  .pl:last-of-type{break-after:auto;page-break-after:auto}
  /* Thème sombre → clair : le papier est blanc (préparerImpression() bascule aussi les classes,
     ces règles restent le filet quand l'impression part sans JavaScript). */
@@ -1142,7 +1369,13 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
  .pl.dark .sdr-card a{color:#14103A!important}
  /* Chiffres en dégradé (background-clip:text) : certains moteurs d'impression ne peignent pas
     le fond → texte transparent invisible (PDF Safari du 25/08). Couleur pleine à la place. */
- .kpi-v,.dl-kv,.dl-lab-s,.dl-r span,.rep-i b,.couv-s,.pj-v.goal-v{background:none!important;-webkit-text-fill-color:#5B4FE9!important;color:#5B4FE9!important}
+ .kpi-v,.dl-kv,.dl-lab-s,.dl-r span,.rep-i b,.couv-s,.pj-v.goal-v,.pq-k b,.pq-ant,.ts b,.couv-acc strong{background:none!important;-webkit-text-fill-color:#5B4FE9!important;color:#5B4FE9!important}
+ .ts{break-inside:avoid;page-break-inside:avoid}
+ .pq-coach{background:#F7F5FE!important;border-color:#E4E0F5!important}
+ ${''/* la carte app garde son violet à l'impression : c'est lui qui détoure les captures */}
+ .pq-ch b,.pq-li b{color:#14103A!important} .pq-li span,.pq-k span{color:#5A5580!important}
+ .pq-li{border-top-color:#E4E0F5!important} .pq-bande figure{border-color:#E4E0F5!important}
+ .pq-coach,.pq-hab,.pq-bande figure{break-inside:avoid;page-break-inside:avoid}
  /* États FINAUX de tout ce que l'animation retient : sans eux, courbes, barres de projection,
     donuts et cascades restaient invisibles au-delà du point de défilement atteint. */
  .reveal{opacity:1!important;transform:none!important}
@@ -1156,7 +1389,20 @@ body{margin:0;font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
  .kpi,.eq,.bl,.ax,.jl,.pb,.pj,.df,.av,.gmb-w,.tel-cadre,.crb,.mk-pod,.mk-ia,.mk-ads,.mk-ap,.sdr-card,.cit,.itw,.rcs,.dl-k,.portrait-bloc,.ill,.casc{break-inside:avoid;page-break-inside:avoid}
 }
 </style></head><body>
-${pl.map((p, i) => planche(p, i, pl.length, doc._mes || {}, doc._logo || null, sdr, images, doc._photo || null, instit)).join('')}
+${(() => {
+  // « Pourquoi Sofy » s'insère au RENDU, avant le CTA : les documents déjà générés la portent
+  // aussi, et une correction du texte se déploie partout sans régénération.
+  const plR = [...pl];
+  const iCta = plR.findIndex(x => x && x.role === 'cta');
+  if (iCta >= 0) plR.splice(iCta, 0, PLANCHE_POURQUOI); else plR.push(PLANCHE_POURQUOI);
+  // Couverture v2 : les teasers se calculent une fois les planches en place (ils pointent vers
+  // leurs numéros réels). Copie de l'objet : doc.planches ne doit jamais être muté.
+  if (plR[0] && plR[0].role === 'couverture') {
+    const c2 = couvertureV2(doc._mes || {}, plR, meta);
+    if (c2) plR[0] = { ...plR[0], couv2: c2 };
+  }
+  return plR.map((p, i) => planche(p, i, plR.length, doc._mes || {}, doc._logo || null, sdr, images, doc._photo || null, instit)).join('');
+})()}
 ${apercu ? `<div class="apercu">👁 Aperçu interne — cette visite n'est pas comptée dans les ouvertures du prospect.</div>` : ''}
 <div class="tools"><button onclick="window.print()">⬇️ Télécharger en PDF</button></div>
 <script>
@@ -1420,7 +1666,7 @@ export default async function handler(req, res) {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
-    return res.status(200).send(page(doc, { jeton }, sdr, interne, images, instit));
+    return res.status(200).send(page(doc, { jeton, cree_le: row.created_at, expire_le: row.expire_le }, sdr, interne, images, instit));
   } catch (e) {
     return res.status(500).send('Analyse momentanément indisponible.');
   }

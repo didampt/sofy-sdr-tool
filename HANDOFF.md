@@ -59,6 +59,26 @@ sur BigMat Latronquière pour vérifier. Le document passe à **13 planches**.
   32 M (Médiamétrie), conversationnel 46 % vs 42 % (Ipsos-BVA 2025, fourni par Didier),
   puissance RCS, Google Partner RBM, commerce omnicanal. Chiffres externes validés Didier 26/08.
 
+### 5. Planche « Pourquoi Sofy » + couverture v2 (soir du 26/08 — rendu, zéro régénération)
+Tout est injecté AU RENDU dans `api/p.js` (comme la trame instit) : les documents déjà générés
+en bénéficient, une correction de texte se déploie d'un push.
+- **Planche 12/13 « Pourquoi Sofy »** (statique) : carte coach incarnée (Cloé, photo public/),
+  photos SunSMS/Optima Group, carte application mobile (9 fonctionnalités, note 4,9 ★ EN DUR — à
+  rafraîchir à la main), habilitations (Google Partner · Partner RBM · ARCEP · agrégateur direct),
+  4 chiffres, bandeau clients défilant (lu de `kb_visuels` type client).
+- **Couverture v2** : encart SDR retiré, accroche fixe, 3 tuiles teaser CALCULÉES depuis les
+  mesures (`couvertureV2()` — si < 2 mesures, couverture d'origine), méthodo en petit, méta
+  (nb planches, date des relevés, jours de validité — lus de la ligne prez).
+- **CTA** : portrait du SDR à la place de la photo d'équipe (filet : photo d'équipe) ; le bandeau
+  de logos y a été RETIRÉ (déménagé sur la planche 12).
+- `visuelsInstit()` rapporte aussi : `apps` (le visuel « application mobile » le plus récent —
+  le déposer DÉTOURÉ en PNG, un fond opaque jure sur le violet) et `symbole` (« symbole »).
+- ⚠️ Pièges du jour : `public/logo-icon.png` est ROGNÉ à gauche et `logo-full.png` n'a PAS de
+  symbole — le seul export propre est `public/logo-symbole.png` (copié de sofy-emoji-symbole-256).
+  Un item de grid contenant le bandeau défilant doit porter `min-width:0` (sinon la piste
+  max-content déborde et crée des pages PDF fantômes). En print, les planches réduites se
+  centrent via `.pl{margin:auto}`. La passe de contrôle = planche-contact des 13 pages, TOUTES.
+
 ### Reste à faire / à surveiller
 - Didier doit supprimer les liens de test BigMat (`LHwow010mFq4`, `YzZAZ1hPcaDX`) — le bon
   document est `fNYkkfv0evc8`.
