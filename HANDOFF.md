@@ -79,7 +79,29 @@ en bénéficient, une correction de texte se déploie d'un push.
   max-content déborde et crée des pages PDF fantômes). En print, les planches réduites se
   centrent via `.pl{margin:auto}`. La passe de contrôle = planche-contact des 13 pages, TOUTES.
 
+### 6. Visuels de la planche app : la chaîne de dépôt préserve enfin les PNG (`c6426b9`, `71df02b`)
+Le premier dépôt réel a révélé que `compresserImage()` (public/index.html) convertissait TOUT en
+JPEG : un visuel détouré devenait un pavé blanc sur la carte violette. Corrigé en trois verrous :
+- **le dépôt garde le format PNG** quand le fichier source est un PNG (transparence préservée ;
+  le recadrage portrait des couvertures aplatit toujours, exprès) ;
+- **la planche ne prend le visuel app de la base que s'il est PNG** (`data:image/png`), sinon
+  filet `public/pourquoi-app.png` (le téléphone détouré, versionné). Le symbole a le même filet
+  (`public/logo-symbole.png` — copie de `sofy-emoji-symbole-256.png`, la SEULE source propre :
+  `logo-icon.png` est rogné à gauche, `logo-full.png` n'a pas de symbole) ;
+- **12 étapes de réduction au lieu de 6** (les exports Illustrator 2000px+ déclenchaient
+  « vignette trop lourde ») + dernier recours JPEG plutôt qu'un refus.
+⚠️ Piège utilisateur : un onglet Sofy Scrap ouvert AVANT un déploiement garde l'ancien front —
+Didier a redéposé son PNG à travers l'ancienne conversion JPEG. Après un push qui touche
+public/index.html, recharger l'onglet avant tout dépôt.
+La note « 4,9 ★★★★★ » de la carte app est EN DUR dans `api/p.js` (`.pq-note`) — à rafraîchir à la
+main quand la note du store bouge.
+
 ### Reste à faire / à surveiller
+- **Visuel app en base : encore le JPEG** (redéposé via l'ancien front) → le filet s'affiche, le
+  rendu est correct. Pour que la base reprenne la main : recharger l'onglet, redéposer
+  `sofy app (2).png` (description « visuel application mobile sofy »).
+- Le visuel « symbole » n'existe pas en base (fallback actif, identique visuellement) — dépôt
+  optionnel, description contenant « symbole ».
 - Didier doit supprimer les liens de test BigMat (`LHwow010mFq4`, `YzZAZ1hPcaDX`) — le bon
   document est `fNYkkfv0evc8`.
 - Safari réel jamais testé pour le PDF (banc = Chrome headless) : au premier export Safari d'un
