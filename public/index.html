@@ -6312,7 +6312,7 @@ async function compresserImage(fichier, maxLargeur, maxKo, carre){
  // visuel détouré (téléphone de la planche « Pourquoi Sofy », logo) devient un pavé blanc sur
  // fond de couleur. Le mode carré (portraits de couverture) aplatit exprès, lui.
  const garderPng=!carre && fichier && fichier.type==='image/png';
- for(let etape=0;etape<6;etape++){
+ for(let etape=0;etape<12;etape++){
   if(carre){
    // Portrait : on recadre au centre en 4/5, le format de la couverture.
    const cible=Math.round(l*1.25);
@@ -6338,7 +6338,7 @@ async function compresserImage(fichier, maxLargeur, maxKo, carre){
   }
   l=Math.round(l*0.8);h=Math.round(h*0.8);
  }
- const data=c.toDataURL(garderPng?'image/png':'image/jpeg',0.4);
+ const data=c.toDataURL('image/jpeg',0.4); // dernier recours : mieux vaut un JPEG accepté qu'un refus
  fermer();
  return {data:data,ko:Math.round(data.length*0.75/1024),largeur:c.width,hauteur:c.height,avantKo:avantKo};
 }
