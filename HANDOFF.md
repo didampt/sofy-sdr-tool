@@ -1,4 +1,72 @@
-# HANDOFF — Reprise du travail (dernière mise à jour : 21 août 2026)
+# HANDOFF — Reprise du travail (dernière mise à jour : 26 août 2026)
+
+## 🎯 26 août 2026 — Audit v2 (planche GEO/IA), PDF fidèle, bug Franck (5 commits : de89829 → be30083)
+
+### 1. Bug Franck : « 145 trouvées » → 2 livrées — les doublons sont désormais REMPLACÉS (`de89829`)
+Pappers renvoie toujours les résultats dans le même ordre → les fiches déjà extraites forment un
+**PRÉFIXE** des résultats. L'ancienne génération les soustrayait de la page rapatriée : relancer des
+critères proches livrait 0-2 fiches. Désormais `api/liste.js` filtre les SIREN connus **avant** la
+pagination et balaie jusqu'à **10 pages** pour réunir le nombre demandé de fiches fraîches.
+`api/estimer.js` applique les mêmes règles que la génération (nb_etab_min, cascade effectif,
+dédoublonnage mesuré sur la vraie 1ʳᵉ page) et renvoie une **fourchette** `[nb_genere_min,
+nb_genere_max]` — jamais d'extrapolation de taux : le préfixe rend un taux linéaire faux dans le
+cas le plus courant. Front : modale d'estimation détaillée, bandeau d'exclusions permanent sur
+l'écran de résultats, message de liste vide qui nomme la vraie cause.
+⚠️ Piège testé : le bloc pagination a été validé par simulation VERBATIM (extraction du bloc +
+`call` factice, 9 scénarios) — refaire pareil à toute modification, il n'y a pas de tests.
+
+### 2. PDF de l'analyse : une planche = une page, identique au web (`b1df990`)
+Trois causes reproduites en local avant correction : (a) les chiffres en dégradé-texte
+(`background-clip:text`) disparaissent quand l'impression supprime les fonds, les ombres sortent
+en pavés gris ; (b) courbes/barres/donuts/cascades n'existent qu'à l'état `.on` posé par
+l'animation au défilement ; (c) le viewport d'impression (794 px < 900) fait tomber les media
+queries desktop → colonne unique interminable.
+**⚠️ SOURCE UNIQUE À MAINTENIR : `REGLES_IMPRESSION` dans `api/p.js`** — partagée entre la feuille
+`@media print` et la mesure JS qui calcule le zoom par planche (`--pz`). Toute évolution du
+responsive (media queries min-width, clamps vw) DOIT s'y répercuter, sinon le PDF re-divergera.
+Banc de test : Chrome headless `--print-to-pdf` + rendu PDFKit page par page (scripts dans le
+scratchpad de session, refaisables en 5 min — cf. commit pour la méthode).
+
+### 3. Audit v2 : planche GEO/aperçu IA + angles omnicanal et RCS (`d2d07f4`, `c0b1b87`, `be30083`)
+Wireframe validé par Didier le 26/08 (artifact « Wireframe Audit v2 »), puis 3 générations réelles
+sur BigMat Latronquière pour vérifier. Le document passe à **13 planches**.
+- **Planche 05 `geo_ia`** (`plancheGeoIa()` dans `api/prez.js`) : calculée comme la trajectoire,
+  jamais rédigée. Titre adaptatif selon `ia_visibilite` (cité / pas cité / pas d'aperçu). Courbe
+  « score d'audit de votre visibilité locale /100 » = l'arithmétique du `scorer()` rejouée avec
+  les seuls critères que des ACTIONS contrôlent (fiche complétée à 3 mois, avis répondus à 6,
+  volume au plancher Groupe Kiosque à 12). Jamais la note ni la position. Un jalon sans
+  progression ne s'affiche pas ; pente < 5 points → pas de courbe ; aucune mesure → pas de planche.
+  La courbe PEUT atteindre 100/100 (petite fiche, tous critères couverts par les actions) —
+  signalé à Didier, assumé : c'est l'arithmétique exacte, le contrat d'honnêteté est affiché.
+- **Consignes duels** : SoConnect = commerce conversationnel OMNICANAL (46 % vs 42 % Ipsos-BVA
+  2025 ; WhatsApp 1ʳᵉ messagerie de France SANS avoir remplacé tél/e-mail) ; SoReach =
+  démonstration du RCS (identité vérifiée anti-spam, carrousels, vidéos, conversation) +
+  « **Google Partner RBM** » mot pour mot (formulation validée Didier, ne pas reformuler).
+  Les duels ont interdiction de refaire un duel entier sur l'aperçu IA (la planche 05 existe).
+- **Pièges vus sur les générations réelles** : le relevé range parfois « Google » parmi les
+  entités citées par l'aperçu IA → filtré dans `plancheGeoIa` (artefact de mesure, pas un
+  concurrent) ; la phrase se reformule quand la liste filtrée est vide (tiret orphelin sinon).
+
+### 4. Base de connaissance `kb_sales` — DEUX pièges corrigés (`d2d07f4`)
+- **Le module « tous » (le DÉFAUT de génération) ne voyait que les blocs rangés en « tous »** :
+  l'essentiel de la base était exclu du prompt. Corrigé dans `blocsUtilisables()`.
+- **Tout ajout au `SEED` exige un `POST /api/kb-sales {seed:true}` manuel (admin) après
+  déploiement** — l'auto-amorçage ne joue que sur base VIDE. Constaté : 6 blocs ajoutés au code
+  les 19-21/08 (cas Marimax, Groupe Kiosque, mécanismes) n'avaient JAMAIS atteint la prod.
+  Relancé le 26/08 : 12 ajoutés, 12 revalidés, 24/24. Vérifier `total` = `grep -c "cle_seed:"
+  api/kb-sales.js` après chaque relance.
+- 6 nouveaux blocs sourcés : aperçus IA France 22/07/2026 + 43 % US (Semrush), WhatsApp France
+  32 M (Médiamétrie), conversationnel 46 % vs 42 % (Ipsos-BVA 2025, fourni par Didier),
+  puissance RCS, Google Partner RBM, commerce omnicanal. Chiffres externes validés Didier 26/08.
+
+### Reste à faire / à surveiller
+- Didier doit supprimer les liens de test BigMat (`LHwow010mFq4`, `YzZAZ1hPcaDX`) — le bon
+  document est `fNYkkfv0evc8`.
+- Safari réel jamais testé pour le PDF (banc = Chrome headless) : au premier export Safari d'un
+  SDR, vérifier ; les en-têtes date/URL restent un réglage utilisateur sous Safari.
+- L'estimation Pappers chiffre désormais le coût sur les fiches réellement livrées : une relance
+  des mêmes critères dépense le prix d'une vraie liste (25 détails) là où l'ancien comportement
+  n'en facturait que 2 — c'est voulu, l'estimation l'annonce avant de dépenser.
 
 ## 🛑 21 août 2026 — « Ne jamais affirmer ce qu'on n'a pas mesuré » (v395 → v403)
 
