@@ -6308,6 +6308,10 @@ async function compresserImage(fichier, maxLargeur, maxKo, carre){
  let l=Math.min(maxLargeur, img.naturalWidth||img.width);
  let h=Math.round((img.naturalHeight||img.height)*l/(img.naturalWidth||img.width));
  const c=document.createElement('canvas'), ctx=c.getContext('2d');
+ // Un PNG garde son format : convertir en JPEG aplatit la transparence sur fond blanc, et un
+ // visuel détouré (téléphone de la planche « Pourquoi Sofy », logo) devient un pavé blanc sur
+ // fond de couleur. Le mode carré (portraits de couverture) aplatit exprès, lui.
+ const garderPng=!carre && fichier && fichier.type==='image/png';
  for(let etape=0;etape<6;etape++){
   if(carre){
    // Portrait : on recadre au centre en 4/5, le format de la couverture.
@@ -6319,17 +6323,22 @@ async function compresserImage(fichier, maxLargeur, maxKo, carre){
    ctx.drawImage(img,(l-dw)/2,(cible-dh)/2,dw,dh);
   }else{
    c.width=l;c.height=h;
-   ctx.fillStyle='#fff';ctx.fillRect(0,0,l,h); // les PNG transparents deviendraient noirs en JPEG
+   ctx.clearRect(0,0,l,h);
+   if(!garderPng){ctx.fillStyle='#fff';ctx.fillRect(0,0,l,h);} // les PNG transparents deviendraient noirs en JPEG
    ctx.drawImage(img,0,0,l,h);
   }
-  for(const q of [0.86,0.76,0.66,0.56,0.46]){
+  if(garderPng){
+   const data=c.toDataURL('image/png');
+   const ko=Math.round(data.length*0.75/1024);
+   if(ko<=maxKo){fermer();return {data:data,ko:ko,largeur:c.width,hauteur:c.height,avantKo:avantKo};}
+  }else for(const q of [0.86,0.76,0.66,0.56,0.46]){
    const data=c.toDataURL('image/jpeg',q);
    const ko=Math.round(data.length*0.75/1024);
    if(ko<=maxKo){fermer();return {data:data,ko:ko,largeur:c.width,hauteur:c.height,avantKo:avantKo};}
   }
   l=Math.round(l*0.8);h=Math.round(h*0.8);
  }
- const data=c.toDataURL('image/jpeg',0.4);
+ const data=c.toDataURL(garderPng?'image/png':'image/jpeg',0.4);
  fermer();
  return {data:data,ko:Math.round(data.length*0.75/1024),largeur:c.width,hauteur:c.height,avantKo:avantKo};
 }

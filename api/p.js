@@ -546,7 +546,7 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
           <figure><img src="/pourquoi-sunsms.jpg" alt="Le stand SunSMS au salon e-marketing" loading="lazy"><figcaption>SunSMS (Optima Group) au salon e-marketing — la messagerie d'entreprise depuis 2012</figcaption></figure>
           <figure><img src="/pourquoi-coach.jpg" alt="Une coach Sofy en échange client" loading="lazy"></figure>
         </div>
-        <div class="pq-app reveal${(instit && (instit.apps || []).length) ? ' avec-visuel' : ''}">
+        <div class="pq-app reveal avec-visuel">
           <div class="pq-app-c">
             <div class="pq-app-h">
               <img src="${esc((instit && instit.symbole) || '/logo-symbole.png')}" alt="Application Sofy" loading="lazy">
@@ -566,7 +566,14 @@ function planche(p, i, total, mes, logo, sdr, images, photoSite, instit) {
               <li>Une alerte à chaque nouvel avis</li>
             </ul>
           </div>
-          ${(instit && (instit.apps || []).length) ? `<img class="pq-app-v" src="${esc(instit.apps[0].image)}" alt="${esc(instit.apps[0].description || 'Application mobile Sofy')}" loading="lazy">` : ''}
+          ${/* Le visuel de la base n'est pris que s'il est PNG : un JPEG a un fond opaque qui
+                jure sur le violet (constaté au premier dépôt réel, 26/08 — l'écran de dépôt
+                convertissait tout en JPEG). Filet : le PNG détouré versionné dans public/. */''}
+          ${(() => {
+            const a = (instit && (instit.apps || [])[0]) || null;
+            const src = (a && /^data:image\/png/.test(String(a.image))) ? a.image : '/pourquoi-app.png';
+            return `<img class="pq-app-v" src="${esc(src)}" alt="${esc((a && a.description) || 'Application mobile Sofy')}" loading="lazy">`;
+          })()}
         </div>
         <div class="pq-habs reveal">
           <div class="pq-hab"><img src="/hab-google.jpg" alt="Google" loading="lazy"><b>Google Partner</b><span>partenaire certifié Google</span></div>
