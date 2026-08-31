@@ -2628,7 +2628,9 @@ async function importerLikers(simuler){
  if(btn){btn.disabled=true;btn.textContent=simuler?'⏳ Qualification…':'⏳ Croisement…';}
  try{
   const r=await api('/api/veille',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:src||'likers importés',texte:txt,post_url:((document.getElementById('imp-lk-url')||{}).value||'').trim(),post_texte:((document.getElementById('imp-lk-post')||{}).value||'').trim(),forcer:!!(document.getElementById('imp-lk-forcer')||{}).checked,simuler:!!simuler})});
-  const d=await r.json();
+  // lireJson et non r.json() : un timeout Vercel renvoie du TEXTE (« An error occurred… ») et le
+  // JSON.parse nu affichait « Unexpected token 'A' » au lieu de la cause (post Partoo, 31/08).
+  const d=await lireJson(r,'Le filtre a dépassé le temps imparti (grosse liste de likers). Rien n\'a été perdu ni marqué « vu » : relance l\'import tel quel.');
   if(d.erreur){toast('Import : '+d.erreur);}
   else if(d.simulation){
    // Le tableau profil par profil : c'est lui qui permet de dire « ce filtre se trompe ICI ».
@@ -5368,12 +5370,12 @@ function radarParams(e){
 }
 // Une réponse Vercel en timeout est du HTML, pas du JSON : sans cette garde le front affichait
 // « Unexpected token 'A' » (début de « An error occurred… ») au lieu de la vraie cause (17/08).
-async function lireJson(r){
+async function lireJson(r,msgTimeout){
  const t=await r.text();
  try{return JSON.parse(t);}
  catch(_){
   if(r.status===504||/FUNCTION_INVOCATION_TIMEOUT|An error occurred/i.test(t))
-   return {erreur:'La recherche a dépassé le temps imparti (grosse enseigne). Réessaie : le travail déjà fait est conservé.',timeout:true};
+   return {erreur:msgTimeout||'La recherche a dépassé le temps imparti (grosse enseigne). Réessaie : le travail déjà fait est conservé.',timeout:true};
   return {erreur:'Réponse serveur illisible (HTTP '+r.status+')'};
  }
 }

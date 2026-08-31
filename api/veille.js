@@ -14,7 +14,10 @@
 
 import { sql, ensureSchema, verifierToken , ajouterHotLead } from './db.js';
 
-export const config = { maxDuration: 120 };
+// 300 et non 120 : l'import d'un gros post (Partoo, 31/08) dépassait les 120 s — Vercel tuait la
+// fonction et renvoyait sa page texte « An error occurred… », que le front prenait pour du JSON
+// (« Unexpected token 'A' »). Même piège que le radar du 17/08, cf. HANDOFF « pièges ».
+export const config = { maxDuration: 300 };
 
 function normaliserLinkedin(url) {
   if (!url) return null;
@@ -303,7 +306,7 @@ et fondations sont exclues. Ne confonds pas un sigle d'entreprise avec un nom d'
         // moins de risque de saturer le budget de sortie. Deux appels pour 22 profils coûtent
         // ≈ 0,02 € — le prix d'une fiabilité qu'on n'avait pas.
         const TAILLE = 12;
-        for (let d = 0; d < nouveauxI.length; d += TAILLE) {
+        const traiterLot = async (d) => {
           const lot = nouveauxI.slice(d, d + TAILLE).map((p, k) => ({ i: d + k, nom: p.nom, fonction: (p.occupation || '').slice(0, 120) }));
           const veutAccroche = postTexte && d === 0; // l'accroche ne se demande qu'une fois
           let ok = false;
@@ -378,12 +381,20 @@ ${veutAccroche ? `Texte du post (publié par « ${societePost || 'inconnu'} »${
               } catch (_) { }
               moitie.forEach(x => nonAnalyses.add(x.i));
             }
-            continue;
+            return;
           }
           // Lot non qualifié (IA en erreur / réponse illisible) : on N'ajoute PAS ces profils aux Hot
           // Leads — ils seraient non filtrés. Ils sont signalés et restent repêchables (♻️).
           if (!ok) lot.forEach(x => nonAnalyses.add(x.i));
-        }
+        };
+        // Lots par VAGUES de 4 en parallèle, et non plus en séquence : le post Partoo du 31/08
+        // (grosse liste) faisait ~10 lots × 20-40 s de Sonnet 5 → la fonction dépassait ses 120 s
+        // et Vercel la tuait AVANT toute création (rien de perdu, mais rien d'importé non plus).
+        // 4 de front = assez pour tenir un post de 300 likers sous 300 s, assez peu pour ne pas
+        // déclencher de 429 Anthropic (un 429 = lot « non analysé » = leads à repêcher à la main).
+        const departs = [];
+        for (let d = 0; d < nouveauxI.length; d += TAILLE) departs.push(d);
+        for (let v = 0; v < departs.length; v += 4) await Promise.all(departs.slice(v, v + 4).map(traiterLot));
         resImp.ia_lots = Math.ceil(nouveauxI.length / TAILLE);
         resImp.ia_modele = process.env.MODELE_FILTRE_LIKERS || 'claude-sonnet-5';
         if (nonAnalyses.size) resImp.ia_non_analyses = nonAnalyses.size;
