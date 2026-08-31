@@ -1,4 +1,24 @@
-# HANDOFF — Reprise du travail (dernière mise à jour : 26 août 2026)
+# HANDOFF — Reprise du travail (dernière mise à jour : 31 août 2026)
+
+## 🎯 31 août 2026 — Import likers : timeout sur les gros posts (constat Didier, post Partoo)
+
+L'import des likers d'un gros post (Partoo) échouait avec « Erreur réseau : Unexpected token 'A' » :
+le filtre IA tournait par lots de 12 **en séquence** (20-40 s de Sonnet 5 par lot) → `/api/veille`
+dépassait ses 120 s → Vercel tuait la fonction et renvoyait sa page texte « An error occurred… »,
+que le front parsait comme du JSON. **Même piège que le radar du 17/08** (cf. section pièges) —
+l'import likers n'avait pas reçu le vaccin. La fonction mourait PENDANT le filtre, donc avant toute
+création : rien de perdu, rien de marqué « vu », relance à l'identique sûre.
+Correctif (3 volets) :
+- `api/veille.js` : `maxDuration` 120 → **300 s** ;
+- filtre IA par **vagues de 4 lots en parallèle** (`traiterLot` + `Promise.all`) — un post de
+  300 likers tient sous 300 s ; 4 de front pour éviter les 429 Anthropic (un 429 = lot « non
+  analysé » à repêcher ♻️). Logique par lot inchangée (reprise en 2 moitiés, accroche au 1er lot) ;
+- front `importerLikers()` : `lireJson()` au lieu du `.json()` nu, message de timeout dédié
+  (« rien n'a été perdu ni marqué vu, relance tel quel »). `lireJson(r, msgTimeout)` accepte
+  désormais un message contextuel optionnel.
+Rappel de la règle (17/08, toujours valable) : **`maxDuration` généreux sur tout endpoint qui
+appelle l'IA ou fait de la recherche web, et jamais de `.json()` nu côté front** sur une réponse
+qui peut expirer.
 
 ## 🎯 26 août 2026 — Audit v2 (planche GEO/IA), PDF fidèle, bug Franck (5 commits : de89829 → be30083)
 
