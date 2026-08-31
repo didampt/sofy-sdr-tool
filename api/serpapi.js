@@ -1,6 +1,7 @@
 // /api/serpapi.js — 🎚️ Le compteur et le garde-fou du budget SerpApi.
 //
-// POURQUOI CE FICHIER. L'abonnement autorise **230 appels par mois**, et jusqu'ici rien ne les
+// POURQUOI CE FICHIER. L'abonnement autorise un nombre fini d'appels par mois (230 à l'origine,
+// **1000 depuis le passage au plan Starter le 31/08/2026**), et jusqu'ici rien ne les
 // comptait. Au-delà du plafond, chaque relevé aurait échoué un par un et les analyses se seraient
 // dégradées en silence — exactement la classe de panne qu'on a passé trois jours à éliminer sur
 // cette brique. Un plafond sans compteur n'est pas un plafond, c'est une surprise.
@@ -16,7 +17,9 @@ import { verifierToken, sql } from './db.js';
 export const config = { maxDuration: 20 };
 
 // Le plafond réel de l'abonnement. Réglable sans redéploiement si l'offre change.
-export const PLAFOND = () => parseInt(process.env.SERPAPI_PLAFOND_MOIS || '230', 10);
+// 1000 = plan Starter pris le 31/08/2026 (230 avant). ⚠️ Si la variable Vercel
+// SERPAPI_PLAFOND_MOIS existe encore à 230, c'est ELLE qui gagne — la mettre à jour ou la retirer.
+export const PLAFOND = () => parseInt(process.env.SERPAPI_PLAFOND_MOIS || '1000', 10);
 // Seuil d'avertissement : à partir d'ici, chaque réponse porte une alerte que le front affiche.
 const SEUIL_ALERTE = 0.8;
 

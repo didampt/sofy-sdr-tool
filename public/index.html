@@ -1327,8 +1327,8 @@ Spot-Hit</textarea>
           <span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">À lancer une fois après une mise à jour, pour pré-calculer les statistiques des anciennes listes.</span>
         </div>
         <div class="save-bar" style="justify-content:flex-start;margin-top:10px">
-          <button class="btn" style="background:var(--paper)" id="btn-budget-serpapi" onclick="budgetSerpApi()" title="230 relevés par mois pour toute l'équipe — voir ce qui reste et qui consomme">🎚️ Budget des relevés (SerpApi)</button>
-          <span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">Chaque analyse client consomme 6 à 10 relevés. Le plafond de l'abonnement est de 230 par mois : au-delà, les mesures s'arrêtent proprement au lieu de se dégrader en silence.</span>
+          <button class="btn" style="background:var(--paper)" id="btn-budget-serpapi" onclick="budgetSerpApi()" title="1000 relevés par mois pour toute l'équipe — voir ce qui reste et qui consomme">🎚️ Budget des relevés (SerpApi)</button>
+          <span style="margin-left:12px;font-size:13px;color:var(--ink-soft)">Chaque analyse client consomme 6 à 10 relevés. Le plafond de l'abonnement est de 1000 par mois (plan Starter depuis le 31/08) : au-delà, les mesures s'arrêtent proprement au lieu de se dégrader en silence.</span>
         </div>
         <div class="save-bar" style="justify-content:flex-start;margin-top:10px">
           <button class="btn" style="background:var(--paper)" id="btn-diag-enrich" onclick="diagEnrich()">📊 Rendement de l'enrichissement</button>
@@ -4894,7 +4894,7 @@ function enseignesHtml(e,i){
  return bloc('enseignes','🏪 Enseignes du groupe',
   lignes+`<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
    <button class="act act-copy" onclick="ouvrirRattacher(${i})">➕ Rattacher une enseigne</button>
-   ${fs.length>1?`<span class="hint" style="margin:0">Le pré-audit et l'audit client ne portent que sur les enseignes cochées — ${nbOk} sur ${fs.length}, soit ≈${nbOk*8} relevés sur les 230 du mois.</span>`:''}
+   ${fs.length>1?`<span class="hint" style="margin:0">Le pré-audit et l'audit client ne portent que sur les enseignes cochées — ${nbOk} sur ${fs.length}, soit ≈${nbOk*8} relevés sur les 1000 du mois.</span>`:''}
   </div>`,
   {defaut:fs.length>1,compteur:fs.length+' enseigne'+(fs.length>1?'s':''),
    resume:fs.length>1?fs.length+' enseignes rattachées — '+nbOk+' cochée(s) pour le pré-audit.':'1 enseigne — ➕ en rattacher d\'autres si le groupe exploite plusieurs marques.'});
@@ -10554,10 +10554,10 @@ async function preAudit(i){
    +'· les outils de son site (avis, chat, SMS) — gratuit\n\n'
    +'Puis la synthèse d\'appel et l\'email seront repris avec ces mesures.\n\n'
    +(secondaires.length
-     ? 'Coût : ≈'+(8+4*secondaires.length)+' relevés sur les 230 du mois — 8 pour '
+     ? 'Coût : ≈'+(8+4*secondaires.length)+' relevés sur les 1000 du mois — 8 pour '
        +nomEnseigne(enseignesDe(e)[0])+', 4 par enseigne supplémentaire ('+secondaires.length+').\n'
        +'L\'aperçu IA et Apple Plans répondent à une requête, pas à un établissement : ils ne sont relevés qu\'une fois pour tout le groupe.\n\n'
-     : 'Coût : 6 à 10 relevés sur les 230 du mois'+(dejaLa.length?' (moins, '+dejaLa.length+' sont déjà en cache)':'')+'.\n\n')
+     : 'Coût : 6 à 10 relevés sur les 1000 du mois'+(dejaLa.length?' (moins, '+dejaLa.length+' sont déjà en cache)':'')+'.\n\n')
    +'Plus un appel IA (≈ 0,02 €) pour reprendre la synthèse.\n\n'
    +'⚠️ Ces mesures rendront GRATUITE la génération de l\'audit client ensuite.',
    '🔍 Relever'+(secondaires.length?' '+cochees.length+' enseignes':'')))return;

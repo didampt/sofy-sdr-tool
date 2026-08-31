@@ -20,6 +20,12 @@ Rappel de la règle (17/08, toujours valable) : **`maxDuration` généreux sur t
 appelle l'IA ou fait de la recherche web, et jamais de `.json()` nu côté front** sur une réponse
 qui peut expirer.
 
+**Aussi le 31/08 — plafond SerpApi 230 → 1000** : Didier est passé au plan Starter (1000
+recherches/mois, 25 $ + Ludicrous Speed = 50 $/mois, à répercuter dans l'onglet Coûts si suivi).
+Défaut mis à jour dans `api/serpapi.js` (PLAFOND) + les textes du front qui citaient « 230 ».
+⚠️ Si la variable Vercel `SERPAPI_PLAFOND_MOIS` existe, c'est elle qui gagne : la mettre à 1000 ou
+la supprimer. Le garde-fou et le compteur restent en place (alerte à 80 % = 800 relevés).
+
 ## 🎯 26 août 2026 — Audit v2 (planche GEO/IA), PDF fidèle, bug Franck (5 commits : de89829 → be30083)
 
 ### 1. Bug Franck : « 145 trouvées » → 2 livrées — les doublons sont désormais REMPLACÉS (`de89829`)
