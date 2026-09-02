@@ -53,7 +53,7 @@ export default async function handler(req, res) {
   }
 
   const ip = clientIp(req);
-  const ipLimit = await rateLimit(`submit:ip:${ip}`, 10, 60 * 60);
+  const ipLimit = await rateLimit(`submit:ip:${ip}`, 20, 60 * 60);
   if (!ipLimit.ok) return json(res, 429, { error: 'Trop de tentatives.', retry_after: ipLimit.retryAfter });
 
   const { errors, normalized } = validateSignupPayload(body);
