@@ -66,7 +66,7 @@ export default async function handler(req, res) {
   const { errors, normalized } = validateSignupPayload(body);
   if (errors.length) return json(res, 400, { error: 'Validation failed', errors });
 
-  const phoneLimit = await rateLimit(`otp:phone:${normalized.phone}`, 4, 60 * 60);
+  const phoneLimit = await rateLimit(`otp:phone:${normalized.phone}`, 20, 60 * 60);
   if (!phoneLimit.ok) return json(res, 429, { error: 'Trop de demandes pour ce numéro.', retry_after: phoneLimit.retryAfter });
 
   const code = newOtpCode();
