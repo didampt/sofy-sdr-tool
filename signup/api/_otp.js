@@ -3,7 +3,6 @@ import { sql, hashKey } from './_lib.js';
 
 const memoryChallenges = new Map();
 const OTP_TTL_SECONDS = 10 * 60;
-const MAX_ATTEMPTS = 5;
 
 function otpSecret() {
   return String(
@@ -92,8 +91,6 @@ export async function verifyOtpChallenge({ id, email, phone, code }) {
     }
     if (challenge.consumedAt) return { ok: false, error: 'Ce code a déjà été utilisé.' };
     if (challenge.expiresAt <= Date.now()) return { ok: false, error: 'Ce code a expiré.' };
-    if (challenge.attempts >= MAX_ATTEMPTS) return { ok: false, error: 'Trop de tentatives pour ce code.' };
-    challenge.attempts += 1;
     if (challenge.codeHash !== expectedHash) return { ok: false, error: 'Code incorrect.' };
     challenge.verifiedAt = Date.now();
     return { ok: true };
@@ -102,14 +99,12 @@ export async function verifyOtpChallenge({ id, email, phone, code }) {
   await ensureOtpSchema();
   const rows = await sql`
     UPDATE signup_otp_challenges
-    SET attempts = attempts + 1,
-        verified_at = CASE WHEN code_hash = ${expectedHash} THEN NOW() ELSE verified_at END
+    SET verified_at = CASE WHEN code_hash = ${expectedHash} THEN NOW() ELSE verified_at END
     WHERE id = ${normalizedID}
       AND email = ${normalizedEmail}
       AND phone = ${normalizedPhone}
       AND consumed_at IS NULL
       AND expires_at > NOW()
-      AND attempts < ${MAX_ATTEMPTS}
     RETURNING code_hash = ${expectedHash} AS valid
   `;
 

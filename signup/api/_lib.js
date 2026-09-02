@@ -135,7 +135,7 @@ export async function storeOtp({ token, code, email, phone, ttlSeconds = 600 }) 
   `;
 }
 
-export async function consumeOtp({ token, code, email, phone, maxAttempts = 5 }) {
+export async function consumeOtp({ token, code, email, phone }) {
   const normalizedToken = String(token || '').trim();
   const normalizedCode = String(code || '').replace(/\s/g, '');
   const normalizedEmail = normalizeEmail(email);
@@ -152,11 +152,6 @@ export async function consumeOtp({ token, code, email, phone, maxAttempts = 5 })
     if (current.email !== normalizedEmail || current.phone !== normalizedPhone) {
       return { ok: false, error: 'Code de validation invalide.' };
     }
-    current.attempts += 1;
-    if (current.attempts > maxAttempts) {
-      memoryOtps.delete(normalizedToken);
-      return { ok: false, error: 'Trop de tentatives. Demandez un nouveau code.' };
-    }
     if (current.codeHash !== otpHash(normalizedToken, normalizedCode, normalizedEmail, normalizedPhone)) {
       return { ok: false, error: 'Code de validation incorrect.' };
     }
@@ -167,21 +162,16 @@ export async function consumeOtp({ token, code, email, phone, maxAttempts = 5 })
 
   await ensureOtpSchema();
   const rows = await sql`
-    UPDATE signup_otps
-    SET attempts = attempts + 1
+    SELECT code_hash, email, phone
+    FROM signup_otps
     WHERE token = ${normalizedToken}
       AND consumed_at IS NULL
       AND expires_at > NOW()
-    RETURNING code_hash, email, phone, attempts
   `;
   const row = rows[0];
   if (!row) return { ok: false, error: 'Code expiré. Demandez un nouveau code.' };
   if (row.email !== normalizedEmail || row.phone !== normalizedPhone) {
     return { ok: false, error: 'Code de validation invalide.' };
-  }
-  if (Number(row.attempts || 0) > maxAttempts) {
-    await sql`DELETE FROM signup_otps WHERE token = ${normalizedToken}`;
-    return { ok: false, error: 'Trop de tentatives. Demandez un nouveau code.' };
   }
   if (row.code_hash !== otpHash(normalizedToken, normalizedCode, normalizedEmail, normalizedPhone)) {
     return { ok: false, error: 'Code de validation incorrect.' };
