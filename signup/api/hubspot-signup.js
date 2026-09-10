@@ -258,17 +258,16 @@ async function upsertCompany({ body, companyProps, companyMeta, token }) {
   const siret = clean(company.siret, 30);
   const siretProp = findProperty(companyMeta, [process.env.HUBSPOT_SIGNUP_COMPANY_SIRET_PROPERTY, 'siret']);
 
-  const searches = [];
+  let existing = null;
   if (siret && siretProp) {
-    searches.push(searchOne('companies', token, [{ propertyName: siretProp.name, operator: 'EQ', value: siret }], ['name']));
+    existing = await searchOne('companies', token, [{ propertyName: siretProp.name, operator: 'EQ', value: siret }], ['name']);
   }
-  if (domain) {
-    searches.push(searchOne('companies', token, [{ propertyName: 'domain', operator: 'EQ', value: domain }], ['name']));
+  if (!existing && domain) {
+    existing = await searchOne('companies', token, [{ propertyName: 'domain', operator: 'EQ', value: domain }], ['name']);
   }
-  if (name) {
-    searches.push(searchOne('companies', token, [{ propertyName: 'name', operator: 'EQ', value: name }], ['name']));
+  if (!existing && name) {
+    existing = await searchOne('companies', token, [{ propertyName: 'name', operator: 'EQ', value: name }], ['name']);
   }
-  const existing = (await Promise.all(searches)).find(Boolean) || null;
 
   if (existing && existing.id) {
     const patch = await hs(`/crm/v3/objects/companies/${existing.id}`, 'PATCH', token, { properties: companyProps });
@@ -336,40 +335,10 @@ export async function syncSignupToHubSpot(body) {
   if (!token) return { ok: false, skipped: true, raison: 'HUBSPOT_API_KEY non configurée' };
 
   const company = body.company || {};
-  const [contactMeta, companyMeta] = await Promise.all([
-    getProperties('contacts', token),
-    getProperties('companies', token)
-  ]);
+  const companyMeta = await getProperties('companies', token);
   const domain = domainFromEmail(body.email);
   const fonction = clean(body.fonction || process.env.HUBSPOT_SIGNUP_DEFAULT_FONCTION || 'Inscription signup', 200);
-
-  const contactProps = compactObject({
-    email: clean(body.email).toLowerCase(),
-    firstname: clean(body.first_name, 200),
-    lastname: clean(body.last_name, 200),
-    phone: clean(body.phone, 80),
-    mobilephone: clean(body.phone, 80),
-    company: clean(company.name, 300),
-    jobtitle: fonction,
-    country: clean(body.country, 200),
-    hs_lead_status: 'OPEN'
-  });
-
-  setProperty(contactProps, findProperty(contactMeta, [
-    process.env.HUBSPOT_SIGNUP_CONTACT_FUNCTION_PROPERTY,
-    'revops_fonction',
-    'fonction',
-    'job_function'
-  ]), [body.fonction, fonction, process.env.HUBSPOT_SIGNUP_DEFAULT_FONCTION, 'autre', 'Autre']);
-  setProperty(contactProps, findProperty(contactMeta, [
-    process.env.HUBSPOT_SIGNUP_CONTACT_COUNTRY_PROPERTY,
-    'revops_pays'
-  ]), [body.country]);
-  setProperty(contactProps, findProperty(contactMeta, [
-    process.env.HUBSPOT_SIGNUP_CONTACT_COUNTRY_CODE_PROPERTY,
-    'hs_country_region_code'
-  ]), [body.country_code]);
-  addConfiguredTrackingProperties(contactProps, contactMeta, 'HUBSPOT_SIGNUP_CONTACT', body.tracking);
+  const warnings = [];
 
   const etabs = establishmentCount(company);
   const companyProps = compactObject({
@@ -405,10 +374,17 @@ export async function syncSignupToHubSpot(body) {
     'number_of_locations',
     'nombre_etablissements_ouverts'
   ]), establishmentCandidates(etabs));
-  setProperty(companyProps, findProperty(companyMeta, [
+  const companySiretProperty = findProperty(companyMeta, [
     process.env.HUBSPOT_SIGNUP_COMPANY_SIRET_PROPERTY,
     'siret'
-  ]), [company.siret]);
+  ]);
+  // SIRET is an identifier, not a quantity. A numeric HubSpot property can
+  // reject valid 14-digit values (and would also lose leading zeroes).
+  if (companySiretProperty && companySiretProperty.type !== 'number') {
+    setProperty(companyProps, companySiretProperty, [company.siret]);
+  } else if (companySiretProperty && company.siret) {
+    warnings.push('SIRET HubSpot ignoré: la propriété est numérique et ne peut pas stocker cet identifiant sans perte');
+  }
   setProperty(companyProps, findProperty(companyMeta, [
     process.env.HUBSPOT_SIGNUP_COMPANY_SIREN_PROPERTY,
     'siren'
@@ -419,18 +395,43 @@ export async function syncSignupToHubSpot(body) {
   ]), [company.tva_id]);
   addConfiguredTrackingProperties(companyProps, companyMeta, 'HUBSPOT_SIGNUP_COMPANY', body.tracking);
 
-  const [contact, companyResult] = await Promise.all([
-    upsertContact({ body, contactProps, token }),
-    upsertCompany({ body, companyProps, companyMeta, token })
-  ]);
-  const warnings = [];
+  const companyResult = await upsertCompany({ body, companyProps, companyMeta, token });
 
-  const [association, note] = await Promise.all([
-    associateContactCompany({ contactId: contact.id, companyId: companyResult.id, token }),
-    createSignupNote({ body, contactId: contact.id, companyId: companyResult.id, token })
-  ]);
+  const contactMeta = await getProperties('contacts', token);
+  const contactProps = compactObject({
+    email: clean(body.email).toLowerCase(),
+    firstname: clean(body.first_name, 200),
+    lastname: clean(body.last_name, 200),
+    phone: clean(body.phone, 80),
+    mobilephone: clean(body.phone, 80),
+    company: clean(company.name, 300),
+    jobtitle: fonction,
+    country: clean(body.country, 200),
+    hs_lead_status: 'OPEN'
+  });
+
+  setProperty(contactProps, findProperty(contactMeta, [
+    process.env.HUBSPOT_SIGNUP_CONTACT_FUNCTION_PROPERTY,
+    'revops_fonction',
+    'fonction',
+    'job_function'
+  ]), [body.fonction, fonction, process.env.HUBSPOT_SIGNUP_DEFAULT_FONCTION, 'autre', 'Autre']);
+  setProperty(contactProps, findProperty(contactMeta, [
+    process.env.HUBSPOT_SIGNUP_CONTACT_COUNTRY_PROPERTY,
+    'revops_pays'
+  ]), [body.country]);
+  setProperty(contactProps, findProperty(contactMeta, [
+    process.env.HUBSPOT_SIGNUP_CONTACT_COUNTRY_CODE_PROPERTY,
+    'hs_country_region_code'
+  ]), [body.country_code]);
+  addConfiguredTrackingProperties(contactProps, contactMeta, 'HUBSPOT_SIGNUP_CONTACT', body.tracking);
+
+  const contact = await upsertContact({ body, contactProps, token });
+
+  const association = await associateContactCompany({ contactId: contact.id, companyId: companyResult.id, token });
   if (association && !association.ok) warnings.push(`Association HubSpot ignorée: HTTP ${association.status}`);
 
+  const note = await createSignupNote({ body, contactId: contact.id, companyId: companyResult.id, token });
   if (note && !note.ok) warnings.push(`Note HubSpot ignorée: ${note.data.message || `HTTP ${note.status}`}`);
 
   return {
