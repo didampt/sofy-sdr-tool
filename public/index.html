@@ -2187,10 +2187,25 @@ const STATUTS_APPEL=[
 const state={naf:[],size:null,emp:[],ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
-function api(url,opts={}){
+async function api(url,opts={}){
  const t=localStorage.getItem('sofy_token');
  opts.headers=Object.assign({},opts.headers||{},t?{'Authorization':'Bearer '+t}:{});
- return fetch(url,opts);
+ const r=await fetch(url,opts);
+ // Jeton expiré EN COURS de session (durée 7 j, onglet resté ouvert) : verifSession() ne joue
+ // qu'au chargement, donc sans ceci chaque action affichait « Connexion requise » sans jamais
+ // renvoyer au login (constat Anaëlle 10/09). On ne réagit qu'à CE 401-là : d'autres 401 existent
+ // (« Réservé au superadmin »…) et ne doivent pas déconnecter.
+ if(r.status===401&&state.user){
+  try{
+   const d=await r.clone().json();
+   if(d&&d.erreur==='Connexion requise'){
+    deconnexion();
+    const err=document.getElementById('login-err');
+    if(err)err.textContent='Session expirée — reconnecte-toi.';
+   }
+  }catch(_){/* réponse non-JSON (timeout Vercel…) : on laisse l'appelant gérer */}
+ }
+ return r;
 }
 async function connexion(action){
  const email=document.getElementById('login-email').value.trim();

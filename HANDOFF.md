@@ -1,4 +1,19 @@
-# HANDOFF — Reprise du travail (dernière mise à jour : 31 août 2026)
+# HANDOFF — Reprise du travail (dernière mise à jour : 10 septembre 2026)
+
+## 🎯 10 septembre 2026 — Session expirée : renvoi automatique au login (constat Anaëlle)
+
+Anaëlle (onglet ouvert depuis > 7 jours, durée de vie des jetons HMAC — `signerToken()` dans
+`api/db.js`) voyait « Erreur : Connexion requise » sur chaque action (création de liste réseau)
+sans jamais être renvoyée au login : `verifSession()` ne joue qu'au **chargement** de la page, et
+le wrapper `api()` n'interceptait pas les 401. Elle restait dans une app d'apparence connectée
+(`state.user` en mémoire) où plus rien ne marchait.
+
+Correctif (`public/index.html`, `api()`) : sur un 401 dont le corps est exactement
+`{erreur:'Connexion requise'}` (clone de la réponse, pour ne pas la consommer), on appelle
+`deconnexion()` + message « Session expirée — reconnecte-toi. » dans l'overlay de login.
+⚠️ On ne déconnecte QUE sur ce libellé : d'autres 401 légitimes existent (« Réservé au
+superadmin » sur les endpoints ?debug) et ne doivent pas éjecter l'utilisateur. Dépannage
+utilisateur sans le correctif : recharger la page suffit.
 
 ## 🎯 31 août 2026 — Import likers : timeout sur les gros posts (constat Didier, post Partoo)
 
