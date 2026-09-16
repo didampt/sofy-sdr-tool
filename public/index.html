@@ -75,6 +75,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
 
 .act{display:inline-flex;align-items:center;gap:7px;padding:9px 15px;border-radius:9px;font-size:13px;font-weight:600;transition:.15s;border:1.5px solid transparent}
 .act:hover{transform:translateY(-1px)}
+.act:disabled{opacity:.6;cursor:not-allowed;transform:none}
 .act-call{background:#0FA968;color:#fff}
 .act-sms{background:#F2620F;color:#fff}
 .act-lemlist{background:#3B82F6;color:#fff}
@@ -11353,7 +11354,7 @@ function rendreSignup(s){
  const siret=s.siret?`<span class="badge b-gmb">SIRET ${htmlSafe(s.siret)}</span>`:'';
  const ficheKey=jsArg(s.fiche_key||s.key);
  const enable=s.pending&&s.can_enable&&state.user&&['admin','superadmin'].includes(state.user.role)
-  ?`<button class="act act-call" style="background:#10B981;color:#fff" onclick="event.stopPropagation();activerSignup('${jsArg(s.key)}')">✅ Activer le compte</button>`
+  ?`<button class="act act-call" style="background:#10B981;color:#fff" onclick="event.stopPropagation();activerSignup('${jsArg(s.key)}',this)">✅ Activer le compte</button>`
   :'';
  const ban=s.pending&&state.user&&['admin','superadmin'].includes(state.user.role)
   ?`<button class="act act-del" onclick="event.stopPropagation();bannirSignup('${jsArg(s.key)}')">Bannir</button>`
@@ -11376,17 +11377,23 @@ async function ouvrirSignupFiche(listId,ficheKey){
  document.querySelectorAll('.nav-btn').forEach(x=>x.classList.remove('active'));
  const b=document.querySelector('[data-view="signups"]');if(b)b.classList.add('active');
 }
-async function activerSignup(key){
+async function activerSignup(key,button){
+ if(button&&button.disabled)return;
+ const initialLabel=button?button.innerHTML:'';
+ if(button){button.disabled=true;button.textContent='⏳ Activation…';}
  key=decodeURIComponent(String(key||''));
  const ok=await confirmSofy('✅ Activer le compte','Activer ce compte Auth0 et marquer la demande comme traitée dans Sofy Scrap ?','Activer');
- if(!ok)return;
+ if(!ok){if(button){button.disabled=false;button.innerHTML=initialLabel;}return;}
+ let completed=false;
  try{
   const r=await api('/api/signups',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key})});
   const d=await r.json();
   if(!r.ok||d.erreur){toast('Erreur : '+(d.detail||d.erreur||'activation impossible'));return;}
+  completed=true;
   toast(d.already_banned?'Signup déjà banni':(d.already_enabled?'Compte déjà activé':'✅ Compte activé'));
   chargerSignups();
  }catch(e){toast('Erreur réseau : '+e.message);}
+ finally{if(!completed&&button&&button.isConnected){button.disabled=false;button.innerHTML=initialLabel;}}
 }
 async function bannirSignup(key){
  key=decodeURIComponent(String(key||''));
