@@ -11301,6 +11301,10 @@ function signupStatut(s){
  if(!s.pending)return '<span class="badge b-new">✅ Activé</span>';
  return '<span class="badge b-signal">⏳ À valider</span>';
 }
+function signupSmsInfo(s){
+ if(s.sms_verification_status==='not_received')return `<span class="badge" style="background:#FFF4D6;color:#9A6700">⚠️ Code SMS non reçu${s.sms_verification_code?' · Code '+htmlSafe(s.sms_verification_code):''}</span>`;
+ return '';
+}
 function signupTitle(s){
  const contact=s.contact||{};
  return s.company_name||contact.full_name||contact.email||'Signup';
@@ -11359,7 +11363,7 @@ function rendreSignup(s){
    <div style="flex:1;min-width:0">
     <div class="lead-name">🆕 ${t}</div>
     <div class="lead-meta">${sub||'Contact non renseigné'} · ${date}</div>
-    <div class="badges">${signupStatut(s)}${siret}${vat}${s.organization_id?`<span class="badge b-new">Org ${htmlSafe(s.organization_id)}</span>`:''}</div>
+    <div class="badges">${signupStatut(s)}${signupSmsInfo(s)}${siret}${vat}${s.organization_id?`<span class="badge b-new">Org ${htmlSafe(s.organization_id)}</span>`:''}</div>
    </div>
    <div class="act-row" style="border:0;padding:0;margin:0">${enable}${ban}<button class="act act-copy" onclick="event.stopPropagation();ouvrirSignupFiche(${Number(s.list_id)||0},'${ficheKey}')">Ouvrir la fiche →</button></div>
   </div>

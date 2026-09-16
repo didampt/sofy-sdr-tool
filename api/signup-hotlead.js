@@ -3,6 +3,7 @@
 
 import crypto from 'crypto';
 import { sql, ensureSchema, ajouterHotLead } from './db.js';
+import { encryptSignupProvisioning } from './signup-provisioning.js';
 
 export const config = { maxDuration: 30 };
 
@@ -36,13 +37,27 @@ async function envoyerSlack(texte) {
 }
 
 function sanitizeSignupPayload(body) {
-  const { password, signup_account, ...rest } = body || {};
+  const { password, signup_account, otp_token, sms_verification_code, ...rest } = body || {};
   const phone = phoneDigits(rest.phone);
   return {
     ...rest,
     phone: phone || rest.phone,
     company: body && body.company ? { ...body.company, pappers_raw: body.company.pappers_raw || undefined } : undefined
   };
+}
+
+function signupProvisioningPayload(body) {
+  const {
+    signup_account,
+    otp_token,
+    otp_code,
+    signup_reference,
+    sms_verification_status,
+    sms_verification_reported_at,
+    sms_verification_code,
+    ...accountPayload
+  } = body || {};
+  return accountPayload;
 }
 
 export default async function handler(req, res) {
@@ -67,7 +82,15 @@ export default async function handler(req, res) {
   const city = String(company.city || '').trim();
   const phone = phoneDigits(body.phone);
   const signupAccount = body.signup_account && typeof body.signup_account === 'object' ? body.signup_account : {};
+  const accountCreated = Boolean(signupAccount.user_id || signupAccount.organization_id);
+  const smsVerificationStatus = body.sms_verification_status === 'not_received' ? 'not_received' : 'verified';
+  const smsVerificationCode = smsVerificationStatus === 'not_received' && /^\d{6}$/.test(String(body.sms_verification_code || ''))
+    ? String(body.sms_verification_code)
+    : null;
   const safePayload = sanitizeSignupPayload(body);
+  const provisioningPayload = accountCreated
+    ? null
+    : encryptSignupProvisioning(signupProvisioningPayload(body));
 
   if (!email || !firstName || !lastName) {
     return res.status(400).json({ erreur: 'first_name, last_name et email requis' });
@@ -93,10 +116,16 @@ export default async function handler(req, res) {
       industrie: company.activity || null,
       effectif: null,
       signup: {
+        otp_token: String(body.otp_token || '').trim() || null,
+        account_created: accountCreated,
+        provisioning_payload: provisioningPayload,
         user_id: signupAccount.user_id || null,
         organization_id: signupAccount.organization_id || null,
         disabled: signupAccount.disabled !== false,
         submitted_at: new Date().toISOString(),
+        sms_verification_status: smsVerificationStatus,
+        sms_verification_reported_at: smsVerificationStatus === 'not_received' ? body.sms_verification_reported_at || new Date().toISOString() : null,
+        sms_verification_code: smsVerificationCode,
         payload: safePayload
       }
     }, {
@@ -107,7 +136,7 @@ export default async function handler(req, res) {
     if (result.ajoute) {
       const app = (process.env.APP_URL || 'https://sofy-sdr-tool.vercel.app').replace(/\/$/, '');
       const link = `${app}/?liste=${result.liste_id}&fiche=${encodeURIComponent(result.cle_fiche || '')}`;
-      await envoyerSlack(`🔥 *Nouvelle inscription Sofy* — ${companyName || email}\n👤 ${firstName} ${lastName} · ${email}${phone ? ` · ${phone}` : ''}\n📍 ${country || 'Pays non renseigné'}${company.siret ? ` · SIRET ${company.siret}` : ''}${company.tva_id ? ` · TVA ${company.tva_id}` : ''}\n📂 <${link}|Ouvrir dans Sofy Scrap>`);
+      await envoyerSlack(`🔥 *Nouvelle inscription Sofy* — ${companyName || email}\n👤 ${firstName} ${lastName} · ${email}${phone ? ` · ${phone}` : ''}\n📍 ${country || 'Pays non renseigné'}${company.siret ? ` · SIRET ${company.siret}` : ''}${company.tva_id ? ` · TVA ${company.tva_id}` : ''}${smsVerificationStatus === 'not_received' ? `\n⚠️ Code SMS non reçu — validation manuelle requise${smsVerificationCode ? ` · Code : ${smsVerificationCode}` : ''}` : ''}\n📂 <${link}|Ouvrir dans Sofy Scrap>`);
     }
 
     return res.status(200).json({ ok: true, ...result });

@@ -356,6 +356,34 @@ export async function ajouterHotLead(profil, cfg) {
   for (const e of ents) for (const id of identites(e)) connus.add(id);
   const idsP = identites(profil);
   const collision = idsP.find(id => connus.has(id));
+  const signupToken = profil.type === 'signup' && profil.signup && profil.signup.otp_token;
+  const signupIndex = signupToken
+    ? ents.findIndex(e => e.signup && e.signup.otp_token === signupToken)
+    : -1;
+  if (signupIndex >= 0) {
+    const existing = ents[signupIndex];
+    const signup = {
+      ...(existing.signup || {}),
+      ...profil.signup,
+      submitted_at: (existing.signup && existing.signup.submitted_at) || profil.signup.submitted_at
+    };
+    ents[signupIndex] = {
+      ...existing,
+      signup,
+      signal: {
+        ...(existing.signal || {}),
+        detail: profil.detail || (existing.signal && existing.signal.detail),
+        signup
+      }
+    };
+    await sql`UPDATE listes SET entreprises = ${JSON.stringify(ents)}, total = ${ents.length} WHERE id = ${hl.id}`;
+    return {
+      ajoute: false,
+      updated: true,
+      liste_id: hl.id,
+      cle_fiche: ((existing.signal && existing.signal.date) || '') + (existing.nom || '')
+    };
+  }
   if (profil.type !== 'signup' && collision) {
     return { ajoute: false, raison: 'déjà présent (' + collision + ')' };
   }

@@ -1,6 +1,7 @@
 // /api/signups.js — Dedicated signup inbox and enable action for Sofy Scrap.
 
 import { sql, ensureSchema, verifierToken } from './db.js';
+import { decryptSignupProvisioning } from './signup-provisioning.js';
 
 function signupInfo(e) {
   return (e && (e.signup || (e.signal && e.signal.signup))) || null;
@@ -50,11 +51,13 @@ function normalizeSignup(e, idx, listId) {
     enabled_by: info.enabled_by || null,
     banned_at: bannedAt,
     banned_by: bannedBy,
+    sms_verification_status: info.sms_verification_status || 'verified',
+    sms_verification_code: info.sms_verification_code || null,
     pending: !enabled && !banned,
     banned,
     user_id: userId,
     organization_id: info.organization_id || null,
-    can_enable: Boolean(userId || contact.email),
+    can_enable: Boolean(info.provisioning_payload || (info.account_created !== false && (userId || contact.email))),
     contact
   };
 }
@@ -80,6 +83,29 @@ async function callBackendEnable({ userId, email }) {
     body: JSON.stringify({ user_id: userId || undefined, email: email || undefined })
   });
   const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || data.erreur || data.detail || `HTTP ${response.status}`);
+  }
+  return data;
+}
+
+async function callBackendCreate(payload) {
+  const backendBase = String(process.env.BACKEND_API_URL || '').replace(/\/$/, '');
+  const url = process.env.BACKEND_SIGNUP_URL || (backendBase ? `${backendBase}/auth/internal/signups` : '');
+  const token = String(process.env.SOFY_SIGNUP_TOKEN || '').trim();
+  if (!url) throw new Error('BACKEND_API_URL or BACKEND_SIGNUP_URL is not configured');
+  if (!token) throw new Error('SOFY_SIGNUP_TOKEN is not configured');
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Sofy-Signup-Token': token
+    },
+    body: JSON.stringify(payload)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (response.status === 409) return { already_exists: true };
   if (!response.ok) {
     throw new Error(data.error || data.erreur || data.detail || `HTTP ${response.status}`);
   }
@@ -152,6 +178,7 @@ export default async function handler(req, res) {
         }
         const signup = {
           ...(signupInfo(latest) || {}),
+          provisioning_payload: null,
           banned: true,
           banned_at: bannedAt,
           banned_by: bannedBy
@@ -170,9 +197,21 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, signup: normalizeSignup(latestEntreprises[latestIdx], latestIdx, latestList.id) });
       }
 
-      if (!normalized.can_enable) return res.status(400).json({ erreur: 'Aucun user_id ou email pour activer ce signup' });
+      if (!normalized.can_enable) return res.status(400).json({ erreur: 'Informations insuffisantes pour créer ou activer ce signup' });
 
-      const backend = await callBackendEnable({ userId: normalized.user_id, email: normalized.contact.email });
+      const currentInfo = signupInfo(current) || {};
+      let createdAccount = null;
+      if (currentInfo.account_created === false) {
+        const provisioning = decryptSignupProvisioning(currentInfo.provisioning_payload);
+        if (!provisioning || !provisioning.password) {
+          return res.status(400).json({ erreur: 'Données de création du compte indisponibles' });
+        }
+        createdAccount = await callBackendCreate(provisioning);
+      }
+      const backend = await callBackendEnable({
+        userId: (createdAccount && createdAccount.user_id) || normalized.user_id,
+        email: normalized.contact.email
+      });
       const enabledAt = new Date().toISOString();
       const latestList = await getHotLeadList();
       const latestEntreprises = (latestList && Array.isArray(latestList.entreprises)) ? latestList.entreprises : [];
@@ -182,7 +221,9 @@ export default async function handler(req, res) {
       const signup = {
         ...(signupInfo(latest) || {}),
         user_id: backend.user_id || normalized.user_id || null,
-        organization_id: normalized.organization_id || null,
+        organization_id: (createdAccount && createdAccount.organization_id) || normalized.organization_id || null,
+        account_created: true,
+        provisioning_payload: null,
         enabled: true,
         disabled: false,
         enabled_at: enabledAt,

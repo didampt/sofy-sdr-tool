@@ -115,6 +115,7 @@ const otpSection = document.querySelector('#otpSection');
 const otpCode = document.querySelector('#otpCode');
 const otpBoxes = Array.from(document.querySelectorAll('.otp-box'));
 const resendOtpBtn = document.querySelector('#resendOtpBtn');
+const missingOtpBtn = document.querySelector('#missingOtpBtn');
 const countryCodeInput = document.querySelector('#countryCode');
 const phoneCountryInput = document.querySelector('#phoneCountry');
 const moduleSlides = Array.from(document.querySelectorAll('.module-slide'));
@@ -148,6 +149,8 @@ let selectedCompanyActivity = '';
 let abortSearch = null;
 let signupCompleted = false;
 let otpToken = '';
+let signupReference = '';
+let missingOtpTimer = null;
 let previewMode = '';
 let pendingSignupPayload = null;
 const searchCache = new Map();
@@ -502,11 +505,13 @@ function validateClient(payload) {
   return errors;
 }
 
-function otpPayload(payload) {
+function otpPayload(payload, manualSmsReview = false) {
   return {
     ...payload,
     otp_token: otpToken,
-    otp_code: otpCode.value.trim()
+    signup_reference: signupReference || otpToken,
+    otp_code: otpCode.value.trim(),
+    ...(manualSmsReview ? { sms_verification_status: 'not_received' } : {})
   };
 }
 
@@ -534,10 +539,20 @@ function showOtpStep() {
     (otpBoxes[firstEmpty === -1 ? otpBoxes.length - 1 : firstEmpty] || otpCode).focus();
   }
   submitBtn.textContent = 'Valider le code et créer mon compte';
+  if (missingOtpTimer) window.clearTimeout(missingOtpTimer);
+  missingOtpBtn.hidden = true;
+  missingOtpTimer = window.setTimeout(() => {
+    missingOtpBtn.hidden = false;
+    missingOtpTimer = null;
+  }, 30_000);
 }
 
 function resetOtpStep() {
+  if (missingOtpTimer) window.clearTimeout(missingOtpTimer);
+  missingOtpTimer = null;
+  missingOtpBtn.hidden = true;
   otpToken = '';
+  signupReference = '';
   pendingSignupPayload = null;
   form.classList.remove('is-otp-step');
   otpSection.hidden = true;
@@ -557,12 +572,14 @@ function showExistingEmailError() {
 
 async function requestOtp(payload) {
   submitBtn.disabled = true;
+  resendOtpBtn.disabled = true;
+  missingOtpBtn.disabled = true;
   submitBtn.textContent = 'Envoi du code...';
   try {
     const response = await fetch('/api/signup-otp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ ...payload, ...(signupReference ? { signup_reference: signupReference } : {}) })
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -570,20 +587,25 @@ async function requestOtp(payload) {
       throw new Error(details);
     }
     otpToken = data.otp_token || '';
+    signupReference = data.signup_reference || signupReference || otpToken;
     if (!otpToken) throw new Error('Code envoyé, mais jeton de validation manquant.');
     pendingSignupPayload = payload;
     setOtpValue('', 0, false);
     showOtpStep();
-    setError('<div>Code envoyé par SMS. Il expire dans 10 minutes.</div>', 'info');
+    setError(data.sms_sent === false
+      ? '<div>Le SMS n’a pas pu être acheminé. Notre équipe pourra valider votre compte.</div>'
+      : '<div>Code envoyé par SMS. Il expire dans 10 minutes.</div>', 'info');
   } catch (err) {
     setError(err.message);
     resetOtpStep();
   } finally {
     submitBtn.disabled = false;
+    resendOtpBtn.disabled = false;
+    missingOtpBtn.disabled = false;
   }
 }
 
-async function submitSignup(payload) {
+async function submitSignup(payload, manualSmsReview = false) {
   const finalPayload = payload || pendingSignupPayload;
   if (!finalPayload) {
     setError('Les informations du formulaire ne sont plus disponibles. Demandez un nouveau code.');
@@ -592,7 +614,7 @@ async function submitSignup(payload) {
   }
 
   const code = otpValue();
-  if (!/^\d{6}$/.test(code)) {
+  if (!manualSmsReview && !/^\d{6}$/.test(code)) {
     setError('Saisissez le code à 6 chiffres reçu par SMS.');
     const firstEmpty = otpBoxes.findIndex(box => !box.value);
     (otpBoxes[firstEmpty === -1 ? 0 : firstEmpty] || otpCode).focus();
@@ -600,12 +622,14 @@ async function submitSignup(payload) {
   }
 
   submitBtn.disabled = true;
+  resendOtpBtn.disabled = true;
+  missingOtpBtn.disabled = true;
   submitBtn.textContent = 'Création en cours...';
   try {
     const response = await fetch('/api/signup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(otpPayload(finalPayload))
+      body: JSON.stringify(otpPayload(finalPayload, manualSmsReview))
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -628,6 +652,8 @@ async function submitSignup(payload) {
   } finally {
     if (!signupCompleted) {
       submitBtn.disabled = false;
+      resendOtpBtn.disabled = false;
+      missingOtpBtn.disabled = false;
       submitBtn.textContent = 'Valider le code et créer mon compte';
     }
   }
@@ -855,6 +881,18 @@ resendOtpBtn.addEventListener('click', async () => {
   }
   const payload = validatedPayload();
   if (payload) await requestOtp(payload);
+});
+missingOtpBtn.addEventListener('click', async () => {
+  if (previewMode) {
+    setError('<div>Mode aperçu : votre demande serait transmise à notre équipe.</div>', 'info');
+    return;
+  }
+  if (!pendingSignupPayload || !otpToken) {
+    setError('Demandez d’abord un code par SMS.');
+    return;
+  }
+  setError('');
+  await submitSignup(pendingSignupPayload, true);
 });
 togglePassword.addEventListener('click', () => {
   const show = password.type === 'password';

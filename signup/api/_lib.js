@@ -26,6 +26,35 @@ function otpHash(token, code, email, phone) {
   return hashKey(`${token}:${code}:${normalizeEmail(email)}:${String(phone || '').trim()}`);
 }
 
+function otpEncryptionKey() {
+  const secret = process.env.SIGNUP_OTP_SECRET
+    || process.env.SOFY_SIGNUP_TOKEN
+    || process.env.SIGNUP_HOTLEAD_TOKEN
+    || 'signup-otp-local-dev';
+  return crypto.createHash('sha256').update(String(secret)).digest();
+}
+
+function encryptOtpCode(token, code) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', otpEncryptionKey(), iv);
+  cipher.setAAD(Buffer.from(String(token)));
+  const encrypted = Buffer.concat([cipher.update(String(code), 'utf8'), cipher.final()]);
+  return [iv, cipher.getAuthTag(), encrypted].map(value => value.toString('base64url')).join('.');
+}
+
+function decryptOtpCode(token, encryptedCode) {
+  try {
+    const [iv, tag, encrypted] = String(encryptedCode || '').split('.').map(value => Buffer.from(value, 'base64url'));
+    if (!iv?.length || !tag?.length || !encrypted?.length) return null;
+    const decipher = crypto.createDecipheriv('aes-256-gcm', otpEncryptionKey(), iv);
+    decipher.setAAD(Buffer.from(String(token)));
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
+  } catch (_) {
+    return null;
+  }
+}
+
 export function newOtpCode() {
   return String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
 }
@@ -100,6 +129,7 @@ async function ensureOtpSchema() {
   await sql`CREATE TABLE IF NOT EXISTS signup_otps (
     token TEXT PRIMARY KEY,
     code_hash TEXT NOT NULL,
+    code_encrypted TEXT,
     email TEXT NOT NULL,
     phone TEXT NOT NULL,
     attempts INTEGER NOT NULL DEFAULT 0,
@@ -107,6 +137,7 @@ async function ensureOtpSchema() {
     consumed_at TIMESTAMPTZ DEFAULT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`;
+  await sql`ALTER TABLE signup_otps ADD COLUMN IF NOT EXISTS code_encrypted TEXT`;
   await sql`CREATE INDEX IF NOT EXISTS idx_signup_otps_expires ON signup_otps (expires_at)`;
 }
 
@@ -114,10 +145,12 @@ export async function storeOtp({ token, code, email, phone, ttlSeconds = 600 }) 
   const normalizedEmail = normalizeEmail(email);
   const normalizedPhone = String(phone || '').trim();
   const codeHash = otpHash(token, code, normalizedEmail, normalizedPhone);
+  const codeEncrypted = encryptOtpCode(token, code);
 
   if (!sql) {
     memoryOtps.set(token, {
       codeHash,
+      code: String(code),
       email: normalizedEmail,
       phone: normalizedPhone,
       attempts: 0,
@@ -130,8 +163,8 @@ export async function storeOtp({ token, code, email, phone, ttlSeconds = 600 }) 
   await ensureOtpSchema();
   await sql`DELETE FROM signup_otps WHERE expires_at <= NOW() - INTERVAL '1 hour' OR consumed_at IS NOT NULL`;
   await sql`
-    INSERT INTO signup_otps (token, code_hash, email, phone, expires_at)
-    VALUES (${token}, ${codeHash}, ${normalizedEmail}, ${normalizedPhone}, NOW() + (${ttlSeconds}::int * INTERVAL '1 second'))
+    INSERT INTO signup_otps (token, code_hash, code_encrypted, email, phone, expires_at)
+    VALUES (${token}, ${codeHash}, ${codeEncrypted}, ${normalizedEmail}, ${normalizedPhone}, NOW() + (${ttlSeconds}::int * INTERVAL '1 second'))
   `;
 }
 
@@ -161,23 +194,66 @@ export async function consumeOtp({ token, code, email, phone }) {
   }
 
   await ensureOtpSchema();
+  const codeHash = otpHash(normalizedToken, normalizedCode, normalizedEmail, normalizedPhone);
   const rows = await sql`
-    SELECT code_hash, email, phone
-    FROM signup_otps
+    UPDATE signup_otps
+    SET consumed_at = NOW()
     WHERE token = ${normalizedToken}
+      AND code_hash = ${codeHash}
+      AND email = ${normalizedEmail}
+      AND phone = ${normalizedPhone}
+      AND consumed_at IS NULL
+      AND expires_at > NOW()
+    RETURNING token
+  `;
+  if (rows.length) return { ok: true };
+
+  const active = await sql`
+    SELECT token FROM signup_otps
+    WHERE token = ${normalizedToken}
+      AND email = ${normalizedEmail}
+      AND phone = ${normalizedPhone}
       AND consumed_at IS NULL
       AND expires_at > NOW()
   `;
-  const row = rows[0];
-  if (!row) return { ok: false, error: 'Code expiré. Demandez un nouveau code.' };
-  if (row.email !== normalizedEmail || row.phone !== normalizedPhone) {
-    return { ok: false, error: 'Code de validation invalide.' };
+  return active.length
+    ? { ok: false, error: 'Code de validation incorrect.' }
+    : { ok: false, error: 'Code expiré. Demandez un nouveau code.' };
+}
+
+// A manual-review request must follow an issued OTP and makes that OTP unusable.
+export async function claimOtpForManualReview({ token, email, phone }) {
+  const normalizedToken = String(token || '').trim();
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedPhone = String(phone || '').trim();
+  if (!normalizedToken) return { ok: false, error: 'Demandez un nouveau code avant de signaler ce problème.' };
+
+  if (!sql) {
+    const current = memoryOtps.get(normalizedToken);
+    if (!current || current.consumed || current.expiresAt <= Date.now()
+      || current.email !== normalizedEmail || current.phone !== normalizedPhone) {
+      return { ok: false, error: 'Code expiré. Demandez un nouveau code.' };
+    }
+    const code = current.code || null;
+    current.consumed = true;
+    memoryOtps.delete(normalizedToken);
+    return { ok: true, code };
   }
-  if (row.code_hash !== otpHash(normalizedToken, normalizedCode, normalizedEmail, normalizedPhone)) {
-    return { ok: false, error: 'Code de validation incorrect.' };
-  }
-  await sql`UPDATE signup_otps SET consumed_at = NOW() WHERE token = ${normalizedToken}`;
-  return { ok: true };
+
+  await ensureOtpSchema();
+  const rows = await sql`
+    UPDATE signup_otps
+    SET consumed_at = NOW()
+    WHERE token = ${normalizedToken}
+      AND email = ${normalizedEmail}
+      AND phone = ${normalizedPhone}
+      AND consumed_at IS NULL
+      AND expires_at > NOW()
+    RETURNING code_encrypted
+  `;
+  return rows.length
+    ? { ok: true, code: decryptOtpCode(normalizedToken, rows[0].code_encrypted) }
+    : { ok: false, error: 'Code expiré. Demandez un nouveau code.' };
 }
 
 export function requireEnv(name) {
