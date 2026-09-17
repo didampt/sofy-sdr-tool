@@ -18,6 +18,34 @@ re-dessiner. ⚠️ Piège si on ajoute une action dans la fenêtre : un `rerend
 silencieusement différé — utiliser `rerender(i,true)`. Le même motif existait déjà pour le champ
 de recherche (garde dans `rerender_all`).
 
+**Suite (17/09 après-midi) — la NOTE qui disparaît = même famille** : le textarea `note{i}` du
+bloc-notes vit aussi dans le HTML de la fiche ; tout re-rendu le reconstruisait vide et la note
+en cours de frappe partait. Ici pas de différé : `capturerNotes()`/`restaurerNotes()` autour de
+chaque repaint (`rerender`, `rerender_all`, y compris la branche filtre) — la fiche se met à
+jour ET la saisie (avec focus/curseur) survit.
+
+**Rappels « qui sautent » (constat Alicia, diagnostic posé, cause à confirmer sur un exemple)** —
+trois mécanismes suppriment/écrasent un rappel en silence : ① **archiver une liste supprime tous
+ses rappels non faits** (`api/listes.js`, voulu mais invisible pour le SDR concerné si un autre
+archive) ; ② **anti-doublon « 1 rappel en attente par (sdr, fiche) »** (`api/taches.js` POST) : re-
+programmer écrase la date du rappel existant, et `annulerRappel()` d'un statut « Rappel demandé »
+crée un défaut lendemain 9 h qui écrase pareil ; ③ le webhook Lemlist marque TOUTES les tâches de
+l'email faites sur réponse/désinscription (`lemlist-webhook.js` STOP). Demander à Alicia un
+exemple précis (fiche + date posée) pour trancher.
+
+**Enrichissement lent (5 h/100 fiches) — diagnostic posé le 17/09, optimisation à valider** :
+pipeline strictement séquentiel (1 fiche à la fois, 1 contact à la fois) × étages à attente
+bloquante : Dropcontact jusqu'à ~40 s serveur + 40 s polls front ; FullEnrich jusqu'à ~100 s
+serveur + 80 s front (cascade 15 sources, tenté dès qu'il manque email OU téléphone) ; Personas =
+Claude + web_search (20-60 s, +30 s sur 429) ; scoring IA. Ce qui a allongé « depuis quelque
+temps » : étage Lemlist ajouté le 17/08 + modèle multi-contacts v394 + personas → 2-3 contacts/
+fiche, chacun traversant Dropcontact/Lemlist/FullEnrich ⇒ 3-5 min/fiche. Côté CONSOMMATION, mêmes
+multiplicateurs : Dropcontact 0,10 €/tentative et FullEnrich 0,25 €/tentative (payé même en
+échec) × nb contacts — vérifier le rendement réel via `GET /api/diag-enrich?jours=30`
+(superadmin). Plan proposé (non appliqué) : vagues de 3 fiches en parallèle (waterfall par
+contact inchangé donc coûts inchangés, précédent des 4 lots parallèles de la veille du 31/08),
+gain attendu ÷3 ; option supplémentaire : paralléliser les contacts d'une fiche étage par étage.
+
 **Bug 2 d'Alicia (traité le même jour) — clics fantômes MATOUBAM = scanners de sécurité email** :
 les passerelles (Microsoft Safe Links, Proofpoint…) « cliquent » tous les liens du mail à la
 livraison → faux `emailsClicked` sur la fiche, contestés par la cliente. Filtre dans

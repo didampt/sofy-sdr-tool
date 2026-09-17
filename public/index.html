@@ -7251,6 +7251,27 @@ function rejouerRendusDifferes(){
  const d=RERENDER_DIFFERE;RERENDER_DIFFERE=null;
  if(d.all)rerender_all();else d.i.forEach(k=>rerender(k));
 }
+/* Le bloc-notes (textarea note{i}) vit lui aussi dans le HTML de la fiche : un re-rendu le
+   reconstruisait VIDE et la note en cours de frappe disparaissait (constat Alicia 17/09 — même
+   famille que la fenêtre de correction, autre champ). Ici on ne diffère pas : on capture la
+   saisie avant de remplacer le HTML et on la reverse dans le textarea reconstruit (mêmes ids),
+   focus et curseur compris — la fiche reste à jour ET la note survit. */
+function capturerNotes(){
+ const s={};
+ document.querySelectorAll('textarea[id^="note"]').forEach(t=>{
+  if(/^note\d+$/.test(t.id)&&t.value.trim())s[t.id]={v:t.value,f:document.activeElement===t,ss:t.selectionStart,se:t.selectionEnd};
+ });
+ return s;
+}
+function restaurerNotes(s){
+ for(const id in s){
+  const t=document.getElementById(id);
+  if(t&&!t.value){
+   t.value=s[id].v;
+   if(s[id].f){t.focus();try{t.setSelectionRange(s[id].ss,s[id].se);}catch(_){}}
+  }
+ }
+}
 function rerender(i,force){
  if(!force&&editionOuverte(i)){
   if(!RERENDER_DIFFERE)RERENDER_DIFFERE={i:new Set(),all:false};
@@ -7258,8 +7279,10 @@ function rerender(i,force){
   majKpisReal(); // les compteurs vivent hors de la fiche : eux peuvent bouger sans danger
   return;
  }
+ const notes=capturerNotes();
  const el=document.getElementById('fr'+i);
  if(el)el.outerHTML=ficheReal(REAL[i],i);
+ restaurerNotes(notes);
  majKpisReal();
  fermerMenuFiche(); // le menu ⋯ pointait vers un bouton qui n'existe plus après ré-affichage
  rejouerRendusDifferes(); // un rendu forcé ferme la fenêtre : les rendus mis en attente repartent
@@ -9034,9 +9057,11 @@ function rerender_all(){
  }
  // Un filtre de recherche actif doit SURVIVRE aux rendus asynchrones (Ringover, engagement…)
  // — sinon l'ouverture ciblée depuis l'Historique est écrasée ~1 s après l'atterrissage.
+ const notes=capturerNotes();
  const champ=document.getElementById('search-fiches');
- if(champ&&champ.value.trim()){filtrerFiches(champ.value.trim());return;}
- const c=document.getElementById('fiches');if(c)c.innerHTML=ordreFiches().map(k=>ficheReal(REAL[k],k)).join('');}
+ if(champ&&champ.value.trim()){filtrerFiches(champ.value.trim());restaurerNotes(notes);return;}
+ const c=document.getElementById('fiches');if(c)c.innerHTML=ordreFiches().map(k=>ficheReal(REAL[k],k)).join('');
+ restaurerNotes(notes);}
 
 /* ───────── ENVOIS : LEMLIST / HUBSPOT / SMS ───────── */
 function produitDominant(e){
