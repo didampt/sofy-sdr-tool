@@ -277,11 +277,26 @@ export default async function handler(req, res) {
         ORDER BY a.ts DESC`;
       const liste = candidats.map(c => ({ id: c.id, email: c.email, type: c.type, clic_le: c.ts, envoye_le: c.envoye_le,
         ecart_s: Math.round((new Date(c.ts) - new Date(c.envoye_le)) / 1000) }));
-      if (q.dry) return res.status(200).json({ dry: true, candidats: liste.length, evenements: liste });
+      // Ouvertures jumelles : collées (± 5 s) à un clic robot — candidat OU déjà reclassé —
+      // ce sont les hits du même scanner (elles allumaient encore le badge 🔥 et l'alerte Slack)
+      const ouvertures = await sql`
+        SELECT o.id, o.fiche_cle AS email, o.ts
+        FROM activites o
+        WHERE o.source = 'lemlist' AND o.type = 'emailsOpened'
+          AND EXISTS (SELECT 1 FROM activites c WHERE c.fiche_cle = o.fiche_cle
+            AND (c.type IN ('emailsClickedBot', 'attractedBot') OR (c.type IN ('emailsClicked', 'attracted')
+              AND EXISTS (SELECT 1 FROM activites s WHERE s.fiche_cle = c.fiche_cle AND s.type = 'emailsSent'
+                AND s.ts <= c.ts AND c.ts - s.ts < interval '60 seconds')))
+            AND c.ts BETWEEN o.ts - interval '5 seconds' AND o.ts + interval '5 seconds')
+        ORDER BY o.ts DESC`;
+      if (q.dry) return res.status(200).json({ dry: true, candidats: liste.length, ouvertures_jumelles: ouvertures.length, evenements: liste, ouvertures: ouvertures });
       const ids = liste.map(c => c.id);
       if (ids.length) await sql`UPDATE activites SET type = type || 'Bot', titre = '🤖 Clic robot (scanner sécurité) — ignoré'
         WHERE id = ANY(${ids})`;
-      return res.status(200).json({ ok: true, reclasses: ids.length, evenements: liste });
+      const idsO = ouvertures.map(o => o.id);
+      if (idsO.length) await sql`UPDATE activites SET type = 'emailsOpenedBot', titre = '🤖 Ouverture robot (scanner sécurité) — ignorée'
+        WHERE id = ANY(${idsO})`;
+      return res.status(200).json({ ok: true, reclasses: ids.length, ouvertures_reclassees: idsO.length, evenements: liste });
     } catch (e) { return res.status(500).json({ erreur: e.message }); }
   }
 
@@ -386,6 +401,17 @@ export default async function handler(req, res) {
             titre = '🤖 Clic robot (scanner sécurité) — ignoré';
           }
         }
+        // L'OUVERTURE du même scanner arrive collée au clic robot (< 5 s, souvent 2 ms — timeline
+        // MATOUBAM/GBH, 17/09) et déclenchait encore le badge 🔥 et l'alerte Slack. On ne filtre
+        // PAS les ouvertures au seul critère des 60 s (un humain peut ouvrir vite) : uniquement
+        // celles appariées à un clic déjà classé robot. Le sens inverse (ouverture reçue AVANT le
+        // clic, cas fréquent à 2 ms près) est couvert par le re-typage rétroactif sous l'INSERT.
+        if (type === 'emailsOpened') {
+          const bot = await sql`SELECT 1 FROM activites WHERE fiche_cle = ${email}
+            AND type IN ('emailsClickedBot', 'attractedBot')
+            AND ts BETWEEN ${ts}::timestamptz - interval '5 seconds' AND ${ts}::timestamptz + interval '5 seconds' LIMIT 1`;
+          if (bot.length) { typeEff = 'emailsOpenedBot'; titre = '🤖 Ouverture robot (scanner sécurité) — ignorée'; }
+        }
         // Au plus UNE alerte Slack par lead par 24 h (tous types confondus) : un lead qui
         // re-reagit plus tard re-declenche (ex : email re-ouvert 2 jours apres), sans spammer
         // le SDR a chaque ouverture rapprochee. Exception : une REPONSE alerte toujours
@@ -402,6 +428,12 @@ export default async function handler(req, res) {
         await sql`INSERT INTO activites (fiche_cle, source, type, titre, detail, auteur, ref, ts)
           VALUES (${email}, 'lemlist', ${typeEff}, ${titre}, ${detail}, ${auteur}, ${ref}, ${ts})
           ON CONFLICT (ref) DO NOTHING`;
+        // Clic classé robot → l'ouverture jumelle déjà journalisée (± 5 s) est du même scanner
+        if (typeEff === 'emailsClickedBot' || typeEff === 'attractedBot') {
+          await sql`UPDATE activites SET type = 'emailsOpenedBot', titre = '🤖 Ouverture robot (scanner sécurité) — ignorée'
+            WHERE fiche_cle = ${email} AND type = 'emailsOpened'
+            AND ts BETWEEN ${ts}::timestamptz - interval '5 seconds' AND ${ts}::timestamptz + interval '5 seconds'`;
+        }
         // Le lead a réagi → on stoppe la prospection Sofy (SMS programmé + tâche de rappel)
         if (STOP.includes(typeEff)) {
           await sql`UPDATE sms_programmes SET statut = 'cancelled' WHERE email = ${email} AND statut = 'pending'`;

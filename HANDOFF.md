@@ -32,6 +32,19 @@ reclasser (rejouable, idempotent). ⚠️ Envoi non journalisé (webhook manqué
 humain ; un vrai clic humain dans la minute suivant l'envoi est possible mais rare, et il reste
 visible sur la fiche.
 
+Épilogue (vérifié sur les données, 17/09) : 126 clics robots reclassés depuis fin juin — écarts
+de 4 à 58 s, clics par paires à ~0,2 s (les 2 liens du mail), concentrés sur les grosses DSI
+(gbh.fr en tête, Renault, Allianz…). La fiche « MATOUBAM » = filiale GBH, contacts en @gbh.fr
+(d'où l'email introuvable en cherchant « matoubam ») : ses clics étaient bien dans les 126, la
+cliente disait vrai. Extension au vu de sa timeline : l'**ouverture** du même scanner arrive
+collée au clic (2 ms) et allumait encore le badge 🔥 + l'alerte Slack → toute `emailsOpened`
+à ± 5 s d'un clic classé robot est re-typée `emailsOpenedBot` (temps réel : test à l'arrivée +
+re-typage rétroactif de la jumelle sous l'INSERT, car elle arrive souvent 2 ms AVANT le clic ;
+historique : même passe dans `?backfill_bots`). On ne filtre PAS les ouvertures au seul critère
+des 60 s : un humain peut ouvrir vite. Résidu connu : l'alerte Slack peut partir si l'ouverture
+est traitée avant que le clic jumeau soit classé (course entre webhooks) — rare, plafonné par
+l'anti-doublon 24 h.
+
 ## 🎯 10 septembre 2026 — Session expirée : renvoi automatique au login (constat Anaëlle)
 
 Anaëlle (onglet ouvert depuis > 7 jours, durée de vie des jetons HMAC — `signerToken()` dans
