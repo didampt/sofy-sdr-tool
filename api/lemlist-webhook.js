@@ -2,7 +2,8 @@
 //   GET ?register=1 -> enregistre le webhook chez Lemlist (tous événements) + secret
 //   GET ?hooks=1    -> liste les webhooks enregistrés
 //   GET ?voir=1     -> 20 derniers événements bruts (debug)
-//   POST (Lemlist)  -> vérifie le secret, journalise dans `activites`, et stoppe la prospection (SMS/tâche) si réponse/intéressé
+//   GET ?backfill_bots=1[&dry=1] -> reclasse les clics de scanners passés (superadmin ; dry = liste sans modifier)
+//   POST (Lemlist)  -> vérifie le secret, journalise dans `activites` (clics de scanners re-typés *Bot), et stoppe la prospection (SMS/tâche) si réponse/intéressé
 import crypto from 'crypto';
 import { sql, ensureSchema } from './db.js';
 
@@ -255,6 +256,35 @@ export default async function handler(req, res) {
   }
 
   // 1quinquies) Backfill des profils LinkedIn depuis les événements déjà archivés (superadmin)
+  // 1sexies) Backfill des clics robots (superadmin) : reclasse rétroactivement les clics de
+  // scanners de sécurité (< 60 s après un « Email envoyé » du même lead — même règle que le
+  // filtre temps réel du POST ci-dessous). ?backfill_bots=1&dry=1 -> liste les candidats SANS
+  // modifier (email, horodatages, écart en secondes) : c'est la vue de vérification (cas
+  // MATOUBAM, 17/09). Sans dry -> reclasse (type + 'Bot', hors badge 🔥 / cockpit). Rejouable.
+  if (req.method === 'GET' && q.backfill_bots) {
+    let user = null;
+    try { const m = await import('./db.js'); user = m.verifierToken(req); } catch (_) {}
+    if (!user || user.role !== 'superadmin') return res.status(401).json({ erreur: 'Réservé au superadmin' });
+    if (!sql) return res.status(500).json({ erreur: 'pas de base' });
+    try {
+      const candidats = await sql`
+        SELECT a.id, a.fiche_cle AS email, a.type, a.ts,
+          (SELECT MAX(s.ts) FROM activites s WHERE s.fiche_cle = a.fiche_cle AND s.type = 'emailsSent' AND s.ts <= a.ts) AS envoye_le
+        FROM activites a
+        WHERE a.source = 'lemlist' AND a.type IN ('emailsClicked', 'attracted')
+          AND EXISTS (SELECT 1 FROM activites s WHERE s.fiche_cle = a.fiche_cle AND s.type = 'emailsSent'
+            AND s.ts <= a.ts AND a.ts - s.ts < interval '60 seconds')
+        ORDER BY a.ts DESC`;
+      const liste = candidats.map(c => ({ id: c.id, email: c.email, type: c.type, clic_le: c.ts, envoye_le: c.envoye_le,
+        ecart_s: Math.round((new Date(c.ts) - new Date(c.envoye_le)) / 1000) }));
+      if (q.dry) return res.status(200).json({ dry: true, candidats: liste.length, evenements: liste });
+      const ids = liste.map(c => c.id);
+      if (ids.length) await sql`UPDATE activites SET type = type || 'Bot', titre = '🤖 Clic robot (scanner sécurité) — ignoré'
+        WHERE id = ANY(${ids})`;
+      return res.status(200).json({ ok: true, reclasses: ids.length, evenements: liste });
+    } catch (e) { return res.status(500).json({ erreur: e.message }); }
+  }
+
   // GET ?backfill_profils=1 -> reconstruit linkedin_profils à partir de lemlist_events (1 requête SQL)
   if (req.method === 'GET' && q.backfill_profils) {
     let user = null;
@@ -337,25 +367,43 @@ export default async function handler(req, res) {
         let detail = [b.campaignName, lead].filter(Boolean).join(' · ');
         if (reponse) detail = (detail ? detail + '\n' : '') + '💬 « ' + reponse + ' »';
         detail = detail || null;
-        const titre = LIBELLES[type] || type;
+        // 🤖 Filtre anti-scanner : les passerelles de sécurité email (Microsoft Safe Links,
+        // Proofpoint, Mimecast…) « cliquent » tous les liens du mail dans la minute qui suit la
+        // livraison, pour les analyser. Un clic < 60 s après le dernier « Email envoyé » du même
+        // lead n'est donc pas un humain (faux « a cliqué plusieurs fois » sur MATOUBAM, contesté
+        // par la cliente — constat Alicia 17/09). Re-typé emailsClickedBot : visible dans la
+        // chronologie de la fiche, mais hors badge 🔥 (engagement), hors cockpit et sans alerte
+        // Slack (leurs listes de types ne le contiennent pas). Le payload brut garde son type
+        // d'origine dans lemlist_events. Envoi non journalisé (webhook manqué) → réputé humain.
+        // (`attracted` = doublon générique de Lemlist pour un clic — même traitement, sinon il
+        // ré-allumerait le badge 🔥 que le re-typage du clic vient d'éviter.)
+        let typeEff = type, titre = LIBELLES[type] || type;
+        if (type === 'emailsClicked' || type === 'attracted') {
+          const env = await sql`SELECT ts FROM activites WHERE fiche_cle = ${email} AND type = 'emailsSent' ORDER BY ts DESC LIMIT 1`;
+          const tClic = new Date(ts).getTime();
+          if (env.length && isFinite(tClic) && tClic - new Date(env[0].ts).getTime() < 60 * 1000) {
+            typeEff = type + 'Bot';
+            titre = '🤖 Clic robot (scanner sécurité) — ignoré';
+          }
+        }
         // Au plus UNE alerte Slack par lead par 24 h (tous types confondus) : un lead qui
         // re-reagit plus tard re-declenche (ex : email re-ouvert 2 jours apres), sans spammer
         // le SDR a chaque ouverture rapprochee. Exception : une REPONSE alerte toujours
         // (fenetre anti-doublon d'1 h seulement, ex : warmed + emailsReplied pour le meme message).
         // Verifie AVANT l'insertion de l'evenement courant.
         let alerter = false;
-        if (ALERTE.includes(type)) {
-          const estReponse = TYPES_REPONSE.includes(type);
+        if (ALERTE.includes(typeEff)) {
+          const estReponse = TYPES_REPONSE.includes(typeEff);
           const typesVus = estReponse ? TYPES_REPONSE : ALERTE;
           const fenetre = estReponse ? '1 hour' : '24 hours';
           const v = await sql`SELECT 1 FROM activites WHERE fiche_cle = ${email} AND type = ANY(${typesVus}) AND ts > NOW() - ${fenetre}::interval LIMIT 1`;
           alerter = (v.length === 0);
         }
         await sql`INSERT INTO activites (fiche_cle, source, type, titre, detail, auteur, ref, ts)
-          VALUES (${email}, 'lemlist', ${type}, ${titre}, ${detail}, ${auteur}, ${ref}, ${ts})
+          VALUES (${email}, 'lemlist', ${typeEff}, ${titre}, ${detail}, ${auteur}, ${ref}, ${ts})
           ON CONFLICT (ref) DO NOTHING`;
         // Le lead a réagi → on stoppe la prospection Sofy (SMS programmé + tâche de rappel)
-        if (STOP.includes(type)) {
+        if (STOP.includes(typeEff)) {
           await sql`UPDATE sms_programmes SET statut = 'cancelled' WHERE email = ${email} AND statut = 'pending'`;
           await sql`UPDATE taches SET faite = TRUE WHERE fiche_cle = ${email} AND faite = FALSE`;
         }

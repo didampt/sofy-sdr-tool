@@ -18,11 +18,19 @@ re-dessiner. ⚠️ Piège si on ajoute une action dans la fenêtre : un `rerend
 silencieusement différé — utiliser `rerender(i,true)`. Le même motif existait déjà pour le champ
 de recherche (garde dans `rerender_all`).
 
-Reste ouvert (bug 2 d'Alicia, non traité) : les « clics » Lemlist de la fiche MATOUBAM contestés
-par la cliente = très probablement un scanner de sécurité email (Safe Links & co) qui suit tous
-les liens. Aucun filtrage anti-robot dans la chaîne webhook → fiche. À trancher sur les
-horodatages bruts (`GET /api/lemlist-webhook?voir=1`, superadmin) ; correctif envisagé : ignorer
-les `emailsClicked` < 60 s après l'envoi.
+**Bug 2 d'Alicia (traité le même jour) — clics fantômes MATOUBAM = scanners de sécurité email** :
+les passerelles (Microsoft Safe Links, Proofpoint…) « cliquent » tous les liens du mail à la
+livraison → faux `emailsClicked` sur la fiche, contestés par la cliente. Filtre dans
+`api/lemlist-webhook.js` (POST) : un `emailsClicked` ou `attracted` (doublon générique Lemlist du
+clic) arrivant **< 60 s après le dernier `emailsSent` du même lead** est re-typé `…Bot` avec le
+titre « 🤖 Clic robot (scanner sécurité) — ignoré » : visible dans la chronologie de la fiche,
+mais hors badge 🔥 (`api/engagement.js`), hors cockpit et sans alerte Slack (leurs listes de
+types ne le contiennent pas). `lemlist_events` garde le payload brut intact. Rétroactif :
+`GET /api/lemlist-webhook?backfill_bots=1&dry=1` (superadmin) liste les candidats avec les
+écarts en secondes — c'est la vue qui tranche le cas MATOUBAM — puis sans `&dry=1` pour
+reclasser (rejouable, idempotent). ⚠️ Envoi non journalisé (webhook manqué) → clic réputé
+humain ; un vrai clic humain dans la minute suivant l'envoi est possible mais rare, et il reste
+visible sur la fiche.
 
 ## 🎯 10 septembre 2026 — Session expirée : renvoi automatique au login (constat Anaëlle)
 
