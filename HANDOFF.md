@@ -1,4 +1,28 @@
-# HANDOFF — Reprise du travail (dernière mise à jour : 10 septembre 2026)
+# HANDOFF — Reprise du travail (dernière mise à jour : 17 septembre 2026)
+
+## 🎯 17 septembre 2026 — Fenêtre de correction fermée par les rendus asynchrones (constat Alicia)
+
+La fenêtre de correction d'une fiche (`edit{i}`) vit DANS le HTML de la carte : tout
+`rerender(i)`/`rerender_all()` la détruisait avec la saisie en cours. Or l'ouverture d'une fiche
+déclenche une cascade de chargements de fond qui re-dessinent 1 à 3 s plus tard : activités
+(`chargerActiviteDB` — sans garde `_actLoaded`, relancé à CHAQUE ouverture), radar, analyses
+(`chargerPrezListe`), engagement Lemlist et journal Ringover (ces deux-là en `rerender_all()`).
+D'où l'« effet Fort Boyard » : Alicia commençait à saisir un contact, la fenêtre se fermait sous
+ses doigts, à chaque tentative.
+
+Correctif (`public/index.html`) : un rendu demandé pendant qu'une fenêtre d'édition est ouverte
+est **différé** (`RERENDER_DIFFERE`) et **rejoué à la fermeture** (`fermerEdit`, ou après un rendu
+forcé). Les actions de la fenêtre elle-même (ajouter/supprimer une ligne, 💾 enregistrer,
+réinitialiser, relance GMB, lien Maps, retirer GMB) passent par `rerender(i,true)` : elles veulent
+re-dessiner. ⚠️ Piège si on ajoute une action dans la fenêtre : un `rerender(i)` nu y serait
+silencieusement différé — utiliser `rerender(i,true)`. Le même motif existait déjà pour le champ
+de recherche (garde dans `rerender_all`).
+
+Reste ouvert (bug 2 d'Alicia, non traité) : les « clics » Lemlist de la fiche MATOUBAM contestés
+par la cliente = très probablement un scanner de sécurité email (Safe Links & co) qui suit tous
+les liens. Aucun filtrage anti-robot dans la chaîne webhook → fiche. À trancher sur les
+horodatages bruts (`GET /api/lemlist-webhook?voir=1`, superadmin) ; correctif envisagé : ignorer
+les `emailsClicked` < 60 s après l'envoi.
 
 ## 🎯 10 septembre 2026 — Session expirée : renvoi automatique au login (constat Anaëlle)
 

@@ -3824,7 +3824,7 @@ async function recupererMapsUrl(i){
  try{
   const r=await api('/api/gmb-url?url='+encodeURIComponent(lien)+'&liste_id='+(state.savedId||''));
   const d=await r.json();
-  if(r.status===404){ e.gmb=null; persister(); rerender(i); toast("ℹ️ Lien Maps enregistré (cliquable sur la fiche). Ancien GMB retiré. Cette fiche n'est pas dans l'API Google — saisis le site / le téléphone à la main."); return; }
+  if(r.status===404){ e.gmb=null; persister(); rerender(i,true); toast("ℹ️ Lien Maps enregistré (cliquable sur la fiche). Ancien GMB retiré. Cette fiche n'est pas dans l'API Google — saisis le site / le téléphone à la main."); return; }
   if(!r.ok||d.erreur){if(msg){msg.style.color='var(--danger)';msg.textContent='❌ '+(d.erreur||('Erreur '+r.status))+(d.detail?'  ▸ diag: '+d.detail:'');}return;}
   const pf=d.prefill||{};
   if(pf.nom)e.nom=pf.nom; if(pf.ville)e.ville=pf.ville; if(pf.code_postal)e.code_postal=pf.code_postal; if(pf.adresse)e.adresse=pf.adresse;
@@ -3832,14 +3832,14 @@ async function recupererMapsUrl(i){
   if(pf.telephone)e.telephone_google=pf.telephone;
   if(pf.place_id)e.place_id=pf.place_id;
   if(d.gmb){e.gmb=d.gmb;e.gmb._sig=enseigneDe(e)+'|'+domaineDe(e);}
-  persister();rerender(i);
+  persister();rerender(i,true);
   toast('✅ '+(pf.nom||'Fiche rattachée')+(d.gmb&&typeof d.gmb.note_moyenne==='number'?` · ${String(d.gmb.note_moyenne).replace('.',',')}★ (${d.gmb.total_avis} avis)`:' (sans note Google)'));
  }catch(err){if(msg){msg.style.color='var(--danger)';msg.textContent='❌ '+err.message;}}
 }
 function retirerGmb(i){
  const e=REAL[i];
  e.gmb=null; e.maps_url=null;
- persister(); rerender(i);
+ persister(); rerender(i,true);
  toast('🗑️ GMB et lien Maps retirés. Tu peux coller un nouveau lien ou saisir le site à la main.');
 }
 // ── Ajout manuel d'une fiche dans la liste ouverte ──
@@ -5241,6 +5241,7 @@ function fermerEdit(i){
  const b=document.getElementById('edit'+(i==null?'':i));
  if(b)b.style.display='none';
  else document.querySelectorAll('[id^="edit"]').forEach(x=>{if(/^edit\d+$/.test(x.id))x.style.display='none';});
+ rejouerRendusDifferes(); // les rendus arrivés pendant l'édition (activités, radar…) repartent maintenant
 }
 document.addEventListener('keydown',ev=>{
  if(ev.key!=='Escape')return;
@@ -7231,11 +7232,37 @@ function majKpisReal(){
  const kn=document.getElementById('k-new'),ks=document.getElementById('k-sig');
  if(kn&&REAL.length){kn.textContent=REAL.filter(e=>!e.deja_hubspot).length;ks.textContent=REAL.filter(e=>e.signal_hot).length||'0';}
 }
-function rerender(i){
+/* ── Protection de la fenêtre de correction contre les rendus asynchrones ──
+   Les chargements de fond (activités, radar, analyses, engagement Lemlist, journal Ringover…)
+   arrivent 1 à 3 s après l'ouverture d'une fiche et re-dessinaient sa carte : la fenêtre de
+   correction, qui vit DANS ce HTML, se fermait sous les doigts du SDR avec sa saisie
+   (constat Alicia 17/09 — « effet Fort Boyard »). Un rendu demandé pendant l'édition est donc
+   DIFFÉRÉ, puis rejoué à la fermeture. Les actions de la fenêtre elle-même (ajouter/supprimer
+   une ligne, enregistrer, relancer GMB…) passent par rerender(i,true) : elles VEULENT re-dessiner. */
+let RERENDER_DIFFERE=null; // null | {i:Set, all:boolean}
+function editionOuverte(i){
+ if(i!=null){const b=document.getElementById('edit'+i);return !!(b&&b.style.display==='block');}
+ let t=false;
+ document.querySelectorAll('[id^="edit"]').forEach(x=>{if(/^edit\d+$/.test(x.id)&&x.style.display==='block')t=true;});
+ return t;
+}
+function rejouerRendusDifferes(){
+ if(!RERENDER_DIFFERE||editionOuverte())return;
+ const d=RERENDER_DIFFERE;RERENDER_DIFFERE=null;
+ if(d.all)rerender_all();else d.i.forEach(k=>rerender(k));
+}
+function rerender(i,force){
+ if(!force&&editionOuverte(i)){
+  if(!RERENDER_DIFFERE)RERENDER_DIFFERE={i:new Set(),all:false};
+  RERENDER_DIFFERE.i.add(i);
+  majKpisReal(); // les compteurs vivent hors de la fiche : eux peuvent bouger sans danger
+  return;
+ }
  const el=document.getElementById('fr'+i);
  if(el)el.outerHTML=ficheReal(REAL[i],i);
  majKpisReal();
  fermerMenuFiche(); // le menu ⋯ pointait vers un bouton qui n'existe plus après ré-affichage
+ rejouerRendusDifferes(); // un rendu forcé ferme la fenêtre : les rendus mis en attente repartent
 }
 
 /* ───────── Le menu ⋯ de la fiche ─────────
@@ -7320,7 +7347,7 @@ async function majFiche(i){
  const vAdr=document.getElementById('edit-adresse'+i);if(vAdr)e.adresse=vAdr.value.trim();
  const vLiso=document.getElementById('edit-liso'+i);if(vLiso&&vLiso.value.trim()){const l=vLiso.value.trim();e.linkedin_entreprise=l.startsWith('http')?l:'https://'+l.replace(/^\/+/,'');}
  e.gmb=null; // re-match avec les nouvelles infos
- rerender(i);persister();
+ rerender(i,true);persister();
  if(indice){
   await iaFiche(i,indice,true);
  }
@@ -7363,14 +7390,14 @@ async function majFicheComplet(i){
   });
   e.contacts=nouveaux;
  }
- rerender(i);persister();
+ rerender(i,true);persister();
  toast('✅ Fiche enregistrée');
 }
 function ajouterContactEdit(i){
  const e=REAL[i];
  e.contacts=contactsDe(e).slice();
  e.contacts.push({prenom:'',nom:'',fonction:'',source:'sdr',enrich:{}});
- rerender(i);
+ rerender(i,true);
  setTimeout(()=>{const b=document.getElementById('edit'+i);if(b)b.style.display='block';},60);
 }
 function supprContactEdit(i,j){
@@ -7378,7 +7405,7 @@ function supprContactEdit(i,j){
  const cs=contactsDe(e).slice();
  cs.splice(j,1);
  e.contacts=cs;
- rerender(i);
+ rerender(i,true);
  setTimeout(()=>{const b=document.getElementById('edit'+i);if(b)b.style.display='block';},60);
 }
 
@@ -7413,7 +7440,7 @@ async function reinitFiche(i){
  if(e._busy){toast('Analyse en cours — patience ⏳');return;}
  if(!confirm('Réinitialiser '+(e.nom)+' ?\n(efface : résultat IA, site web, enseigne corrigée, analyse GMB — puis re-analyse complète)'))return;
  e.ia=null;e.enseigne_ia=null;e.site_web='';e.site_source=null;e.gmb=null;
- rerender(i);persister();
+ rerender(i,true);persister();
  e.analyse_le=null;e.score_le=null; // reset explicite → la re-analyse ne redemande pas confirmation
  await analyserFiche(i,{force:true});
 }
@@ -8999,6 +9026,12 @@ async function verifierHubspot(){
  }catch(_){}
 }
 function rerender_all(){
+ // Une fenêtre de correction ouverte doit SURVIVRE aux rendus asynchrones : différé, rejoué à la fermeture.
+ if(editionOuverte()){
+  if(!RERENDER_DIFFERE)RERENDER_DIFFERE={i:new Set(),all:false};
+  RERENDER_DIFFERE.all=true;
+  return;
+ }
  // Un filtre de recherche actif doit SURVIVRE aux rendus asynchrones (Ringover, engagement…)
  // — sinon l'ouverture ciblée depuis l'Historique est écrasée ~1 s après l'atterrissage.
  const champ=document.getElementById('search-fiches');
