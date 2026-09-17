@@ -41,10 +41,23 @@ Claude + web_search (20-60 s, +30 s sur 429) ; scoring IA. Ce qui a allongé « 
 temps » : étage Lemlist ajouté le 17/08 + modèle multi-contacts v394 + personas → 2-3 contacts/
 fiche, chacun traversant Dropcontact/Lemlist/FullEnrich ⇒ 3-5 min/fiche. Côté CONSOMMATION, mêmes
 multiplicateurs : Dropcontact 0,10 €/tentative et FullEnrich 0,25 €/tentative (payé même en
-échec) × nb contacts — vérifier le rendement réel via `GET /api/diag-enrich?jours=30`
-(superadmin). Plan proposé (non appliqué) : vagues de 3 fiches en parallèle (waterfall par
-contact inchangé donc coûts inchangés, précédent des 4 lots parallèles de la veille du 31/08),
-gain attendu ÷3 ; option supplémentaire : paralléliser les contacts d'une fiche étage par étage.
+échec) × nb contacts — rendement réel via `GET /api/diag-enrich?jours=30` (superadmin) :
+426 € / 30 j, 64 % emails, 61 % mobiles ; coût/donnée : Dropcontact 0,08 € < Lemlist 0,16 € <
+FullEnrich 0,18 € (l'ordre actuel du waterfall est donc justifié, NE PAS remonter Lemlist en
+premier malgré le verdict du diag). ⚠️ Les compteurs `cascade` du diag (fe/kaspr/lemlist_tente,
+515 épuisés) sont CUMULÉS sur les listes actives (drapeaux sans date), seul `cout_total_eur`
+est fenêtré.
+
+**Appliqué le 17/09 (GO Didier, les deux)** :
+- **Vagues de 3 fiches en parallèle** dans `lancerWaterfall()` — waterfall PAR CONTACT inchangé
+  (l'ordre des étages protège les coûts) ; gain ÷3 attendu (~1 h 40 / 100 fiches). Une fiche en
+  erreur ne tue plus la boucle (catch par fiche + toast de fin). Étiquette wfg-label = les 3
+  fiches de la vague.
+- **Garde-fou « cascade épuisée », version prudente** dans `pipelineFiche()` : contact SANS
+  LinkedIn, ni email ni téléphone après Dropcontact + Lemlist → FullEnrich sauté
+  (`fe_skip='cascade_epuisee_sans_linkedin'` posé sur le contact, visible au diag). Le bouton
+  FullEnrich manuel de la fiche reste libre ; un contact ayant déjà une donnée n'est jamais
+  bloqué. Gisement : 515 contacts « tout échoué » ≈ 283 € cumulés.
 
 **Bug 2 d'Alicia (traité le même jour) — clics fantômes MATOUBAM = scanners de sécurité email** :
 les passerelles (Microsoft Safe Links, Proofpoint…) « cliquent » tous les liens du mail à la

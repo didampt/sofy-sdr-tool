@@ -8917,6 +8917,15 @@ async function pipelineFiche(i){
   for(let j=0;j<cs.length;j++){
    const c=cs[j];
    if(c.nom&&c.enrich&&!c.enrich.fe_fait&&(!c.enrich.email||!c.enrich.telephone)){
+    // Garde-fou « cascade épuisée », version prudente (GO Didier 17/09, diag-enrich : 515
+    // contacts facturés à plusieurs étages sans rien rendre). Contact SANS LinkedIn, toujours
+    // ni email ni téléphone après Dropcontact et Lemlist → FullEnrich (0,25 € payé même en
+    // échec) n'a plus rien pour travailler : on ne paie pas. Un contact qui a DÉJÀ une donnée
+    // n'est jamais bloqué (FE complète l'autre), et le bouton manuel de la fiche reste libre.
+    if(!c.enrich.email&&!c.enrich.telephone&&c.enrich.lemlist_fait&&!(c.linkedin||c.enrich.linkedin)){
+     c.enrich.fe_skip='cascade_epuisee_sans_linkedin';
+     continue;
+    }
     feTente=true;wfSet(i,'fe','run');
     if(await enrichirFE(i,j))feGain=true;
    }
@@ -8994,21 +9003,32 @@ async function lancerWaterfall(nouvellesSeulement){
  let emailsOk=0,emailsTentes=0,arrete=false;
  notifierEnrichSlack(aTraiter.length);
  let fait=0;
- for(const i of aTraiter){
-  if(WF_STOP){arrete=true;break;}
-  fait++;
-  const lbl=document.getElementById('wfg-label');if(lbl)lbl.textContent=(enseigneDe(REAL[i])||REAL[i].nom)+' · fiche '+fait+'/'+aTraiter.length;
-  const r=await pipelineFiche(i);
-  emailsTentes+=r.tentes;emailsOk+=r.ok;
+ // Vagues de 3 fiches en parallèle (GO Didier 17/09 — 100 fiches passaient 5 h en séquentiel).
+ // Le waterfall PAR CONTACT reste strictement séquentiel à l'intérieur d'une fiche : l'ordre
+ // Dropcontact → Lemlist → FullEnrich protège les coûts, il ne bouge pas. 3 de front = sous le
+ // seuil des 429 Anthropic (personas/scoring ont déjà leur re-tentative à 30 s), même recette
+ // que le filtre likers du 31/08 (4 lots). Au passage : une fiche en erreur ne tue plus toute
+ // la file en silence (avant, l'exception remontait hors de la boucle).
+ const VAGUE=3;
+ let echecsPipeline=0;
+ for(let v=0;v<aTraiter.length&&!WF_STOP;v+=VAGUE){
+  const lot=aTraiter.slice(v,v+VAGUE);
+  const lbl=document.getElementById('wfg-label');
+  if(lbl)lbl.textContent=lot.map(i=>enseigneDe(REAL[i])||REAL[i].nom).join(' · ')+' · fiches '+(v+1)+'–'+(v+lot.length)+'/'+aTraiter.length;
+  const rs=await Promise.all(lot.map(i=>pipelineFiche(i).catch(function(err){echecsPipeline++;console.error('pipeline fiche',i,err);return {tentes:0,ok:0};})));
+  for(const r of rs){emailsTentes+=r.tentes;emailsOk+=r.ok;}
+  fait=v+lot.length;
   const p=Math.round(fait/aTraiter.length*100),b=document.getElementById('wfg-bar');
   if(b){b.style.width=p+'%';document.getElementById('wfg-pct').textContent=p+' %';}
   majBarreProgression(fait,aTraiter.length,false);
-  // Rafraîchit le verrou + progression partagée (toutes les 3 fiches pour limiter les appels).
+  // Rafraîchit le verrou + progression partagée (une fois par vague pour limiter les appels).
   // Le coût n'est pas envoyé ici (calcul serveur lourd) : un autre onglet le lira via /api/stats.
-  if(state.savedId&&(fait%3===0||fait===aTraiter.length)){
+  if(state.savedId){
    api('/api/enrich-lock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({liste_id:state.savedId,action:'rafraichir',faites:fait})}).catch(()=>{});
   }
  }
+ if(WF_STOP&&fait<aTraiter.length)arrete=true;
+ if(echecsPipeline)toast('⚠️ '+echecsPipeline+' fiche(s) en erreur pendant l\'enrichissement — leurs étapes déjà faites sont conservées');
  document.getElementById('wf-titre').textContent=arrete?`⏹ Enrichissement arrêté — ${emailsOk} email(s) trouvés (les fiches faites sont conservées)`:`🏁 Enrichissement terminé — ${emailsOk}/${emailsTentes} nouveaux emails`;
  if(document.getElementById('wf-stop'))document.getElementById('wf-stop').disabled=true;
  // Rapport au SDR (Slack + email si Resend configuré)
