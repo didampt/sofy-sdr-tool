@@ -1,5 +1,18 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 18 septembre 2026)
 
+## 🎯 18 septembre 2026 — Hot lead manuel pour les AE (plan « sièges Lemlist »)
+
+Contexte : réduction des sièges Lemlist 6 → 2 (654 → 218 €/mois) ; les SDR (Anaëlle, Franck,
+Alicia) et les AE (Etienne, Hugo, Sarah) doivent enrichir via Sofy Scrap, plus via l'extension
+Sales Nav. Le formulaire ➕ Hot lead porte désormais URL LinkedIn du contact + site web + ville
+(la tuyauterie `ajouterHotLead()` les acceptait déjà : `linkedin_brut`/`domaine`/`ville`, seul
+le POST `api/hotlead.js` les ignorait). **Raccourci mobile : `/?hotlead=1`** ouvre directement
+le formulaire après login, source pré-réglée « Salon / événement » — à faire épingler sur
+l'écran d'accueil des téléphones AE. Vérifié au navigateur en 375 px. Bascule Lemlist : la clé
+API « sofy scrap » et le webhook sont portés par le compte didier (gratuit) → rien à migrer côté
+API ; check-list de bascule donnée à Didier le 18/09 (test 1 campagne → semaine d'observation →
+coupe).
+
 ## 🎯 18 septembre 2026 — Transfert de liste tracé (cas « recouvrement 13 » de Franck)
 
 La liste #166 de Franck s'est retrouvée au nom de Didier sans que personne sache qui/quand :
