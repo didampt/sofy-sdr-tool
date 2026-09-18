@@ -1,7 +1,10 @@
 // /api/hotlead.js — ➕ Hot lead MANUEL : une demande entrante (téléphone, email, salon…) devient
 // une fiche de la liste Hot Leads partagée, comme un signal automatique (tuile 🔥 du cockpit,
 // claim « Je prends », enrichissement auto au chargement). Accessible à tout utilisateur connecté.
-// POST { nom_complet, entreprise, fonction?, email?, telephone?, source?, detail? }
+// POST { nom_complet, entreprise, fonction?, email?, telephone?, linkedin?, site_web?, ville?, source?, detail? }
+// linkedin/site_web/ville ajoutés le 18/09 (usage AE : contact repéré sur LinkedIn ou en salon) —
+// le LinkedIn du contact est le meilleur carburant du waterfall (Lemlist/FullEnrich s'appuient
+// dessus), et le site web renforce la dédup (identites() compare domaine + noms).
 
 import { verifierToken, ensureSchema, ajouterHotLead, sql } from './db.js';
 
@@ -25,6 +28,9 @@ export default async function handler(req, res) {
       fonction: String(b.fonction || '').slice(0, 120),
       email: String(b.email || '').trim().toLowerCase() || null,
       telephone: String(b.telephone || '').trim() || null,
+      linkedin_brut: String(b.linkedin || '').trim().slice(0, 300) || null,
+      domaine: String(b.site_web || '').trim().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0] || null,
+      ville: String(b.ville || '').trim().slice(0, 80) || null,
       source: `manuel — ${source}`,
       type: 'manuel',
       detail: `📞 ${source}${b.detail ? ' — ' + String(b.detail).slice(0, 300) : ''} (saisi par ${user.nom})`
