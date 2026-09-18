@@ -17,7 +17,18 @@ vignettes PNG du 26/08) ; 🪄 URL LinkedIn : prénom/nom déduits du slug (grat
 web_search retrouve fonction/entreprise/site via les traces publiques (~0,03-0,06 €, 10-30 s ;
 LinkedIn lui-même n'est PAS lisible côté serveur — mur d'auth). Règles : champ non confirmé →
 null (jamais inventé), le front ne remplit que les champs VIDES, tout reste éditable. Conso
-journalisée `ia_claude`. Bascule Lemlist : la clé
+journalisée `ia_claude`.
+
+**➕ Contact depuis la fiche (GO Didier, même jour)** — clone du Hot lead pour les SDR : bouton
+« ➕ Contact » en tête du bloc Contact de la fiche (PAS dans la barre d'actions du bas, réservée
+depuis le 21/08 à ce qui coûte/demande un choix) → modale `contact-modal` avec 📷/🪄 (les
+fonctions `scannerCarte`/`prefillLinkedin`/`carteRemplir` sont désormais PARAMÉTRÉES par préfixe
+d'ids 'hl'|'ct' — toute nouvelle action dans un des deux formulaires doit passer le préfixe),
+portée multi-enseignes (reprend `enseignesDe`/`nomEnseigne`), et case « 🚀 chercher email &
+mobile juste après » cochée par défaut → `enrichirContactSolo(i,j)` : waterfall Dropcontact →
+Lemlist → FullEnrich sur CE contact seulement, avec le même garde-fou « cascade épuisée » que le
+pipeline. Anti-doublon par nom (confirm). La fenêtre ✏️ de correction ne change pas (édition des
+contacts existants). Bascule Lemlist : la clé
 API « sofy scrap » et le webhook sont portés par le compte didier (gratuit) → rien à migrer côté
 API ; check-list de bascule donnée à Didier le 18/09 (test 1 campagne → semaine d'observation →
 coupe).

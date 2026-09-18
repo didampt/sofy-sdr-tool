@@ -1362,8 +1362,8 @@ Spot-Hit</textarea>
     <div style="font-size:18px;font-weight:800;margin-bottom:6px">➕ Hot lead manuel</div>
     <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:12px">Demande entrante ou contact repéré (téléphone, email, salon, LinkedIn…) → fiche dans les Hot Leads partagés, tuile 🔥 de « Ma journée », annonce Slack à l'équipe. L'enrichissement complète email et mobile tout seul : le lien LinkedIn est son meilleur carburant.</div>
     <div style="display:flex;gap:8px;margin-bottom:10px">
-      <label class="btn" style="background:var(--paper);flex:1;margin:0;display:flex;align-items:center;justify-content:center;cursor:pointer"><span id="hl-scan-txt">📷 Scanner une carte</span><input type="file" accept="image/*" capture="environment" id="hl-photo" style="display:none" onchange="scannerCarte(this.files[0])"></label>
-      <button class="btn" style="background:var(--paper);flex:1" id="hl-magic" onclick="prefillLinkedin()" title="Colle d'abord l'URL du profil dans le champ 🔗, puis clique : prénom, nom, fonction, entreprise et site sont recherchés sur le web (~10-30 s)">🪄 Depuis LinkedIn</button>
+      <label class="btn" style="background:var(--paper);flex:1;margin:0;display:flex;align-items:center;justify-content:center;cursor:pointer"><span id="hl-scan-txt">📷 Scanner une carte</span><input type="file" accept="image/*" capture="environment" id="hl-photo" style="display:none" onchange="scannerCarte(this.files[0],'hl')"></label>
+      <button class="btn" style="background:var(--paper);flex:1" id="hl-magic" onclick="prefillLinkedin('hl')" title="Colle d'abord l'URL du profil dans le champ 🔗, puis clique : prénom, nom, fonction, entreprise et site sont recherchés sur le web (~10-30 s)">🪄 Depuis LinkedIn</button>
     </div>
     <input class="field" id="hl-nom" placeholder="Prénom Nom du contact *" style="width:100%;margin-bottom:8px">
     <input class="field" id="hl-entreprise" placeholder="Entreprise" style="width:100%;margin-bottom:8px">
@@ -1388,6 +1388,38 @@ Spot-Hit</textarea>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
       <button class="btn" style="background:var(--paper)" onclick="document.getElementById('hotlead-modal').style.display='none'">Annuler</button>
       <button class="btn btn-primary" id="hl-btn" onclick="envoyerHotLeadManuel()">🔥 Créer le hot lead</button>
+    </div>
+  </div>
+</div>
+<!-- ➕ Contact depuis la fiche (18/09) — niveau document, comme hotlead-modal : le clone du Hot
+     lead adapté à la fiche (portée multi-enseignes + enrichissement immédiat du seul contact). -->
+<div id="contact-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.55);z-index:903;align-items:center;justify-content:center" onclick="if(event.target===this)this.style.display='none'">
+  <div style="background:var(--card,#fff);border-radius:14px;padding:22px 24px;max-width:520px;width:94%;max-height:92vh;overflow-y:auto">
+    <div style="font-size:18px;font-weight:800;margin-bottom:6px" id="ct-titre">➕ Contact</div>
+    <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:12px">Ajoute un contact à <b>cette fiche</b>. Scanne une carte ou colle le LinkedIn : les champs se remplissent, tout reste éditable.</div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <label class="btn" style="background:var(--paper);flex:1;margin:0;display:flex;align-items:center;justify-content:center;cursor:pointer"><span id="ct-scan-txt">📷 Scanner une carte</span><input type="file" accept="image/*" capture="environment" id="ct-photo" style="display:none" onchange="scannerCarte(this.files[0],'ct')"></label>
+      <button class="btn" style="background:var(--paper);flex:1" id="ct-magic" onclick="prefillLinkedin('ct')" title="Colle d'abord l'URL du profil dans le champ 🔗, puis clique : prénom, nom et fonction sont recherchés sur le web (~10-30 s)">🪄 Depuis LinkedIn</button>
+    </div>
+    <input class="field" id="ct-nom" placeholder="Prénom Nom du contact *" style="width:100%;margin-bottom:8px">
+    <input class="field" id="ct-fonction" placeholder="Fonction (ex : Gérant)" style="width:100%;margin-bottom:8px">
+    <input class="field" id="ct-linkedin" placeholder="🔗 LinkedIn du contact (colle l'URL du profil)" style="width:100%;margin-bottom:8px">
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <input class="field" id="ct-email" placeholder="Email (sinon l'enrichissement le cherche)" style="flex:1;min-width:0">
+      <input class="field" id="ct-tel" placeholder="Téléphone" style="flex:1;min-width:0">
+    </div>
+    <div id="ct-portee-wrap" style="display:none">
+      <div style="font-size:12px;font-weight:700;color:var(--ink-soft);margin:2px 0 4px">🤝 Ce contact couvre</div>
+      <select class="field" id="ct-portee" style="width:100%;margin-bottom:8px"></select>
+    </div>
+    <label style="display:flex;gap:9px;align-items:flex-start;font-size:13px;cursor:pointer;background:var(--accent-soft,#EBEEFE);border-radius:10px;padding:10px 12px">
+      <input type="checkbox" id="ct-enrichir" checked style="margin-top:3px">
+      <span><b>🚀 Chercher email &amp; mobile juste après l'ajout</b><br>
+      <span style="color:var(--ink-soft);font-size:12px">Dropcontact → Lemlist → FullEnrich · ≈ 0,10-0,35 € seulement si une donnée manque — jamais re-payé.</span></span>
+    </label>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+      <button class="btn" style="background:var(--paper)" onclick="document.getElementById('contact-modal').style.display='none'">Annuler</button>
+      <button class="btn btn-primary" onclick="validerAjoutContact()">➕ Ajouter à la fiche</button>
     </div>
   </div>
 </div>
@@ -2297,15 +2329,20 @@ async function verifSession(){
    l'IA propose, l'humain valide. La photo est réduite au canvas AVANT l'envoi (≤1600 px, JPEG) —
    une photo de téléphone fait 3-8 Mo et dépasserait la limite de corps Vercel (piège des
    vignettes PNG du 26/08). */
-function hlRemplir(re){
+/* Le même moteur sert DEUX formulaires : 'hl' (Hot lead manuel) et 'ct' (➕ Contact sur une
+   fiche, ajouté le 18/09) — préfixe d'ids en paramètre, seuls les champs propres au Hot lead
+   (entreprise/site/ville) sont conditionnels. */
+function carteRemplir(pfx,re){
  const set=(id,val)=>{const el=document.getElementById(id);if(el&&val&&!el.value.trim())el.value=val;};
- set('hl-nom',[re.prenom,re.nom].filter(Boolean).join(' '));
- set('hl-entreprise',re.entreprise);set('hl-fonction',re.fonction);
- set('hl-site',re.site_web);set('hl-ville',re.ville);set('hl-email',re.email);set('hl-tel',re.telephone);
+ set(pfx+'-nom',[re.prenom,re.nom].filter(Boolean).join(' '));
+ set(pfx+'-fonction',re.fonction);
+ set(pfx+'-email',re.email);set(pfx+'-tel',re.telephone);
+ if(pfx==='hl'){set('hl-entreprise',re.entreprise);set('hl-site',re.site_web);set('hl-ville',re.ville);}
 }
-async function scannerCarte(file){
+async function scannerCarte(file,pfx){
  if(!file)return;
- const txt=document.getElementById('hl-scan-txt');
+ pfx=pfx||'hl';
+ const txt=document.getElementById(pfx+'-scan-txt');
  if(txt)txt.textContent='⏳ Lecture… (3-5 s)';
  try{
   const img=await new Promise((ok,ko)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=()=>ko(new Error('photo illisible'));i.src=URL.createObjectURL(file);});
@@ -2316,24 +2353,87 @@ async function scannerCarte(file){
   const r=await api('/api/carte',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:b64,media_type:'image/jpeg'})});
   const d=await lireJson(r,'Lecture trop longue — réessaie, ou remplis à la main');
   if(d.erreur||!d.ok){toast('Carte : '+(d.erreur||'lecture impossible — remplis à la main'));return;}
-  hlRemplir(d.resultat||{});
-  toast('🪄 Carte lue — vérifie les champs avant de créer');
+  carteRemplir(pfx,d.resultat||{});
+  toast('🪄 Carte lue — vérifie les champs avant de valider');
  }catch(e){toast('Carte : '+e.message);}
- finally{if(txt)txt.textContent='📷 Scanner une carte';const f=document.getElementById('hl-photo');if(f)f.value='';}
+ finally{if(txt)txt.textContent='📷 Scanner une carte';const f=document.getElementById(pfx+'-photo');if(f)f.value='';}
 }
-async function prefillLinkedin(){
- const url=((document.getElementById('hl-linkedin')||{}).value||'').trim();
- if(!/linkedin\.com\/in\//i.test(url)){toast('Colle d\'abord l\'URL du profil (linkedin.com/in/…) dans le champ 🔗');const f=document.getElementById('hl-linkedin');if(f)f.focus();return;}
- const btn=document.getElementById('hl-magic');
+async function prefillLinkedin(pfx){
+ pfx=pfx||'hl';
+ const url=((document.getElementById(pfx+'-linkedin')||{}).value||'').trim();
+ if(!/linkedin\.com\/in\//i.test(url)){toast('Colle d\'abord l\'URL du profil (linkedin.com/in/…) dans le champ 🔗');const f=document.getElementById(pfx+'-linkedin');if(f)f.focus();return;}
+ const btn=document.getElementById(pfx+'-magic');
  if(btn){btn.disabled=true;btn.textContent='⏳ Recherche… (10-30 s)';}
  try{
   const r=await api('/api/carte',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({linkedin:url})});
   const d=await lireJson(r,'Recherche trop longue — réessaie');
   if(d.erreur||!d.ok){toast('LinkedIn : '+(d.erreur||'rien trouvé — remplis à la main'));return;}
-  hlRemplir(d.resultat||{});
-  toast('🪄 Champs pré-remplis — vérifie avant de créer');
+  carteRemplir(pfx,d.resultat||{});
+  toast('🪄 Champs pré-remplis — vérifie avant de valider');
  }catch(e){toast('LinkedIn : '+e.message);}
  finally{if(btn){btn.disabled=false;btn.textContent='🪄 Depuis LinkedIn';}}
+}
+/* ➕ Contact depuis la fiche (18/09) : le clone du Hot lead, adapté à la fiche — portée
+   multi-enseignes + case « enrichir tout de suite » (waterfall sur CE contact uniquement). */
+let CT_I=null;
+function ouvrirAjoutContact(i){
+ const e=REAL[i];if(!e)return;
+ CT_I=i;
+ document.getElementById('ct-titre').textContent='➕ Contact — '+(enseigneDe(e)||e.nom||'');
+ ['ct-nom','ct-fonction','ct-linkedin','ct-email','ct-tel'].forEach(x=>{const f=document.getElementById(x);if(f)f.value='';});
+ const fs=(typeof enseignesDe==='function'?enseignesDe(e):[])||[];
+ const wrap=document.getElementById('ct-portee-wrap');
+ if(fs.length<2){wrap.style.display='none';}
+ else{
+  wrap.style.display='block';
+  document.getElementById('ct-portee').innerHTML='<option value="">Tout le groupe ('+fs.length+' enseignes)</option>'
+   +fs.map(f=>'<option value="'+htmlSafe(String(f.place_id||''))+'">'+htmlSafe(nomEnseigne(f))+' seulement</option>').join('');
+ }
+ const ck=document.getElementById('ct-enrichir');if(ck)ck.checked=true;
+ document.getElementById('contact-modal').style.display='flex';
+ setTimeout(()=>{const n=document.getElementById('ct-nom');if(n)n.focus();},60);
+}
+async function validerAjoutContact(){
+ const i=CT_I;if(i==null||!REAL[i])return;
+ const v=id=>((document.getElementById(id)||{}).value||'').trim();
+ const nomC=v('ct-nom');
+ if(!nomC){toast('⚠️ Renseigne au moins « Prénom Nom »');const f=document.getElementById('ct-nom');if(f)f.focus();return;}
+ const e=REAL[i];
+ const deja=contactsDe(e).some(c=>((c.prenom||'')+' '+(c.nom||'')).trim().toLowerCase()===nomC.toLowerCase());
+ if(deja&&!confirm('« '+nomC+' » est déjà sur cette fiche. Ajouter quand même ?'))return;
+ const morceaux=nomC.split(' ');
+ const en={};
+ if(v('ct-email')){en.email=v('ct-email').toLowerCase();en.email_source='sdr';}
+ if(v('ct-tel'))en.telephone=v('ct-tel');
+ const lk=v('ct-linkedin');
+ if(lk)en.linkedin=lk.startsWith('http')?lk:('https://'+lk.replace(/^\/+/,''));
+ e.contacts=contactsDe(e).slice();
+ e.contacts.push({prenom:morceaux[0]||'',nom:morceaux.slice(1).join(' ')||'',fonction:v('ct-fonction'),source:'sdr',portee:v('ct-portee')||'',enrich:en});
+ const j=e.contacts.length-1;
+ document.getElementById('contact-modal').style.display='none';
+ rerender(i);persister();
+ toast('👤 Contact ajouté à la fiche');
+ if((document.getElementById('ct-enrichir')||{}).checked)enrichirContactSolo(i,j);
+}
+// Waterfall sur UN contact (mêmes étages et mêmes garde-fous que le pipeline global,
+// y compris « cascade épuisée » version prudente — jamais de re-paiement).
+async function enrichirContactSolo(i,j){
+ const e=REAL[i];const c0=contactsDe(e)[j];if(!c0||!c0.nom&&!c0.prenom)return;
+ if(e._busy){toast('Analyse déjà en cours sur cette fiche — relance 🚀 sur le contact ensuite ⏳');return;}
+ e._busy=true;rerender(i);
+ try{
+  if(contactAFaire(e,c0))await enrichir(i,j);
+  const c=contactsDe(e)[j];if(!c)return;
+  if(!c.enrich)c.enrich={};
+  if(!c.enrich.lemlist_fait&&(!c.enrich.email||manqueMobile(c.enrich)))await enrichirLemlist(i,j,{silencieux:true});
+  const fantome=!c.enrich.email&&!c.enrich.telephone&&c.enrich.lemlist_fait&&!(c.linkedin||c.enrich.linkedin);
+  if(!c.enrich.fe_fait&&(!c.enrich.email||!c.enrich.telephone)&&!fantome)await enrichirFE(i,j);
+  const en=(contactsDe(e)[j]||{}).enrich||{};
+  toast(en.email||en.telephone
+   ?('✅ '+[(en.email?'✉️ '+en.email:null),(en.telephone?'📱 '+en.telephone:null)].filter(Boolean).join(' · '))
+   :'Rien trouvé sur ce contact — 📱 Kaspr (bouton fiche) si le lead compte');
+ }catch(err){toast('Enrichissement du contact : '+err.message);}
+ finally{e._busy=false;rerender(i);persister();majCoutListe();}
 }
 async function envoyerHotLeadManuel(){
  const v=id=>((document.getElementById(id)||{}).value||'').trim();
@@ -7203,7 +7303,7 @@ function ficheReal(e,i){
    ${prezHtml(e,i)}
    <div class="fiche-cols">
     <div>
-     <div class="col-title">Contact</div>
+     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><div class="col-title" style="margin-bottom:0">Contact</div><button class="act" style="padding:4px 11px;font-size:12px;background:var(--ink,#131726);color:#fff;border-color:var(--ink,#131726)" onclick="ouvrirAjoutContact(${i})" title="Ajouter un contact à cette fiche — scan de carte de visite ou LinkedIn, puis enrichissement immédiat">➕ Contact</button></div>
      ${(!(e.gmb&&e.gmb.telephone))&&e.ia&&e.ia.telephone?`<div class="contact-line">☎️ Standard : <b>${e.ia.telephone}</b>${telBtns(e.ia.telephone,i,'Standard')} <span class="badge b-signal">trouvé sur le web (IA)</span></div>`:''}
      ${(!(e.gmb&&e.gmb.trouve))&&e.ia&&e.ia.adresse?`<div class="contact-line" style="color:var(--ink-soft)">📍 ${e.ia.adresse} <span class="badge b-gmb">source web</span></div>`:''}
      ${contacts.map((c,j)=>contactHtml(c,i,j)).join('')||'<div class="hint">Aucun contact identifié — lance 🚀 Fiche.</div>'}
