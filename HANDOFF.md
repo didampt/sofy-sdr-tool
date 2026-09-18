@@ -8,7 +8,16 @@ Sales Nav. Le formulaire ➕ Hot lead porte désormais URL LinkedIn du contact +
 (la tuyauterie `ajouterHotLead()` les acceptait déjà : `linkedin_brut`/`domaine`/`ville`, seul
 le POST `api/hotlead.js` les ignorait). **Raccourci mobile : `/?hotlead=1`** ouvre directement
 le formulaire après login, source pré-réglée « Salon / événement » — à faire épingler sur
-l'écran d'accueil des téléphones AE. Vérifié au navigateur en 375 px. Bascule Lemlist : la clé
+l'écran d'accueil des téléphones AE. Vérifié au navigateur en 375 px.
+
+**Pré-remplissage IA du Hot lead (GO Didier, même jour)** — nouvel endpoint `api/carte.js`, deux
+modes : 📷 photo de carte de visite lue par Claude **vision** (~0,01 €, 3-5 s ; le front réduit la
+photo au canvas ≤ 1600 px AVANT l'envoi — limite de corps Vercel ~4,5 Mo, même piège que les
+vignettes PNG du 26/08) ; 🪄 URL LinkedIn : prénom/nom déduits du slug (gratuit) puis Claude +
+web_search retrouve fonction/entreprise/site via les traces publiques (~0,03-0,06 €, 10-30 s ;
+LinkedIn lui-même n'est PAS lisible côté serveur — mur d'auth). Règles : champ non confirmé →
+null (jamais inventé), le front ne remplit que les champs VIDES, tout reste éditable. Conso
+journalisée `ia_claude`. Bascule Lemlist : la clé
 API « sofy scrap » et le webhook sont portés par le compte didier (gratuit) → rien à migrer côté
 API ; check-list de bascule donnée à Didier le 18/09 (test 1 campagne → semaine d'observation →
 coupe).

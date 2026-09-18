@@ -1361,6 +1361,10 @@ Spot-Hit</textarea>
   <div style="background:var(--card,#fff);border-radius:14px;padding:22px 24px;max-width:520px;width:94%;max-height:92vh;overflow-y:auto">
     <div style="font-size:18px;font-weight:800;margin-bottom:6px">➕ Hot lead manuel</div>
     <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:12px">Demande entrante ou contact repéré (téléphone, email, salon, LinkedIn…) → fiche dans les Hot Leads partagés, tuile 🔥 de « Ma journée », annonce Slack à l'équipe. L'enrichissement complète email et mobile tout seul : le lien LinkedIn est son meilleur carburant.</div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <label class="btn" style="background:var(--paper);flex:1;margin:0;display:flex;align-items:center;justify-content:center;cursor:pointer"><span id="hl-scan-txt">📷 Scanner une carte</span><input type="file" accept="image/*" capture="environment" id="hl-photo" style="display:none" onchange="scannerCarte(this.files[0])"></label>
+      <button class="btn" style="background:var(--paper);flex:1" id="hl-magic" onclick="prefillLinkedin()" title="Colle d'abord l'URL du profil dans le champ 🔗, puis clique : prénom, nom, fonction, entreprise et site sont recherchés sur le web (~10-30 s)">🪄 Depuis LinkedIn</button>
+    </div>
     <input class="field" id="hl-nom" placeholder="Prénom Nom du contact *" style="width:100%;margin-bottom:8px">
     <input class="field" id="hl-entreprise" placeholder="Entreprise" style="width:100%;margin-bottom:8px">
     <input class="field" id="hl-fonction" placeholder="Fonction (ex : Gérant)" style="width:100%;margin-bottom:8px">
@@ -2288,6 +2292,49 @@ async function verifSession(){
 /* ───────── NAV / TOAST ───────── */
 // 📥 Import manuel des likers d'un post (remplaçant de PhantomBuster) → pipeline veille existant
 // ➕ Hot lead manuel (demande entrante) → liste Hot Leads partagée
+/* 🪄 Pré-remplissage du Hot lead (AE en salon) : photo de carte de visite OU URL LinkedIn.
+   Ne remplit que les champs VIDES (jamais d'écrasement d'une saisie), et tout reste éditable :
+   l'IA propose, l'humain valide. La photo est réduite au canvas AVANT l'envoi (≤1600 px, JPEG) —
+   une photo de téléphone fait 3-8 Mo et dépasserait la limite de corps Vercel (piège des
+   vignettes PNG du 26/08). */
+function hlRemplir(re){
+ const set=(id,val)=>{const el=document.getElementById(id);if(el&&val&&!el.value.trim())el.value=val;};
+ set('hl-nom',[re.prenom,re.nom].filter(Boolean).join(' '));
+ set('hl-entreprise',re.entreprise);set('hl-fonction',re.fonction);
+ set('hl-site',re.site_web);set('hl-ville',re.ville);set('hl-email',re.email);set('hl-tel',re.telephone);
+}
+async function scannerCarte(file){
+ if(!file)return;
+ const txt=document.getElementById('hl-scan-txt');
+ if(txt)txt.textContent='⏳ Lecture… (3-5 s)';
+ try{
+  const img=await new Promise((ok,ko)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=()=>ko(new Error('photo illisible'));i.src=URL.createObjectURL(file);});
+  const MAX=1600,ratio=Math.min(1,MAX/Math.max(img.width,img.height));
+  const cv=document.createElement('canvas');cv.width=Math.round(img.width*ratio);cv.height=Math.round(img.height*ratio);
+  cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+  const b64=cv.toDataURL('image/jpeg',0.85).split(',')[1];
+  const r=await api('/api/carte',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:b64,media_type:'image/jpeg'})});
+  const d=await lireJson(r,'Lecture trop longue — réessaie, ou remplis à la main');
+  if(d.erreur||!d.ok){toast('Carte : '+(d.erreur||'lecture impossible — remplis à la main'));return;}
+  hlRemplir(d.resultat||{});
+  toast('🪄 Carte lue — vérifie les champs avant de créer');
+ }catch(e){toast('Carte : '+e.message);}
+ finally{if(txt)txt.textContent='📷 Scanner une carte';const f=document.getElementById('hl-photo');if(f)f.value='';}
+}
+async function prefillLinkedin(){
+ const url=((document.getElementById('hl-linkedin')||{}).value||'').trim();
+ if(!/linkedin\.com\/in\//i.test(url)){toast('Colle d\'abord l\'URL du profil (linkedin.com/in/…) dans le champ 🔗');const f=document.getElementById('hl-linkedin');if(f)f.focus();return;}
+ const btn=document.getElementById('hl-magic');
+ if(btn){btn.disabled=true;btn.textContent='⏳ Recherche… (10-30 s)';}
+ try{
+  const r=await api('/api/carte',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({linkedin:url})});
+  const d=await lireJson(r,'Recherche trop longue — réessaie');
+  if(d.erreur||!d.ok){toast('LinkedIn : '+(d.erreur||'rien trouvé — remplis à la main'));return;}
+  hlRemplir(d.resultat||{});
+  toast('🪄 Champs pré-remplis — vérifie avant de créer');
+ }catch(e){toast('LinkedIn : '+e.message);}
+ finally{if(btn){btn.disabled=false;btn.textContent='🪄 Depuis LinkedIn';}}
+}
 async function envoyerHotLeadManuel(){
  const v=id=>((document.getElementById(id)||{}).value||'').trim();
  if(!v('hl-nom')&&!v('hl-entreprise')){toast('Renseigne au moins le nom du contact ou l\'entreprise');return;}
