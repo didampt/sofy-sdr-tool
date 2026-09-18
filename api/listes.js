@@ -14,6 +14,19 @@ import { sql, ensureSchema, verifierToken } from './db.js';
 // travail du SDR (incident Franck du 20/08 — 30 fiches et un RDV perdus).
 const SEUIL_LISTES_MORTES = 5;
 
+// DM Slack (même helper local que lemlist-webhook.js — pas de module partagé dans ce repo)
+async function envoyerDM(slackId, texte) {
+  const token = process.env.SLACK_BOT_TOKEN;
+  if (!token || !slackId) return;
+  try {
+    await fetch('https://slack.com/api/chat.postMessage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ channel: slackId, text: texte })
+    });
+  } catch (_) {}
+}
+
 function hashCriteres(criteres) {
   // Hash stable : on ne garde que les critères de ciblage (pas le nom de liste ni le SDR)
   const c = criteres || {};
@@ -603,8 +616,37 @@ export default async function handler(req, res) {
         if (!['admin', 'superadmin'].includes(user.role)) {
           return res.status(403).json({ erreur: 'Seuls les administrateurs peuvent transférer une liste' });
         }
-        await sql`UPDATE listes SET sdr = ${assigner_a.trim()} WHERE id = ${parseInt(id)}`;
-        return res.status(200).json({ ok: true, assigne: assigner_a.trim() });
+        // Un transfert n'est plus muet (cas « recouvrement 13 » du 18/09 : la liste de Franck
+        // s'est retrouvée chez Didier sans que personne sache qui/quand — l'UPDATE nu ne
+        // laissait AUCUNE trace) : trace d'audit dans `activites` (fiche_cle='liste:<id>',
+        // retrouvable par la recherche de l'Historique) + DM Slack à l'ancien et au nouveau
+        // titulaire. Un échec de trace ou de DM ne fait jamais échouer le transfert.
+        const nouveau = assigner_a.trim();
+        const avant = await sql`SELECT nom, sdr FROM listes WHERE id = ${parseInt(id)}`;
+        if (!avant.length) return res.status(404).json({ erreur: 'Liste introuvable' });
+        const ancien = avant[0].sdr || '?';
+        await sql`UPDATE listes SET sdr = ${nouveau} WHERE id = ${parseInt(id)}`;
+        try {
+          await sql`INSERT INTO activites (fiche_cle, source, type, titre, detail, auteur, ts)
+            VALUES (${'liste:' + parseInt(id)}, 'liste', 'liste_transferee',
+              ${'📋 Liste transférée : ' + (avant[0].nom || '#' + id)},
+              ${'de ' + ancien + ' à ' + nouveau + ' — par ' + (user.nom || '?')},
+              ${user.nom || null}, NOW())`;
+        } catch (_) {}
+        try {
+          if (ancien !== nouveau) {
+            const cibles = await sql`SELECT nom, slack_id FROM sdrs WHERE nom = ANY(${[ancien, nouveau]}) AND slack_id IS NOT NULL AND slack_id <> ''`;
+            const lien = (process.env.APP_URL || 'https://sofy-sdr-tool.vercel.app').replace(/\/$/, '') + '/?liste=' + parseInt(id);
+            for (const s of cibles) {
+              if (s.nom === user.nom) continue; // l'auteur du transfert sait ce qu'il vient de faire
+              const txt = s.nom === nouveau
+                ? `📋 La liste « ${avant[0].nom} » (#${id}) t'a été transférée par ${user.nom || 'un admin'}${ancien !== '?' ? ' (ancien titulaire : ' + ancien + ')' : ''}\n👉 ${lien}`
+                : `📋 Ta liste « ${avant[0].nom} » (#${id}) a été transférée à ${nouveau} par ${user.nom || 'un admin'}. Ses rappels restent à ton nom — dis-le à ${nouveau} s'ils doivent suivre.`;
+              await envoyerDM(s.slack_id, txt);
+            }
+          }
+        } catch (_) {}
+        return res.status(200).json({ ok: true, assigne: nouveau, ancien });
       }
       // ── Cycle de vie : active | nurturing | archivee ──
       // active    = le SDR travaille la liste

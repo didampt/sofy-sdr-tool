@@ -1,4 +1,15 @@
-# HANDOFF — Reprise du travail (dernière mise à jour : 17 septembre 2026)
+# HANDOFF — Reprise du travail (dernière mise à jour : 18 septembre 2026)
+
+## 🎯 18 septembre 2026 — Transfert de liste tracé (cas « recouvrement 13 » de Franck)
+
+La liste #166 de Franck s'est retrouvée au nom de Didier sans que personne sache qui/quand :
+`assigner_a` (`api/listes.js`) faisait un `UPDATE listes SET sdr` nu — aucune trace. Désormais un
+transfert : ① journalise une activité `liste_transferee` (fiche_cle `liste:<id>`, auteur, de → à)
+retrouvable par la recherche libre de l'Historique ; ② envoie un DM Slack à l'ancien ET au nouveau
+titulaire (sauf à l'auteur du transfert) ; ③ renvoie `ancien` dans la réponse. ⚠️ Les RAPPELS ne
+suivent pas le transfert (taches keyées par sdr) — le DM le rappelle à l'ancien titulaire. Échec
+de trace/DM = transfert quand même (try/catch). Pour l'historique d'AVANT ce patch : aucune trace
+n'existe, la colonne `createur` (auteur de la création) est le seul indice.
 
 ## 🎯 17 septembre 2026 — Fenêtre de correction fermée par les rendus asynchrones (constat Alicia)
 
