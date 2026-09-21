@@ -823,6 +823,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
           <button class="act act-copy" id="btn-email-web" style="display:none" onclick="chercherEmailsWeb()">🔎 Emails manquants (IA)</button>
           <button class="act act-lemlist" id="btn-lemlist-batch" style="display:none" onclick="envoyerBatchLemlist()">✈️ Envoi groupé Lemlist</button>
           <button class="act act-export" onclick="exportCsv()">⬇️ Export Excel / CSV</button>
+          <button class="act act-export" onclick="exportSalesNav()" title="CSV à uploader dans Sales Navigator (Account lists › Upload list) : accountname + site web pour le matching LinkedIn. Séparateur virgule imposé par LinkedIn, 1 000 comptes max.">⬇️ CSV Sales Navigator</button>
           <button class="btn-reset" onclick="resetWizard();nav('wizard',document.querySelector('[data-view=wizard]'))">↺ Nouvelle liste</button>
         </div>
       </div>
@@ -10241,6 +10242,43 @@ function exportCsv(){
  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
  a.download='sofy-liste-appel.csv';a.click();
  toast('Export téléchargé — s\'ouvre directement dans Excel');
+}
+
+/* ───────── EXPORT SALES NAVIGATOR ─────────
+   CSV pour « Account lists › Upload list » : accountname (obligatoire) + website/ville/pays
+   pour améliorer le matching LinkedIn. Contraintes LinkedIn : séparateur VIRGULE
+   (le point-virgule fait échouer l'upload), 1 000 comptes max, pas de BOM
+   (il polluerait l'en-tête « accountname » au mapping des colonnes). */
+function exportSalesNav(){
+ let comptes;
+ if(REAL.length){
+  comptes=REAL.map(e=>{
+   const en=(e.contacts&&e.contacts[0]&&e.contacts[0].enrich)||e.enrich||{};
+   return {nom:e.nom||'',site:en.site_web||e.site_web||'',ville:e.ville||''};
+  });
+ }else{
+  comptes=sortedDemo().map(d=>({nom:d.co||'',site:d.site||'',ville:''}));
+ }
+ // Dédoublonnage par raison sociale (SalesNav matche l'entreprise, pas le contact)
+ const vus=new Set();
+ comptes=comptes.filter(c=>{
+  const k=c.nom.trim().toLowerCase();
+  if(!k||vus.has(k))return false;
+  vus.add(k);return true;
+ });
+ if(!comptes.length){toast('Aucune entreprise à exporter');return;}
+ const tronque=comptes.length>1000;
+ if(tronque)comptes=comptes.slice(0,1000);
+ const champ=c=>'"'+String(c==null?'':c).replace(/"/g,'""').replace(/[\r\n]+/g,' ')+'"';
+ const csv=[['accountname','website','city','country'],...comptes.map(c=>[c.nom,c.site,c.ville,'France'])]
+  .map(r=>r.map(champ).join(',')).join('\r\n');
+ const a=document.createElement('a');
+ a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+ const slug=String(state.listeNom||'liste').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-zA-Z0-9]+/g,'-').replace(/^-+|-+$/g,'').toLowerCase()||'liste';
+ a.download='salesnav-'+slug+'.csv';a.click();
+ toast(tronque
+  ?'⚠️ Export limité aux 1 000 premiers comptes (plafond Sales Navigator)'
+  :comptes.length+' compte'+(comptes.length>1?'s':'')+' — dans Sales Navigator : Account lists › Upload list');
 }
 
 /* ───────── PARAMÈTRES : GESTION SDR ───────── */
