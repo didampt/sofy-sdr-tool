@@ -1,5 +1,25 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 22 septembre 2026, nuit)
 
+## 🎯 22 septembre 2026 (nuit, 7e passe) — l'ordre instable de companies/find (la VRAIE cause des aperçus vides) + Tout sélectionné par défaut
+
+Retour Didier : « la liste a encore disparu » (capture : 15 mesurés sur 98 entreprises) + « 19
+sélectionnés alors que j'ai demandé 50 fiches ».
+- **Cause racine ENFIN identifiée** : `companies/find` ne renvoie PAS le même ordre entre deux
+  appels identiques. Le comptage repérait les lots peuplés sur SON jeu de SIREN, puis la page
+  RE-DEMANDAIT les entreprises → autre ordre → lots interrogés sans personne → aperçu vide.
+  (Et Basile plafonne ~100 entreprises/page : « 210 » demandés → 98 servis, l'affichage utilise
+  nb_entreprises_balayees réel ✓.) Fix : la page sert le JEU DE SIREN DU COMPTAGE — transporté
+  dans `apercu_suite` (`{phase:'lki', pIdx, lots:[indices peuplés], sirens:[…], entToken}`,
+  ~2,7 Ko), plus AUCUN companies/find pour paginer (banc K2 : 0 appel) ; seuls les lots PEUPLÉS
+  sont servis ; à la frontière, la page d'entreprises suivante est re-fetchée UNE fois et son
+  jeu repart dans la suite. Compat ancien format {lot, entToken} conservée.
+- **« Tout sélectionner » est COCHÉ PAR DÉFAUT** à chaque nouvel aperçu : le bouton principal
+  est d'office « 🚀 Générer tout le gisement (N max) » — demander 50 fiches donne 50 fiches ;
+  décocher (la case ou des lignes) devient l'exception. (Le « 19 » était la sélection manuelle
+  de la seule page chargée.)
+- Vérifié : node --check ; banc J (lots vides sautés, suite avec sirens) + K1/K2 (page 2 sans
+  companies/find, pIdx avance) ; smoke navigateur (AV_TOUT par défaut, bouton gisement).
+
 ## 🎯 22 septembre 2026 (nuit, 6e passe) — lots vides sautés, estimation en gros, Tout sélectionner = gisement, modale personas vraiment épurée
 
 Retours Didier (parcours « Directeur commercial » 25 048 → +45.11Z « 45 » et plus de contacts) :

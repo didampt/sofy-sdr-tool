@@ -3871,7 +3871,7 @@ async function avApercu(page){
  const count=document.getElementById('av-count'),box=document.getElementById('av-apercu');
  const P=AV_PAG.pro;
  const reset=(page===undefined||page===false);
- if(reset){P.pages=[];P.cur=0;P.suite=null;AV_TOUT=false;count.innerHTML='⏳ Comptage en cours (gratuit)…';}
+ if(reset){P.pages=[];P.cur=0;P.suite=null;AV_TOUT=true;count.innerHTML='⏳ Comptage en cours (gratuit)…';} // Tout sélectionné PAR DÉFAUT : « 50 fiches demandées » = 50 fiches (retour Didier)
  else if(page<0)return;
  else if(page<P.pages.length){P.cur=page;avRendrePage('pro','avApercu',avEnTetePro());avMajSelection();return;}
  else if(!P.suite)return;

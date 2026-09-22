@@ -361,7 +361,7 @@ export default async function handler(req, res) {
       } else {
         const phase0 = suite ? suite.phase : (source === 'legal' ? 'legal' : 'lki');
         let nbEntSecteur = null, lkiPartiel = false, nbEntBalayees = null;
-        let lotDepart = null; // premier lot de SIREN avec des personnes (comptage ci-dessous)
+        let entCache = null, lotsPeuples = []; // jeu de SIREN du comptage + lots où il y a des personnes
         if (!suite) {
           // Comptages, une seule fois. Part LinkedIn : voie directe (sans secteur NAF) ou voie
           // SIREN (comptage sur les 90 premières entreprises du secteur — partiel mais VRAI).
@@ -370,16 +370,16 @@ export default async function handler(req, res) {
           totalLegal = (rC2.data && rC2.data.total) || 0;
           if (lkiParSiren) {
             const ent = await sirensGarde(ENT_PAR_PAGE, null);
+            entCache = ent; // la PAGE réutilise CE jeu de SIREN — companies/find n'a pas d'ordre
+            // stable entre deux appels, un re-fetch tombait sur d'autres entreprises (lots vides)
             nbEntSecteur = ent.total; lkiPartiel = !!ent.next;
-            nbEntBalayees = ent.sirens.length; // vrai nombre (Basile peut plafonner la page)
+            nbEntBalayees = ent.sirens.length; // vrai nombre (Basile plafonne ~100/page)
             totalLki = 0;
             for (let i = 0; i < ent.sirens.length; i += LOT_SIREN) {
               const rc = await basile('/people/find', { limit: 1, filters: { ...baseLkiSiren, siren: { include: ent.sirens.slice(i, i + LOT_SIREN) } } }, key);
               const n = (rc.data && rc.data.success !== false) ? (rc.data.total || 0) : 0;
               totalLki += n;
-              // 1re page servie = le PREMIER lot qui a des personnes (les 30 premières entreprises
-              // d'un secteur dilué n'ont souvent AUCUN lead → l'aperçu se cachait, retour Didier)
-              if (n > 0 && lotDepart === null) lotDepart = i / LOT_SIREN;
+              if (n > 0) lotsPeuples.push(i / LOT_SIREN); // seuls ces lots seront servis en pages
             }
           } else {
             const rC1 = await basile('/people/find', { limit: 1, filters: extrasLki(filtres, avecSource(base, 'lki')) }, key);
@@ -408,21 +408,35 @@ export default async function handler(req, res) {
         } else if (lkiParSiren) {
           // Page LinkedIn = un lot de 30 entreprises du secteur (déterministe : même page
           // companies/find rechargée via entToken, puis lot N)
-          const entToken = suite ? (suite.entToken || null) : null;
-          let lot = suite ? (suite.lot || 0) : (lotDepart != null ? lotDepart : 0);
-          const ent = await sirensGarde(ENT_PAR_PAGE, entToken);
-          const nbLots = Math.ceil(ent.sirens.length / LOT_SIREN);
-          // Saute les lots sans lead (≤ 4 essais par appel — pages « vides » supprimées)
-          for (let essais = 0; lot < nbLots && essais < 4; essais++, lot++) {
-            const lotSirens = ent.sirens.slice(lot * LOT_SIREN, (lot + 1) * LOT_SIREN);
-            if (!lotSirens.length) break;
+          // Jeu de SIREN de la page : celui du comptage (reset), sinon celui transporté par la
+          // suite — JAMAIS un re-fetch pour une page déjà connue (ordre companies/find instable).
+          let sirensPage, ordre, pIdx, entToken;
+          if (!suite && entCache) {
+            sirensPage = entCache.sirens; ordre = lotsPeuples.slice(); pIdx = 0; entToken = entCache.next || null;
+          } else if (suite && Array.isArray(suite.sirens) && suite.sirens.length) {
+            sirensPage = suite.sirens; ordre = Array.isArray(suite.lots) ? suite.lots : null; pIdx = suite.pIdx || 0; entToken = suite.entToken || null;
+          } else {
+            // Compat (suite ancien format {lot, entToken}) : re-fetch, ordre = tous les lots
+            const ent2 = await sirensGarde(ENT_PAR_PAGE, suite ? (suite.entToken || null) : null);
+            sirensPage = ent2.sirens; ordre = null; pIdx = suite ? (suite.lot || 0) : 0; entToken = ent2.next || null;
+          }
+          if (!ordre) ordre = Array.from({ length: Math.ceil(sirensPage.length / LOT_SIREN) }, (_, k) => k);
+          for (let essais = 0; pIdx < ordre.length && essais < 4; essais++) {
+            const lotSirens = sirensPage.slice(ordre[pIdx] * LOT_SIREN, (ordre[pIdx] + 1) * LOT_SIREN);
+            if (!lotSirens.length) { pIdx++; continue; }
             const rP = await basile('/people/find', { limit: 100, filters: { ...baseLkiSiren, siren: { include: lotSirens } } }, key);
             if (rP.data && rP.data.success !== false) leadsBruts = rP.data.leads || [];
             if (leadsBruts.length) break;
+            pIdx++;
           }
-          if (lot + 1 < nbLots) prochaineSuite = { phase: 'lki', lot: lot + 1, entToken };
-          else if (ent.next) prochaineSuite = { phase: 'lki', lot: 0, entToken: ent.next };
-          else if (source === 'deux') prochaineSuite = { phase: 'legal', token: null };
+          if (pIdx + 1 < ordre.length && leadsBruts.length) {
+            prochaineSuite = { phase: 'lki', pIdx: pIdx + 1, lots: ordre, sirens: sirensPage, entToken };
+          } else if (entToken) {
+            // Frontière : page d'entreprises suivante, nouveau jeu de SIREN transporté
+            const entN = await sirensGarde(ENT_PAR_PAGE, entToken);
+            if (entN.sirens.length) prochaineSuite = { phase: 'lki', pIdx: 0, sirens: entN.sirens, entToken: entN.next || null };
+            else if (source === 'deux') prochaineSuite = { phase: 'legal', token: null };
+          } else if (source === 'deux') prochaineSuite = { phase: 'legal', token: null };
         } else {
           const body = { limit: 20, filters: extrasLki(filtres, avecSource(base, 'lki')) };
           if (suite && suite.token) body.paginationToken = suite.token;
