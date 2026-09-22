@@ -185,9 +185,13 @@ export default async function handler(req, res) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ erreur: 'ANTHROPIC_API_KEY manquante dans Vercel' });
 
-  const { entreprise = {}, jobs = [] } = req.body || {};
+  const { entreprise = {} } = req.body || {};
+  // « ~mot » (mode CONTIENT de la Recherche avancée / des modales) : le ~ est un marqueur front,
+  // motsClesJobs tokenise déjà en mots-clés — on strip pour la voie Basile ET le prompt IA.
+  const jobs = (Array.isArray(req.body.jobs) ? req.body.jobs : [])
+    .map(x => String(x || '').trim().replace(/^~\s*/, '')).filter(Boolean);
   const jobsExclus = (Array.isArray(req.body.jobs_exclus) ? req.body.jobs_exclus : [])
-    .map(x => String(x || '').trim()).filter(Boolean).slice(0, 20);
+    .map(x => String(x || '').trim().replace(/^~\s*/, '')).filter(Boolean).slice(0, 20);
   if (!entreprise.nom || !jobs.length) return res.status(400).json({ erreur: 'entreprise.nom et jobs requis' });
 
   try {

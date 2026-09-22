@@ -1,5 +1,19 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 23 septembre 2026)
 
+## 🎯 23 septembre 2026 — VALIDÉ EN PROD : 74 + Vincent · le mode « ~ contient » généralisé partout
+
+Didier confirme : « ~acha × 🌴 Guadeloupe » = 74 LinkedIn, Vincent Boulogne dans l'aperçu —
+parité Sales Nav atteinte. Généralisation du mode « ~ contient » (demande Didier) :
+- `ligneContient(q, ajouterFn, etatFn, boxId)` générique + `rolesSuggest(..., enteteFn)` :
+  l'en-tête « ~ contient “mot” » (✓ Inclure / ✕ Exclure, re-rendue à chaque clic) apparaît sur
+  LES QUATRE dropdowns d'intitulés : Postes (avancé), Fonctions Entreprises (avancé), modale
+  personas (fiches + Ma journée, via personasContient), wizard Pappers étape 5 (via jobContient).
+  L'ancienne mécanique dédiée aux postes (AV_POSTE_MOT/avPosteLigneContient) est purgée.
+- Chips « ~ contient « mot » » lisibles aussi sur les fonctions Entreprises.
+- personas.js STRIP le ~ à l'entrée (jobs + jobs_exclus) : la voie Basile matche par mots-clés
+  et le prompt IA reçoit les mots propres. recherche.js strippait déjà.
+- Smoke : ligne ~ sur les 4 dropdowns, coche modale '~achats', exclusion '~stagiaire', chips ent.
+
 ## 🎯 23 septembre 2026 — le filtre RÉGION marche (74 vs 41 245) : les chips 🌴 passent dessus
 
 Mesure Didier : location_region / result_region / region 'Guadeloupe' = 74 (contrôle 41 245) →

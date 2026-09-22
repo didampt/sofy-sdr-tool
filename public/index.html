@@ -3692,8 +3692,8 @@ function avRendreChips(){
  const bje=document.getElementById('av-ent-jobs-chips');
  if(bje)bje.innerHTML=
   `<div class="chips"><button class="chip${AV.ent.jobs.length?'':' sel'}" onclick="avEntDecideur()">N'importe quel décideur</button></div>`
-  +AV.ent.jobs.map((p,k)=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;font-size:12.5px;background:#f0fdf4"><b style="flex-grow:1">${esc(p)}</b><span style="font-size:11px;font-weight:800;color:#15803d">✓ INCLUS</span><a style="font-size:11px;cursor:pointer" onclick="AV.ent.jobs.splice(${k},1);avRendreChips();avEntMajModale()">retirer</a></div>`).join('')
-  +AV.ent.jobsEx.map((p,k)=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;font-size:12.5px;background:#fef2f2"><b style="flex-grow:1">${esc(p)}</b><span style="font-size:11px;font-weight:800;color:#b91c1c">✕ EXCLU</span><a style="font-size:11px;cursor:pointer" onclick="AV.ent.jobsEx.splice(${k},1);avRendreChips();avEntMajModale()">retirer</a></div>`).join('');
+  +AV.ent.jobs.map((p,k)=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;font-size:12.5px;background:#f0fdf4"><b style="flex-grow:1">${p.startsWith('~')?'~ contient « '+esc(p.slice(1))+' »':esc(p)}</b><span style="font-size:11px;font-weight:800;color:#15803d">✓ INCLUS</span><a style="font-size:11px;cursor:pointer" onclick="AV.ent.jobs.splice(${k},1);avRendreChips();avEntMajModale()">retirer</a></div>`).join('')
+  +AV.ent.jobsEx.map((p,k)=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;font-size:12.5px;background:#fef2f2"><b style="flex-grow:1">${p.startsWith('~')?'~ contient « '+esc(p.slice(1))+' »':esc(p)}</b><span style="font-size:11px;font-weight:800;color:#b91c1c">✕ EXCLU</span><a style="font-size:11px;cursor:pointer" onclick="AV.ent.jobsEx.splice(${k},1);avRendreChips();avEntMajModale()">retirer</a></div>`).join('');
  document.getElementById('av-ent-eff-chips').innerHTML=['Indifférent','1–9','10–19','20–49','50–199','200–499','500+'].map(t=>
   `<button class="chip${AV.ent.eff===t?' sel':''}" onclick="AV.ent.eff='${t}';avRendreChips();avMajEnt()">${t}</button>`).join('');
  document.getElementById('av-ent-zones-chips').innerHTML=['France métropolitaine','Guadeloupe','Martinique','Guyane française','Réunion','Mayotte'].map(z=>
@@ -3719,23 +3719,15 @@ let AV_POSTE_TIMER=null;
 // de la box, Échap, ou nouvelle saisie trop courte.
 let ROLES_SUGG_TIMER=null;
 const SUGG_ETAT={}; // boxId -> {items, rendu} (re-rendu après chaque action via suggAfficher)
-let AV_POSTE_MOT=null;
-function avPosteLigneContient(){
- if(!AV_POSTE_MOT)return '';
- const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
- const m=esc(AV_POSTE_MOT),cle='~'+AV_POSTE_MOT;
- const inc=AV.postes.includes(cle),exc=(AV.postesEx||[]).includes(cle);
- return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:2px solid var(--line);font-size:13px;background:${inc?'#f0fdf4':exc?'#fef2f2':'#f7f8ff'}"><span style="flex-grow:1"><b>~ contient « ${m} »</b> <span style="font-size:10.5px;color:var(--ink-soft)">tous les intitulés avec ce mot (même à rallonge)</span></span><button class="btn" data-p="${esc(cle)}" style="padding:4px 9px;font-size:11.5px;${inc?'background:#15803d;color:#fff;border:1px solid #15803d':'background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0'}" onclick="avAjouterPoste(this.dataset.p,'inclure');suggAfficher('av-poste-results')">${inc?'✓ Inclus':'✓ Inclure'}</button><button class="btn" data-p="${esc(cle)}" style="padding:4px 9px;font-size:11.5px;${exc?'background:#b91c1c;color:#fff;border:1px solid #b91c1c':'background:#fef2f2;color:#b91c1c;border:1px solid #fecaca'}" onclick="avAjouterPoste(this.dataset.p,'exclure');suggAfficher('av-poste-results')">${exc?'✕ Exclu':'✕ Exclure'}</button></div>`;
-}
 function suggAfficher(boxId){
  const e=SUGG_ETAT[boxId],box=document.getElementById(boxId);
  if(!box)return;
- const entete=boxId==='av-poste-results'?avPosteLigneContient():'';
+ const entete=(e&&e.enteteFn)?e.enteteFn():'';
  if((!e||!e.items.length)&&!entete){box.style.display='none';return;}
  box.innerHTML=entete+((e&&e.items)||[]).map(e?e.rendu:(x=>x)).join('');
  box.style.display='block';
 }
-function rolesSuggest(q,boxId,renduLigne){
+function rolesSuggest(q,boxId,renduLigne,enteteFn){
  clearTimeout(ROLES_SUGG_TIMER);
  const box=document.getElementById(boxId);if(!box)return;
  if(!q||q.trim().length<2){box.style.display='none';return;}
@@ -3748,9 +3740,18 @@ function rolesSuggest(q,boxId,renduLigne){
    items=(brut.suggestions||brut.roles||brut.results||(Array.isArray(brut)?brut:[]))
     .map(s=>typeof s==='string'?s:(s.value||s.label||s.name||'')).filter(Boolean).slice(0,25);
   }catch(_){}
-  SUGG_ETAT[boxId]={items,rendu:renduLigne};
+  SUGG_ETAT[boxId]={items,rendu:renduLigne,enteteFn};
   suggAfficher(boxId);
  },350);
+}
+// Ligne « ~ contient “mot” » générique : mot = dernier mot ≥3 lettres de la saisie ; ajouterFn =
+// nom d'une fonction front (cle,'inclure'|'exclure') ; etatFn(cle) = [estInclus, estExclu]
+function ligneContient(q,ajouterFn,etatFn,boxId){
+ const mot=(String(q||'').trim().split(/\s+/).pop()||'').replace(/[^\p{L}\p{N}-]/gu,'');
+ if(mot.length<3)return '';
+ const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+ const cle='~'+mot,etat=etatFn(cle),inc=etat[0],exc=etat[1];
+ return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:2px solid var(--line);font-size:13px;background:${inc?'#f0fdf4':exc?'#fef2f2':'#f7f8ff'}"><span style="flex-grow:1"><b>~ contient « ${esc(mot)} »</b> <span style="font-size:10.5px;color:var(--ink-soft)">tous les intitulés avec ce mot (même à rallonge)</span></span><button class="btn" data-p="${esc(cle)}" style="padding:4px 9px;font-size:11.5px;${inc?'background:#15803d;color:#fff;border:1px solid #15803d':'background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0'}" onclick="${ajouterFn}(this.dataset.p,'inclure');suggAfficher('${esc(boxId)}')">${inc?'✓ Inclus':'✓ Inclure'}</button><button class="btn" data-p="${esc(cle)}" style="padding:4px 9px;font-size:11.5px;${exc?'background:#b91c1c;color:#fff;border:1px solid #b91c1c':'background:#fef2f2;color:#b91c1c;border:1px solid #fecaca'}" onclick="${ajouterFn}(this.dataset.p,'exclure');suggAfficher('${esc(boxId)}')">${exc?'✕ Exclu':'✕ Exclure'}</button></div>`;
 }
 // Fermeture globale : clic hors de la box (les clics DANS la box restent multi-choix) + Échap
 const SUGG_BOXES={'av-poste-results':'av-poste-libre','av-secteur-results':'av-secteur','av-ent-naf-results':'av-ent-naf','av-ent-jobs-results':'av-ent-jobs-libre','av-gmb-act-results':'av-gmb-act','av-gmb-villes-results':'av-gmb-villes','job-custom-results':'job-custom','personas-autre-results':'personas-autre'};
@@ -3770,15 +3771,11 @@ document.addEventListener('keydown',ev=>{
 });
 function avPosteSuggest(q){
  const escA=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
- // Ligne « ~ contient » en tête : un MOT-CLÉ attrape tous les intitulés qui le contiennent
- // (mesuré : « achats » = 33 850 vs « Directeur Achats » exact = 756 — les intitulés à rallonge
- // type « Directeur Achats Automobile Antilles Guyane » échappent à l'exact, cas Sales Nav).
- const mot=(String(q||'').trim().split(/\s+/).pop()||'').replace(/[^\p{L}\p{N}-]/gu,'');
- AV_POSTE_MOT=mot.length>=3?mot:null;
+ const entete=()=>ligneContient(q,'avAjouterPoste',c=>[AV.postes.includes(c),(AV.postesEx||[]).includes(c)],'av-poste-results');
  rolesSuggest(q,'av-poste-results',p=>{
   const inc=AV.postes.includes(p),exc=(AV.postesEx||[]).includes(p);
   return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);font-size:13px${(inc||exc)?';background:'+(inc?'#f0fdf4':'#fef2f2'):''}"><span style="flex-grow:1">${escA(p)}</span><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;${inc?'background:#15803d;color:#fff;border:1px solid #15803d':'background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0'}" onclick="avAjouterPoste(this.dataset.p,'inclure');suggAfficher('av-poste-results')">${inc?'✓ Inclus':'✓ Inclure'}</button><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;${exc?'background:#b91c1c;color:#fff;border:1px solid #b91c1c':'background:#fef2f2;color:#b91c1c;border:1px solid #fecaca'}" onclick="avAjouterPoste(this.dataset.p,'exclure');suggAfficher('av-poste-results')">${exc?'✕ Exclu':'✕ Exclure'}</button></div>`;
- });
+ },entete);
 }
 function avPosteFerme(){document.getElementById('av-poste-results').style.display='none';document.getElementById('av-poste-libre').value='';}
 function avToggleEff(x){x=String(x||'').trim();const i=AV.effSN.indexOf(x);if(i>=0)AV.effSN.splice(i,1);else AV.effSN.push(x);avRendreChips();avMaj();}
@@ -4040,10 +4037,11 @@ function avEntDecideur(){AV.ent.jobs=[];avRendreChips();avEntMajModale();}
 function avEntMajModale(){if(AV.onglet==='entreprises'&&document.getElementById('av-modal').style.display==='flex')avApercuEnt();}
 function avEntJobSuggest(q){
  const escA=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+ const entete=()=>ligneContient(q,'avEntJobAjouter',c=>[(AV.ent.jobs||[]).includes(c),(AV.ent.jobsEx||[]).includes(c)],'av-ent-jobs-results');
  rolesSuggest(q,'av-ent-jobs-results',p=>{
   const inc=(AV.ent.jobs||[]).includes(p),exc=(AV.ent.jobsEx||[]).includes(p);
   return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);font-size:13px${(inc||exc)?';background:'+(inc?'#f0fdf4':'#fef2f2'):''}"><span style="flex-grow:1">${escA(p)}</span><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;${inc?'background:#15803d;color:#fff;border:1px solid #15803d':'background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0'}" onclick="avEntJobAjouter(this.dataset.p,'inclure');suggAfficher('av-ent-jobs-results')">${inc?'✓ Inclus':'✓ Inclure'}</button><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;${exc?'background:#b91c1c;color:#fff;border:1px solid #b91c1c':'background:#fef2f2;color:#b91c1c;border:1px solid #fecaca'}" onclick="avEntJobAjouter(this.dataset.p,'exclure');suggAfficher('av-ent-jobs-results')">${exc?'✕ Exclu':'✕ Exclure'}</button></div>`;
- });
+ },entete);
 }
 // ── Villes : autocomplete Basile (/people/cities/suggest) sur un input à virgules ──
 let AV_VILLE_TIMER=null;
@@ -5079,12 +5077,17 @@ function jobExRendre(){
  document.getElementById('job-ex-chips').innerHTML=(state.jobsEx||[]).map((o,k)=>
   `<span class="chip sel" style="background:#fef2f2;border-color:#fecaca;color:#b91c1c;cursor:pointer" onclick="state.jobsEx.splice(${k},1);jobExRendre();validate()">✕ ${esc(o)} — exclu</span>`).join('');
 }
+function jobContient(cle,mode){
+ if(mode==='exclure')jobExToggle(cle);
+ else jobToggle(cle);
+}
 function jobSuggest(q){
  const escA=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+ const entete=()=>ligneContient(q,'jobContient',c=>[state.jobs.includes(c),(state.jobsEx||[]).some(x=>x.toLowerCase()===c.toLowerCase())],'job-custom-results');
  rolesSuggest(q,'job-custom-results',p=>{
   const inc=state.jobs.includes(p),exc=(state.jobsEx||[]).some(x=>x.toLowerCase()===p.toLowerCase());
   return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);font-size:13px${(inc||exc)?';background:'+(inc?'#f0fdf4':'#fef2f2'):''}"><span style="flex-grow:1">${escA(p)} <span style="font-size:10.5px;color:var(--ink-soft)">💼 intitulé Basile</span></span><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;${inc?'background:#15803d;color:#fff;border:1px solid #15803d':'background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0'}" onclick="jobToggle(this.dataset.p);suggAfficher('job-custom-results')">${inc?'✓ Inclus':'✓ Inclure'}</button><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;${exc?'background:#b91c1c;color:#fff;border:1px solid #b91c1c':'background:#fef2f2;color:#b91c1c;border:1px solid #fecaca'}" onclick="jobExToggle(this.dataset.p);suggAfficher('job-custom-results')">${exc?'✕ Exclu':'✕ Exclure'}</button></div>`;
- });
+ },entete);
 }
 function addCustomJob(e){
  if(e.key!=='Enter'||!e.target.value.trim())return;
@@ -10102,12 +10105,17 @@ function personasCochee(v){
  const c=[...boite.querySelectorAll('input[type=checkbox]')].find(x=>x.value.toLowerCase()===String(v).toLowerCase());
  return !!(c&&c.checked);
 }
+function personasContient(cle,mode){
+ if(mode==='exclure')personasExclure(cle);
+ else personasAjouterFonction(cle);
+}
 function personasSuggest(q){
  const escA=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+ const entete=()=>ligneContient(q,'personasContient',c=>[personasCochee(c),PERSONAS_EX.some(x=>x.toLowerCase()===c.toLowerCase())],'personas-autre-results');
  rolesSuggest(q,'personas-autre-results',p=>{
   const inc=personasCochee(p),exc=PERSONAS_EX.some(x=>x.toLowerCase()===p.toLowerCase());
   return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);font-size:13px${(inc||exc)?';background:'+(inc?'#f0fdf4':'#fef2f2'):''}"><span style="flex-grow:1">${escA(p)} <span style="font-size:10.5px;color:var(--ink-soft)">💼 intitulé Basile</span></span><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;${inc?'background:#15803d;color:#fff;border:1px solid #15803d':'background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0'}" onclick="personasAjouterFonction(this.dataset.p)">${inc?'✓ Inclus':'✓ Inclure'}</button><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;${exc?'background:#b91c1c;color:#fff;border:1px solid #b91c1c':'background:#fef2f2;color:#b91c1c;border:1px solid #fecaca'}" onclick="personasExclure(this.dataset.p)">${exc?'✕ Exclu':'✕ Exclure'}</button></div>`;
- });
+ },entete);
 }
 const JOBS_PERSONAS=["N'importe quel décideur"]; // les intitulés préétablis (inventés) ont sauté — champ Basile
 let PERSONAS_EX=[]; // fonctions exclues de la modale en cours
