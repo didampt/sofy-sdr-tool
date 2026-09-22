@@ -559,45 +559,62 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
     <!-- ════ VUE 1 : WIZARD ════ -->
     <section class="view on" id="view-wizard">
       <div class="eyebrow">Nouvelle liste d'appel</div>
-      <div id="mode-choix" style="max-width:680px">
+      <div id="mode-choix" style="max-width:920px">
         <h1 style="margin-bottom:6px">Comment veux-tu créer ta liste ?</h1>
-        <p class="sub" style="margin-bottom:22px">Six façons : décris ta cible à l'IA, filtre façon Sales Navigator, extrais depuis Pappers, cible par note Google Maps, vise un réseau ou un groupe entier, ou crée une liste vide à remplir à la main.</p>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-          <div onclick="choisirMode('ia')" style="cursor:pointer;border:2px solid #185FA5;border-radius:14px;padding:22px;transition:.15s;background:var(--card);position:relative" onmouseover="this.style.background='#f5f9fe'" onmouseout="this.style.background='var(--card)'">
-            <div style="position:absolute;top:12px;right:12px;font-size:10px;font-weight:700;color:#fff;background:#185FA5;padding:2px 8px;border-radius:20px">NOUVEAU</div>
-            <div style="font-size:30px;margin-bottom:10px">✨</div>
-            <div style="font-size:16px;font-weight:700;margin-bottom:5px">Liste intelligente (IA)</div>
-            <div style="font-size:13px;color:var(--ink-soft);line-height:1.5">Décris ta cible en une phrase. L'IA comprend, te pose les bonnes questions et construit la liste pour toi.</div>
+        <p class="sub" style="margin-bottom:22px">Quatre façons — et une porte d'entrée principale : la Recherche avancée, qui réunit Pappers, LinkedIn et Google Maps.</p>
+
+        <!-- HÉRO : Recherche avancée (les cartes Pappers et Google Maps ont fusionné dedans — GO Didier 23/09) -->
+        <div onclick="choisirMode('avance')" style="cursor:pointer;border:2px solid #185FA5;border-radius:16px;padding:22px 26px;background:linear-gradient(135deg,var(--card) 62%,#eef3fb 100%);box-shadow:0 10px 30px rgba(24,95,165,.10);display:flex;flex-direction:column;gap:14px;margin-bottom:16px" onmouseover="this.style.boxShadow='0 14px 36px rgba(24,95,165,.18)'" onmouseout="this.style.boxShadow='0 10px 30px rgba(24,95,165,.10)'">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="font-size:30px">🔎</span>
+            <div style="flex-grow:1">
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <b style="font-size:20px">Recherche avancée</b>
+                <span style="font-size:10px;font-weight:800;padding:3px 9px;border-radius:20px;background:#185FA5;color:#fff">RECOMMANDÉ</span>
+              </div>
+              <div style="font-size:13.5px;color:var(--ink-soft);margin-top:2px;line-height:1.5">Les filtres façon Sales Navigator — registre légal (Pappers), LinkedIn (Basile) et Google Maps réunis, assistés par l'IA. Comptage gratuit en direct, aperçu réel, tu coches qui tu veux.</div>
+            </div>
+            <button class="btn btn-primary" style="padding:12px 20px;font-size:14.5px;white-space:nowrap">Commencer →</button>
           </div>
-          <div onclick="choisirMode('pappers')" style="cursor:pointer;border:1px solid var(--line);border-radius:14px;padding:22px;transition:.15s;background:var(--card)" onmouseover="this.style.borderColor='#185FA5'" onmouseout="this.style.borderColor='var(--line)'">
-            <div style="font-size:30px;margin-bottom:10px">🎯</div>
-            <div style="font-size:16px;font-weight:700;margin-bottom:5px">Liste depuis Pappers</div>
-            <div style="font-size:13px;color:var(--ink-soft);line-height:1.5">Tu choisis un secteur, une zone, une taille. La machine extrait les entreprises, dédoublonne et score automatiquement.</div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+            <div onclick="event.stopPropagation();choisirAvance('prospects')" style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer" onmouseover="this.style.borderColor='#185FA5'" onmouseout="this.style.borderColor='var(--line)'">
+              <b style="font-size:13.5px">👤 Prospects</b>
+              <div style="font-size:11.5px;color:var(--ink-soft);margin-top:3px;line-height:1.45">Postes réels Basile (Inclure/Exclure), secteur, effectif Sales Nav, siège, la personne.</div>
+            </div>
+            <div onclick="event.stopPropagation();choisirAvance('entreprises')" style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer" onmouseover="this.style.borderColor='#185FA5'" onmouseout="this.style.borderColor='var(--line)'">
+              <b style="font-size:13.5px">🏢 Entreprises</b>
+              <div style="font-size:11.5px;color:var(--ink-soft);margin-top:3px;line-height:1.45">L'ex « Liste depuis Pappers » : NAF, zone, taille, CA — plus les décideurs en modale.</div>
+            </div>
+            <div onclick="event.stopPropagation();choisirAvance('gmb')" style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer" onmouseover="this.style.borderColor='#185FA5'" onmouseout="this.style.borderColor='var(--line)'">
+              <b style="font-size:13.5px">📍 Google</b>
+              <div style="font-size:11.5px;color:var(--ink-soft);margin-top:3px;line-height:1.45">L'ex « Liste Google Maps » : catégories officielles, villes, note — moteur SerpApi.</div>
+            </div>
+            <div onclick="event.stopPropagation();choisirAvance('lookalike')" style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer" onmouseover="this.style.borderColor='#185FA5'" onmouseout="this.style.borderColor='var(--line)'">
+              <b style="font-size:13.5px">👯 Lookalike</b>
+              <div style="font-size:11.5px;color:var(--ink-soft);margin-top:3px;line-height:1.45">Tes listes classées par RDV pris — relance les critères gagnants, dédupliqué.</div>
+            </div>
           </div>
-          <div onclick="choisirMode('gmb')" style="cursor:pointer;border:1px solid var(--line);border-radius:14px;padding:22px;transition:.15s;background:var(--card);position:relative" onmouseover="this.style.borderColor='#185FA5'" onmouseout="this.style.borderColor='var(--line)'">
-            <div style="position:absolute;top:12px;right:12px;font-size:10px;font-weight:700;color:#fff;background:#16A34A;padding:2px 8px;border-radius:20px">NOUVEAU</div>
-            <div style="font-size:30px;margin-bottom:10px">📍</div>
-            <div style="font-size:16px;font-weight:700;margin-bottom:5px">Liste Google Maps (SoView)</div>
-            <div style="font-size:13px;color:var(--ink-soft);line-height:1.5">Ville + activité + note Google. Idéal SoView : cible les fiches mal notées, avec téléphone et site web inclus.</div>
+          <div style="font-size:12px;color:#7a5510;background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:8px 12px">🧭 Les cartes « Liste depuis Pappers » et « Liste Google Maps » ont déménagé ICI (onglets Entreprises et Google) — mêmes moteurs, mêmes listes, plus de filtres.</div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+          <div onclick="choisirMode('ia')" style="cursor:pointer;border:1px solid var(--line);border-radius:14px;padding:20px;transition:.15s;background:var(--card)" onmouseover="this.style.borderColor='#185FA5'" onmouseout="this.style.borderColor='var(--line)'">
+            <div style="font-size:28px;margin-bottom:8px">✨</div>
+            <div style="font-size:15.5px;font-weight:700;margin-bottom:5px">Liste intelligente (IA)</div>
+            <div style="font-size:12.5px;color:var(--ink-soft);line-height:1.5">Décris ta cible en une phrase, l'IA construit la liste. Elle sait aussi pré-remplir la Recherche avancée.</div>
           </div>
-          <div onclick="choisirMode('verticale')" style="cursor:pointer;border:1px solid var(--line);border-radius:14px;padding:22px;transition:.15s;background:var(--card);position:relative" onmouseover="this.style.borderColor='#185FA5'" onmouseout="this.style.borderColor='var(--line)'">
-            <div style="position:absolute;top:12px;right:12px;font-size:10px;font-weight:700;color:#fff;background:#7C3AED;padding:2px 8px;border-radius:20px">NOUVEAU</div>
-            <div style="font-size:30px;margin-bottom:10px">🏢</div>
-            <div style="font-size:16px;font-weight:700;margin-bottom:5px">Liste Verticale (réseau / groupe)</div>
-            <div style="font-size:13px;color:var(--ink-soft);line-height:1.5">Une franchise (BigMat…) ou un groupe multi-enseignes (GBH…) : toutes ses entités en une liste — points de vente, filiales, dirigeants.</div>
+          <div onclick="choisirMode('verticale')" style="cursor:pointer;border:1px solid var(--line);border-radius:14px;padding:20px;transition:.15s;background:var(--card)" onmouseover="this.style.borderColor='#185FA5'" onmouseout="this.style.borderColor='var(--line)'">
+            <div style="font-size:28px;margin-bottom:8px">🏢</div>
+            <div style="font-size:15.5px;font-weight:700;margin-bottom:5px">Liste Verticale (réseau / groupe)</div>
+            <div style="font-size:12.5px;color:var(--ink-soft);line-height:1.5">Une franchise (BigMat…) ou un groupe multi-enseignes (GBH…) : toutes ses entités en une liste.</div>
           </div>
-          <div onclick="choisirMode('avance')" style="cursor:pointer;border:1px solid var(--line);border-radius:14px;padding:22px;transition:.15s;background:var(--card);position:relative" onmouseover="this.style.borderColor='#185FA5'" onmouseout="this.style.borderColor='var(--line)'">
-            <div style="position:absolute;top:12px;right:12px;font-size:10px;font-weight:700;color:#fff;background:#7C3AED;padding:2px 8px;border-radius:20px">NOUVEAU</div>
-            <div style="font-size:30px;margin-bottom:10px">🔎</div>
-            <div style="font-size:16px;font-weight:700;margin-bottom:5px">Recherche avancée</div>
-            <div style="font-size:13px;color:var(--ink-soft);line-height:1.5">Les filtres façon Sales Navigator : postes, secteur, effectif, listes de comptes — comptage gratuit en direct, aperçu réel, tu coches qui tu veux.</div>
-          </div>
-          <div onclick="choisirMode('manuelle')" style="cursor:pointer;border:1px solid var(--line);border-radius:14px;padding:22px;transition:.15s;background:var(--card)" onmouseover="this.style.borderColor='#185FA5'" onmouseout="this.style.borderColor='var(--line)'">
-            <div style="font-size:30px;margin-bottom:10px">✍️</div>
-            <div style="font-size:16px;font-weight:700;margin-bottom:5px">Liste manuelle</div>
-            <div style="font-size:13px;color:var(--ink-soft);line-height:1.5">Tu nommes ta liste (ton ICP) et tu y ajoutes toi-même les fiches que tu as identifiées. Idéal pour des cibles repérées à la main.</div>
+          <div onclick="choisirMode('manuelle')" style="cursor:pointer;border:1px solid var(--line);border-radius:14px;padding:20px;transition:.15s;background:var(--card)" onmouseover="this.style.borderColor='#185FA5'" onmouseout="this.style.borderColor='var(--line)'">
+            <div style="font-size:28px;margin-bottom:8px">✍️</div>
+            <div style="font-size:15.5px;font-weight:700;margin-bottom:5px">Liste manuelle</div>
+            <div style="font-size:12.5px;color:var(--ink-soft);line-height:1.5">Tu nommes ta liste (ton ICP) et tu ajoutes toi-même les fiches repérées à la main.</div>
           </div>
         </div>
+        <p class="hint" style="margin-top:14px">Les listes, recherches enregistrées et lookalikes créés avec les anciennes cartes continuent de fonctionner — seuls les points d'entrée ont fusionné.</p>
       </div>
       <div id="mode-gmb" style="display:none;max-width:640px">
         <div class="head-row">
@@ -3114,6 +3131,10 @@ function nav(v,btn){
  if(v==='wizard')retourChoixMode();
 }
 // ── Choix du mode de création de liste ──
+function choisirAvance(onglet){
+ choisirMode('avance');
+ avOnglet(onglet);
+}
 function choisirMode(mode){
  document.getElementById('mode-choix').style.display='none';
  document.getElementById('wizard-pappers').style.display='none';

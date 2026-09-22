@@ -1,4 +1,19 @@
-# HANDOFF — Reprise du travail (dernière mise à jour : 22 septembre 2026, nuit)
+# HANDOFF — Reprise du travail (dernière mise à jour : 23 septembre 2026)
+
+## 🎯 23 septembre 2026 — écran de choix v2 : la Recherche avancée en héro, cartes Pappers & Google Maps retirées (GO Didier)
+
+Wireframe validé (canvas, artboard « 0 · Choix de création v2 ») :
+- **#mode-choix refondu** (max-width 920) : HÉRO Recherche avancée pleine largeur (badge
+  RECOMMANDÉ, CTA « Commencer → », clic = choisirMode('avance') en gardant l'onglet courant)
+  avec 4 SOUS-CARTES cliquables → `choisirAvance(onglet)` (nouveau helper : choisirMode('avance')
+  + avOnglet) — Entreprises et Google assument leur filiation (« l'ex Liste depuis Pappers /
+  Google Maps ») ; bandeau 🧭 « ont déménagé ici » ; rangée secondaire IA / Verticale / Manuelle ;
+  note compat en bas.
+- **Les cartes « Liste depuis Pappers » et « Liste Google Maps » quittent le menu** — le CODE
+  reste intégralement (`choisirMode('pappers'|'gmb')`, #wizard-pappers, #mode-gmb) : listes
+  existantes, recherches enregistrées, lookalikes et liens internes inchangés. Zéro migration.
+- Vérifié : node --check ; smoke navigateur (8 cartes cliquables attendues, sous-carte Google →
+  mode avance onglet gmb rail affiché, capture conforme au wireframe).
 
 ## 🎯 22 septembre 2026 (nuit, 15e passe) — l'onglet Google reprend l'autocomplétion de la carte 3
 
