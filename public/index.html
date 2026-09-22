@@ -12183,7 +12183,7 @@ function rendreSignup(s){
  const vat=s.tva_id?`<span class="badge b-new">TVA ${htmlSafe(s.tva_id)}</span>`:'';
  const siret=s.siret?`<span class="badge b-gmb">SIRET ${htmlSafe(s.siret)}</span>`:'';
  const ficheKey=jsArg(s.fiche_key||s.key);
- const enable=s.pending&&s.can_enable&&state.user&&['admin','superadmin'].includes(state.user.role)
+ const enable=s.pending&&s.can_enable
   ?`<button class="act act-call" style="background:#10B981;color:#fff" onclick="event.stopPropagation();activerSignup('${jsArg(s.key)}',this)">✅ Activer le compte</button>`
   :'';
  const ban=s.pending&&state.user&&['admin','superadmin'].includes(state.user.role)

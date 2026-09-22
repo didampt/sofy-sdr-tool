@@ -136,12 +136,12 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
-      if (!['admin', 'superadmin'].includes(user.role)) {
-        return res.status(403).json({ erreur: 'Réservé aux administrateurs' });
-      }
       const { key, action } = req.body || {};
       const signupAction = action || 'enable';
       if (!['enable', 'ban'].includes(signupAction)) return res.status(400).json({ erreur: 'action invalide' });
+      if (signupAction === 'ban' && !['admin', 'superadmin'].includes(user.role)) {
+        return res.status(403).json({ erreur: 'Réservé aux administrateurs' });
+      }
       if (!list) return res.status(404).json({ erreur: 'Liste Hot Leads introuvable' });
       if (!key) return res.status(400).json({ erreur: 'key requis' });
 
