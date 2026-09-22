@@ -101,6 +101,7 @@ function infoFiche(e, listeId, listeNom) {
     nom: e.enseigne_ia || e.enseigne || e.nom, ville: e.ville || '',
     // Matière des enrichissements lancés depuis le cockpit (👥 Personas, ↻ Compléter Lemlist)
     nom_officiel: e.nom || '',
+    siren: e.siren || null,
     site: e.site_web || (e.gmb && e.gmb.site) || (e.ia && e.ia.site) || null,
     linkedin_entreprise: e.linkedin_entreprise || null,
     contact: c0 ? ((c0.prenom || '') + ' ' + (c0.nom || '')).trim() : '',

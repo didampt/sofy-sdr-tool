@@ -1,5 +1,42 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 22 septembre 2026)
 
+## 🎯 22 septembre 2026 — « Solution Etienne » : personas par SIREN + choix des salariés (en attente de GO)
+
+Remontée : Etienne (AE) filtre dans Sales Nav, « obtient plus de contacts » et enrichit depuis
+Sales Nav (extensions Lemlist/FullEnrich) — il contourne Sofy Scrap alors que le plan sièges du
+18/09 veut l'inverse. Cause côté produit : les personas Basile cherchaient par **nom d'employeur**
+(rappel limité, garde anti-faux-positifs stricte) et plafonnaient l'affichage à 5, sans vue
+« tous les salariés » où choisir soi-même.
+
+**Découverte clé (doc https://docs.basile.cc/openapi.yaml relue le 22/09)** : l'API Basile a
+beaucoup évolué depuis juillet — le filtre `siren` sur `people/find` renvoie désormais **les
+salariés LinkedIn en plus des mandataires** (il résout la page LinkedIn de l'entreprise ; c'était
+LE blocage de v209), et `people/find` accepte maintenant `activity` fin (préfixes naf:/lki:),
+`company_headcount`, `result_city`/`result_postal_code`, `current_tenure_years`… La ligne
+« pièges » du HANDOFF (§ pas de filtre géo/effectif sur people) est PÉRIMÉE. ⚠️ Non re-testé en
+prod : Basile ignore silencieusement les filtres inconnus (leçon du 21/07) — d'où le garde-fou
+ci-dessous. Grosse opportunité restante : refondre la Liste intelligente avec ces filtres
+(remplacerait le tri sectoriel IA de v210) — non fait, à arbitrer.
+
+**Livré (local, en attente de GO pour push)** :
+- `api/personas.js` : voie **SIREN d'abord** (exact, salariés + registre), complément par nom
+  d'employeur si < 3 retenus, garde d'appartenance MÊME sur la voie siren (siren du lead OU
+  memeEntreprise) → si l'API ignorait le filtre, les 100 profils quelconques sont écartés et la
+  voie employeur reprend (testé en simulation verbatim, 5 scénarios, scratchpad). Réponse :
+  `personas` (auto ≤5, pipeline inchangé) + **`salaries`** (tous les salariés valides, ≤30,
+  cible true/false/null). 0 décideur + des salariés → repli Claude lancé ET `salaries` joints.
+- Front : `chercherPersonas(i, manuel)` passe `siren` ; sur le flux MANUEL (bouton 👥), les
+  salariés non ajoutés s'affichent dans un **picker** (modale personas-modal réutilisée,
+  décideurs pré-cochés, lien LinkedIn, XSS échappé) → `ajouterSalariesChoisis()` (source contact
+  `basile-salaries`). Pipeline 🚀 : auto-5 inchangé ; `peutPersonas` accepte désormais une fiche
+  avec seul un SIREN. Cockpit « Ma journée » : `infoFiche` expose `siren`, transmis par
+  `ckValiderPersonas` (le PUT chirurgical plafonne toujours à 8 contacts/fiche).
+- Vérifié : node --check (personas/cockpit/front), simulation verbatim serveur, picker testé au
+  navigateur sur page locale (rendu, pré-cochage, ajout, échappement).
+**Validation prod à faire au déploiement (2 min, snippet console donné à Didier)** : vérifier que
+`people/find {siren}` renvoie bien des `profile_url` LinkedIn (pas que des mandataires) sur un
+SIREN connu — sinon la voie employeur prend le relais toute seule, rien ne casse.
+
 ## 🎯 22 septembre 2026 — « SofyScrap trouve moins qu'une recherche manuelle » (cas Romain, 82.91Z)
 
 Romain : annuaire-entreprises = 835 sociétés de recouvrement actives, SofyScrap = « 126 trouvées
@@ -1014,7 +1051,7 @@ Trois règles qui en découlent, à ne plus jamais enfreindre :
 - **Extraction LinkedIn : ne jamais lire le nom depuis un ancêtre du lien.** LinkedIn a supprimé les `<li>` de la fenêtre des réactions ; `a.closest('li')||a.parentElement` remonte alors au conteneur de **toute la liste**, et `innerText.split('\n')[0]` renvoie le nom du **premier** liker pour tous les profils. Symptôme : N URLs distinctes mais un seul nom répété N fois (17/08 : « Guillaume Cavaroc » ×15 → 15 exclusions IA du même profil Meta). Le nom se lit **dans le lien** (texte, `alt` de la photo, `aria-label`, slug de l'URL en dernier recours) ; la fonction dans le plus proche ancêtre ne contenant **qu'un seul** `a[href*="/in/"]`. Le script annonce le nombre de noms distincts et le rapport d'import alerte si un profil domine.
 - **Webhooks externes → toujours `www.sofyscrap.com`** (l'apex 308 avale les POST).
 - Ringover ne pousse **rien** vers une URL non « Verified » ; son payload réel ≠ doc (voir plus haut) ; la clé sert à **signer** (JWT HS512), elle n'arrive jamais en clair.
-- Basile : pas de filtre région/département ni effectif sur `people/find` ; 7 macro-slugs `*_global` seulement ; `FAMILLES_POSTE` figées côté serveur (déterminisme) ; géo fine uniquement via `companies/find` (codes postaux / NAF).
+- Basile : ⚠️ PÉRIMÉ EN PARTIE (relecture doc du 22/09/2026, cf. section « Solution Etienne ») — `people/find` accepte désormais `activity` fin (naf:/lki:), `company_headcount`, `result_city`/`result_postal_code`, et `siren` renvoie les salariés LinkedIn. Toujours vrai : `FAMILLES_POSTE` figées côté serveur (déterminisme) ; filtres inconnus ignorés SILENCIEUSEMENT (toujours garder une garde d'appartenance) ; ces nouveaux filtres restent à re-tester en prod avant de refondre la Liste intelligente.
 - CSP stricte : **aucune lib externe** dans `public/index.html` (script-src 'self' 'unsafe-inline').
 - `listes.entreprises` (JSONB) = source de vérité ; préserver sa forme.
 - Secrets : valeurs dans **Vercel → Environment Variables** (27 vars ; `RINGOVER_WEBHOOK_SECRET`, `SNITCHER_WEBHOOK_SECRET`, etc.). Ne jamais les exposer côté client ni les committer.

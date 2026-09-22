@@ -1,12 +1,14 @@
 // /api/personas.js — Wave 2 : trouver les PERSONNES aux postes ciblés (Dir Commercial, Dir Réseau…)
-// POST {entreprise:{nom, enseigne, site, ville, linkedin}, jobs:["Dir Marketing", …]}
-//   → {personas:[{prenom, nom, fonction, linkedin, confiance, cible}]}
+// POST {entreprise:{nom, enseigne, site, ville, linkedin, siren}, jobs:["Dir Marketing", …]}
+//   → {personas:[{prenom, nom, fonction, linkedin, confiance, cible}], salaries:[…]}
 //
-// Waterfall (v244) :
-//   1. Basile /people/find par EMPLOYEUR — salariés LinkedIn + dirigeants du registre, données réelles
-//      (~0,01 €, zéro hallucination, profils non indexés par Google inclus). Filtre postes côté serveur
-//      car le champ current_job_functions de Basile est peu fiable (testé : "Marketing" → 0 résultat).
-//   2. Repli : agent Claude + recherche web (ancien comportement) uniquement si Basile ne donne rien.
+// Waterfall (v244, voie SIREN ajoutée 09/2026 « solution Etienne ») :
+//   1. Basile /people/find par SIREN (exact : dirigeants registre + salariés LinkedIn) puis par
+//      EMPLOYEUR en complément — données réelles (~0,01 €, zéro hallucination). Filtre postes côté
+//      serveur car le champ current_job_functions de Basile est peu fiable (testé : "Marketing" → 0).
+//      `salaries` = TOUS les salariés valides (≤30) pour le choix manuel « façon Sales Nav » ;
+//      `personas` = auto-ajout ≤5 (pipeline inchangé).
+//   2. Repli : agent Claude + recherche web uniquement si Basile ne classe aucun décideur.
 // Les contacts trouvés passent ensuite dans le waterfall standard (Dropcontact → FullEnrich).
 
 import { verifierToken, loggerConso, limiteAtteinte } from './db.js';
@@ -70,53 +72,98 @@ function motsClesJobs(jobs) {
 const EXCLUS_FONCTION = /commissaire|liquidateur|administrateur judiciaire|stagiaire|alternant|apprenti|assistant|technico/i;
 const REPLI_DECIDEUR = /fondat|founder|\bceo\b|\bcoo\b|\bdg\b|\bpdg\b|president|directeur|directrice|gerant/;
 
-async function personasBasile(entreprise, jobs, cle) {
-  const valeurs = valeursEmployeur(entreprise);
-  if (!valeurs.length) return null;
-
+async function leadsBasile(filters, cle) {
   const r = await fetch('https://api.basile.cc/people/find', {
     method: 'POST',
     headers: { 'Authorization': cle, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ limit: 100, filters: { employer: { include: valeurs }, hide_legal_entities: true } })
+    body: JSON.stringify({ limit: 100, filters })
   });
   const d = await r.json().catch(() => null);
   if (!r.ok || !d || d.success === false) return null;
+  return d.leads || [];
+}
 
+// Recherche Basile en deux voies :
+//   1. SIREN (fiches Pappers/Verticale) — exact : dirigeants du registre ET salariés LinkedIn
+//      (le filtre siren résout la page LinkedIn de l'entreprise — évolution API constatée 09/2026 ;
+//      avant, siren ne renvoyait que les mandataires légaux). Pas de garde memeEntreprise : exact.
+//   2. Nom d'employeur (voie historique) — en complément si le SIREN manque ou rapporte peu
+//      (page LinkedIn non liée au SIREN chez Basile → meta.noticeCode siren_no_linkedin_company).
+// Sort AUSSI la liste complète des salariés valides (`salaries`, plafond 30) pour que le SDR/AE
+// puisse choisir lui-même « façon Sales Nav » — l'auto-ajout reste limité à 5 (pipeline inchangé).
+async function personasBasile(entreprise, jobs, cle) {
+  const siren = String(entreprise.siren || '').replace(/\D/g, '');
   const refs = [entreprise.enseigne, entreprise.nom, racineDomaine(entreprise.site)]
     .map(x => normaliser(x || '').replace(/ /g, '')).filter(x => x.length >= 4);
   const { mots, generique } = motsClesJobs(jobs);
 
-  const cibles = [], replis = [], vus = new Set();
-  for (const lead of ((d && d.leads) || [])) {
-    const x = lead.data || lead || {};
-    const prenom = x.people_first_name || x.result_first_name || '';
-    const nomC = x.people_last_name || x.result_last_name || '';
-    if (!nomC && !prenom) continue;
-    const kNom = normaliser(prenom + ' ' + nomC);
-    if (vus.has(kNom)) continue;
-    if (!memeEntreprise(x.current_company_name || x.legal_name || '', refs)) continue;
+  const cibles = [], replis = [], autres = [], vus = new Set();
+  // Classe un paquet de leads ; renvoie le nb RETENUS (après gardes d'appartenance/fonction).
+  // Voie SIREN (exact) : on vérifie quand même l'appartenance (siren du lead OU nom d'entreprise) —
+  // Basile ignore SILENCIEUSEMENT les filtres qu'il ne connaît pas (leçon du 21/07) : si le filtre
+  // siren était ignoré, on recevrait 100 profils quelconques qu'il faut tous écarter.
+  function classer(leads, exact) {
+    let retenus = 0;
+    for (const lead of (leads || [])) {
+      const x = lead.data || lead || {};
+      const prenom = x.people_first_name || x.result_first_name || '';
+      const nomC = x.people_last_name || x.result_last_name || '';
+      if (!nomC && !prenom) continue;
+      const kNom = normaliser(prenom + ' ' + nomC);
+      if (vus.has(kNom)) continue;
+      const memeEnt = memeEntreprise(x.current_company_name || x.legal_name || '', refs);
+      const okEntreprise = exact
+        ? (String(x.siren || '').replace(/\D/g, '') === siren || memeEnt)
+        : memeEnt;
+      if (!okEntreprise) continue;
 
-    const fonction = x.result_role || x.current_job_title || '';
-    if (EXCLUS_FONCTION.test(fonction)) continue;
-    const fn = normaliser(fonction);
+      const fonction = x.result_role || x.current_job_title || '';
+      if (EXCLUS_FONCTION.test(fonction)) continue;
+      const fn = normaliser(fonction);
 
-    const p = {
-      prenom, nom: nomC, fonction: fonction || 'Contact',
-      linkedin: x.profile_url || null, confiance: 'haute'
-    };
-    if (mots.some(m => fn.includes(m)) || (generique && REPLI_DECIDEUR.test(fn))) {
-      p.cible = true; cibles.push(p); vus.add(kNom);
-    } else if (REPLI_DECIDEUR.test(fn)) {
-      p.cible = false; replis.push(p); vus.add(kNom);
+      const p = {
+        prenom, nom: nomC, fonction: fonction || 'Contact',
+        linkedin: x.profile_url || null, confiance: 'haute'
+      };
+      vus.add(kNom); retenus++;
+      if (mots.some(m => fn.includes(m)) || (generique && REPLI_DECIDEUR.test(fn))) {
+        p.cible = true; cibles.push(p);
+      } else if (REPLI_DECIDEUR.test(fn)) {
+        p.cible = false; replis.push(p);
+      } else {
+        // Salarié valide hors décideurs : jamais auto-ajouté, mais proposé au choix manuel.
+        p.cible = null; autres.push(p);
+      }
+    }
+    return retenus;
+  }
+
+  let retenusSiren = 0;
+  if (siren.length === 9) {
+    const l = await leadsBasile({ siren: { include: [siren] }, hide_legal_entities: true }, cle);
+    retenusSiren = classer(l, true);
+  }
+  // Voie employeur : si pas de SIREN, ou si le SIREN a RETENU peu (< 3) — y compris le cas où le
+  // filtre siren serait ignoré par l'API (100 leads bruts, 0 retenu après garde).
+  if (retenusSiren < 3) {
+    const valeurs = valeursEmployeur(entreprise);
+    if (valeurs.length) {
+      const l = await leadsBasile({ employer: { include: valeurs }, hide_legal_entities: true }, cle);
+      classer(l, false);
     }
   }
 
   const personas = cibles.concat(replis.slice(0, 2)).slice(0, 5);
-  if (!personas.length) return null;
+  const salaries = cibles.concat(replis, autres).slice(0, 30);
+  if (!personas.length && !salaries.length) return null;
+  const voie = retenusSiren > 0 ? 'SIREN' : 'nom d’employeur';
   return {
     personas,
+    salaries,
     linkedin_entreprise: null,
-    explication: `${personas.length} contact(s) trouvés via Basile (salariés LinkedIn + registre légal)${replis.length && cibles.length ? ', décideurs de repli inclus' : ''}`
+    explication: personas.length
+      ? `${personas.length} contact(s) trouvés via Basile par ${voie} (salariés LinkedIn + registre légal)${replis.length && cibles.length ? ', décideurs de repli inclus' : ''}${salaries.length > personas.length ? ` — ${salaries.length} salariés au total` : ''}`
+      : `Aucun décideur aux postes ciblés, mais ${salaries.length} salarié(s) LinkedIn trouvés via Basile par ${voie} (choix manuel possible)`
   };
 }
 
@@ -138,12 +185,18 @@ export default async function handler(req, res) {
 
   try {
     // ── Étape 1 : Basile (pas cher, données réelles) ──
+    let salariesBasile = null; // salariés trouvés sans décideur classé : joints au repli Claude
     if (process.env.BASILE_API_KEY) {
       let viaBasile = null;
       try { viaBasile = await personasBasile(entreprise, jobs, process.env.BASILE_API_KEY); } catch (_) { viaBasile = null; }
       if (viaBasile) {
         await loggerConso(user, 'basile', 1, (req.body && req.body.liste_id) || req.query.liste_id);
-        return res.status(200).json({ ok: true, resultat: viaBasile });
+        if ((viaBasile.personas || []).length) {
+          return res.status(200).json({ ok: true, resultat: viaBasile });
+        }
+        // Des salariés mais aucun décideur aux postes ciblés : on tente quand même le repli
+        // Claude (il peut trouver un décideur hors LinkedIn/Basile) SANS perdre la liste.
+        salariesBasile = viaBasile.salaries || null;
       }
     }
 
@@ -216,6 +269,7 @@ Réponds UNIQUEMENT avec un objet JSON, sans texte autour, sans backticks :
     parsed.personas = (parsed.personas || [])
       .filter(p => p && p.nom && p.confiance !== 'basse')
       .slice(0, 5);
+    if (salariesBasile && salariesBasile.length) parsed.salaries = salariesBasile;
 
     return res.status(200).json({ ok: true, resultat: parsed });
   } catch (err) {

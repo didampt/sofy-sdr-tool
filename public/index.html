@@ -8789,9 +8789,9 @@ async function validerChoixPersonas(i){
  // Relance la recherche sur la fiche
  if(REAL[i]._busy){return;}
  REAL[i]._busy=true;rerender(i);
- try{toast('👥 Recherche des personas (IA)…');await chercherPersonas(i);}finally{REAL[i]._busy=false;rerender(i);}
+ try{toast('👥 Recherche des personas (IA)…');await chercherPersonas(i,true);}finally{REAL[i]._busy=false;rerender(i);}
 }
-async function chercherPersonas(i){
+async function chercherPersonas(i,manuel){
  const e=REAL[i];
  let jobs=jobsCibles();
  // Hot Lead (RB2B) sans critères de liste → personas C-level par défaut
@@ -8800,7 +8800,7 @@ async function chercherPersonas(i){
  if(!jobs.length){ouvrirChoixPersonas(i);return false;} // aucun poste ciblé → le SDR choisit à la volée
  try{
   const r=await api('/api/personas',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({liste_id:state.savedId,entreprise:{nom:e.nom,enseigne:enseigneDe(e),site:domaineDe(e),ville:e.ville||'',linkedin:e.linkedin_entreprise||''},jobs})});
+   body:JSON.stringify({liste_id:state.savedId,entreprise:{nom:e.nom,enseigne:enseigneDe(e),site:domaineDe(e),ville:e.ville||'',linkedin:e.linkedin_entreprise||'',siren:e.siren||''},jobs})});
   let d;
   try{d=await r.json();}catch(_){toast('Personas : réponse invalide ('+r.status+')');return false;}
   if(d.erreur){toast('Personas : '+d.erreur+(d.detail?' — '+d.detail:''));return false;}
@@ -8810,19 +8810,65 @@ async function chercherPersonas(i){
   if(p.linkedin_entreprise)e.linkedin_entreprise=p.linkedin_entreprise;
   const cs=contactsDe(e);
   let ajoutes=0;
+  const dejaLa=np=>cs.some(c=>(c.nom||'').toLowerCase()===(np.nom||'').toLowerCase()&&(c.prenom||'').toLowerCase()===(np.prenom||'').toLowerCase());
   for(const np of (p.personas||[])){
-   const deja=cs.some(c=>(c.nom||'').toLowerCase()===(np.nom||'').toLowerCase()&&(c.prenom||'').toLowerCase()===(np.prenom||'').toLowerCase());
-   if(!deja){
+   if(!dejaLa(np)){
     cs.push({prenom:np.prenom||'',nom:np.nom,fonction:np.fonction||'',source:'linkedin',
      enrich:np.linkedin?{linkedin:np.linkedin,email:null,telephone:null,fonction:np.fonction||'',source:'ia-personas',avec_domaine:false}:null});
     ajoutes++;
    }
   }
   rerender(i);persister();
-  if(ajoutes)toast(`👥 ${ajoutes} persona(s) trouvé(s) chez ${enseigneDe(e)||e.nom}`);
+  // Choix manuel « façon Sales Nav » : Basile renvoie aussi TOUS les salariés valides (≤30).
+  // Sur le flux manuel (bouton 👥), on propose au SDR/AE d'en ajouter d'autres lui-même —
+  // c'est la réponse à « Sales Nav me donne plus de contacts » (Etienne, 09/2026).
+  const restants=(p.salaries||[]).filter(s=>!dejaLa(s));
+  if(manuel&&restants.length){ouvrirSalariesBasile(i,restants,ajoutes);return ajoutes>0;}
+  if(ajoutes)toast(`👥 ${ajoutes} persona(s) trouvé(s) chez ${enseigneDe(e)||e.nom}${restants.length?` (+${restants.length} autres salariés via 👥)`:''}`);
   else toast('👥 '+(p.explication||'Aucun persona trouvé (normal sur les petites structures : le dirigeant est le décideur)'));
   return ajoutes>0;
  }catch(err){toast('Personas erreur réseau : '+err.message);return false;}
+}
+
+/* ── Picker « tous les salariés LinkedIn » (voie SIREN/employeur Basile) ──
+   Réutilise la modale personas-modal. Les décideurs auto-ajoutés le sont déjà :
+   ici on liste les AUTRES salariés (cible=false/null) à cocher librement. */
+let SALARIES_BASILE={i:-1,liste:[]};
+function ouvrirSalariesBasile(i,salaries,dejaAjoutes){
+ SALARIES_BASILE={i,liste:salaries};
+ const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+ const e=REAL[i];
+ document.getElementById('personas-choix').innerHTML=`
+  <h2 style="margin-bottom:4px">👥 ${salaries.length} autre(s) salarié(s) chez ${esc(enseigneDe(e)||e.nom)}</h2>
+  <p class="hint" style="margin-bottom:10px">${dejaAjoutes?dejaAjoutes+' décideur(s) déjà ajouté(s) à la fiche. ':''}Coche ceux à ajouter comme contacts (source Basile : salariés LinkedIn + registre). L'enrichissement email/mobile se lance ensuite depuis la fiche.</p>
+  <div style="max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:6px 10px;margin-bottom:12px">
+   ${salaries.map((s,k)=>`<label style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--line);cursor:pointer;font-size:13.5px;line-height:1.4">
+     <input type="checkbox" value="${k}" ${s.cible===false?'checked':''} style="margin-top:3px">
+     <span><b>${esc((s.prenom+' '+s.nom).trim())}</b> — ${esc(s.fonction)}${s.cible===false?' <span class="badge b-gmb">décideur</span>':''}${s.linkedin?` · <a href="${esc(s.linkedin.startsWith('http')?s.linkedin:'https://'+s.linkedin)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">LinkedIn ↗</a>`:''}</span>
+    </label>`).join('')}
+  </div>
+  <div style="display:flex;gap:10px;justify-content:flex-end">
+   <button class="btn" onclick="document.getElementById('personas-modal').style.display='none'" style="background:var(--paper)">Fermer</button>
+   <button class="btn btn-primary" onclick="ajouterSalariesChoisis()">➕ Ajouter les cochés</button>
+  </div>`;
+ document.getElementById('personas-modal').style.display='flex';
+}
+function ajouterSalariesChoisis(){
+ const {i,liste}=SALARIES_BASILE;
+ const e=REAL[i];if(!e)return;
+ const cs=contactsDe(e);
+ let ajoutes=0;
+ for(const box of document.querySelectorAll('#personas-choix input[type=checkbox]:checked')){
+  const s=liste[parseInt(box.value)];if(!s)continue;
+  const deja=cs.some(c=>(c.nom||'').toLowerCase()===(s.nom||'').toLowerCase()&&(c.prenom||'').toLowerCase()===(s.prenom||'').toLowerCase());
+  if(deja)continue;
+  cs.push({prenom:s.prenom||'',nom:s.nom,fonction:s.fonction||'',source:'linkedin',
+   enrich:s.linkedin?{linkedin:s.linkedin,email:null,telephone:null,fonction:s.fonction||'',source:'basile-salaries',avec_domaine:false}:null});
+  ajoutes++;
+ }
+ document.getElementById('personas-modal').style.display='none';
+ if(ajoutes){rerender(i);persister();toast(`➕ ${ajoutes} contact(s) ajouté(s) — lance ✉️/📱 pour les enrichir`);}
+ else toast('Aucun contact coché');
 }
 
 /* ───────── NIVEAU 2 : FULLENRICH (emails de repli + MOBILES) ───────── */
@@ -9066,7 +9112,8 @@ async function pipelineFiche(i){
   prog(i,35,'Étape 3/7 · 👥 Recherche des personas LinkedIn…');
   // ── 2.5 Personas (si la liste en cible OU Hot Lead, et que la fiche a un domaine/enseigne/LinkedIn) ──
   const estHotLead=estVisiteSite(e);
-  const peutPersonas=(jobsCibles().length||estHotLead)&&(domaineDe(e)||e.enseigne_ia||e.linkedin_entreprise);
+  // e.siren suffit désormais : la voie SIREN de /api/personas trouve les salariés sans domaine ni GMB
+  const peutPersonas=(jobsCibles().length||estHotLead)&&(domaineDe(e)||e.enseigne_ia||e.linkedin_entreprise||e.siren);
   if(peutPersonas&&!e.personas_fait){
    wfSet(i,'pers','run');
    await chercherPersonas(i);
@@ -11000,7 +11047,7 @@ async function ckValiderPersonas(rid){
  ckProgres(rid,'👥 Recherche des décideurs (Basile, puis IA en repli)… ~10-30 s');
  try{
   const r=await api('/api/personas',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({liste_id:it.liste_id,entreprise:{nom:it.nom_officiel||it.nom,enseigne:it.nom,site:it.site||'',ville:it.ville||'',linkedin:it.linkedin_entreprise||''},jobs:choix})});
+   body:JSON.stringify({liste_id:it.liste_id,entreprise:{nom:it.nom_officiel||it.nom,enseigne:it.nom,site:it.site||'',ville:it.ville||'',linkedin:it.linkedin_entreprise||'',siren:it.siren||''},jobs:choix})});
   let d;try{d=await r.json();}catch(_){toast('Personas : réponse invalide ('+r.status+')');return;}
   if(d.erreur){toast('Personas : '+d.erreur+(d.detail?' — '+d.detail:''));return;}
   const ps=((d.resultat||{}).personas)||[];
