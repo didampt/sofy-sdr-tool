@@ -1,5 +1,24 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 23 septembre 2026)
 
+## 🎯 23 septembre 2026 — matrice n°3 : result_role exact/contains + mode « ~ contient » + casse des villes DOM
+
+Matrice Didier (debug_count) : géo DOM par villes OK (10 294 lki en Guadeloupe) · result_city
+include = OU (Lyon 46 → +Villeurbanne 47) · **result_role : multi-mots = EXACT (« Directeur
+Achats » = 756, guillemets sans effet), UN token = CONTAINS (« achats » = 33 850)** — les
+intitulés à rallonge (« Directeur Achats Automobile Antilles Guyane Groupe SFPR ») échappent à
+l'exact → c'est pour ça que Sales Nav (fonction taxonomique) trouvait Vincent Boulogne et pas
+nous. Guadeloupe × contains 'achats' = 13 ✓.
+- **Mode « ~ contient »** : le dropdown Postes ciblés affiche en tête « ~ contient “mot” »
+  (dernier mot ≥3 lettres de la saisie) avec ✓/✕ ; chips stockées « ~mot » (rendu « ~ contient
+  « mot » »), STRIP du ~ côté serveur (rolesDepuisFiltres + postes_exclus) → le token nu part
+  dans le même include (OU avec les intitulés exacts). Une EXCLUSION ~assistant écarte tout
+  intitulé contenant le mot — puissant.
+- **Villes DOM en 3 graphies** (le suggest villes duplique : Guadeloupe / GUADELOUPE /
+  « GUADELOUPE (FRANCE) ») : chaque ville part en 3 variantes (14 villes → 42 valeurs, OU).
+- Banc N (~achats + exact + ~assistant strippés, 42 villes, pays FR) ; smoke (ligne ~ en tête,
+  chips ~, box ouverte).
+RECETTE PARITÉ SALES NAV : « ~achats » (+ exclusions ~assistant…) × 🌴 Guadeloupe = les 13.
+
 ## 🎯 23 septembre 2026 — DOM : result_country_code 'GP' = 0 chez Basile → les chips 🌴 filtrent par VILLES
 
 Mesure Didier : « directeur achats » × pays GP = 0, × FR = 889 → Basile classe les DOM sous FR

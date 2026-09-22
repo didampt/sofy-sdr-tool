@@ -37,7 +37,9 @@ function rolesDepuisFiltres(f) {
     if (arr) for (const t of arr) if (!out.includes(t)) out.push(t);
   }
   for (const p of (Array.isArray(f.postes) ? f.postes : [])) {
-    const t = String(p || '').trim();
+    // « ~mot » = mode CONTIENT (mesuré 23/09 : un token seul fait du contains chez Basile,
+    // un intitulé multi-mots est exact) — on envoie le mot nu dans le même include (OU).
+    const t = String(p || '').trim().replace(/^~\s*/, '');
     if (t && !out.includes(t)) out.push(t);
   }
   return out.slice(0, 80);
@@ -82,14 +84,18 @@ function filtresBasile(f, conceptIds, roles) {
   const b = { result_country_code: { include: pays.length ? pays : ['FR'] }, hide_legal_entities: true };
   if (roles.length) b.result_role = { include: roles };
   // Intitulés EXCLUS (wireframe v2 : postes ciblés Inclure/Exclure façon Sales Nav)
-  const rolesEx = (Array.isArray(f.postes_exclus) ? f.postes_exclus : []).map(x => String(x || '').trim()).filter(Boolean).slice(0, 30);
+  const rolesEx = (Array.isArray(f.postes_exclus) ? f.postes_exclus : []).map(x => String(x || '').trim().replace(/^~\s*/, '')).filter(Boolean).slice(0, 30);
   if (rolesEx.length) { b.result_role = b.result_role || {}; b.result_role.exclude = rolesEx; }
   if (conceptIds.length) b.activity = { include: conceptIds };
   // Ville de la PERSONNE (result_city, multi-source) — le seul filtre géo qui existe sur
   // people/find (region/département n'existent pas ; result_postal_code est Legal-only et
   // exclurait LinkedIn). Pour une zone entière : filtre « lieu du siège » (voie SIREN).
   const villes = (Array.isArray(f.villes) ? f.villes : []).map(v => String(v || '').trim()).filter(Boolean).slice(0, 15);
-  for (const d of dom) for (const v of DOM_VILLES[d]) if (!villes.includes(v)) villes.push(v);
+  for (const d of dom) for (const v0 of DOM_VILLES[d]) {
+    // Le référentiel villes Basile duplique les graphies (Guadeloupe / GUADELOUPE /
+    // « GUADELOUPE (FRANCE) », mesuré au suggest) : on couvre les trois.
+    for (const v of [v0, v0.toUpperCase(), v0.toUpperCase() + ' (FRANCE)']) if (!villes.includes(v)) villes.push(v);
+  }
   if (villes.length) b.result_city = { include: villes };
   // La personne (wireframe v2) : prénom / nom / entreprise actuelle (employer exact+contains,
   // même pattern que personas.js — multi-source, marche aussi en voie directe)

@@ -3667,9 +3667,9 @@ function avRendreChips(){
  document.getElementById('av-postes-chips').innerHTML=
   `<div class="chips"><button class="chip${AV.decideur?' sel':''}" onclick="avToggleDecideur()">N'importe quel décideur</button></div>`
   +AV.postes.map((p,k)=>
-   `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;font-size:12.5px;background:#f0fdf4"><b style="flex-grow:1">${esc(p)}</b><span style="font-size:11px;font-weight:800;color:#15803d">✓ INCLUS</span><a style="font-size:11px;cursor:pointer" onclick="AV.postes.splice(${k},1);avRendreChips();avMaj()">retirer</a></div>`).join('')
+   `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;font-size:12.5px;background:#f0fdf4"><b style="flex-grow:1">${p.startsWith('~')?'~ contient « '+esc(p.slice(1))+' »':esc(p)}</b><span style="font-size:11px;font-weight:800;color:#15803d">✓ INCLUS</span><a style="font-size:11px;cursor:pointer" onclick="AV.postes.splice(${k},1);avRendreChips();avMaj()">retirer</a></div>`).join('')
   +AV.postesEx.map((p,k)=>
-   `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;font-size:12.5px;background:#fef2f2"><b style="flex-grow:1">${esc(p)}</b><span style="font-size:11px;font-weight:800;color:#b91c1c">✕ EXCLU</span><a style="font-size:11px;cursor:pointer" onclick="AV.postesEx.splice(${k},1);avRendreChips();avMaj()">retirer</a></div>`).join('');
+   `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;font-size:12.5px;background:#fef2f2"><b style="flex-grow:1">${p.startsWith('~')?'~ contient « '+esc(p.slice(1))+' »':esc(p)}</b><span style="font-size:11px;font-weight:800;color:#b91c1c">✕ EXCLU</span><a style="font-size:11px;cursor:pointer" onclick="AV.postesEx.splice(${k},1);avRendreChips();avMaj()">retirer</a></div>`).join('');
  // Listes de comptes
  document.getElementById('av-listes-chips').innerHTML=AV.listes.map((l,k)=>
   `<span class="chip sel" style="cursor:pointer" onclick="AV.listes.splice(${k},1);avRendreChips();avMaj()">📋 ${esc(l.nom)} ✕</span>`).join('');
@@ -3719,11 +3719,20 @@ let AV_POSTE_TIMER=null;
 // de la box, Échap, ou nouvelle saisie trop courte.
 let ROLES_SUGG_TIMER=null;
 const SUGG_ETAT={}; // boxId -> {items, rendu} (re-rendu après chaque action via suggAfficher)
+let AV_POSTE_MOT=null;
+function avPosteLigneContient(){
+ if(!AV_POSTE_MOT)return '';
+ const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+ const m=esc(AV_POSTE_MOT),cle='~'+AV_POSTE_MOT;
+ const inc=AV.postes.includes(cle),exc=(AV.postesEx||[]).includes(cle);
+ return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:2px solid var(--line);font-size:13px;background:${inc?'#f0fdf4':exc?'#fef2f2':'#f7f8ff'}"><span style="flex-grow:1"><b>~ contient « ${m} »</b> <span style="font-size:10.5px;color:var(--ink-soft)">tous les intitulés avec ce mot (même à rallonge)</span></span><button class="btn" data-p="${esc(cle)}" style="padding:4px 9px;font-size:11.5px;${inc?'background:#15803d;color:#fff;border:1px solid #15803d':'background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0'}" onclick="avAjouterPoste(this.dataset.p,'inclure');suggAfficher('av-poste-results')">${inc?'✓ Inclus':'✓ Inclure'}</button><button class="btn" data-p="${esc(cle)}" style="padding:4px 9px;font-size:11.5px;${exc?'background:#b91c1c;color:#fff;border:1px solid #b91c1c':'background:#fef2f2;color:#b91c1c;border:1px solid #fecaca'}" onclick="avAjouterPoste(this.dataset.p,'exclure');suggAfficher('av-poste-results')">${exc?'✕ Exclu':'✕ Exclure'}</button></div>`;
+}
 function suggAfficher(boxId){
  const e=SUGG_ETAT[boxId],box=document.getElementById(boxId);
  if(!box)return;
- if(!e||!e.items.length){box.style.display='none';return;}
- box.innerHTML=e.items.map(e.rendu).join('');
+ const entete=boxId==='av-poste-results'?avPosteLigneContient():'';
+ if((!e||!e.items.length)&&!entete){box.style.display='none';return;}
+ box.innerHTML=entete+((e&&e.items)||[]).map(e?e.rendu:(x=>x)).join('');
  box.style.display='block';
 }
 function rolesSuggest(q,boxId,renduLigne){
@@ -3761,6 +3770,11 @@ document.addEventListener('keydown',ev=>{
 });
 function avPosteSuggest(q){
  const escA=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+ // Ligne « ~ contient » en tête : un MOT-CLÉ attrape tous les intitulés qui le contiennent
+ // (mesuré : « achats » = 33 850 vs « Directeur Achats » exact = 756 — les intitulés à rallonge
+ // type « Directeur Achats Automobile Antilles Guyane » échappent à l'exact, cas Sales Nav).
+ const mot=(String(q||'').trim().split(/\s+/).pop()||'').replace(/[^\p{L}\p{N}-]/gu,'');
+ AV_POSTE_MOT=mot.length>=3?mot:null;
  rolesSuggest(q,'av-poste-results',p=>{
   const inc=AV.postes.includes(p),exc=(AV.postesEx||[]).includes(p);
   return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);font-size:13px${(inc||exc)?';background:'+(inc?'#f0fdf4':'#fef2f2'):''}"><span style="flex-grow:1">${escA(p)}</span><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;${inc?'background:#15803d;color:#fff;border:1px solid #15803d':'background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0'}" onclick="avAjouterPoste(this.dataset.p,'inclure');suggAfficher('av-poste-results')">${inc?'✓ Inclus':'✓ Inclure'}</button><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;${exc?'background:#b91c1c;color:#fff;border:1px solid #b91c1c':'background:#fef2f2;color:#b91c1c;border:1px solid #fecaca'}" onclick="avAjouterPoste(this.dataset.p,'exclure');suggAfficher('av-poste-results')">${exc?'✕ Exclu':'✕ Exclure'}</button></div>`;
