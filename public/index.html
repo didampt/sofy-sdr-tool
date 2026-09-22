@@ -713,9 +713,13 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
           <div style="width:430px;flex-shrink:0;display:flex;flex-direction:column;gap:10px">
             <div id="av-rail-prospects" style="display:flex;flex-direction:column;gap:10px">
               <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
-                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">1 · Postes ciblés <span style="font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;background:#fef3c7;color:#92400e">variantes IA incluses</span></div>
-                <div id="av-postes-chips" class="chips"></div>
-                <input class="field" id="av-poste-libre" placeholder="Autre intitulé… (Entrée pour ajouter)" style="width:100%;margin-top:8px" onkeydown="if(event.key==='Enter'){avAjouterPoste(this.value);this.value='';}">
+                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">1 · Postes ciblés <span style="font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;background:#dbeafe;color:#1d4ed8">INTITULÉS RÉELS BASILE</span></div>
+                <div style="position:relative">
+                  <input class="field" id="av-poste-libre" placeholder="Intitulé de poste… (suggestions Basile)" style="width:100%" autocomplete="off" oninput="avPosteSuggest(this.value)" onkeydown="if(event.key==='Enter'){avAjouterPoste(this.value,'inclure');this.value='';document.getElementById('av-poste-results').style.display='none';}">
+                  <div id="av-poste-results" style="display:none;position:absolute;left:0;right:0;top:44px;background:#fff;border:1px solid var(--line);border-radius:10px;z-index:12;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div>
+                </div>
+                <div id="av-postes-chips" style="margin-top:8px;display:flex;flex-direction:column;gap:5px"></div>
+                <p class="hint" style="margin-top:6px">Intitulés proposés par Basile (ceux qui existent vraiment). Inclure = OU · Exclure = écarté.</p>
               </div>
               <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
                 <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">2 · Secteur / activité <span style="font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;background:#d1fae5;color:#0f766e">NAF PAPPERS</span></div>
@@ -3545,7 +3549,7 @@ function remplirSelectSdrManuelle(){return remplirSelectSdr('manuelle-sdr');}
    Onglet Prospects → /api/recherche (Basile people/find : concepts secteur, postes, effectif,
    listes de comptes par SIREN). Onglet Entreprises → /api/estimer + launch() (tuyauterie Pappers
    existante). Barre ✨ → /api/ia-liste (mêmes critères que la Liste intelligente). */
-const AV={onglet:'prospects',concepts:[],postes:[],decideur:false,effSN:[],types:[],lieux:[],listes:[],villes:[],source:'deux',
+const AV={onglet:'prospects',concepts:[],postes:[],postesEx:[],decideur:false,effSN:[],types:[],lieux:[],listes:[],villes:[],source:'deux',
   ent:{nafs:[],eff:'Indifférent',zones:['France métropolitaine']}};
 // Tranches d'effectif SALES NAV (wireframe v2) — multi-sélection → enveloppe min/max
 const SN_EFF={'Indépendant':[1,1],'1-10':[1,10],'11-50':[11,50],'51-200':[51,200],'201-500':[201,500],'501-1 000':[501,1000],'1 001-5 000':[1001,5000],'5 001-10 000':[5001,10000]};
@@ -3553,7 +3557,7 @@ const AV_TYPES=['Société commerciale','Société cotée en bourse','Société 
 const AV_LIEUX_SUGG=['France métropolitaine','Auvergne-Rhône-Alpes','Bourgogne-Franche-Comté','Bretagne','Centre-Val de Loire','Corse','Grand Est','Hauts-de-France','Île-de-France','Normandie','Nouvelle-Aquitaine','Occitanie','Pays de la Loire',"Provence-Alpes-Côte d'Azur",'Guadeloupe','Martinique','Guyane','Réunion','Mayotte'];
 const AV_SOURCES=[['deux','💼 LinkedIn d’abord + 🏛️ registre'],['lki','💼 LinkedIn uniquement'],['legal','🏛️ Registre uniquement']];
 const AV_EFF={'Indifférent':[null,null],'1–9':[1,9],'10–49':[10,49],'50–199':[50,199],'200+':[200,null]};
-const AV_POSTES_FIXES=["N'importe quel décideur","Directeur Commercial","Directeur Marketing","Directeur Relation Client","Directeur Expérience Client (CX)","Responsable Service Client","Directeur CRM","Responsable Communication","Directeur Réseau / Retail"];
+
 let AV_TIMER=null,AV_SUGG_TIMER=null,AV_EN_COURS=false,AV_LISTES=[],AV_APERCU=null;
 
 function avInit(){
@@ -3614,12 +3618,14 @@ function avRendreChips(){
  AV.lieux=AV.lieux||[];
  document.getElementById('av-lieux-chips').innerHTML=AV.lieux.map((l,k)=>
   `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;font-size:12.5px;background:${l.mode==='exclure'?'#fef2f2':'#f0fdf4'}"><b style="flex-grow:1">${esc(l.valeur)}</b><span style="font-size:11px;font-weight:800;color:${l.mode==='exclure'?'#b91c1c':'#15803d'}">${l.mode==='exclure'?'✕ EXCLU':'✓ INCLUS'}</span><a style="font-size:11px;cursor:pointer" onclick="AV.lieux.splice(${k},1);avRendreChips();avMaj()">retirer</a></div>`).join('');
- // Postes : décideur exclusif des intitulés précis
- document.getElementById('av-postes-chips').innerHTML=AV_POSTES_FIXES.map(p=>{
-  const sel=p==="N'importe quel décideur"?AV.decideur:AV.postes.includes(p);
-  return `<button class="chip${sel?' sel':''}" onclick="avTogglePoste(this.textContent)">${p}</button>`;
- }).join('')+AV.postes.filter(p=>!AV_POSTES_FIXES.includes(p)).map(p=>
-  `<button class="chip sel" onclick="avTogglePoste(this.textContent.replace(/ ✕$/,''))">${esc(p)} ✕</button>`).join('');
+ // Postes : chip décideur (exclusif des intitulés inclus) + lignes inclure/exclure façon lieux
+ AV.postesEx=AV.postesEx||[];
+ document.getElementById('av-postes-chips').innerHTML=
+  `<div class="chips"><button class="chip${AV.decideur?' sel':''}" onclick="avToggleDecideur()">N'importe quel décideur</button></div>`
+  +AV.postes.map((p,k)=>
+   `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;font-size:12.5px;background:#f0fdf4"><b style="flex-grow:1">${esc(p)}</b><span style="font-size:11px;font-weight:800;color:#15803d">✓ INCLUS</span><a style="font-size:11px;cursor:pointer" onclick="AV.postes.splice(${k},1);avRendreChips();avMaj()">retirer</a></div>`).join('')
+  +AV.postesEx.map((p,k)=>
+   `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;font-size:12.5px;background:#fef2f2"><b style="flex-grow:1">${esc(p)}</b><span style="font-size:11px;font-weight:800;color:#b91c1c">✕ EXCLU</span><a style="font-size:11px;cursor:pointer" onclick="AV.postesEx.splice(${k},1);avRendreChips();avMaj()">retirer</a></div>`).join('');
  // Listes de comptes
  document.getElementById('av-listes-chips').innerHTML=AV.listes.map((l,k)=>
   `<span class="chip sel" style="cursor:pointer" onclick="AV.listes.splice(${k},1);avRendreChips();avMaj()">📋 ${esc(l.nom)} ✕</span>`).join('');
@@ -3639,13 +3645,38 @@ function avRendreChips(){
  document.getElementById('av-ent-zones-chips').innerHTML=['France métropolitaine','Guadeloupe','Martinique','Guyane française','Réunion','Mayotte'].map(z=>
   `<button class="chip${AV.ent.zones.includes(z)?' sel':''}" onclick="avToggleZone('${z}')">${z}</button>`).join('');
 }
-function avTogglePoste(p){
- p=String(p||'').replace(/ ✕$/,'').trim();if(!p)return;
- if(p==="N'importe quel décideur"){AV.decideur=!AV.decideur;if(AV.decideur)AV.postes=[];}
- else{AV.decideur=false;const i=AV.postes.indexOf(p);if(i>=0)AV.postes.splice(i,1);else AV.postes.push(p);}
+function avToggleDecideur(){AV.decideur=!AV.decideur;if(AV.decideur)AV.postes=[];avRendreChips();avMaj();}
+function avAjouterPoste(v,mode){
+ const p=String(v||'').trim();if(!p)return;
+ AV.postes=AV.postes.filter(x=>x.toLowerCase()!==p.toLowerCase());
+ AV.postesEx=(AV.postesEx||[]).filter(x=>x.toLowerCase()!==p.toLowerCase());
+ if(mode==='exclure'){AV.postesEx.push(p);}
+ else{AV.decideur=false;if(AV.postes.length>=20){toast('20 intitulés max');return;}AV.postes.push(p);}
  avRendreChips();avMaj();
 }
-function avAjouterPoste(v){const p=String(v||'').trim();if(!p)return;AV.decideur=false;if(!AV.postes.includes(p))AV.postes.push(p);avRendreChips();avMaj();}
+// Autocomplete des intitulés RÉELS Basile (/people/roles/suggest) — chaque ligne : Inclure / Exclure
+let AV_POSTE_TIMER=null;
+function avPosteSuggest(q){
+ clearTimeout(AV_POSTE_TIMER);
+ const box=document.getElementById('av-poste-results');
+ if(!q||q.trim().length<2){box.style.display='none';return;}
+ AV_POSTE_TIMER=setTimeout(async()=>{
+  const escA=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  let items=[];
+  try{
+   const r=await api('/api/basile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'roles_suggest',q:q.trim()})});
+   const d=await r.json();
+   const brut=(d.brut||{});
+   items=(brut.suggestions||brut.roles||brut.results||(Array.isArray(brut)?brut:[]))
+    .map(s=>typeof s==='string'?s:(s.value||s.label||s.name||'')).filter(Boolean).slice(0,9);
+  }catch(_){/* suggest indisponible : Entrée ajoute le texte tapé tel quel */}
+  if(!items.length){box.innerHTML='<div style="padding:10px 12px;font-size:13px;color:var(--ink-soft)">Aucun intitulé Basile — Entrée pour ajouter « '+escA(q.trim())+' » tel quel.</div>';box.style.display='block';return;}
+  box.innerHTML=items.map(p=>
+   `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);font-size:13px"><span style="flex-grow:1">${escA(p)}</span><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0" onclick="avAjouterPoste(this.dataset.p,'inclure');avPosteFerme()">✓ Inclure</button><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="avAjouterPoste(this.dataset.p,'exclure');avPosteFerme()">✕ Exclure</button></div>`).join('');
+  box.style.display='block';
+ },350);
+}
+function avPosteFerme(){document.getElementById('av-poste-results').style.display='none';document.getElementById('av-poste-libre').value='';}
 function avToggleEff(x){x=String(x||'').trim();const i=AV.effSN.indexOf(x);if(i>=0)AV.effSN.splice(i,1);else AV.effSN.push(x);avRendreChips();avMaj();}
 function avToggleType(x){x=String(x||'').trim();const i=AV.types.indexOf(x);if(i>=0)AV.types.splice(i,1);else AV.types.push(x);avRendreChips();avMaj();}
 function avAjouterLieu(mode){
@@ -3735,7 +3766,7 @@ function avFiltres(){
  for(const x of (AV.effSN||[])){const [a,b]=SN_EFF[x]||[];if(a!=null)effMin=effMin==null?a:Math.min(effMin,a);if(b!=null)effMax=effMax==null?b:Math.max(effMax,b);}
  const v=id=>{const el=document.getElementById(id);return el?el.value.trim():'';};
  return {concept_ids:AV.concepts.map(c=>c.id),concept_labels:AV.concepts.map(c=>c.label),
-  postes:AV.postes,decideur:AV.decideur,effectif_min:effMin,effectif_max:effMax,
+  postes:AV.postes,postes_exclus:(AV.postesEx||[]).slice(),decideur:AV.decideur,effectif_min:effMin,effectif_max:effMax,
   types_entreprise:(AV.types||[]).slice(),lieux:(AV.lieux||[]).map(l=>({valeur:l.valeur,mode:l.mode})),
   prenom:v('av-p-prenom'),nom_personne:v('av-p-nom'),entreprise:v('av-p-entreprise'),
   langue:v('av-p-langue'),anciennete:v('av-p-anciennete'),
@@ -4255,7 +4286,7 @@ async function avRelancer(id){
   avMajGmb();
  }else if(c.avance&&c.filtres){
   Object.assign(AV,{concepts:(c.filtres.concept_ids||[]).map((cid,k)=>({id:cid,label:(c.filtres.concept_labels||[])[k]||cid})),
-   postes:c.filtres.postes||[],decideur:!!c.filtres.decideur,villes:c.filtres.villes||[],
+   postes:c.filtres.postes||[],postesEx:c.filtres.postes_exclus||[],decideur:!!c.filtres.decideur,villes:c.filtres.villes||[],
    types:c.filtres.types_entreprise||[],lieux:c.filtres.lieux||[],listes:[]});
   avOnglet('prospects');avRendreChips();avMaj();
  }else if((c.criteres_ia&&(c.criteres_ia.naf_codes||[]).length)||Array.isArray(c.naf)&&c.naf.length){

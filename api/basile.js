@@ -37,13 +37,21 @@ export default async function handler(req, res) {
 
   const { action, filters, limit, paginationToken } = req.body || {};
 
-  // 'activity_suggest' : IDs de concept pour le filtre `activity` (people ET companies).
-  // Réponse renvoyée BRUTE (non documentée chez Basile) — sert aussi de debug console.
-  if (action === 'activity_suggest') {
+  // Suggestions Basile (GET, gratuites) : 'activity_suggest' (concepts pour `activity`),
+  // 'roles_suggest' (intitulés de poste RÉELS pour `result_role` — wireframe v2, retour Didier
+  // 22/09 : nos chips inventées ne matchaient rien), 'cities_suggest', 'legal_forms_suggest'.
+  // Réponses renvoyées BRUTES (shapes non documentés chez Basile) — servent aussi de debug console.
+  const SUGGESTS = {
+    activity_suggest: '/companies/activity-suggest',
+    roles_suggest: '/people/roles/suggest',
+    cities_suggest: '/people/cities/suggest',
+    legal_forms_suggest: '/companies/legal-form-suggest'
+  };
+  if (SUGGESTS[action]) {
     const q = String((req.body || {}).q || '').trim();
     if (!q) return res.status(400).json({ erreur: 'q requis' });
     try {
-      const r = await fetch(BASE + '/companies/activity-suggest?q=' + encodeURIComponent(q), { headers: { 'Authorization': key } });
+      const r = await fetch(BASE + SUGGESTS[action] + '?q=' + encodeURIComponent(q), { headers: { 'Authorization': key } });
       let data = null; try { data = await r.json(); } catch (e) { data = null; }
       return res.status(200).json({ status: r.status, brut: data });
     } catch (e) {

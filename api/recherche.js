@@ -69,6 +69,9 @@ function filtresBasile(f, conceptIds, roles) {
   const pays = (Array.isArray(f.pays) ? f.pays : []).map(p => String(p || '').trim().toUpperCase()).filter(p => /^[A-Z]{2}$/.test(p)).slice(0, 6);
   const b = { result_country_code: { include: pays.length ? pays : ['FR'] }, hide_legal_entities: true };
   if (roles.length) b.result_role = { include: roles };
+  // Intitulés EXCLUS (wireframe v2 : postes ciblés Inclure/Exclure façon Sales Nav)
+  const rolesEx = (Array.isArray(f.postes_exclus) ? f.postes_exclus : []).map(x => String(x || '').trim()).filter(Boolean).slice(0, 30);
+  if (rolesEx.length) { b.result_role = b.result_role || {}; b.result_role.exclude = rolesEx; }
   if (conceptIds.length) b.activity = { include: conceptIds };
   // Ville de la PERSONNE (result_city, multi-source) — le seul filtre géo qui existe sur
   // people/find (region/département n'existent pas ; result_postal_code est Legal-only et
@@ -80,8 +83,11 @@ function filtresBasile(f, conceptIds, roles) {
   const prenom = String(f.prenom || '').trim(), nomP = String(f.nom_personne || '').trim();
   if (prenom) b.result_first_name = { include: [prenom] };
   if (nomP) b.result_last_name = { include: [nomP] };
+  // ⚠️ MESURÉ (matrice Didier 22/09 nuit) : employer traite plusieurs valeurs en ET, pas en OU
+  // (exact 3 · contains 39 517 · les deux 3) → UNE seule valeur. Sans guillemets = contains
+  // (large, façon Sales Nav) ; le SDR peut taper "X" entre guillemets pour l'exact.
   const ent = String(f.entreprise || '').trim();
-  if (ent) b.employer = { include: ent.length >= 5 ? ['"' + ent + '"', ent] : ['"' + ent + '"'] };
+  if (ent) b.employer = { include: [ent] };
   const effMin = parseInt(f.effectif_min, 10), effMax = parseInt(f.effectif_max, 10);
   if (effMin > 0 || effMax > 0) {
     b.company_headcount = {};
@@ -127,24 +133,30 @@ function sansActivity(o) { const c = { ...o }; delete c.activity; return c; }
 // fantôme dans le handler : si le comptage entreprises tombe à 0 avec le filtre, on l'ignore
 // et on le dit (`types_ignores`). Régions par NOM canonique (le code region_code est ⛔ ignoré,
 // cf. openapi Basile) ; DOM par préfixes de code postal ; villes par headquarters_city.
+// ⚠️ MESURÉ (matrice Didier 22/09 nuit) : legal_category attend des codes INSEE NIVEAU 3
+// (4 chiffres — ['5710','5720','5499','5498'] → 46 775 ✓) ; les préfixes ('5', '57') et les
+// libellés ('SAS') donnent 0. On énumère donc TOUS les 4-chiffres de chaque préfixe niveau 2
+// (les codes inexistants ne matchent rien — même pattern que les CP des DOM) ; la garde
+// types_ignores du handler reste le filet de sécurité.
 const TYPES_ENTREPRISE = {
-  'Société commerciale': ['5'],
+  'Société commerciale': ['54', '55', '56', '57', '58'],
   'Société cotée en bourse': ['55', '56'],
   'Société civile': ['65'],
-  'À but non lucratif': ['9'],
+  'À but non lucratif': ['91', '92', '93'],
   'Société de personnes': ['52', '53'],
-  'Indépendant / EI': ['1'],
-  'Administration publique': ['4', '7']
+  'Indépendant / EI': ['10'],
+  'Administration publique': ['41', '71', '72', '73', '74']
 };
+function catsDePrefixe(p) { const a = []; for (let i = 0; i < 100; i++) a.push(p + String(i).padStart(2, '0')); return a; }
 const REGIONS_NOMS = ['Auvergne-Rhône-Alpes', 'Bourgogne-Franche-Comté', 'Bretagne', 'Centre-Val de Loire', 'Corse', 'Grand Est', 'Hauts-de-France', 'Île-de-France', 'Normandie', 'Nouvelle-Aquitaine', 'Occitanie', 'Pays de la Loire', "Provence-Alpes-Côte d'Azur"];
 const DOM_CP = { 'Guadeloupe': '971', 'Martinique': '972', 'Guyane': '973', 'Réunion': '974', 'Mayotte': '976' };
 function cpsDePrefixe(p) { const a = []; for (let i = 0; i < 100; i++) a.push(p + String(i).padStart(2, '0')); return a; }
 function filtresEntreprises(filtres) {
   const f = { company_ceased: false };
-  // Type d'entreprise → legal_category (préfixes INSEE — validé par le garde du handler)
+  // Type d'entreprise → legal_category en codes niveau 3 énumérés (cf. TYPES_ENTREPRISE)
   const cats = [];
   for (const t of (Array.isArray(filtres.types_entreprise) ? filtres.types_entreprise : [])) {
-    for (const p of (TYPES_ENTREPRISE[t] || [])) if (!cats.includes(p)) cats.push(p);
+    for (const p of (TYPES_ENTREPRISE[t] || [])) for (const c of catsDePrefixe(p)) if (!cats.includes(c)) cats.push(c);
   }
   if (cats.length) f.legal_category = { include: cats };
   // Lieux du siège : {valeur, mode:'inclure'|'exclure'} — régions (nom canonique), DOM (CP), villes

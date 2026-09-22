@@ -1,5 +1,30 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 22 septembre 2026, nuit)
 
+## 🎯 22 septembre 2026 (nuit, suite) — Verdicts matrice n°2 appliqués + postes ciblés sur les intitulés RÉELS Basile
+
+Matrice debug_count de Didier (68.31Z, contrôle 100 000 entreprises) :
+- **legal_category = codes INSEE NIVEAU 3** (4 chiffres) : `['5710','5720','5499','5498']` →
+  46 775 ✓ ; préfixes ('5', '57') et libellés ('SAS') → 0. Corrigé : `TYPES_ENTREPRISE` énumère
+  tous les 4-chiffres de chaque préfixe niveau 2 (`catsDePrefixe`, codes inexistants inoffensifs,
+  garde types_ignores conservée en filet).
+- **employer traite plusieurs valeurs en ET** (exact 3 · contains 39 517 · les deux 3 — la doc
+  OpenAPI dit OR, la mesure dit non). Corrigé : UNE seule valeur — sans guillemets = contains
+  (large, façon Sales Nav), guillemets tapés par le SDR = exact.
+- **Retour Didier : « Directeur Expérience Client (CX) » seul → 0** : nos chips de postes
+  inventées ne matchaient rien. La doc Basile expose `/people/roles/suggest` → bloc « 1 · Postes
+  ciblés » refondu : autocomplete des intitulés RÉELS (action `roles_suggest` ajoutée à
+  /api/basile, avec cities_suggest et legal_forms_suggest au passage), chaque suggestion avec
+  boutons **✓ Inclure / ✕ Exclure** façon Sales Nav (lignes vertes/rouges, pattern lieux),
+  `postes_exclus` → `result_role.exclude` côté serveur, chips par défaut supprimées (reste le
+  toggle « N'importe quel décideur », exclusif des inclus). ⚠️ Le shape de la réponse
+  roles/suggest n'est PAS documenté — le parseur front est défensif (suggestions|roles|results|
+  array, string ou {value|label|name}) ; si le dropdown reste vide en prod, logguer
+  `api('/api/basile',{action:'roles_suggest',q:'…'})` et adapter.
+- **Vérifié** : node --check (recherche, basile, front) ; banc test-v2 6 scénarios (dont
+  employer 1 valeur, 500 codes 5400..5899 sur companies/find, result_role.exclude transmis) ;
+  smoke navigateur (dropdown 3 suggestions × Inclure/Exclure, chips ✓/✕, décideur vide les
+  inclus, avFiltres transmet postes/postes_exclus).
+
 ## 🎯 22 septembre 2026 (nuit) — 🔎 Recherche avancée v2 : les 4 onglets du wireframe v2 (GO Didier)
 
 Wireframe v2 : artifact canvas « Recherche avancée SofyScrap » (4 artboards Main/Comptes/Google/
