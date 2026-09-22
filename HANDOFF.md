@@ -33,9 +33,39 @@ ci-dessous. Grosse opportunité restante : refondre la Liste intelligente avec c
   `ckValiderPersonas` (le PUT chirurgical plafonne toujours à 8 contacts/fiche).
 - Vérifié : node --check (personas/cockpit/front), simulation verbatim serveur, picker testé au
   navigateur sur page locale (rendu, pré-cochage, ajout, échappement).
-**Validation prod à faire au déploiement (2 min, snippet console donné à Didier)** : vérifier que
-`people/find {siren}` renvoie bien des `profile_url` LinkedIn (pas que des mandataires) sur un
-SIREN connu — sinon la voie employeur prend le relais toute seule, rien ne casse.
+**✅ Validé en prod le 22/09 (snippet console, Didier)** : `people/find {siren:352821664}` (GBH) →
+total 757, 100/100 leads avec `profile_url` LinkedIn — la voie SIREN renvoie bien les salariés.
+NB : le résultat inclut les filiales rattachées à la page LinkedIn du groupe (Infobam sous GBH) —
+le garde memeEntreprise/siren de personas.js les écarte pour une fiche mono-société, c'est voulu.
+
+## 🎯 22 septembre 2026 (suite) — Refonte Liste intelligente : filtres Basile natifs (chemin V2)
+
+GO Didier après validation SIREN. Le chemin métropole+NAF (`hybride`) utilise désormais les
+nouveaux filtres people/find AU LIEU du tri sectoriel IA de v210 :
+- **`api/ia-liste-creer.js`** : `filtresPersonnesV2()` = result_role (familles inchangées) +
+  `activity:{include:['naf:<code>',…]}` (secteur FIN natif) + `company_headcount` (>=/<=) quand
+  l'effectif est demandé (critère jusqu'ici IGNORÉ par la Liste intelligente). **Garde
+  anti-« filtre ignoré »** (leçon du 21/07) : comptage limit:1 AVEC puis SANS `activity` — égaux
+  ou 0 → retombe sur v210 (macro + tri IA, code intact) ; restreint → chemin V2
+  `mode_recherche:'personne_activite'`. Estimation : nb exact + `nb_personnes_sans_secteur` +
+  `nb_personnes_sans_effectif` (piège « effectif inconnu exclu ~21 % », doc Basile — même
+  transparence que le fix Pappers/Romain) + échantillon direct de 20 profils SANS IA. Génération :
+  même boucle curseur/dédup LinkedIn que v210 mais sans tri IA → ~100 candidats/page au lieu de
+  ~3 fiches/100 profils, zéro coût Claude, 150 fiches en 2 pages au banc. `cleCurseur` intègre
+  `company_headcount` seulement s'il est présent (curseurs existants préservés).
+- **Front** : branche `personne_activite` dans `ouvrirEstimationIA` (gros chiffre = comptage natif,
+  bandeau 📉 « ton filtre effectif cache N personnes », filtres envoyés, échantillon). La boucle de
+  génération front est agnostique au mode (fiches/curseur/epuise) — aucune modif.
+- **Vérifié** : banc complet dans le scratchpad (handler réel + db stub + fetch factice, 5
+  scénarios : V2 estimer/creer, activity ignoré → v210, activity 0 → v210, sans effectif) ;
+  node --check ; modale testée visuellement en local.
+- **Validation prod à la première utilisation** : si `naf:` n'est pas reconnu par l'API réelle, la
+  garde fait tout retomber sur v210 silencieusement — la modale d'estimation dit quel chemin a
+  servi (« filtre Basile natif » vs « tri sectoriel par IA »), c'est LE témoin. Snippet countOnly
+  donné à Didier pour trancher en 30 s.
+- **Non fait, à arbitrer** : chemin DOM (toujours dirigeants légaux par SIREN — la voie salariés
+  LinkedIn par siren + result_role l'améliorerait) ; géo fine sur les personnes en V2
+  (`result_postal_code` est Legal-only : l'activer exclurait la source LinkedIn, on s'est abstenu).
 
 ## 🎯 22 septembre 2026 — « SofyScrap trouve moins qu'une recherche manuelle » (cas Romain, 82.91Z)
 

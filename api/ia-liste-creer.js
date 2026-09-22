@@ -80,6 +80,30 @@ function filtresPersonnes(c) {
   return f;
 }
 
+// V2 (22/09/2026, « refonte Liste intelligente ») : l'API Basile filtre désormais les PERSONNES
+// par secteur FIN (`activity` avec préfixe naf:) et par taille d'employeur (`company_headcount`,
+// RangeFilter >=/<=) — cf. docs.basile.cc/openapi.yaml relue le 22/09. Remplace le tri sectoriel
+// IA de v210 quand des naf_codes existent, SOUS RÉSERVE du garde anti-« filtre ignoré » du
+// handler (Basile ignore silencieusement les filtres qu'il ne connaît pas — leçon du 21/07).
+// ⚠️ company_headcount écarte AUSSI les employeurs à effectif inconnu (~21 % des fiches, doc
+// Basile) — même piège que Pappers (cas Romain 22/09) : l'écart est mesuré et affiché au SDR.
+function filtresPersonnesV2(c) {
+  const nafs = Array.isArray(c.naf_codes) ? c.naf_codes.map(x => String(x || '').trim()).filter(Boolean) : [];
+  if (!nafs.length) return null;
+  const f = {};
+  const roles = rolesDepuisFamilles(c);
+  if (roles.length) f.result_role = { include: roles };
+  f.result_country_code = { include: Array.isArray(c.pays) && c.pays.length ? c.pays : ['FR'] };
+  f.activity = { include: nafs.map(x => 'naf:' + x) };
+  const effMin = parseInt(c.effectif_min, 10), effMax = parseInt(c.effectif_max, 10);
+  if (effMin > 0 || effMax > 0) {
+    f.company_headcount = {};
+    if (effMin > 0) f.company_headcount['>='] = effMin;
+    if (effMax > 0) f.company_headcount['<='] = effMax;
+  }
+  return f;
+}
+
 function leadVersFichePersonne(lead) {
   const d = lead.data || lead || {};
   const prenom = d.people_first_name || d.result_first_name || '';
@@ -244,11 +268,14 @@ async function linkedinsConnus(sql) {
 // Clé du curseur de pagination : mêmes filtres Basile => on reprend là où on s'était arrêté,
 // même le lendemain (config JSONB). Une relance des mêmes critères explore donc du terrain neuf.
 function cleCurseur(filtres) {
-  const base = JSON.stringify({
+  const o = {
     roles: [...((filtres.result_role && filtres.result_role.include) || [])].sort(),
     activity: (filtres.activity && filtres.activity.include) || [],
     pays: (filtres.result_country_code && filtres.result_country_code.include) || []
-  });
+  };
+  // Effectif V2 : ajouté SEULEMENT s'il est présent, pour ne pas invalider les curseurs existants.
+  if (filtres.company_headcount) o.eff = filtres.company_headcount;
+  const base = JSON.stringify(o);
   let h = 0; for (let i = 0; i < base.length; i++) { h = ((h << 5) - h + base.charCodeAt(i)) | 0; }
   return 'ia_curseur_' + Math.abs(h).toString(36);
 }
@@ -407,6 +434,111 @@ export default async function handler(req, res) {
     // pas croiser SIREN et postes LinkedIn. On cherche donc par POSTE (+ macro-secteur), puis
     // Claude trie les entreprises des profils trouvés selon le secteur visé, page par page.
     if (hybride) {
+      // ── V2 (22/09/2026) : filtre secteur FIN natif sur les personnes (`activity` naf:) ──
+      // Garde anti-« filtre ignoré » : comptage AVEC puis SANS `activity` (limit 1, gratuit).
+      // Égaux → le filtre ne restreint rien (ignoré, ou concepts naf: inconnus) ; 0 → rien ne
+      // matche. Dans les deux cas on retombe sur le chemin v210 (macro + tri IA), l'ancien
+      // comportement sûr. Restreint → plus de tri IA : direct, rapide, déterministe.
+      const filtresV2 = filtresPersonnesV2(criteres);
+      let v2 = null; // {filtres, total, totalSansActivity, totalSansEffectif}
+      if (filtresV2) {
+        const rAvec = await basile('/people/find', { limit: 1, filters: filtresV2 }, key);
+        if (rAvec.status === 401) return res.status(502).json({ erreur: 'Clé Basile refusée' });
+        const totalV2 = (rAvec.data && rAvec.data.success !== false && rAvec.data.total) || 0;
+        if (totalV2 > 0) {
+          const sansAct = { ...filtresV2 }; delete sansAct.activity;
+          const rSans = await basile('/people/find', { limit: 1, filters: sansAct }, key);
+          const totalSansActivity = (rSans.data && rSans.data.total) || 0;
+          if (totalSansActivity > totalV2) {
+            v2 = { filtres: filtresV2, total: totalV2, totalSansActivity, totalSansEffectif: null };
+            // Écart « effectif inconnu » (piège Pappers/Romain) : mesuré pour être affiché.
+            if (filtresV2.company_headcount) {
+              const sansEff = { ...filtresV2 }; delete sansEff.company_headcount;
+              const rEff = await basile('/people/find', { limit: 1, filters: sansEff }, key);
+              if (rEff.data && rEff.data.total != null) v2.totalSansEffectif = rEff.data.total;
+            }
+          }
+        }
+      }
+
+      if (v2 && mode === 'estimer') {
+        // Échantillon réel direct (20 profils), sans tri IA — le filtre secteur est natif.
+        const r = await basile('/people/find', { limit: 20, filters: v2.filtres }, key);
+        const leads = (r.data && r.data.leads) || [];
+        const echantillon = leads.slice(0, 6).map(l => {
+          const f = leadVersFichePersonne(l);
+          return {
+            nom: ((f.contacts[0].prenom || '') + ' ' + (f.contacts[0].nom || '')).trim() || '—',
+            role: f.contacts[0].fonction || '—',
+            entreprise: f.nom || '—',
+            ville: f.ville || ''
+          };
+        });
+        return res.status(200).json({
+          mode_recherche: 'personne_activite',
+          nb_personnes: v2.total,
+          nb_personnes_sans_secteur: v2.totalSansActivity,
+          nb_personnes_sans_effectif: v2.totalSansEffectif, // null si pas de filtre effectif
+          echantillon_personnes: echantillon,
+          _filtres: {
+            postes: (v2.filtres.result_role && v2.filtres.result_role.include) || [],
+            naf_codes: naf.include,
+            activity: v2.filtres.activity.include,
+            effectif: v2.filtres.company_headcount || null,
+            zones
+          }
+        });
+      }
+
+      if (v2 && mode === 'creer') {
+        const debutV2 = Date.now();
+        const tempsOkV2 = () => (Date.now() - debutV2) < 40000; // marge sous les 60 s Vercel
+        const cap = capContacts(criteres);
+        const connus = await linkedinsConnus(sql);
+        const cle = cleCurseur(v2.filtres);
+        let curseur = (req.body.curseur && typeof req.body.curseur === 'object') ? req.body.curseur : await lireCurseur(sql, cle);
+        if (curseur && curseur.epuise) curseur = null;
+        let token = (curseur && curseur.token) || null;
+        let pages = (curseur && curseur.pages) || 0;
+        let fiches = [];
+        let epuise = false;
+        for (let p = 0; p < 6; p++) {
+          if (!tempsOkV2() || fiches.length >= cap) break;
+          const body = { limit: 100, filters: v2.filtres };
+          if (token) body.paginationToken = token;
+          let r = await basile('/people/find', body, key);
+          if (token && (!r.data || r.data.success === false)) {
+            token = null; pages = 0;
+            r = await basile('/people/find', { limit: 100, filters: v2.filtres }, key);
+          }
+          if (r.status === 402) break; // pagination coupée -> on garde ce qu'on a
+          if (!r.data || r.data.success === false) break;
+          const leads = r.data.leads || [];
+          if (!leads.length) { epuise = true; break; }
+          pages++;
+          token = (r.data.pagination && r.data.pagination.nextToken) || null;
+          for (const l of leads) {
+            const s = slugLinkedin(((l.data || l) || {}).profile_url);
+            if (!s || connus.has(s)) continue;
+            fiches.push(leadVersFichePersonne(l));
+            connus.add(s); // pas deux fois dans la même génération
+            if (fiches.length >= cap) break;
+          }
+          if (!token) { epuise = true; break; }
+        }
+        await ecrireCurseur(sql, cle, { token, pages, epuise, maj: new Date().toISOString() });
+        fiches = regrouperParEntreprise(fiches).slice(0, cap);
+        return res.status(200).json({
+          fiches, nb: fiches.length, mode_recherche: 'personne_activite',
+          curseur: { token, pages, epuise },
+          epuise,
+          profils_parcourus: pages * 100,
+          message: fiches.length ? undefined : (epuise
+            ? 'Fin du gisement Basile pour ces critères — tout le neuf a déjà été extrait. Élargis le secteur, les postes ou l’effectif.'
+            : 'Aucun nouveau contact sur ce lot de profils — relance pour explorer la suite.')
+        });
+      }
+      // v2 indisponible (filtre activity ignoré / concepts inconnus / 0 résultat) → v210 ci-dessous.
       const apiKeyIA = process.env.ANTHROPIC_API_KEY;
       if (!apiKeyIA) return res.status(500).json({ erreur: 'ANTHROPIC_API_KEY manquante (tri sectoriel)' });
       const filtres = filtresPersonnes(criteres);

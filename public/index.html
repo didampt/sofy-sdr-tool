@@ -3110,7 +3110,49 @@ function ouvrirEstimationIA(d){
  const esc=s=>String(s).replace(/</g,'&lt;');
  const cap=Math.min((IA_CRITERES&&parseInt(IA_CRITERES.nb_contacts,10))||20,200);
  let html;
- if(mode==='personne_secteur'){
+ if(mode==='personne_activite'){
+  // Chemin V2 (22/09) : filtre secteur FIN natif Basile (naf:) sur les personnes — sans tri IA.
+  const nb=d.nb_personnes||0;
+  const nbTous=d.nb_personnes_sans_secteur||0;
+  const nbSansEff=d.nb_personnes_sans_effectif; // null si pas de filtre effectif
+  const ech=d.echantillon_personnes||[];
+  const f=d._filtres||{}; const postes=f.postes||[]; const nafs=f.naf_codes||[];
+  const NOMS={'971':'Guadeloupe','972':'Martinique','973':'Guyane','974':'La Réunion','976':'Mayotte',metropole:'Métropole'};
+  const zones=(f.zones||[]).map(z=>NOMS[z]||z).join(', ');
+  const eff=f.effectif?[f.effectif['>=']?'≥ '+f.effectif['>=']:null,f.effectif['<=']?'≤ '+f.effectif['<=']:null].filter(Boolean).join(' et '):'';
+  const aCreer=Math.min(nb,cap);
+  const coutMin=(aCreer*0.09).toFixed(0), coutMax=(aCreer*0.66).toFixed(0);
+  const echHtml=ech.length
+    ?`<div style="margin-top:8px">${ech.map(e=>`<div style="font-size:12.5px;padding:6px 0;border-top:1px solid var(--line)"><b>${esc(e.entreprise)}</b> — ${esc(e.role)}${e.nom&&e.nom!=="—"?` · ${esc(e.nom)}`:""}${e.ville?` <span style="color:var(--ink-soft)">(${esc(e.ville)})</span>`:""}</div>`).join("")}</div>`
+    :`<div style="font-size:12.5px;color:var(--danger);margin-top:8px">Aucun profil sur l'échantillon — à vérifier avant de générer.</div>`;
+  html=`
+   <div style="font-size:18px;font-weight:700;margin-bottom:3px">📊 Estimation de ta liste</div>
+   <div style="font-size:13px;color:var(--ink-soft);margin-bottom:14px">Secteur précis → <b>filtre Basile natif sur les personnes</b> (gratuit, sans tri IA).</div>
+   <div style="background:var(--paper);border-radius:10px;padding:16px;margin-bottom:14px">
+    <div style="font-size:13px;color:var(--ink-soft);margin-bottom:4px">Personnes aux postes ciblés dans le secteur visé</div>
+    <div style="font-size:30px;font-weight:800">${nb.toLocaleString('fr-FR')}</div>
+    <div style="font-size:12.5px;color:var(--ink-soft);margin-top:6px">Sur ${nbTous.toLocaleString('fr-FR')} profils aux mêmes postes tous secteurs confondus. La liste prendra jusqu'à ${cap} fiches.</div>
+   </div>
+   ${(nbSansEff&&nbSansEff>nb)?`<div style="background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:12.5px;line-height:1.5;color:#7a5510">📉 Ton filtre effectif cache <b>${(nbSansEff-nb).toLocaleString('fr-FR')}</b> personne(s) : Basile écarte aussi les employeurs dont il ne connaît pas l'effectif (${nbSansEff.toLocaleString('fr-FR')} sans ce filtre). Retire l'effectif de ta demande pour les inclure.</div>`:''}
+   <div style="background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:var(--ink-soft)">
+    <div style="font-weight:700;color:var(--ink);margin-bottom:5px">🔎 Filtres réellement envoyés à Basile</div>
+    <div><b>Secteur NAF</b> (${nafs.length}) : ${nafs.length?nafs.slice(0,6).map(esc).join(', '):'—'}</div>
+    <div style="margin-top:3px"><b>Postes ciblés</b> (${postes.length}) : ${postes.length?postes.slice(0,4).map(esc).join(', ')+(postes.length>4?` <span style="color:var(--ink-soft)">(+${postes.length-4})</span>`:''):'<span style="color:var(--danger)">aucun (tous postes)</span>'}</div>
+    ${eff?`<div style="margin-top:3px"><b>Effectif employeur :</b> ${esc(eff)} salariés</div>`:''}
+    <div style="margin-top:3px"><b>Zone :</b> ${zones?esc(zones):'—'}</div>
+    <div style="font-weight:700;color:var(--ink);margin-top:9px;margin-bottom:3px">👤 Échantillon de contacts (réel)</div>
+    ${echHtml}
+   </div>
+   <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px solid var(--line);font-size:13px"><span style="color:var(--ink-soft)">Coût enrichissement estimé (jusqu'à ${aCreer} fiches)</span><span style="font-weight:600">${coutMin} à ${coutMax} €</span></div>
+   <div style="margin-bottom:4px">
+    <label style="font-size:13px;font-weight:700;display:block;margin-bottom:6px">📝 Nom de la liste <span style="color:var(--danger)">*</span></label>
+    <input class="field" id="ia-liste-nom" placeholder="Ex : Dir. commerciaux automobile métropole" style="width:100%" value="${(window.IA_NOM_LISTE||'').replace(/"/g,'&quot;')}" oninput="window.IA_NOM_LISTE=this.value">
+   </div>
+   <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+    <button class="btn" onclick="document.getElementById('estim-ia-modal').style.display='none'" style="background:var(--paper)">Affiner</button>
+    <button class="btn btn-primary" id="ia-btn-creer" onclick="creerListeIA()" ${nb===0?"disabled style='opacity:.5'":""}>🚀 Générer la liste</button>
+   </div>`;
+ } else if(mode==='personne_secteur'){
   // Chemin hybride métropole : personnes par poste, puis tri sectoriel par IA
   const nbBrut=d.nb_personnes_brut||0;
   const nbSect=d.nb_personnes; // null si le tri IA a échoué
