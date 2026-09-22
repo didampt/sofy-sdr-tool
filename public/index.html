@@ -3677,8 +3677,10 @@ function avRendreChips(){
   `<span class="chip sel" style="cursor:pointer" onclick="AV.villes.splice(${k},1);avRendreChips();avMaj()">📍 ${esc(v)} ✕</span>`).join('');
  // Pays de la personne (FR par défaut ; Basile = base française, hors FR le vivier peut être mince)
  AV.paysP=(AV.paysP&&AV.paysP.length)?AV.paysP:['FR'];
- document.getElementById('av-pays-chips').innerHTML=['FR','BE','CH','LU'].map(p=>
-  `<button class="chip${AV.paysP.includes(p)?' sel':''}" onclick="avTogglePays('${p}')">${p}</button>`).join('');
+ // DOM inclus : LinkedIn (et donc Basile) classe la Guadeloupe & co comme des pays distincts
+ // (test comparatif Sales Nav de Didier : « Guadeloupe » y est une zone géographique à part)
+ document.getElementById('av-pays-chips').innerHTML=[['FR','🇫🇷 FR'],['BE','🇧🇪 BE'],['CH','🇨🇭 CH'],['LU','🇱🇺 LU'],['GP','🌴 Guadeloupe'],['MQ','🌴 Martinique'],['GF','🌴 Guyane'],['RE','🌴 Réunion'],['YT','🌴 Mayotte']].map(([p,l])=>
+  `<button class="chip${AV.paysP.includes(p)?' sel':''}" onclick="avTogglePays('${p}')">${l}</button>`).join('');
  // Entreprises : NAF + effectif + zones
  AV.ent.nafs=AV.ent.nafs||[];
  document.getElementById('av-ent-naf-chips').innerHTML=AV.ent.nafs.map((n,k)=>
@@ -3955,6 +3957,7 @@ async function avApercu(page){
     ${(d.total_sans_effectif&&d.total_sans_effectif>(d.total||0))?`<div style="font-size:12.5px;background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:8px 12px;color:#7a5510">📉 ton filtre effectif cache <b>${(d.total_sans_effectif-(d.total||0)).toLocaleString('fr-FR')}</b> personne(s) (effectif employeur inconnu)</div>`:''}
     ${enPlus.length?`<div style="font-size:12px;color:var(--ink-soft);width:100%">🔎 Secteur élargi automatiquement (registre ⇄ LinkedIn/Google) : ${enPlus.slice(0,4).map(esc).join(', ')}${enPlus.length>4?' (+'+(enPlus.length-4)+')':''}</div>`:''}
     ${d.types_ignores?`<div style="font-size:12.5px;background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:8px 12px;color:#7a5510">🏷️ le filtre <b>type d'entreprise</b> vidait le comptage — ignoré pour cette recherche</div>`:''}
+    ${(d.total===0&&d.total_sans_secteur>0)?`<div style="font-size:12.5px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px 12px;color:#1d4ed8;width:100%">💡 0 avec le secteur : les décideurs des groupes sont souvent rattachés à la <b>holding</b> (autre code NAF). Sans le secteur, tes intitulés + géo donnent <b>${avNb(d.total_sans_secteur)}</b> prospects LinkedIn — <a style="cursor:pointer;font-weight:700" onclick="AV.concepts=[];avRendreChips();avMaj()">retirer le secteur et relancer</a></div>`:''}
     ${alerteConcepts}
    </div>`;
    if(!(d.leads||[]).length){box.style.display='none';return;}

@@ -464,14 +464,27 @@ export default async function handler(req, res) {
       // 22/09 : `gmb:Concessionnaire automobile` seul → 0 — les concepts Google Maps ne matchent
       // pas toujours des personnes, contrairement aux naf:/lki:). Comptages limit 1, gratuits :
       // on renvoie les ids sans résultat pour que le front les marque et propose la variante.
-      let conceptsZero = null;
+      let conceptsZero = null, totalSansSecteur = null;
       if (!suite && total === 0 && conceptIds.length && !sirens.length) {
         conceptsZero = [];
         for (const cid of conceptIds.slice(0, 8)) {
-          const seul = { ...base, activity: { include: [cid] } };
+          // Le concept est testé SEUL (avec le seul pays) : croisé avec des intitulés précis
+          // (LinkedIn-only) il donnait 0 PAR CONSTRUCTION → chips marquées « mortes » à tort
+          // (test comparatif Sales Nav de Didier, 23/09 : 45.11Z déclaré mort avec 18 000+ personnes).
+          const seul = { result_country_code: base.result_country_code, hide_legal_entities: true, activity: { include: [cid] } };
           const rc = await basile('/people/find', { limit: 1, filters: seul }, key);
           if (!rc.data || !(rc.data.total > 0)) conceptsZero.push(cid);
         }
+        if (!conceptsZero.length) conceptsZero = null; // aucun concept mort : le zéro vient du CROISEMENT
+      }
+      // Croisement secteur × intitulés = 0 (cas structurel : les décideurs de groupes sont
+      // rattachés à la HOLDING, autre NAF — ex Vincent Boulogne, Directeur Achats @ Groupe SFPR
+      // introuvable via 45.11Z). On mesure gratuitement le gisement SANS le secteur pour
+      // proposer la sortie au SDR (bandeau + bouton côté front).
+      if (!suite && total === 0 && conceptIds.length && roles.length && !sirens.length) {
+        const sans = extrasLki(filtres, avecSource(sansActivity(base), 'lki'));
+        const rs = await basile('/people/find', { limit: 1, filters: sans }, key);
+        if (rs.data && rs.data.success !== false) totalSansSecteur = rs.data.total || 0;
       }
       // Doublons : slugs LinkedIn déjà extraits dans les listes actives
       const connus = await linkedinsConnus(sql);
@@ -492,7 +505,8 @@ export default async function handler(req, res) {
         total, total_sans_effectif: totalSansEffectif, // null sur les pages suivantes (comptés au 1er appel)
         total_lki: totalLki, total_legal: totalLegal,  // répartition par source (null en mode listes)
         concepts_labels: conceptLabels, concepts_ids: conceptIds,
-        concepts_zero: conceptsZero, // ids sans AUCUNE personne (null si total > 0)
+        concepts_zero: conceptsZero, // ids sans AUCUNE personne (null si total > 0 ou si le zéro vient du croisement)
+        total_sans_secteur: totalSansSecteur, // gisement intitulés+géo SANS le secteur (null hors cas 0)
         nb_roles: roles.length,
         nb_sirens: sirens.length || null,
         nb_entreprises_secteur: (typeof _nbEntSecteur !== 'undefined' && _nbEntSecteur != null) ? _nbEntSecteur : null,

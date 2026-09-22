@@ -1,5 +1,28 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 23 septembre 2026)
 
+## 🎯 23 septembre 2026 — test comparatif Sales Nav (cas Vincent Boulogne) : la sortie « sans secteur » + DOM en pays personne
+
+Test Didier : Sales Nav « Développement commercial × Guadeloupe » trouve Vincent Boulogne
+(Directeur Achats @ GROUPE SFPR) ; SofyScrap « Directeur Achats × automobile (+NAF) » = 0.
+DIAGNOSTIC STRUCTUREL : les décideurs de groupes sont rattachés à la HOLDING (NAF 70.10Z…),
+pas aux entités métier (45.11Z) → secteur × poste les rate PAR NATURE ; Sales Nav ne filtre pas
+par NAF. Trois corrections :
+- **Le diagnostic « concept mort » mentait** : il testait le concept croisé avec les intitulés
+  (LinkedIn-only) → 0 par construction → chips rouges à tort (45.11Z « ne matche aucune
+  personne » avec 18 000+ personnes). Il teste désormais le concept SEUL (pays uniquement), et
+  concepts_zero=null quand aucun concept n'est mort (le zéro vient du croisement).
+- **Sortie actionnable** : croisement secteur×intitulés=0 → le serveur mesure gratuitement le
+  gisement intitulés+géo SANS le secteur (`total_sans_secteur`, countOnly lki) et le front
+  affiche « 💡 les décideurs des groupes sont souvent rattachés à la holding — sans le secteur :
+  N prospects · retirer le secteur et relancer » (lien qui vide AV.concepts + relance → l'aperçu
+  REVIENT, point 4 de Didier « filtre supprimé = tout perdu » couvert au smoke).
+- **DOM dans le PAYS de la personne** (voie directe = le cas Sales Nav exact) : chips 🌴 GP/MQ/
+  GF/RE/YT ajoutées à FR/BE/CH/LU (result_country_code, regex 2 lettres déjà ok). ⚠️ À VALIDER
+  en prod : Basile suit-il LinkedIn (DOM = pays distincts) ? Le comptage le dira — « directeur
+  achats » × 🌴 Guadeloupe doit sortir Vincent Boulogne SANS secteur.
+- Banc L (combo=0 → concepts_zero null + sans_secteur 150) ; smoke complet (bandeau, plus de
+  fausses chips rouges, clic → aperçu revient, chips DOM rendues).
+
 ## 🎯 23 septembre 2026 (suite) — modale décideurs : l'échantillon se remplit même quand la page 1 est saturée de doublons
 
 Retour Didier : « 1 décideur sur 739 entreprises » (8291Z recouvrement, SON secteur de test :
