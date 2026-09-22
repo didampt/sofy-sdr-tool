@@ -135,6 +135,24 @@ filtres manuels façon Sales Navigator, mixe Pappers × Basile × IA.
   ⚠️ Volumétrie voie SIREN en génération : 87 000 entreprises → 6×300 SIREN/appel serveur, le
   front enchaîne 4 appels → jusqu'à ~7 200 entreprises couvertes par génération ; le curseur
   persistant continue au prochain run. Coût : appels Basile uniquement (gratuits/0,01 €).
+- **Retour Didier n°6 — « sélectionner un ou tous les contacts pour créer la liste »** : l'aperçu
+  Prospects a désormais ① une case **Tout sélectionner** dans l'en-tête (agit sur toutes les
+  pages CHARGÉES) + compteur « n coché(s) sur m chargé(s) » ; ② DEUX modes de génération :
+  **« 🚀 Générer ma sélection (n) »** (la liste = exactement les contacts cochés, construits
+  CÔTÉ FRONT depuis AV_PAG — zéro appel Basile, regroupés par entreprise) et **« ⚡ Les N
+  premiers (auto) »** (l'ancien mode, sélection = exclusions). Factorisation `avFinaliserListe()`
+  (dédup HubSpot/listes + POST /api/listes + ouvrirListe) partagée par les deux modes. Testé au
+  navigateur (tout on/off, décoche → (2), liste créée avec regroupement et exclu respecté).
+- **Wireframe v2 (canvas « Recherche avancée SofyScrap », Versions 4-7)** : 4 onglets selon les
+  specs Didier de 23 h — Prospects grammaire Sales Nav (postes → secteur → effectif tranches SN
+  Indépendant…5001-10000 → type d'entreprise/catégorie juridique INSEE → lieu du siège
+  INCLURE/EXCLURE → la personne : prénom/nom/entreprise actuelle/langue/ancienneté/nouveau
+  poste) ; Entreprises + MODALE personas cochable paginée ; Google sur SERPAPI google_maps
+  (demande Didier — 20/page ~120/ville, note+avis sans Details, plafond 1000/mois partagé,
+  autocomplete catégories v223, pays, modale établissements) ; Lookalike = listes classées par
+  RDV pris/fiches (stats v245), « Relancer » pré-remplit. Note chantiers sur le canvas :
+  filtres à VALIDER en countOnly avant usage (languages, current_tenure_years, legal_category,
+  exclude géo). Implémentation v2 : en attente de GO Didier sur le wireframe.
 - ⚠️ Affinage restant (constat aperçu Didier) : l'élargissement lki: par libellé NAF long ramène
   du hors-secteur. Piste : élargir CÔTÉ FRONT au clic (chips lki: visibles et retirables) plutôt
   que silencieusement côté serveur. Non fait.

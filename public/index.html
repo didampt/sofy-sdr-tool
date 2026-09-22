@@ -814,7 +814,8 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
               <select class="field" id="av-nb" style="width:100px"><option>25</option><option selected>50</option><option>100</option><option>200</option></select>
               <span style="font-size:12px;color:var(--ink-soft)">fiches max</span>
               <button class="btn" onclick="avEnregistrer()" style="background:var(--paper);margin-left:auto">💾 Enregistrer la recherche</button>
-              <button class="btn btn-primary" id="av-btn-gen" onclick="avGenerer()">🚀 Générer la liste</button>
+              <button class="btn btn-primary" id="av-btn-sel" onclick="avGenererSelection()" style="display:none">🚀 Générer ma sélection</button>
+              <button class="btn btn-primary" id="av-btn-gen" onclick="avGenerer()" style="background:#4b5563">⚡ Les N premiers (auto)</button>
             </div>
           </div>
         </div>
@@ -3679,7 +3680,7 @@ const AV_PAG={pro:{pages:[],cur:0,suite:null},ent:{pages:[],cur:0,suite:null}};
 const AV_DECOCHES=new Set(); // clés décochées par le SDR (exclues de la génération/fusion)
 let AV_ENT_LEADS=new Map();  // décideurs vus à l'aperçu Entreprises (clé → lead), pour la fusion
 function avCle(l){return l.slug||('p:'+((l.prenom||'')+' '+(l.nom||'')+'@'+(l.entreprise||'')).toLowerCase().replace(/\s+/g,' ').trim());}
-function avCocher(cb){const k=cb.getAttribute('data-cle');if(!k)return;if(cb.checked)AV_DECOCHES.delete(k);else AV_DECOCHES.add(k);}
+function avCocher(cb){const k=cb.getAttribute('data-cle');if(!k)return;if(cb.checked)AV_DECOCHES.delete(k);else AV_DECOCHES.add(k);avMajSelection();}
 function avLigneLead(l){
  const esc=s=>String(s||'').replace(/</g,'&lt;');
  const cle=avCle(l);
@@ -3713,7 +3714,7 @@ async function avApercu(page){
  const reset=(page===undefined||page===false);
  if(reset){P.pages=[];P.cur=0;P.suite=null;count.innerHTML='⏳ Comptage en cours (gratuit)…';}
  else if(page<0)return;
- else if(page<P.pages.length){P.cur=page;avRendrePage('pro','avApercu',AV_ENTETE_PRO);return;}
+ else if(page<P.pages.length){P.cur=page;avRendrePage('pro','avApercu',avEnTetePro());avMajSelection();return;}
  else if(!P.suite)return;
  try{
   const r=await api('/api/recherche',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'apercu',filtres:avFiltres(),apercu_suite:reset?null:P.suite})});
@@ -3743,10 +3744,29 @@ async function avApercu(page){
    </div>`;
    if(!(d.leads||[]).length){box.style.display='none';return;}
   }
-  avRendrePage('pro','avApercu',AV_ENTETE_PRO);
+  avRendrePage('pro','avApercu',avEnTetePro());avMajSelection();
  }catch(e){if(reset)count.innerHTML='⚠️ Erreur réseau : '+e.message;}
 }
-const AV_ENTETE_PRO=`<div style="padding:11px 16px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--ink-soft)"><b style="color:var(--ink)">Aperçu réel</b> — décoche pour écarter de la génération · 💼 d'abord, 🏛️ ensuite</div>`;
+function avLeadsCharges(){return AV_PAG.pro.pages.flat().filter(l=>!l.doublon);}
+function avLeadsCoches(){const vus=new Set();return avLeadsCharges().filter(l=>{const k=avCle(l);if(vus.has(k)||AV_DECOCHES.has(k))return false;vus.add(k);return true;});}
+function avEnTetePro(){
+ const charges=avLeadsCharges(),coches=avLeadsCoches();
+ const tout=charges.length>0&&coches.length===charges.length;
+ return `<div style="padding:11px 16px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--ink-soft);display:flex;align-items:center;gap:10px">
+  <label style="display:flex;align-items:center;gap:7px;cursor:pointer;color:var(--ink);font-weight:700"><input type="checkbox" ${tout?'checked':''} onchange="avToutSelectionner(this.checked)" aria-label="Tout sélectionner">Tout sélectionner</label>
+  <span><b style="color:var(--ink)">${coches.length}</b> coché(s) sur ${charges.length} chargé(s) — génère TA sélection, ou les N premiers en auto · 💼 d'abord, 🏛️ ensuite</span>
+ </div>`;
+}
+function avToutSelectionner(coche){
+ for(const l of avLeadsCharges()){const k=avCle(l);if(coche)AV_DECOCHES.delete(k);else AV_DECOCHES.add(k);}
+ avRendrePage('pro','avApercu',avEnTetePro());avMajSelection();
+}
+function avMajSelection(){
+ const b=document.getElementById('av-btn-sel');if(!b)return;
+ const n=AV.onglet==='prospects'?avLeadsCoches().length:0;
+ b.style.display=n?'':'none';
+ b.textContent='🚀 Générer ma sélection ('+n+')';
+}
 
 // ── Aperçu « décideurs des entreprises trouvées » (onglet Entreprises), mêmes pages ──
 let AV_ENT_SIRENS=[];
@@ -3952,29 +3972,65 @@ async function avGenerer(){
   }
   fiches=fiches.slice(0,cap);
   if(!fiches.length){toast(dernierMsg||'Aucune fiche trouvée — élargis les filtres');return;}
-  // Dédup HubSpot / listes (même passe que la Liste intelligente : marque, retire les doublons de liste)
   btn.textContent='⏳ Vérification doublons…';
-  try{
-   const contacts=fiches.map(fi=>{const ct=(fi.contacts||[])[0]||{};return {email:null,telephone:null,linkedin:ct.enrich?.linkedin||null,nom:ct.nom||'',prenom:ct.prenom||'',siren:fi.siren||''};});
-   const rd=await api('/api/dedup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contacts})});
-   const rez=((await rd.json())||{}).resultats||{};
-   fiches.forEach(fi=>{
-    const ct=(fi.contacts||[])[0]||{};
-    const cle=((ct.prenom||'')+' '+(ct.nom||'')).trim().toLowerCase();
-    const rr=rez[cle];
-    if(rr){if(rr.hubspot){fi.dedup_hubspot=rr.hubspot;fi.skip_enrich=true;}if(rr.liste){fi.dedup_liste=rr.liste;fi.skip_enrich=true;}}
-   });
-  }catch(_){/* dédup non bloquante */}
-  const nbDup=fiches.filter(fi=>fi.dedup_liste).length;
-  fiches=fiches.filter(fi=>!fi.dedup_liste);
-  if(!fiches.length){toast('Tout est déjà dans d\'autres listes ('+nbDup+' doublons). Rien à créer.');return;}
-  const rc=await api('/api/listes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nom:'🔎 '+nom,sdr:sdrChoisi,criteres:{avance:true,onglet:'prospects',filtres:f,jobs:f.decideur?["N'importe quel décideur"]:f.postes,naf:[],pays:[]},entreprises:fiches,credits_estimes:0})});
-  const dc=await rc.json();
-  if(dc.erreur){toast('Erreur création : '+dc.erreur);return;}
-  toast('🔎 Liste créée : '+fiches.length+' fiche'+(fiches.length>1?'s':'')+(nbDup?' · '+nbDup+' doublon(s) retiré(s)':''));
-  setTimeout(()=>ouvrirListe(dc.id),300);
+  await avFinaliserListe(fiches,nom,sdrChoisi,f);
  }catch(e){toast('Erreur réseau : '+e.message);}
- finally{AV_EN_COURS=false;btn.disabled=false;btn.textContent='🚀 Générer la liste';}
+ finally{AV_EN_COURS=false;btn.disabled=false;btn.textContent='⚡ Les N premiers (auto)';}
+}
+
+// Dédup HubSpot/listes puis création — commun aux deux modes (auto et « ma sélection »)
+async function avFinaliserListe(fiches,nom,sdrChoisi,f){
+ try{
+  const contacts=fiches.map(fi=>{const ct=(fi.contacts||[])[0]||{};return {email:null,telephone:null,linkedin:ct.enrich?.linkedin||null,nom:ct.nom||'',prenom:ct.prenom||'',siren:fi.siren||''};});
+  const rd=await api('/api/dedup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contacts})});
+  const rez=((await rd.json())||{}).resultats||{};
+  fiches.forEach(fi=>{
+   const ct=(fi.contacts||[])[0]||{};
+   const cle=((ct.prenom||'')+' '+(ct.nom||'')).trim().toLowerCase();
+   const rr=rez[cle];
+   if(rr){if(rr.hubspot){fi.dedup_hubspot=rr.hubspot;fi.skip_enrich=true;}if(rr.liste){fi.dedup_liste=rr.liste;fi.skip_enrich=true;}}
+  });
+ }catch(_){/* dédup non bloquante */}
+ const nbDup=fiches.filter(fi=>fi.dedup_liste).length;
+ fiches=fiches.filter(fi=>!fi.dedup_liste);
+ if(!fiches.length){toast('Tout est déjà dans d\'autres listes ('+nbDup+' doublons). Rien à créer.');return;}
+ const rc=await api('/api/listes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nom:'🔎 '+nom,sdr:sdrChoisi,criteres:{avance:true,onglet:'prospects',filtres:f,jobs:f.decideur?["N'importe quel décideur"]:f.postes,naf:[],pays:[]},entreprises:fiches,credits_estimes:0})});
+ const dc=await rc.json();
+ if(dc.erreur){toast('Erreur création : '+dc.erreur);return;}
+ toast('🔎 Liste créée : '+fiches.length+' fiche'+(fiches.length>1?'s':'')+(nbDup?' · '+nbDup+' doublon(s) retiré(s)':''));
+ setTimeout(()=>ouvrirListe(dc.id),300);
+}
+
+// « Ma sélection » : la liste = EXACTEMENT les contacts cochés des pages chargées de l'aperçu.
+// Zéro appel Basile : les leads sont déjà en mémoire (AV_PAG), on regroupe par entreprise.
+async function avGenererSelection(){
+ if(AV_EN_COURS)return;
+ const nom=document.getElementById('av-nom').value.trim();
+ if(!nom){toast('⚠️ Donne un nom à ta liste');document.getElementById('av-nom').focus();return;}
+ const sdrChoisi=(document.getElementById('av-sdr')||{}).value||(state.user?state.user.nom:'');
+ const coches=avLeadsCoches();
+ if(!coches.length){toast('Coche au moins un contact dans l\'aperçu');return;}
+ AV_EN_COURS=true;
+ const b=document.getElementById('av-btn-sel');if(b){b.disabled=true;b.textContent='⏳ Création…';}
+ try{
+  const fiches=[];
+  for(const l of coches){
+   const nomEnt=(l.entreprise||((l.prenom+' '+l.nom).trim())||'Sans nom');
+   const contact={prenom:l.prenom||'',nom:l.nom,fonction:l.fonction||'',source:'basile',
+    enrich:l.linkedin?{linkedin:l.linkedin,email:null,telephone:null,fonction:l.fonction||'',avec_domaine:false}:{}};
+   const cle=nomEnt.toLowerCase().trim();
+   const exist=fiches.find(x=>(x.nom||'').toLowerCase().trim()===cle);
+   if(exist){
+    if(!exist.contacts.some(ct=>((ct.prenom||'')+' '+(ct.nom||'')).toLowerCase()===((l.prenom||'')+' '+(l.nom||'')).toLowerCase()))exist.contacts.push(contact);
+    continue;
+   }
+   fiches.push({nom:nomEnt,ville:l.ville||'',code_postal:'',region:'',adresse:'',naf:null,siren:l.siren||null,
+    site_web:null,linkedin_entreprise:null,activite:null,effectif:null,chiffre_affaires:null,
+    nb_etablissements:null,dirigeant:null,enseigne:null,source:'basile',contacts:[contact]});
+  }
+  await avFinaliserListe(fiches,nom,sdrChoisi,avFiltres());
+ }catch(e){toast('Erreur réseau : '+e.message);}
+ finally{AV_EN_COURS=false;if(b){b.disabled=false;avMajSelection();}}
 }
 
 // ── Onglet 📍 Google : façade du moteur GMB existant (/api/gmb-liste) ──
