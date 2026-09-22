@@ -845,7 +845,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
             <div style="background:#fff;border:1px solid var(--line);border-radius:12px;padding:13px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
               <input class="field" id="av-nom" placeholder="📝 Nom de la liste *" style="width:260px">
               <select class="field" id="av-sdr" style="width:160px" title="SDR / AE assigné à la liste"></select>
-              <select class="field" id="av-nb" style="width:100px"><option>25</option><option selected>50</option><option>100</option><option>200</option></select>
+              <select class="field" id="av-nb" style="width:100px" onchange="avMajSelection()"><option>25</option><option selected>50</option><option>100</option><option>200</option></select>
               <span style="font-size:12px;color:var(--ink-soft)">fiches max</span>
               <button class="btn" onclick="avEnregistrer()" style="background:var(--paper);margin-left:auto">💾 Enregistrer la recherche</button>
               <button class="btn btn-primary" id="av-btn-sel" onclick="avGenererSelection()" style="display:none">🚀 Générer ma sélection</button>
@@ -3563,7 +3563,7 @@ const AV_LIEUX_SUGG=['France métropolitaine','Auvergne-Rhône-Alpes','Bourgogne
 const AV_SOURCES=[['deux','💼 LinkedIn d’abord + 🏛️ registre'],['lki','💼 LinkedIn uniquement'],['legal','🏛️ Registre uniquement']];
 const AV_EFF={'Indifférent':[null,null],'1–9':[1,9],'10–49':[10,49],'50–199':[50,199],'200+':[200,null]};
 
-let AV_TIMER=null,AV_SUGG_TIMER=null,AV_EN_COURS=false,AV_LISTES=[],AV_APERCU=null,AV_TOUT=false;
+let AV_TIMER=null,AV_SUGG_TIMER=null,AV_EN_COURS=false,AV_LISTES=[],AV_APERCU=null,AV_TOUT=false,AV_EST_TOTAL=0;
 
 function avInit(){
  avOnglet(AV.onglet);
@@ -3854,9 +3854,12 @@ function avLigneLead(l){
 function avBarrePages(qui,fn){
  const P=AV_PAG[qui];
  const gauche=P.cur>0, droite=(P.cur<P.pages.length-1)||!!P.suite;
+ // Total de pages : exact quand la pagination est finie, sinon estimation gisement (~20/page)
+ let total=P.suite?null:Math.max(P.pages.length,1);
+ if(total===null&&qui==='pro'&&AV_EST_TOTAL>0)total='~'+Math.max(P.pages.length,Math.ceil(AV_EST_TOTAL/20));
  return `<div class="av-pagination" style="display:flex;align-items:center;justify-content:center;gap:14px;padding:10px 16px">
    <button class="btn" style="background:var(--paper)${gauche?'':';opacity:.4'}" ${gauche?'':'disabled'} onclick="${fn}(${P.cur-1})">‹ Précédent</button>
-   <span style="font-size:12.5px;color:var(--ink-soft)">Page ${P.cur+1}${P.suite?'':' / '+Math.max(P.pages.length,1)}</span>
+   <span style="font-size:12.5px;color:var(--ink-soft)">Page ${P.cur+1}${total!==null?' / '+total:''}</span>
    <button class="btn" style="background:var(--paper)${droite?'':';opacity:.4'}" ${droite?'':'disabled'} onclick="${fn}(${P.cur+1})">Suivant ›</button>
   </div>`;
 }
@@ -3881,7 +3884,10 @@ async function avApercu(page){
   if(AV.onglet!=='prospects')return; // l'onglet a changé pendant l'appel
   if(d.erreur){if(reset){count.innerHTML='⚠️ '+String(d.erreur).replace(/</g,'&lt;');box.style.display='none';}else toast('⚠️ '+d.erreur);return;}
   P.suite=d.apercu_suite||null;
-  P.pages.push(d.leads||[]);P.cur=P.pages.length-1;
+  // Dédup d'affichage : Basile peut renvoyer deux fois le même profil (même page ou pages
+  // différentes) — un seul reste visible (la génération dédupliquait déjà, pas l'aperçu)
+  const vusAv=new Set(P.pages.flat().map(avCle));
+  P.pages.push((d.leads||[]).filter(l=>{const k=avCle(l);if(vusAv.has(k))return false;vusAv.add(k);return true;}));P.cur=P.pages.length-1;
   if(reset){
    AV_APERCU=d;
    const esc=s=>String(s||'').replace(/</g,'&lt;');
@@ -3900,9 +3906,10 @@ async function avApercu(page){
    // comme le total du secteur (retour Didier 22/09 nuit).
    const partiel=!!(d.total_lki_partiel&&d.nb_entreprises_balayees&&d.nb_entreprises_secteur>d.nb_entreprises_balayees&&d.total_lki>0);
    const estimSecteur=partiel?Math.round(d.total_lki/d.nb_entreprises_balayees*d.nb_entreprises_secteur)+(d.total_legal||0):null;
+   AV_EST_TOTAL=partiel?estimSecteur:(d.total||0); // sert au « Page N / ~M » du pager
    count.innerHTML=`<div style="display:flex;gap:22px;align-items:center;flex-wrap:wrap">
     <div><div style="font-size:12px;color:var(--ink-soft)">Prospects correspondants${partiel?' (estimation)':''}</div><div style="font-size:30px;font-weight:800;color:var(--ink)">${partiel?'≈ '+avNb(estimSecteur):avNb(d.total)}</div></div>
-    <div style="font-size:12.5px;line-height:1.55;color:var(--ink-soft)">${(d.total_lki!=null&&d.total_legal!=null)?`<b style="color:#0369a1">💼 LinkedIn ${avNb(d.total_lki)}${d.total_lki_partiel?' (sur les '+(d.nb_entreprises_balayees||90)+' premières entreprises'+(d.nb_entreprises_secteur?' des '+d.nb_entreprises_secteur.toLocaleString('fr-FR')+' du secteur':'')+')':''}</b> · <b style="color:#0f766e">🏛️ registre ${avNb(d.total_legal)}</b><br>`:''}comptage gratuit, recalculé à chaque filtre${(d.total_lki>=100000||d.total_legal>=100000)?'<br>⤴️ 100 000+ = plafond d\'affichage Basile par source — le gisement réel est plus grand, affine tes filtres':''}${d.nb_sirens?`<br>recherche sur les <b>${d.nb_sirens}</b> entreprises de tes listes`:''}${doublons?`<br>♻️ ${doublons} déjà extrait(s) — décochés`:''}</div>
+    <div style="font-size:12.5px;line-height:1.55;color:var(--ink-soft)">${(d.total_lki!=null&&d.total_legal!=null)?`<b style="color:#0369a1">💼 LinkedIn ${avNb(d.total_lki)}${d.total_lki_partiel?' mesurés (sur les '+(d.nb_entreprises_balayees||90)+' premières entreprises'+(d.nb_entreprises_secteur?' des '+d.nb_entreprises_secteur.toLocaleString('fr-FR')+' du secteur':'')+')':''}</b> · <b style="color:#0f766e">🏛️ registre ${avNb(d.total_legal)}</b><br>`:''}comptage gratuit, recalculé à chaque filtre${(d.total_lki>=100000||d.total_legal>=100000)?'<br>⤴️ 100 000+ = plafond d\'affichage Basile par source — le gisement réel est plus grand, affine tes filtres':''}${d.nb_sirens?`<br>recherche sur les <b>${d.nb_sirens}</b> entreprises de tes listes`:''}${doublons?`<br>♻️ ${doublons} déjà extrait(s) — décochés`:''}</div>
     ${partiel?`<div style="font-size:12.5px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px 12px;color:#1d4ed8">📈 estimation par règle de trois (${d.total_lki} mesurés sur ${d.nb_entreprises_balayees} entreprises → ${(d.nb_entreprises_secteur||0).toLocaleString('fr-FR')}) — la génération balaye jusqu'à ~1 800 entreprises par tour${(AV.effSN||[]).length?'':' · coche un <b>effectif</b> pour concentrer le balayage sur les bonnes tailles'}</div>`:''}
     ${(d.total_sans_effectif&&d.total_sans_effectif>(d.total||0))?`<div style="font-size:12.5px;background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:8px 12px;color:#7a5510">📉 ton filtre effectif cache <b>${(d.total_sans_effectif-(d.total||0)).toLocaleString('fr-FR')}</b> personne(s) (effectif employeur inconnu)</div>`:''}
     ${enPlus.length?`<div style="font-size:12px;color:var(--ink-soft);width:100%">🔎 Secteur élargi automatiquement (registre ⇄ LinkedIn/Google) : ${enPlus.slice(0,4).map(esc).join(', ')}${enPlus.length>4?' (+'+(enPlus.length-4)+')':''}</div>`:''}

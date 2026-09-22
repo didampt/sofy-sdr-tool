@@ -1,5 +1,19 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 22 septembre 2026, nuit)
 
+## 🎯 22 septembre 2026 (nuit, 8e passe) — pager « / ~M », « mesurés », étiquette N max vivante, dédup d'affichage
+
+Retours Didier n°3 :
+- **Pager** : « Page N / M » exact quand la pagination est finie, « Page N / ~M » estimé sinon
+  (M = AV_EST_TOTAL/20, AV_EST_TOTAL = estimation gisement posée au rendu du comptage).
+- **« LinkedIn 15 » vs « ≈ 49 »** (question) : 15 = MESURE sur l'échantillon de 189 entreprises,
+  49 = extrapolation sur les 622 — libellé précisé : « 💼 LinkedIn 15 mesurés (sur les…) ».
+- **Étiquette « Générer tout le gisement (N max) » figée** : elle ne suivait pas le sélecteur
+  « fiches max » (av-nb) — onchange → avMajSelection. NB la génération, elle, lisait déjà av-nb
+  au clic (il aurait EU ses 100 fiches, seule l'étiquette mentait).
+- **Dédup d'affichage** (capture : VINCENT PERE-LAGARESTE ×2) : Basile renvoie parfois deux fois
+  le même profil — l'aperçu filtre par avCle sur toutes les pages chargées (la génération
+  dédupliquait déjà).
+
 ## 🎯 22 septembre 2026 (nuit, 7e passe) — l'ordre instable de companies/find (la VRAIE cause des aperçus vides) + Tout sélectionné par défaut
 
 Retour Didier : « la liste a encore disparu » (capture : 15 mesurés sur 98 entreprises) + « 19
