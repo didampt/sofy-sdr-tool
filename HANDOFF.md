@@ -1,5 +1,16 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 22 septembre 2026, nuit)
 
+## 🎯 22 septembre 2026 (nuit, 15e passe) — l'onglet Google reprend l'autocomplétion de la carte 3
+
+Demande Didier : « pourquoi ne pas reprendre l'autocomplétion comme sur la Liste Google Maps » :
+- **Activités** : la table officielle `ACTIVITES_GMB` de la carte 3 (33 libellés FR → type
+  Google, ex restaurant→restaurant, restauration rapide→meal_takeaway) passe EN PREMIER dans le
+  dropdown de l'onglet avancé, le suggest Basile gmb: complète (dédupliqué par label). Rendu
+  « label 📍 type », multi-choix conservé.
+- **Villes** : `avVilleSuggest` bascule du cities_suggest Basile (CEDEX, doublons de casse) vers
+  `/api/places-autocomplete?ville=` (Google Places, le même endpoint que la carte 3) — rendu
+  « nom · France » à droite, 10 max, debounce 250 ms, multi-choix conservé.
+
 ## 🎯 22 septembre 2026 (nuit, 14e passe) — Google : le « 2 sur 20 » expliqué (filtre note + plafond Maps)
 
 Retour Didier (« il n'y a pas que 2 ou 20 restaurants italiens à Paris !! ») : le moteur MARCHE

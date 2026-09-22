@@ -3994,6 +3994,9 @@ function avEntJobSuggest(q){
 }
 // ── Villes : autocomplete Basile (/people/cities/suggest) sur un input à virgules ──
 let AV_VILLE_TIMER=null;
+// Même source que la carte 3 (Google Places Autocomplete via /api/places-autocomplete) :
+// villes propres avec le pays à droite — le référentiel Basile servait des CEDEX et des
+// doublons de casse (retour Didier 22/09 : « reprendre l'autocomplétion de la liste Google Maps »)
 function avVilleSuggest(q,inputId){
  clearTimeout(AV_VILLE_TIMER);
  const boxId=inputId+'-results',box=document.getElementById(boxId);
@@ -4003,23 +4006,18 @@ function avVilleSuggest(q,inputId){
   const escA=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
   let items=[];
   try{
-   const r=await api('/api/basile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'cities_suggest',q:seg,limit:15})});
+   const r=await api('/api/places-autocomplete?ville='+encodeURIComponent(seg));
    const d=await r.json();
-   const brut=(d.brut||{});
-   items=(brut.suggestions||brut.cities||brut.results||(Array.isArray(brut)?brut:[]))
-    .map(s=>typeof s==='string'?s:(s.value||s.label||s.name||'')).filter(Boolean);
-   // Le référentiel Basile a des doublons de casse (Paris/PARIS/paris) : une seule variante
-   const vusV=new Set();
-   items=items.filter(v=>{const k=v.toLowerCase();if(vusV.has(k))return false;vusV.add(k);return true;}).slice(0,15);
+   items=(d.villes||[]).map(v=>({nom:String(v.nom||''),detail:String(v.detail||'')})).filter(v=>v.nom).slice(0,10);
   }catch(_){}
   if(!items.length){if(box)box.style.display='none';return;}
   SUGG_ETAT[boxId]={items,rendu:v=>{
    const prises=document.getElementById(inputId).value.split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
-   const pris=prises.includes(String(v).toLowerCase());
-   return `<div data-p="${escA(v)}" data-i="${escA(inputId)}" onclick="avVilleToggle(this.dataset.p,this.dataset.i);suggAfficher('${escA(boxId)}')" style="padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px${pris?';background:#f0fdf4':''}">${pris?'✓ ':''}${escA(v)} <span style="font-size:10.5px;color:var(--ink-soft)">📍 ville Basile</span></div>`;
+   const pris=prises.includes(v.nom.toLowerCase());
+   return `<div data-p="${escA(v.nom)}" data-i="${escA(inputId)}" onclick="avVilleToggle(this.dataset.p,this.dataset.i);suggAfficher('${escA(boxId)}')" style="display:flex;justify-content:space-between;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px${pris?';background:#f0fdf4':''}"><span>${pris?'✓ ':''}${escA(v.nom)}</span><span style="font-size:11px;color:var(--accent);font-weight:600">${escA(v.detail).slice(0,30)}</span></div>`;
   }};
   suggAfficher(boxId);
- },350);
+ },250);
 }
 function avVilleToggle(v,inputId){
  const inp=document.getElementById(inputId);
@@ -4057,13 +4055,19 @@ function avGmbActSuggest(q){
  if(seg.length<2){box.style.display='none';return;}
  AV_GMBACT_TIMER=setTimeout(async()=>{
   const escA=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
-  let items=[];
+  // 1. Les catégories OFFICIELLES de la carte 3 (label FR → type Google) — mêmes suggestions
+  //    que « Liste Google Maps » (demande Didier) ; 2. le suggest Basile gmb: en complément.
+  const fragL=seg.toLowerCase();
+  let items=ACTIVITES_GMB.filter(([l])=>l.toLowerCase().includes(fragL)).map(([l,c])=>({label:l,cat:c}));
   try{
    const r=await api('/api/basile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'activity_suggest',q:seg})});
    const d=await r.json();
-   items=(((d.brut||{}).suggestions)||[]).filter(s=>s&&s.type==='gmb')
-    .map(s=>({label:String(s.label||'').trim()||String(s.value||'').replace(/^gmb:/,''),cat:String(s.value||'').replace(/^gmb:/,'')})).slice(0,20);
+   for(const s of (((d.brut||{}).suggestions)||[]).filter(x=>x&&x.type==='gmb')){
+    const label=String(s.label||'').trim()||String(s.value||'').replace(/^gmb:/,'');
+    if(!items.some(i=>i.label.toLowerCase()===label.toLowerCase()))items.push({label,cat:String(s.value||'').replace(/^gmb:/,'')});
+   }
   }catch(_){}
+  items=items.slice(0,20);
   if(!items.length){box.innerHTML='<div style="padding:10px 12px;font-size:13px;color:var(--ink-soft)">Pas de catégorie Google officielle pour « '+seg.replace(/</g,'&lt;')+' » — ta saisie partira telle quelle dans la recherche Maps.</div>';box.style.display='block';return;}
   SUGG_ETAT['av-gmb-act-results']={items,rendu:it=>{
    const pris=avGmbActs().some(a=>a.toLowerCase()===it.label.toLowerCase());
