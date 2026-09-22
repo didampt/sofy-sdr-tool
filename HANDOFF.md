@@ -1,5 +1,30 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 22 septembre 2026, nuit)
 
+## 🎯 22 septembre 2026 (nuit, 6e passe) — lots vides sautés, estimation en gros, Tout sélectionner = gisement, modale personas vraiment épurée
+
+Retours Didier (parcours « Directeur commercial » 25 048 → +45.11Z « 45 » et plus de contacts) :
+- **Le « 45 » n'était pas un bug de filtre** : c'est le comptage LinkedIn PARTIEL (210 premières
+  entreprises) affiché en gros comme un total. Le gros chiffre devient l'**estimation secteur
+  entier** (« ≈ 17 313 », règle de trois + registre), la mesure brute reste en détail, bandeau 📈
+  reformulé. Rappel structurel : secteur×poste n'existe QUE via la voie SIREN — 45 mesurés / 210
+  ≈ 8 % d'entreprises avec ce poste, cohérent, PAS un « vrai » 45.
+- **Les contacts disparaissaient** : la page d'aperçu voie SIREN servait le LOT 0 (30 premières
+  entreprises), souvent SANS AUCUN lead sur un secteur dilué → aperçu caché ; la géo changeait
+  l'ordre des entreprises → réapparition. Fix serveur : le comptage repère le premier lot
+  peuplé (`lotDepart`) et la page SAUTE les lots vides (≤ 4 essais/appel, pages suivantes
+  comprises). Banc : scénario J (2 lots vides → page au lot 2).
+- **« Tout sélectionner » = TOUT LE GISEMENT** (plus page par page) : `AV_TOUT` — le bouton
+  devient « 🚀 Générer tout le gisement (N max) » et route vers la génération auto (les
+  décochés partent en exclus_slugs, compteur « écarté(s) » live via avCocher). Reset au
+  changement de filtre/onglet. « ⚡ Les N premiers (auto) » renommé « ⚡ Auto : les N premiers
+  du gisement » + title (question Didier : c'est la génération sans sélection).
+- **Modale personas vraiment épurée** : les vieux `criteres.jobs` mémorisés et le pré-cochage
+  C-level (hot lead / Ma journée) RÉAFFICHAIENT toutes les anciennes fonctions cochées (capture
+  Didier). Ne reste que « N'importe quel décideur » coché + champ Basile ; les fonctions
+  mémorisées ne sont plus réaffichées (le PUT merge, rien n'est perdu côté criteres).
+- Vérifié : node --check, banc test-v2 (10 sections dont J), smoke navigateur (≈ estimation en
+  gros, bandeau règle de trois, bouton gisement, écarté(s) live, modale à 1 case).
+
 ## 🎯 22 septembre 2026 (nuit, 5e passe) — fin des intitulés préétablis + le secteur Basile pèse ENFIN sur les entreprises
 
 Retours Didier (captures modale personas + wizard raturés, puis « 2 profils LinkedIn seulement,

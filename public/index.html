@@ -849,7 +849,8 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
               <span style="font-size:12px;color:var(--ink-soft)">fiches max</span>
               <button class="btn" onclick="avEnregistrer()" style="background:var(--paper);margin-left:auto">💾 Enregistrer la recherche</button>
               <button class="btn btn-primary" id="av-btn-sel" onclick="avGenererSelection()" style="display:none">🚀 Générer ma sélection</button>
-              <button class="btn btn-primary" id="av-btn-gen" onclick="avGenerer()" style="background:#4b5563">⚡ Les N premiers (auto)</button>
+              <button class="btn btn-primary" id="av-btn-gen" onclick="avGenerer()" style="background:#4b5563"
+title="Sans rien cocher : génère directement les N premiers prospects du gisement entier (N = fiches max)">⚡ Auto : les N premiers du gisement</button>
             </div>
           </div>
         </div>
@@ -3562,7 +3563,7 @@ const AV_LIEUX_SUGG=['France métropolitaine','Auvergne-Rhône-Alpes','Bourgogne
 const AV_SOURCES=[['deux','💼 LinkedIn d’abord + 🏛️ registre'],['lki','💼 LinkedIn uniquement'],['legal','🏛️ Registre uniquement']];
 const AV_EFF={'Indifférent':[null,null],'1–9':[1,9],'10–49':[10,49],'50–199':[50,199],'200+':[200,null]};
 
-let AV_TIMER=null,AV_SUGG_TIMER=null,AV_EN_COURS=false,AV_LISTES=[],AV_APERCU=null;
+let AV_TIMER=null,AV_SUGG_TIMER=null,AV_EN_COURS=false,AV_LISTES=[],AV_APERCU=null,AV_TOUT=false;
 
 function avInit(){
  avOnglet(AV.onglet);
@@ -3579,7 +3580,7 @@ function avOnglet(t){
  // Prospects restait affiché sur Google — retour Didier 22/09 nuit)
  clearTimeout(AV_TIMER);
  AV_PAG.pro={pages:[],cur:0,suite:null};AV_PAG.ent={pages:[],cur:0,suite:null};
- AV_APERCU=null;
+ AV_APERCU=null;AV_TOUT=false;
  const ap=document.getElementById('av-apercu');if(ap)ap.innerHTML='';
  document.getElementById('av-rail-prospects').style.display=t==='prospects'?'flex':'none';
  document.getElementById('av-rail-entreprises').style.display=t==='entreprises'?'flex':'none';
@@ -3836,7 +3837,9 @@ const AV_PAG={pro:{pages:[],cur:0,suite:null},ent:{pages:[],cur:0,suite:null}};
 const AV_DECOCHES=new Set(); // clés décochées par le SDR (exclues de la génération/fusion)
 let AV_ENT_LEADS=new Map();  // décideurs vus à l'aperçu Entreprises (clé → lead), pour la fusion
 function avCle(l){return l.slug||('p:'+((l.prenom||'')+' '+(l.nom||'')+'@'+(l.entreprise||'')).toLowerCase().replace(/\s+/g,' ').trim());}
-function avCocher(cb){const k=cb.getAttribute('data-cle');if(!k)return;if(cb.checked)AV_DECOCHES.delete(k);else AV_DECOCHES.add(k);avMajSelection();}
+function avCocher(cb){const k=cb.getAttribute('data-cle');if(!k)return;if(cb.checked)AV_DECOCHES.delete(k);else AV_DECOCHES.add(k);avMajSelection();
+ if(AV.onglet==='prospects'&&AV_TOUT&&!k.startsWith('g:'))avRendrePage('pro','avApercu',avEnTetePro()); // rafraîchit le compteur « écarté(s) »
+}
 function avLigneLead(l){
  const esc=s=>String(s||'').replace(/</g,'&lt;');
  const cle=avCle(l);
@@ -3868,7 +3871,7 @@ async function avApercu(page){
  const count=document.getElementById('av-count'),box=document.getElementById('av-apercu');
  const P=AV_PAG.pro;
  const reset=(page===undefined||page===false);
- if(reset){P.pages=[];P.cur=0;P.suite=null;count.innerHTML='⏳ Comptage en cours (gratuit)…';}
+ if(reset){P.pages=[];P.cur=0;P.suite=null;AV_TOUT=false;count.innerHTML='⏳ Comptage en cours (gratuit)…';}
  else if(page<0)return;
  else if(page<P.pages.length){P.cur=page;avRendrePage('pro','avApercu',avEnTetePro());avMajSelection();return;}
  else if(!P.suite)return;
@@ -3892,10 +3895,15 @@ async function avApercu(page){
    }else{AV.concepts.forEach(c=>{delete c.mort;});avRendreChips();}
    const applique=(d.concepts_labels||[]);
    const enPlus=applique.length>AV.concepts.length?applique.slice(AV.concepts.length):[];
+   // Comptage LinkedIn PARTIEL (échantillon d'entreprises) : le gros chiffre = l'estimation
+   // secteur entier (règle de trois), la mesure brute reste en détail — sinon « 45 » se lisait
+   // comme le total du secteur (retour Didier 22/09 nuit).
+   const partiel=!!(d.total_lki_partiel&&d.nb_entreprises_balayees&&d.nb_entreprises_secteur>d.nb_entreprises_balayees&&d.total_lki>0);
+   const estimSecteur=partiel?Math.round(d.total_lki/d.nb_entreprises_balayees*d.nb_entreprises_secteur)+(d.total_legal||0):null;
    count.innerHTML=`<div style="display:flex;gap:22px;align-items:center;flex-wrap:wrap">
-    <div><div style="font-size:12px;color:var(--ink-soft)">Prospects correspondants</div><div style="font-size:30px;font-weight:800;color:var(--ink)">${avNb(d.total)}</div></div>
+    <div><div style="font-size:12px;color:var(--ink-soft)">Prospects correspondants${partiel?' (estimation)':''}</div><div style="font-size:30px;font-weight:800;color:var(--ink)">${partiel?'≈ '+avNb(estimSecteur):avNb(d.total)}</div></div>
     <div style="font-size:12.5px;line-height:1.55;color:var(--ink-soft)">${(d.total_lki!=null&&d.total_legal!=null)?`<b style="color:#0369a1">💼 LinkedIn ${avNb(d.total_lki)}${d.total_lki_partiel?' (sur les '+(d.nb_entreprises_balayees||90)+' premières entreprises'+(d.nb_entreprises_secteur?' des '+d.nb_entreprises_secteur.toLocaleString('fr-FR')+' du secteur':'')+')':''}</b> · <b style="color:#0f766e">🏛️ registre ${avNb(d.total_legal)}</b><br>`:''}comptage gratuit, recalculé à chaque filtre${(d.total_lki>=100000||d.total_legal>=100000)?'<br>⤴️ 100 000+ = plafond d\'affichage Basile par source — le gisement réel est plus grand, affine tes filtres':''}${d.nb_sirens?`<br>recherche sur les <b>${d.nb_sirens}</b> entreprises de tes listes`:''}${doublons?`<br>♻️ ${doublons} déjà extrait(s) — décochés`:''}</div>
-    ${(d.total_lki_partiel&&d.nb_entreprises_balayees&&d.nb_entreprises_secteur>d.nb_entreprises_balayees&&d.total_lki>0)?`<div style="font-size:12.5px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px 12px;color:#1d4ed8">📈 ≈ <b>${Math.round(d.total_lki/d.nb_entreprises_balayees*d.nb_entreprises_secteur).toLocaleString('fr-FR')}</b> estimés sur le secteur entier — la génération balaye jusqu'à ~1 800 entreprises par tour${(AV.effSN||[]).length?'':' · coche un <b>effectif</b> pour concentrer le balayage sur les bonnes tailles'}</div>`:''}
+    ${partiel?`<div style="font-size:12.5px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px 12px;color:#1d4ed8">📈 estimation par règle de trois (${d.total_lki} mesurés sur ${d.nb_entreprises_balayees} entreprises → ${(d.nb_entreprises_secteur||0).toLocaleString('fr-FR')}) — la génération balaye jusqu'à ~1 800 entreprises par tour${(AV.effSN||[]).length?'':' · coche un <b>effectif</b> pour concentrer le balayage sur les bonnes tailles'}</div>`:''}
     ${(d.total_sans_effectif&&d.total_sans_effectif>(d.total||0))?`<div style="font-size:12.5px;background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:8px 12px;color:#7a5510">📉 ton filtre effectif cache <b>${(d.total_sans_effectif-(d.total||0)).toLocaleString('fr-FR')}</b> personne(s) (effectif employeur inconnu)</div>`:''}
     ${enPlus.length?`<div style="font-size:12px;color:var(--ink-soft);width:100%">🔎 Secteur élargi automatiquement (registre ⇄ LinkedIn/Google) : ${enPlus.slice(0,4).map(esc).join(', ')}${enPlus.length>4?' (+'+(enPlus.length-4)+')':''}</div>`:''}
     ${d.types_ignores?`<div style="font-size:12.5px;background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:8px 12px;color:#7a5510">🏷️ le filtre <b>type d'entreprise</b> vidait le comptage — ignoré pour cette recherche</div>`:''}
@@ -3913,18 +3921,27 @@ function avLeadsCharges(){return AV_PAG.pro.pages.flat().filter(l=>!l.doublon);}
 function avLeadsCoches(){const vus=new Set();return avLeadsCharges().filter(l=>{const k=avCle(l);if(vus.has(k)||AV_DECOCHES.has(k))return false;vus.add(k);return true;});}
 function avEnTetePro(){
  const charges=avLeadsCharges(),coches=avLeadsCoches();
- const tout=charges.length>0&&coches.length===charges.length;
  return `<div style="padding:11px 16px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--ink-soft);display:flex;align-items:center;gap:10px">
-  <label style="display:flex;align-items:center;gap:7px;cursor:pointer;color:var(--ink);font-weight:700"><input type="checkbox" ${tout?'checked':''} onchange="avToutSelectionner(this.checked)" aria-label="Tout sélectionner">Tout sélectionner</label>
-  <span><b style="color:var(--ink)">${coches.length}</b> coché(s) sur ${charges.length} chargé(s) — génère TA sélection, ou les N premiers en auto · 💼 d'abord, 🏛️ ensuite</span>
+  <label style="display:flex;align-items:center;gap:7px;cursor:pointer;color:var(--ink);font-weight:700"><input type="checkbox" ${AV_TOUT?'checked':''} onchange="avToutSelectionner(this.checked)" aria-label="Tout sélectionner">Tout sélectionner</label>
+  <span>${AV_TOUT?`<b style="color:var(--ink)">TOUT le gisement</b> sera généré (les N premiers) — décoche une ligne pour l'écarter${AV_DECOCHES.size?` · ${AV_DECOCHES.size} écarté(s)`:''}`:`<b style="color:var(--ink)">${coches.length}</b> coché(s) sur ${charges.length} chargé(s) · 💼 d'abord, 🏛️ ensuite`}</span>
  </div>`;
 }
+// « Tout sélectionner » = TOUT LE GISEMENT (retour Didier 22/09 nuit : « je n'ai pas à passer
+// chaque page ») : la génération devient automatique (les N premiers du gisement entier), les
+// lignes décochées à la main restent écartées (exclus_slugs).
 function avToutSelectionner(coche){
+ AV_TOUT=!!coche;
  for(const l of avLeadsCharges()){const k=avCle(l);if(coche)AV_DECOCHES.delete(k);else AV_DECOCHES.add(k);}
  avRendrePage('pro','avApercu',avEnTetePro());avMajSelection();
 }
 function avMajSelection(){
  const b=document.getElementById('av-btn-sel');if(!b)return;
+ if(AV.onglet==='prospects'&&AV_TOUT){
+  const cap=parseInt(document.getElementById('av-nb').value)||50;
+  b.style.display='';
+  b.textContent='🚀 Générer tout le gisement ('+cap+' max)';
+  return;
+ }
  const n=AV.onglet==='prospects'?avLeadsCoches().length:0;
  b.style.display=n?'':'none';
  b.textContent='🚀 Générer ma sélection ('+n+')';
@@ -4148,7 +4165,7 @@ async function avGenerer(){
   btn.textContent='⏳ Vérification doublons…';
   await avFinaliserListe(fiches,nom,sdrChoisi,f);
  }catch(e){toast('Erreur réseau : '+e.message);}
- finally{AV_EN_COURS=false;btn.disabled=false;btn.textContent='⚡ Les N premiers (auto)';}
+ finally{AV_EN_COURS=false;btn.disabled=false;btn.textContent='⚡ Auto : les N premiers du gisement';}
 }
 
 // Dédup HubSpot/listes puis création — commun aux deux modes (auto et « ma sélection »)
@@ -4180,6 +4197,7 @@ async function avGenererSelection(){
  if(AV_EN_COURS)return;
  const nom=document.getElementById('av-nom').value.trim();
  if(!nom){toast('⚠️ Donne un nom à ta liste');document.getElementById('av-nom').focus();return;}
+ if(AV_TOUT){await avGenerer();return;} // Tout sélectionné = les N premiers du gisement entier
  const sdrChoisi=(document.getElementById('av-sdr')||{}).value||(state.user?state.user.nom:'');
  const coches=avLeadsCoches();
  if(!coches.length){toast('Coche au moins un contact dans l\'aperçu');return;}
@@ -4304,7 +4322,7 @@ async function avGenererGmb(nom,sdr){
   toast('📍 Liste créée : '+fiches.length+' établissement'+(fiches.length>1?'s':'')+(d.emails_trouves?' · '+d.emails_trouves+' email(s) trouvés':''));
   setTimeout(()=>ouvrirListe(dc.id),300);
  }catch(e){toast('Erreur réseau : '+e.message);}
- finally{AV_EN_COURS=false;btn.disabled=false;btn.textContent='⚡ Les N premiers (auto)';}
+ finally{AV_EN_COURS=false;btn.disabled=false;btn.textContent='⚡ Auto : les N premiers du gisement';}
 }
 
 // ── 👯 Onglet Lookalike : les listes classées par succès (RDV pris), relance en un clic ──
@@ -9913,14 +9931,13 @@ function personasExRendre(){
  el.innerHTML=PERSONAS_EX.map((o,k)=>`<span class="chip sel" style="background:#fef2f2;border-color:#fecaca;color:#b91c1c;cursor:pointer" onclick="PERSONAS_EX.splice(${k},1);personasExRendre()">✕ ${esc(o)} — exclu</span>`).join('');
 }
 function ouvrirChoixPersonas(i){
- const deja=new Set(jobsCibles());
- // Hot Lead (Signaux / Signups) sans fonctions mémorisées : personas C-level pré-cochés
- if(!deja.size&&REAL[i]&&estVisiteSite(REAL[i])){['Directeur Commercial','Directeur Marketing','Responsable Communication'].forEach(function(j){deja.add(j);});}
+ // Design épuré (retour Didier 22/09 nuit ×2) : plus AUCUN intitulé préétabli ni mémorisé
+ // réaffiché — « N'importe quel décideur » coché + le champ Basile, c'est tout.
  PERSONAS_EX=[];
  document.getElementById('personas-choix').innerHTML=`
   <div style="font-size:18px;font-weight:700;margin-bottom:6px">👥 Quelles fonctions chercher ?</div>
   <div style="font-size:13px;color:var(--ink-soft);line-height:1.5;margin-bottom:14px">Cette liste ne cible que « Dirigeant / PDG » — il est déjà fourni par Pappers sur chaque fiche. Coche les fonctions à chercher sur LinkedIn : elles seront <b>mémorisées pour toute la liste</b> (bouton 👥 et enrichissement).</div>
-  ${[...new Set([...JOBS_PERSONAS,...deja])].map(j=>`<label style="display:flex;align-items:center;gap:8px;padding:7px 4px;font-size:13.5px;cursor:pointer;border-top:1px solid var(--line)"><input type="checkbox" value="${j}" ${deja.has(j)?'checked':''}>${j}</label>`).join('')}
+  ${JOBS_PERSONAS.map(j=>`<label style="display:flex;align-items:center;gap:8px;padding:7px 4px;font-size:13.5px;cursor:pointer;border-top:1px solid var(--line)"><input type="checkbox" value="${j}" checked>${j}</label>`).join('')}
   <div style="position:relative;margin-top:10px">
    <input class="field" id="personas-autre" placeholder="Fonction… (intitulés réels Basile, Inclure/Exclure)" style="width:100%" autocomplete="off" oninput="personasSuggest(this.value)" onkeydown="if(event.key==='Enter'){personasAjouterFonction(this.value);}">
    <div id="personas-autre-results" style="display:none;position:absolute;left:0;right:0;top:44px;background:#fff;border:1px solid var(--line);border-radius:10px;z-index:12;overflow-y:auto;max-height:340px;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div>
@@ -12187,12 +12204,12 @@ async function ckAnalyse(rid){
 function ckPersonas(rid){
  const it=CK_ITEMS[rid];if(!it||!it.liste_id||!it.cle)return;
  if(it._busy){toast('Recherche déjà en cours sur cette fiche ⏳');return;}
- const deja=new Set(['Directeur Commercial','Directeur Marketing','Responsable Communication']);
+
  PERSONAS_EX=[];
  document.getElementById('personas-choix').innerHTML=`
   <div style="font-size:18px;font-weight:700;margin-bottom:6px">👥 Quelles fonctions chercher ?</div>
   <div style="font-size:13px;color:var(--ink-soft);line-height:1.5;margin-bottom:14px">Recherche LinkedIn (Basile, puis IA en repli) pour <b>${htmlSafe(it.nom||'')}</b> — les contacts trouvés s'ajoutent directement à la fiche.</div>
-  ${[...new Set([...JOBS_PERSONAS,...deja])].map(j=>`<label style="display:flex;align-items:center;gap:8px;padding:7px 4px;font-size:13.5px;cursor:pointer;border-top:1px solid var(--line)"><input type="checkbox" value="${j}" ${deja.has(j)?'checked':''}>${j}</label>`).join('')}
+  ${JOBS_PERSONAS.map(j=>`<label style="display:flex;align-items:center;gap:8px;padding:7px 4px;font-size:13.5px;cursor:pointer;border-top:1px solid var(--line)"><input type="checkbox" value="${j}" checked>${j}</label>`).join('')}
   <div style="position:relative;margin-top:10px">
    <input class="field" id="personas-autre" placeholder="Fonction… (intitulés réels Basile, Inclure/Exclure)" style="width:100%" autocomplete="off" oninput="personasSuggest(this.value)" onkeydown="if(event.key==='Enter'){personasAjouterFonction(this.value);}">
    <div id="personas-autre-results" style="display:none;position:absolute;left:0;right:0;top:44px;background:#fff;border:1px solid var(--line);border-radius:10px;z-index:12;overflow-y:auto;max-height:340px;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div>

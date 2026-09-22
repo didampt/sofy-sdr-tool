@@ -361,6 +361,7 @@ export default async function handler(req, res) {
       } else {
         const phase0 = suite ? suite.phase : (source === 'legal' ? 'legal' : 'lki');
         let nbEntSecteur = null, lkiPartiel = false, nbEntBalayees = null;
+        let lotDepart = null; // premier lot de SIREN avec des personnes (comptage ci-dessous)
         if (!suite) {
           // Comptages, une seule fois. Part LinkedIn : voie directe (sans secteur NAF) ou voie
           // SIREN (comptage sur les 90 premières entreprises du secteur — partiel mais VRAI).
@@ -374,7 +375,11 @@ export default async function handler(req, res) {
             totalLki = 0;
             for (let i = 0; i < ent.sirens.length; i += LOT_SIREN) {
               const rc = await basile('/people/find', { limit: 1, filters: { ...baseLkiSiren, siren: { include: ent.sirens.slice(i, i + LOT_SIREN) } } }, key);
-              if (rc.data && rc.data.success !== false) totalLki += rc.data.total || 0;
+              const n = (rc.data && rc.data.success !== false) ? (rc.data.total || 0) : 0;
+              totalLki += n;
+              // 1re page servie = le PREMIER lot qui a des personnes (les 30 premières entreprises
+              // d'un secteur dilué n'ont souvent AUCUN lead → l'aperçu se cachait, retour Didier)
+              if (n > 0 && lotDepart === null) lotDepart = i / LOT_SIREN;
             }
           } else {
             const rC1 = await basile('/people/find', { limit: 1, filters: extrasLki(filtres, avecSource(base, 'lki')) }, key);
@@ -404,14 +409,17 @@ export default async function handler(req, res) {
           // Page LinkedIn = un lot de 30 entreprises du secteur (déterministe : même page
           // companies/find rechargée via entToken, puis lot N)
           const entToken = suite ? (suite.entToken || null) : null;
-          const lot = suite ? (suite.lot || 0) : 0;
+          let lot = suite ? (suite.lot || 0) : (lotDepart != null ? lotDepart : 0);
           const ent = await sirensGarde(ENT_PAR_PAGE, entToken);
-          const lotSirens = ent.sirens.slice(lot * LOT_SIREN, (lot + 1) * LOT_SIREN);
-          if (lotSirens.length) {
+          const nbLots = Math.ceil(ent.sirens.length / LOT_SIREN);
+          // Saute les lots sans lead (≤ 4 essais par appel — pages « vides » supprimées)
+          for (let essais = 0; lot < nbLots && essais < 4; essais++, lot++) {
+            const lotSirens = ent.sirens.slice(lot * LOT_SIREN, (lot + 1) * LOT_SIREN);
+            if (!lotSirens.length) break;
             const rP = await basile('/people/find', { limit: 100, filters: { ...baseLkiSiren, siren: { include: lotSirens } } }, key);
             if (rP.data && rP.data.success !== false) leadsBruts = rP.data.leads || [];
+            if (leadsBruts.length) break;
           }
-          const nbLots = Math.ceil(ent.sirens.length / LOT_SIREN);
           if (lot + 1 < nbLots) prochaineSuite = { phase: 'lki', lot: lot + 1, entToken };
           else if (ent.next) prochaineSuite = { phase: 'lki', lot: 0, entToken: ent.next };
           else if (source === 'deux') prochaineSuite = { phase: 'legal', token: null };
