@@ -59,7 +59,10 @@ function memeEntreprise(nomLead, refs) {
 
 // Mots-clés significatifs des postes ciblés ("Directeur Marketing" → "marketing").
 const MOTS_GENERIQUES = new Set(['directeur', 'directrice', 'dir', 'direction', 'responsable', 'resp',
-  'head', 'chef', 'manager', 'adjoint', 'adjointe', 'de', 'du', 'des', 'le', 'la', 'les', 'et', 'd', 'l', 'of', 'the']);
+  'head', 'chef', 'manager', 'adjoint', 'adjointe', 'de', 'du', 'des', 'le', 'la', 'les', 'et', 'd', 'l', 'of', 'the',
+  // « N'importe quel décideur » (chip du 22/09) et variantes libres : 100 % générique →
+  // generique=true → tout décideur (REPLI_DECIDEUR) devient cible, au lieu de filtrer par fonction.
+  'importe', 'quel', 'quelle', 'decideur', 'decideuse', 'indifferent', 'indifferente', 'tout', 'tous', 'poste', 'peu']);
 function motsClesJobs(jobs) {
   const mots = new Set(); let generique = false;
   for (const j of jobs) {

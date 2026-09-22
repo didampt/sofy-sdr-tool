@@ -90,33 +90,40 @@ function filtresPersonnes(c) {
 // ⚠️ company_headcount écarte AUSSI les employeurs à effectif inconnu (~21 % des fiches, doc
 // Basile) — même piège que Pappers (cas Romain 22/09) : l'écart est mesuré et affiché au SDR.
 
-// Résout NAF/activité libre → IDs de concept `activity`. Réponse NON documentée → parsing
-// défensif (tableau de chaînes ou d'objets, champs id/slug/label devinés) ; en cas de raté, le
-// garde comptage avec/sans activity du handler renvoie sur v210 — rien ne casse.
-// Ordre : chaque code NAF (précis) d'abord, top 3 par code ; l'activité libre en repli seulement.
+// Résout NAF/activité libre → IDs de concept `activity`. Forme réelle vue en prod (22/09) :
+// {success, suggestions:[{type:'concept'|'gmb'|'lki'|'naf', value:'naf:82.91Z', label, parents}]}.
+// SÉLECTION PAR TYPE : naf/lki/gmb = équivalents FINS du secteur (gardés, l'union OR couvre
+// registre + LinkedIn + Google Maps) ; type 'concept' = macro-famille parente (« Services
+// financiers… » pour le recouvrement) → JAMAIS retenue : elle noierait la liste ; s'il n'existe
+// rien de fin, on préfère le repli v210 (tri IA, plus précis qu'une macro).
+// Parsing défensif malgré tout ; en cas de raté, le garde avec/sans activity renvoie sur v210.
 async function resoudreConcepts(criteres, key) {
   const requetes = (Array.isArray(criteres.naf_codes) ? criteres.naf_codes : [])
     .map(x => String(x || '').trim()).filter(Boolean).slice(0, 4);
   const libre = String(criteres.activite_libre || '').trim();
-  const ids = [], labels = [], vus = new Set();
+  const fins = [], vus = new Set();
   async function suggere(q) {
     try {
       const r = await fetch('https://api.basile.cc/companies/activity-suggest?q=' + encodeURIComponent(q), { headers: { 'Authorization': key } });
       const d = await r.json().catch(() => null);
       if (!r.ok || !d) return;
-      const items = Array.isArray(d) ? d : (d.suggestions || d.results || d.concepts || d.items || d.activities || d.leads || []);
-      for (const it of (Array.isArray(items) ? items.slice(0, 3) : [])) {
-        const id = typeof it === 'string' ? it : (it.id || it._id || it.concept_id || it.conceptId || it.slug || it.value || null);
+      const items = Array.isArray(d) ? d : (d.suggestions || d.results || d.concepts || d.items || d.activities || []);
+      for (const it of (Array.isArray(items) ? items : [])) {
+        const id = typeof it === 'string' ? it : (it.value || it.id || it._id || it.slug || null);
         if (!id || vus.has(String(id))) continue;
-        vus.add(String(id)); ids.push(String(id));
-        const lbl = (typeof it === 'object' && (it.label || it.name || it.title || it.libelle)) || '';
-        labels.push(lbl ? String(lbl) : String(id));
+        vus.add(String(id));
+        const sid = String(id);
+        const type = (typeof it === 'object' && it.type) || (sid.split(':')[0] || '');
+        if (type === 'concept' || sid.startsWith('concept:')) continue; // macro-famille : écartée
+        const lbl = (typeof it === 'object' && (it.label || it.name || it.title)) || sid;
+        fins.push({ id: sid, label: String(lbl) });
       }
     } catch (_) {}
   }
   for (const q of requetes) await suggere(q);
-  if (!ids.length && libre) await suggere(libre);
-  return { ids: ids.slice(0, 8), labels: labels.slice(0, 8) };
+  if (!fins.length && libre) await suggere(libre);
+  const retenus = fins.slice(0, 10);
+  return { ids: retenus.map(x => x.id), labels: retenus.map(x => x.label) };
 }
 
 function filtresPersonnesV2(c, conceptIds) {

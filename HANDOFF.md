@@ -68,11 +68,22 @@ nouveaux filtres people/find AU LIEU du tri sectoriel IA de v210 :
   (« Secteur Basile appliqué »). Suggest en panne ou concepts inconnus → v210, banc re-passé
   (7 scénarios). `api/basile.js` : action `activity_suggest` (renvoie la réponse BRUTE — sert de
   debug console pour voir la vraie forme et ajuster le parsing si besoin).
-- **Validation prod à la première utilisation** : la modale d'estimation dit quel chemin a servi
-  (« filtre Basile natif » + libellés des concepts vs « tri sectoriel par IA ») — c'est LE témoin.
-  Si elle reste sur le tri IA, faire tourner
-  `api('/api/basile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'activity_suggest',q:'recouvrement'})})`
-  et regarder `brut` : la forme réelle dira quoi ajuster dans `resoudreConcepts()`.
+- **Forme réelle de suggest vue en prod (Didier, 22/09)** : `{success, suggestions:[{type:
+  'concept'|'gmb'|'lki'|'naf', value:'naf:82.91Z', label, parents}]}`. Deux enseignements intégrés
+  à `resoudreConcepts()` : ① le type `concept` est la MACRO-FAMILLE parente (« Services
+  financiers… » pour le recouvrement) → jamais retenu, sinon liste noyée ; s'il n'y a rien de fin,
+  v210 (tri IA) plutôt qu'une macro. ② `naf:82.91Z` EST une valeur valide de suggest — le
+  comptage à 0 du 22/09 signifiait donc peut-être « 0 Dir Co dans le recouvrement », pas « format
+  refusé » ; peu importe : l'union naf+lki+gmb renvoyée par suggest couvre les deux cas.
+- **Question 5 du wizard Pappers : « N'importe quel décideur »** (remontées Romain « n'importe
+  quel poste par téléphone » + Etienne « obligé de choisir un persona qui réduit la recherche ») :
+  chip exclusive en tête de la question fonctions (+ dans `JOBS_PERSONAS` des deux modales 👥).
+  Serveur `personas.js` : les mots de ce libellé (importe/quel/decideur/indifferent/tout/poste/
+  peu…) sont dans `MOTS_GENERIQUES` → `generique=true` → TOUT décideur (`REPLI_DECIDEUR` :
+  fondateur, CEO, DG, président, directeur, gérant…) devient cible auto, au lieu d'un filtrage
+  par mots-clés de fonction. Vérifié : motsClesJobs → {mots:[], generique:true}, classification
+  sur cas simulé (Président/Dir Co/Gérant cibles, Chargé de recouvrement → picker), exclusivité
+  des chips au navigateur, banc concepts re-passé (8 scénarios, macro-only → v210).
 - **Non fait, à arbitrer** : chemin DOM (toujours dirigeants légaux par SIREN — la voie salariés
   LinkedIn par siren + result_role l'améliorerait) ; géo fine sur les personnes en V2
   (`result_postal_code` est Legal-only : l'activer exclurait la source LinkedIn, on s'est abstenu).

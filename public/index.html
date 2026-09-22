@@ -3776,7 +3776,20 @@ document.getElementById('emp-chips').addEventListener('click',(ev)=>{
 });
 chips('etab-chips',["Indifférent","2+","5+","10+"],'etab');
 chips('ca-chips',["< 500 K€","500 K€ – 2 M€","2 – 10 M€","10 – 50 M€","50 M€ +","Indifférent"],'ca');
-chips('job-chips',["Dirigeant / PDG","Directeur Marketing","Directeur Relation Client","Directeur Expérience Client (CX)","Directeur Omnicanal / Digital","Responsable Service Client","Directeur CRM","Directeur Commercial","Responsable Communication","Directeur Réseau / Retail"],'jobs',true);
+chips('job-chips',["N'importe quel décideur","Dirigeant / PDG","Directeur Marketing","Directeur Relation Client","Directeur Expérience Client (CX)","Directeur Omnicanal / Digital","Responsable Service Client","Directeur CRM","Directeur Commercial","Responsable Communication","Directeur Réseau / Retail"],'jobs',true);
+// « N'importe quel décideur » (cas Etienne/Romain 22/09 : la question forçait un poste précis,
+// ce qui RESTREINT la recherche personas) est exclusif des fonctions précises, et réciproquement.
+// Côté serveur, ce libellé est 100 % générique → personas cible tout décideur (fondateur, DG,
+// directeur, gérant…) au lieu de filtrer par mots-clés de fonction.
+document.getElementById('job-chips').addEventListener('click',(ev)=>{
+ const chip=ev.target&&ev.target.classList&&ev.target.classList.contains('chip')?ev.target.textContent:null;
+ if(!chip)return;
+ const INDIF="N'importe quel décideur";
+ if(chip===INDIF){if(state.jobs.includes(INDIF))state.jobs=[INDIF];}
+ else state.jobs=state.jobs.filter(x=>x!==INDIF);
+ [...ev.currentTarget.children].forEach(c=>c.classList.toggle('sel',state.jobs.includes(c.textContent)));
+ validate();
+});
 chips('pays-chips',["Guadeloupe","Martinique","Guyane française","Réunion","France métropolitaine","Mayotte"],'pays',true);
 async function chargerSdrChips(){
  try{
@@ -8801,7 +8814,7 @@ function jobsCibles(){
  return ((state.criteres&&state.criteres.jobs)||[]).filter(j=>!/dirigeant|pdg/i.test(j));
 }
 // Fonctions proposées quand la liste n'a aucun poste ciblé (mêmes choix que l'étape 5, hors Dirigeant/PDG)
-const JOBS_PERSONAS=["Directeur Commercial","Directeur Marketing","Responsable Communication","Directeur Relation Client","Directeur Expérience Client (CX)","Directeur Omnicanal / Digital","Responsable Service Client","Directeur CRM","Directeur Réseau / Retail"];
+const JOBS_PERSONAS=["N'importe quel décideur","Directeur Commercial","Directeur Marketing","Responsable Communication","Directeur Relation Client","Directeur Expérience Client (CX)","Directeur Omnicanal / Digital","Responsable Service Client","Directeur CRM","Directeur Réseau / Retail"];
 function ouvrirChoixPersonas(i){
  const deja=new Set(jobsCibles());
  // Hot Lead (Signaux / Signups) sans fonctions mémorisées : personas C-level pré-cochés
