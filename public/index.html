@@ -3131,8 +3131,9 @@ function ouvrirEstimationIA(d){
    <div style="background:var(--paper);border-radius:10px;padding:16px;margin-bottom:14px">
     <div style="font-size:13px;color:var(--ink-soft);margin-bottom:4px">Personnes aux postes ciblés dans le secteur visé</div>
     <div style="font-size:30px;font-weight:800">${nb.toLocaleString('fr-FR')}</div>
-    <div style="font-size:12.5px;color:var(--ink-soft);margin-top:6px">Sur ${nbTous.toLocaleString('fr-FR')} profils aux mêmes postes tous secteurs confondus. La liste prendra jusqu'à ${cap} fiches.</div>
+    <div style="font-size:12.5px;color:var(--ink-soft);margin-top:6px">${nbTous?`Sur ${nbTous.toLocaleString('fr-FR')} profils aux mêmes postes tous secteurs confondus. `:''}La liste prendra jusqu'à ${cap} fiches.</div>
    </div>
+   ${(nb===0&&d.nb_secteur_tous_postes)?`<div style="background:#fcebeb;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:12.5px;line-height:1.5;color:#a32d2d">Le secteur est bien reconnu — Basile y connaît <b>${d.nb_secteur_tous_postes.toLocaleString('fr-FR')}</b> personne(s) tous postes confondus — mais <b>aucune aux postes ciblés</b>. Élargis les postes dans ta demande (« tous les décideurs », « responsables commerciaux »…) puis Recalculer, ou passe par une liste Pappers + 👥 décideurs par fiche.</div>`:''}
    ${(nbSansEff&&nbSansEff>nb)?`<div style="background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:12.5px;line-height:1.5;color:#7a5510">📉 Ton filtre effectif cache <b>${(nbSansEff-nb).toLocaleString('fr-FR')}</b> personne(s) : Basile écarte aussi les employeurs dont il ne connaît pas l'effectif (${nbSansEff.toLocaleString('fr-FR')} sans ce filtre). Retire l'effectif de ta demande pour les inclure.</div>`:''}
    <div style="background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:var(--ink-soft)">
     <div style="font-weight:700;color:var(--ink);margin-bottom:5px">🔎 Filtres réellement envoyés à Basile</div>
@@ -3171,6 +3172,7 @@ function ouvrirEstimationIA(d){
   html=`
    <div style="font-size:18px;font-weight:700;margin-bottom:3px">📊 Estimation de ta liste</div>
    <div style="font-size:13px;color:var(--ink-soft);margin-bottom:14px">Secteur précis détecté → <b>recherche par postes + tri sectoriel par IA</b> (gratuit).</div>
+   ${(function(){const vd=d._v2_diag;if(!vd)return '';const pk={aucun_concept:'aucun concept sectoriel résolu par Basile',secteur_introuvable:'concepts résolus mais 0 personne dans le secteur',non_restrictif:'le filtre ne restreignait rien ('+((vd.total||0).toLocaleString('fr-FR'))+' profils)'};return `<div style="font-size:12px;color:var(--ink-soft);background:var(--paper);border-radius:8px;padding:8px 12px;margin-bottom:12px">ℹ️ Filtre secteur natif Basile tenté d'abord : ${pk[vd.raison]||vd.raison}${(vd.concepts&&vd.concepts.length)?' — concepts : '+vd.concepts.slice(0,3).map(esc).join(', '):''} → repli sur le tri IA.</div>`;})()}
    <div style="background:var(--paper);border-radius:10px;padding:16px;margin-bottom:14px">
     <div style="font-size:13px;color:var(--ink-soft);margin-bottom:4px">Personnes estimées dans le secteur visé</div>
     <div style="font-size:30px;font-weight:800">${triKO?'—':nbSect.toLocaleString('fr-FR')}</div>

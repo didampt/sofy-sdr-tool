@@ -75,6 +75,15 @@ nouveaux filtres people/find AU LIEU du tri sectoriel IA de v210 :
   v210 (tri IA) plutôt qu'une macro. ② `naf:82.91Z` EST une valeur valide de suggest — le
   comptage à 0 du 22/09 signifiait donc peut-être « 0 Dir Co dans le recouvrement », pas « format
   refusé » ; peu importe : l'union naf+lki+gmb renvoyée par suggest couvre les deux cas.
+- **Test prod de Didier (22/09, « dir co recouvrement métropole ») : modale = v210, 0 %** — sans
+  dire pourquoi la V2 n'avait pas servi. Corrigé : ① la modale v210 porte désormais une ligne
+  témoin `_v2_diag` (« filtre natif tenté : aucun concept résolu / 0 personne dans le secteur /
+  non restrictif (N) → repli tri IA ») — c'est LE réflexe de diagnostic en prod ; ② nouveau cas
+  `v2zero` : secteur RECONNU par Basile mais 0 profil aux postes ciblés → la V2 répond quand même
+  (estimer : 0 exact + « Basile connaît N personnes tous postes dans ce secteur, élargis les
+  postes » ; creer : liste vide + même message) au lieu du « ≈0 % mesuré par IA » opaque de v210.
+  NB : sur ce segment, 0 Directeur Commercial dans le recouvrement est PLAUSIBLE (petites
+  structures) — le conseil utile est d'élargir les postes, pas de balayer 6 000 profils.
 - **Question 5 du wizard Pappers : « N'importe quel décideur »** (remontées Romain « n'importe
   quel poste par téléphone » + Etienne « obligé de choisir un persona qui réduit la recherche ») :
   chip exclusive en tête de la question fonctions (+ dans `JOBS_PERSONAS` des deux modales 👥).

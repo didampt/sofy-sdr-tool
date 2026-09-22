@@ -479,7 +479,10 @@ export default async function handler(req, res) {
       // (macro + tri IA), l'ancien comportement sûr. Restreint → plus de tri IA : direct, rapide.
       const concepts = await resoudreConcepts(criteres, key);
       const filtresV2 = filtresPersonnesV2(criteres, concepts.ids);
-      let v2 = null; // {filtres, total, totalSansActivity, totalSansEffectif}
+      let v2 = null;     // {filtres, total, totalSansActivity, totalSansEffectif}
+      let v2zero = null; // secteur RECONNU par Basile mais 0 profil aux postes ciblés → réponse
+                         // honnête et actionnable (élargir les postes), pas un « 0 % IA » opaque
+      let v2diag = null; // pourquoi la V2 n'a pas servi — affiché dans la modale v210 (témoin prod)
       if (filtresV2) {
         const rAvec = await basile('/people/find', { limit: 1, filters: filtresV2 }, key);
         if (rAvec.status === 401) return res.status(502).json({ erreur: 'Clé Basile refusée' });
@@ -496,8 +499,41 @@ export default async function handler(req, res) {
               const rEff = await basile('/people/find', { limit: 1, filters: sansEff }, key);
               if (rEff.data && rEff.data.total != null) v2.totalSansEffectif = rEff.data.total;
             }
-          }
+          } else v2diag = { raison: 'non_restrictif', concepts: concepts.labels, total: totalV2 };
+        } else {
+          // 0 aux postes ciblés — le secteur existe-t-il tout de même ? (comptage sans les rôles)
+          const seul = { activity: filtresV2.activity, result_country_code: filtresV2.result_country_code };
+          const rSeul = await basile('/people/find', { limit: 1, filters: seul }, key);
+          const totalSecteur = (rSeul.data && rSeul.data.total) || 0;
+          if (totalSecteur > 0) v2zero = { totalSecteur };
+          else v2diag = { raison: 'secteur_introuvable', concepts: concepts.labels, total: 0 };
         }
+      } else v2diag = { raison: 'aucun_concept', concepts: [], total: null };
+
+      // Secteur reconnu, 0 profil aux postes : réponse exacte + conseil, dans les DEUX modes.
+      if (v2zero && mode === 'estimer') {
+        return res.status(200).json({
+          mode_recherche: 'personne_activite',
+          nb_personnes: 0,
+          nb_secteur_tous_postes: v2zero.totalSecteur,
+          nb_personnes_sans_secteur: null,
+          nb_personnes_sans_effectif: null,
+          echantillon_personnes: [],
+          _filtres: {
+            postes: (filtresV2.result_role && filtresV2.result_role.include) || [],
+            naf_codes: naf.include,
+            activity: filtresV2.activity.include,
+            concepts: concepts.labels,
+            effectif: filtresV2.company_headcount || null,
+            zones
+          }
+        });
+      }
+      if (v2zero && mode === 'creer') {
+        return res.status(200).json({
+          fiches: [], nb: 0, mode_recherche: 'personne_activite', epuise: true,
+          message: `Aucun profil aux postes ciblés dans ce secteur — Basile y connaît pourtant ${v2zero.totalSecteur} personne(s) tous postes confondus. Élargis les postes dans ta demande, ou passe par une liste Pappers + 👥 décideurs par fiche.`
+        });
       }
 
       if (v2 && mode === 'estimer') {
@@ -611,6 +647,7 @@ export default async function handler(req, res) {
         }
         return res.status(200).json({
           mode_recherche: 'personne_secteur',
+          _v2_diag: v2diag, // pourquoi le filtre natif n'a pas servi (témoin affiché dans la modale)
           nb_personnes_brut: totalBrut,
           nb_personnes: taux == null ? null : Math.round(totalBrut * taux),
           taux_secteur: taux,
