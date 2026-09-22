@@ -701,7 +701,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
           <button class="btn" id="av-tab-prospects" onclick="avOnglet('prospects')" style="padding:8px 18px">👤 Prospects</button>
           <button class="btn" id="av-tab-entreprises" onclick="avOnglet('entreprises')" style="padding:8px 18px">🏢 Entreprises</button>
           <button class="btn" id="av-tab-gmb" onclick="avOnglet('gmb')" style="padding:8px 18px">📍 Google</button>
-          <button class="btn" onclick="avLookalike()" style="padding:8px 14px;background:transparent;color:var(--ink-soft)" title="Pré-remplit le secteur depuis ta dernière fiche « RDV pris »">👯 Lookalike RDV</button>
+          <button class="btn" id="av-tab-lookalike" onclick="avOnglet('lookalike')" style="padding:8px 18px">👯 Lookalike</button>
         </div>
         <div style="background:linear-gradient(90deg,#f3efff,#fff);border:1px solid #ddd3f8;border-radius:12px;padding:10px 14px;display:flex;align-items:center;gap:10px;margin-bottom:14px">
           <span style="font-size:17px">✨</span>
@@ -713,43 +713,69 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
           <div style="width:430px;flex-shrink:0;display:flex;flex-direction:column;gap:10px">
             <div id="av-rail-prospects" style="display:flex;flex-direction:column;gap:10px">
               <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
-                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Secteur / activité <span style="font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;background:#ede9fe;color:#6d28d9">BASILE</span></div>
+                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">1 · Postes ciblés <span style="font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;background:#fef3c7;color:#92400e">variantes IA incluses</span></div>
+                <div id="av-postes-chips" class="chips"></div>
+                <input class="field" id="av-poste-libre" placeholder="Autre intitulé… (Entrée pour ajouter)" style="width:100%;margin-top:8px" onkeydown="if(event.key==='Enter'){avAjouterPoste(this.value);this.value='';}">
+              </div>
+              <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
+                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">2 · Secteur / activité <span style="font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;background:#d1fae5;color:#0f766e">NAF PAPPERS</span></div>
                 <div style="position:relative">
                   <input class="field" id="av-secteur" placeholder="Métier, secteur ou code NAF…" style="width:100%" autocomplete="off" oninput="avSuggest(this.value)">
                   <div id="av-secteur-results" style="display:none;position:absolute;left:0;right:0;top:44px;background:#fff;border:1px solid var(--line);border-radius:10px;z-index:12;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div>
                 </div>
                 <div id="av-concepts-chips" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
-                <p class="hint" style="margin-top:6px">Tape le métier (« concessionnaire ») ou le code NAF : secteurs du registre 🏛️ et de LinkedIn 💼. Plusieurs = OU.</p>
+                <p class="hint" style="margin-top:6px">Côté LinkedIn : voie entreprises → SIREN → salariés. Plusieurs = OU.</p>
               </div>
               <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
-                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Effectif de l'employeur</div>
+                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">3 · Effectifs de l'entreprise <span style="font-size:10px;color:var(--ink-soft);font-weight:500">(tranches Sales Nav — aucune coche = indifférent)</span></div>
                 <div id="av-eff-chips" class="chips"></div>
                 <p class="hint" id="av-eff-note" style="display:none;color:#B45309;margin-top:6px">⚠️ Filtrer par effectif écarte aussi les employeurs à effectif inconnu — l'écart s'affiche dans le comptage.</p>
               </div>
               <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
-                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Source des contacts</div>
-                <div id="av-source-chips" class="chips"></div>
-                <p class="hint" style="margin-top:6px">💼 = profils LinkedIn (poste réel, enrichissables Kaspr/FullEnrich). 🏛️ = dirigeants du registre légal (fiable, mais mandat ≠ poste). Par défaut : LinkedIn d'abord, registre en complément.</p>
+                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">4 · Type d'entreprise <span style="font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;background:#d1fae5;color:#0f766e">PAPPERS (forme juridique)</span></div>
+                <div id="av-types-chips" class="chips"></div>
+                <p class="hint" style="margin-top:6px">Catégorie juridique INSEE, appliquée aux entreprises du secteur (voie SIREN). Si ce filtre vidait le comptage, il est retiré et signalé.</p>
               </div>
               <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
-                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Postes ciblés <span style="font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;background:#fef3c7;color:#92400e">variantes IA incluses</span></div>
-                <div id="av-postes-chips" class="chips"></div>
-                <input class="field" id="av-poste-libre" placeholder="Autre intitulé… (Entrée pour ajouter)" style="width:100%;margin-top:8px" onkeydown="if(event.key==='Enter'){avAjouterPoste(this.value);this.value='';}">
+                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">5 · Lieu du siège social <span style="font-size:10px;color:var(--ink-soft);font-weight:500">Inclure | Exclure</span></div>
+                <div style="display:flex;gap:8px">
+                  <select class="field" id="av-lieu-select" style="flex:1"></select>
+                  <button class="btn" style="background:var(--paper);padding:8px 12px" onclick="avAjouterLieu('inclure')">Inclure</button>
+                  <button class="btn" style="background:var(--paper);padding:8px 12px" onclick="avAjouterLieu('exclure')">Exclure</button>
+                </div>
+                <input class="field" id="av-lieu-ville" placeholder="…ou une ville (Entrée = inclure, ⇧Entrée = exclure)" style="width:100%;margin-top:8px" onkeydown="if(event.key==='Enter'){avAjouterLieuVille(this.value,event.shiftKey?'exclure':'inclure');this.value='';}">
+                <div id="av-lieux-chips" style="margin-top:8px;display:flex;flex-direction:column;gap:5px"></div>
+                <p class="hint" style="margin-top:6px">Siège de l'ENTREPRISE (régions, DOM, villes — voie SIREN). Basile = base française.</p>
+              </div>
+              <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+                <div style="font-size:13.5px;font-weight:600">6 · La personne</div>
+                <div style="display:flex;gap:8px">
+                  <input class="field" id="av-p-prenom" placeholder="Prénom" style="flex:1" oninput="avMaj()">
+                  <input class="field" id="av-p-nom" placeholder="Nom" style="flex:1" oninput="avMaj()">
+                </div>
+                <input class="field" id="av-p-entreprise" placeholder="Entreprise actuelle (ex : Renault)" style="width:100%" oninput="avMaj()">
+                <div style="display:flex;gap:8px">
+                  <select class="field" id="av-p-langue" style="flex:1" onchange="avMaj()" title="Langue du profil LinkedIn"><option value="">Langue : indifférent</option><option>Français</option><option>Anglais</option><option>Espagnol</option><option>Allemand</option></select>
+                  <select class="field" id="av-p-anciennete" style="flex:1" onchange="avMaj()" title="Ancienneté au poste actuel"><option value="">Ancienneté : indifférent</option><option value="<1">&lt; 1 an 🆕</option><option value="1-3">1–3 ans</option><option value="3+">3 ans +</option></select>
+                </div>
+                <label style="display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer"><input type="checkbox" id="av-p-nouveau" onchange="avMaj()"> 🆕 <b>Nouveau poste</b> (&lt; 1 an — le meilleur signal d'appel) <span style="font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;background:#e0f2fe;color:#0369a1">LINKEDIN</span></label>
+                <div style="border-top:1px solid var(--line);padding-top:8px">
+                  <div style="font-size:12.5px;font-weight:600;margin-bottom:6px">Ville(s) de la personne</div>
+                  <input class="field" id="av-ville-libre" placeholder="Ex : Lyon (Entrée pour ajouter)" style="width:100%" onkeydown="if(event.key==='Enter'){avAjouterVille(this.value);this.value='';}">
+                  <div id="av-villes-chips" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
+                  <div style="font-size:12.5px;font-weight:600;margin:10px 0 6px">Pays</div>
+                  <div id="av-pays-chips" class="chips"></div>
+                </div>
+              </div>
+              <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
+                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Source des contacts</div>
+                <div id="av-source-chips" class="chips"></div>
+                <p class="hint" style="margin-top:6px">💼 = profils LinkedIn (poste réel). 🏛️ = dirigeants du registre (mandat ≠ poste). Défaut : LinkedIn d'abord.</p>
               </div>
               <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
                 <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Depuis des listes de comptes SofyScrap <span style="font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;background:#ede9fe;color:#6d28d9">SIREN</span></div>
                 <select class="field" id="av-listes-select" style="width:100%" onchange="avAjouterListe(this.value)"><option value="">Ajouter une liste…</option></select>
                 <div id="av-listes-chips" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
-                <p class="hint" style="margin-top:6px">L'équivalent des « account lists » Sales Nav : les salariés LinkedIn + dirigeants des entreprises de ces listes (300 SIREN max).</p>
-              </div>
-              <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
-                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Ville(s) de la personne</div>
-                <input class="field" id="av-ville-libre" placeholder="Ex : Lyon (Entrée pour ajouter)" style="width:100%" onkeydown="if(event.key==='Enter'){avAjouterVille(this.value);this.value='';}">
-                <div id="av-villes-chips" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
-                <p class="hint" style="margin-top:6px">Ville du profil LinkedIn ou de la personne au registre. Pas de filtre région/département sur les personnes — pour une zone entière, passe par l'onglet Entreprises.</p>
-                <div style="font-size:13px;font-weight:600;margin:12px 0 6px">Pays</div>
-                <div id="av-pays-chips" class="chips"></div>
-                <p class="hint" style="margin-top:6px">Basile est une base française : hors FR, le vivier peut être très mince (le comptage le dira).</p>
               </div>
               <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
                 <label style="display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer"><input type="checkbox" id="av-exclure" checked onchange="avMaj()"> Masquer les contacts <b>déjà extraits</b> par un SDR</label>
@@ -800,7 +826,11 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
                  <select class="field" id="av-gmb-note-max" style="flex:1" onchange="avMajGmb()"><option value="">Toutes</option><option value="3">≤ 3,0 ★</option><option value="3.5">≤ 3,5 ★</option><option value="4">≤ 4,0 ★</option><option value="4.5" selected>≤ 4,5 ★</option></select>
                  <select class="field" id="av-gmb-note-min" style="flex:1" onchange="avMajGmb()"><option value="">Pas de min</option><option value="1">≥ 1,0 ★</option><option value="2">≥ 2,0 ★</option><option value="3">≥ 3,0 ★</option></select>
                 </div></div>
-                <p class="hint" style="margin:0">L'échantillon montre la note et le nb d'avis. Après génération : téléphone, site, pire avis, email du site — et les personas par 🚀 (les fiches Google n'ont pas de SIREN).</p>
+                <div style="display:flex;gap:8px">
+                 <select class="field" id="av-gmb-pays" style="flex:1" onchange="avMajGmb()" title="Pays de la recherche Google"><option value="fr" selected>🇫🇷 France</option><option value="be">🇧🇪 Belgique</option><option value="ch">🇨🇭 Suisse</option><option value="lu">🇱🇺 Luxembourg</option></select>
+                 <select class="field" id="av-gmb-avismin" style="flex:1" onchange="avMajGmb()" title="Nombre d'avis minimum"><option value="">Avis : indifférent</option><option value="10">≥ 10 avis</option><option value="30">≥ 30 avis</option><option value="100">≥ 100 avis</option></select>
+                </div>
+                <p class="hint" style="margin:0">Moteur SerpApi (20/page, ~120/ville, plafond 1 000 recherches/mois partagé). Google ne donne jamais de total : on affiche ce qui est réellement balayé. Détails (tél, site, pire avis, email) à la génération.</p>
               </div>
             </div>
           </div>
@@ -817,6 +847,13 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
               <button class="btn btn-primary" id="av-btn-sel" onclick="avGenererSelection()" style="display:none">🚀 Générer ma sélection</button>
               <button class="btn btn-primary" id="av-btn-gen" onclick="avGenerer()" style="background:#4b5563">⚡ Les N premiers (auto)</button>
             </div>
+          </div>
+        </div>
+        <div id="av-modal" style="display:none;position:fixed;inset:0;background:rgba(15,18,32,.5);z-index:905;align-items:center;justify-content:center" onclick="if(event.target===this)this.style.display='none'">
+          <div style="background:#fff;border-radius:14px;width:min(860px,94vw);max-height:86vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.25)">
+            <div id="av-modal-titre" style="padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;font-size:15px"></div>
+            <div id="av-modal-corps" style="overflow:auto;flex-grow:1"></div>
+            <div id="av-modal-pied" style="padding:12px 20px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px"></div>
           </div>
         </div>
       </div>
@@ -3508,8 +3545,12 @@ function remplirSelectSdrManuelle(){return remplirSelectSdr('manuelle-sdr');}
    Onglet Prospects → /api/recherche (Basile people/find : concepts secteur, postes, effectif,
    listes de comptes par SIREN). Onglet Entreprises → /api/estimer + launch() (tuyauterie Pappers
    existante). Barre ✨ → /api/ia-liste (mêmes critères que la Liste intelligente). */
-const AV={onglet:'prospects',concepts:[],postes:[],decideur:false,eff:'Indifférent',listes:[],villes:[],source:'deux',
+const AV={onglet:'prospects',concepts:[],postes:[],decideur:false,effSN:[],types:[],lieux:[],listes:[],villes:[],source:'deux',
   ent:{nafs:[],eff:'Indifférent',zones:['France métropolitaine']}};
+// Tranches d'effectif SALES NAV (wireframe v2) — multi-sélection → enveloppe min/max
+const SN_EFF={'Indépendant':[1,1],'1-10':[1,10],'11-50':[11,50],'51-200':[51,200],'201-500':[201,500],'501-1 000':[501,1000],'1 001-5 000':[1001,5000],'5 001-10 000':[5001,10000]};
+const AV_TYPES=['Société commerciale','Société cotée en bourse','Société civile','À but non lucratif','Société de personnes','Indépendant / EI','Administration publique'];
+const AV_LIEUX_SUGG=['France métropolitaine','Auvergne-Rhône-Alpes','Bourgogne-Franche-Comté','Bretagne','Centre-Val de Loire','Corse','Grand Est','Hauts-de-France','Île-de-France','Normandie','Nouvelle-Aquitaine','Occitanie','Pays de la Loire',"Provence-Alpes-Côte d'Azur",'Guadeloupe','Martinique','Guyane','Réunion','Mayotte'];
 const AV_SOURCES=[['deux','💼 LinkedIn d’abord + 🏛️ registre'],['lki','💼 LinkedIn uniquement'],['legal','🏛️ Registre uniquement']];
 const AV_EFF={'Indifférent':[null,null],'1–9':[1,9],'10–49':[10,49],'50–199':[50,199],'200+':[200,null]};
 const AV_POSTES_FIXES=["N'importe quel décideur","Directeur Commercial","Directeur Marketing","Directeur Relation Client","Directeur Expérience Client (CX)","Responsable Service Client","Directeur CRM","Responsable Communication","Directeur Réseau / Retail"];
@@ -3521,22 +3562,27 @@ function avInit(){
  avChargerSelectListes();
  avRafraichirSaved();
  remplirSelectSdr('av-sdr');
+ const ls=document.getElementById('av-lieu-select');
+ if(ls&&!ls.options.length)ls.innerHTML=AV_LIEUX_SUGG.map(x=>`<option>${x}</option>`).join('');
 }
 function avOnglet(t){
  AV.onglet=t;
  document.getElementById('av-rail-prospects').style.display=t==='prospects'?'flex':'none';
  document.getElementById('av-rail-entreprises').style.display=t==='entreprises'?'flex':'none';
  const rg=document.getElementById('av-rail-gmb');if(rg)rg.style.display=t==='gmb'?'flex':'none';
+ const tl=document.getElementById('av-tab-lookalike');if(tl)tl.style.cssText='padding:8px 18px;border-radius:7px;'+(t==='lookalike'?'border:0;background:var(--accent,#185FA5);color:#fff;font-weight:600':'border:0;background:transparent;color:var(--ink-soft)');
+ if(t==='lookalike'){avChargerLookalike();}
  const on='border:0;background:var(--accent,#185FA5);color:#fff;font-weight:600',off='border:0;background:transparent;color:var(--ink-soft)';
  document.getElementById('av-tab-prospects').style.cssText='padding:8px 18px;border-radius:7px;'+(t==='prospects'?on:off);
  document.getElementById('av-tab-entreprises').style.cssText='padding:8px 18px;border-radius:7px;'+(t==='entreprises'?on:off);
  const tg=document.getElementById('av-tab-gmb');if(tg)tg.style.cssText='padding:8px 18px;border-radius:7px;'+(t==='gmb'?on:off);
  document.getElementById('av-apercu').style.display='none';
  document.getElementById('av-count').innerHTML=t==='prospects'
-  ?'Ajoute un secteur, des postes ou une liste de comptes — le comptage est gratuit et se met à jour tout seul.'
-  :(t==='gmb'?'Renseigne une activité et une ou plusieurs villes — l\'estimation Google est gratuite.'
-  :'Renseigne au moins un code NAF — l\'estimation Pappers est gratuite et se met à jour toute seule.');
- if(t==='prospects')avMaj();else if(t==='entreprises')avMajEnt();else avMajGmb();
+  ?'Ajoute un secteur, des postes, une personne ou une liste de comptes — le comptage est gratuit et se met à jour tout seul.'
+  :(t==='gmb'?'Renseigne une activité et une ou plusieurs villes — chaque page = 1 recherche SerpApi par combinaison (plafond 1 000/mois).'
+  :(t==='lookalike'?'⏳ Chargement de tes listes…'
+  :'Renseigne au moins un code NAF — l\'estimation Pappers est gratuite et se met à jour toute seule.'));
+ if(t==='prospects')avMaj();else if(t==='entreprises')avMajEnt();else if(t==='gmb')avMajGmb();
 }
 async function avChargerSelectListes(){
  try{
@@ -3555,10 +3601,19 @@ function avRendreChips(){
  AV.source=AV.source||'deux';
  document.getElementById('av-source-chips').innerHTML=AV_SOURCES.map(([v,l])=>
   `<button class="chip${AV.source===v?' sel':''}" onclick="AV.source='${v}';avRendreChips();avMaj()">${l}</button>`).join('');
- // Effectif (sélection simple, « Indifférent » par défaut)
- document.getElementById('av-eff-chips').innerHTML=Object.keys(AV_EFF).map(t=>
-  `<button class="chip${AV.eff===t?' sel':''}" onclick="AV.eff='${t}';avRendreChips();avMaj()">${t}</button>`).join('');
- document.getElementById('av-eff-note').style.display=AV.eff!=='Indifférent'?'block':'none';
+ // Effectif : tranches Sales Nav, multi-sélection → enveloppe (aucune coche = indifférent)
+ AV.effSN=AV.effSN||[];
+ document.getElementById('av-eff-chips').innerHTML=Object.keys(SN_EFF).map(x=>
+  `<button class="chip${AV.effSN.includes(x)?' sel':''}" onclick="avToggleEff(this.textContent)">${x}</button>`).join('');
+ document.getElementById('av-eff-note').style.display=AV.effSN.length?'block':'none';
+ // Type d'entreprise (catégorie juridique, voie SIREN)
+ AV.types=AV.types||[];
+ document.getElementById('av-types-chips').innerHTML=AV_TYPES.map(x=>
+  `<button class="chip${AV.types.includes(x)?' sel':''}" onclick="avToggleType(this.textContent)">${x}</button>`).join('');
+ // Lieux du siège : lignes inclure/exclure
+ AV.lieux=AV.lieux||[];
+ document.getElementById('av-lieux-chips').innerHTML=AV.lieux.map((l,k)=>
+  `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;font-size:12.5px;background:${l.mode==='exclure'?'#fef2f2':'#f0fdf4'}"><b style="flex-grow:1">${esc(l.valeur)}</b><span style="font-size:11px;font-weight:800;color:${l.mode==='exclure'?'#b91c1c':'#15803d'}">${l.mode==='exclure'?'✕ EXCLU':'✓ INCLUS'}</span><a style="font-size:11px;cursor:pointer" onclick="AV.lieux.splice(${k},1);avRendreChips();avMaj()">retirer</a></div>`).join('');
  // Postes : décideur exclusif des intitulés précis
  document.getElementById('av-postes-chips').innerHTML=AV_POSTES_FIXES.map(p=>{
   const sel=p==="N'importe quel décideur"?AV.decideur:AV.postes.includes(p);
@@ -3591,6 +3646,20 @@ function avTogglePoste(p){
  avRendreChips();avMaj();
 }
 function avAjouterPoste(v){const p=String(v||'').trim();if(!p)return;AV.decideur=false;if(!AV.postes.includes(p))AV.postes.push(p);avRendreChips();avMaj();}
+function avToggleEff(x){x=String(x||'').trim();const i=AV.effSN.indexOf(x);if(i>=0)AV.effSN.splice(i,1);else AV.effSN.push(x);avRendreChips();avMaj();}
+function avToggleType(x){x=String(x||'').trim();const i=AV.types.indexOf(x);if(i>=0)AV.types.splice(i,1);else AV.types.push(x);avRendreChips();avMaj();}
+function avAjouterLieu(mode){
+ const sel=document.getElementById('av-lieu-select');const v=sel.value;if(!v)return;
+ AV.lieux=AV.lieux.filter(l=>l.valeur!==v);
+ if(AV.lieux.length>=12){toast('12 lieux max');return;}
+ AV.lieux.push({valeur:v,mode});avRendreChips();avMaj();
+}
+function avAjouterLieuVille(v,mode){
+ v=String(v||'').trim();if(!v)return;
+ AV.lieux=(AV.lieux||[]).filter(l=>l.valeur.toLowerCase()!==v.toLowerCase());
+ if(AV.lieux.length>=12){toast('12 lieux max');return;}
+ AV.lieux.push({valeur:v,mode});avRendreChips();avMaj();
+}
 function avTogglePays(p){AV.paysP=AV.paysP||['FR'];const i=AV.paysP.indexOf(p);if(i>=0){if(AV.paysP.length>1)AV.paysP.splice(i,1);}else AV.paysP.push(p);avRendreChips();avMaj();}
 function avAjouterVille(v){const x=String(v||'').trim();if(!x)return;AV.villes=AV.villes||[];if(AV.villes.length>=15){toast('15 villes max');return;}if(!AV.villes.some(y=>y.toLowerCase()===x.toLowerCase()))AV.villes.push(x);avRendreChips();avMaj();}
 function avAjouterListe(id){
@@ -3661,9 +3730,16 @@ function avAjouterConcept(id,label){
 
 // ── Comptage + aperçu (gratuits), avec debounce ──
 function avFiltres(){
- const [effMin,effMax]=AV_EFF[AV.eff]||[null,null];
+ // Enveloppe des tranches Sales Nav cochées (multi → min des min / max des max)
+ let effMin=null,effMax=null;
+ for(const x of (AV.effSN||[])){const [a,b]=SN_EFF[x]||[];if(a!=null)effMin=effMin==null?a:Math.min(effMin,a);if(b!=null)effMax=effMax==null?b:Math.max(effMax,b);}
+ const v=id=>{const el=document.getElementById(id);return el?el.value.trim():'';};
  return {concept_ids:AV.concepts.map(c=>c.id),concept_labels:AV.concepts.map(c=>c.label),
   postes:AV.postes,decideur:AV.decideur,effectif_min:effMin,effectif_max:effMax,
+  types_entreprise:(AV.types||[]).slice(),lieux:(AV.lieux||[]).map(l=>({valeur:l.valeur,mode:l.mode})),
+  prenom:v('av-p-prenom'),nom_personne:v('av-p-nom'),entreprise:v('av-p-entreprise'),
+  langue:v('av-p-langue'),anciennete:v('av-p-anciennete'),
+  nouveau_poste:!!(document.getElementById('av-p-nouveau')||{}).checked,
   villes:(AV.villes||[]).slice(),pays:(AV.paysP||['FR']).slice(),source:AV.source||'deux',
   listes_ids:AV.listes.map(l=>l.id),exclure_extraits:document.getElementById('av-exclure').checked};
 }
@@ -3671,7 +3747,7 @@ function avMaj(){
  if(AV.onglet!=='prospects')return;
  clearTimeout(AV_TIMER);
  const f=avFiltres();
- if(!f.concept_ids.length&&!f.postes.length&&!f.decideur&&!f.listes_ids.length&&!f.villes.length)return;
+ if(!f.concept_ids.length&&!f.postes.length&&!f.decideur&&!f.listes_ids.length&&!f.villes.length&&!f.prenom&&!f.nom_personne&&!f.entreprise)return;
  AV_TIMER=setTimeout(avApercu,800);
 }
 /* ── Aperçus paginés PAR PAGES (cache front : ‹ › naviguent dans les pages chargées, la
@@ -3702,7 +3778,7 @@ function avBarrePages(qui,fn){
   </div>`;
 }
 function avRendrePage(qui,fn,entete){
- const box=document.getElementById('av-apercu');
+ const box=document.getElementById(qui==='pro'?'av-apercu':'av-modal-corps');
  const P=AV_PAG[qui];
  const page=P.pages[P.cur]||[];
  box.innerHTML=entete+(page.map(avLigneLead).join('')||'<div style="padding:12px 16px;font-size:13px;color:var(--ink-soft)">Rien sur cette page.</div>')+avBarrePages(qui,fn);
@@ -3740,6 +3816,7 @@ async function avApercu(page){
     <div style="font-size:12.5px;line-height:1.55;color:var(--ink-soft)">${(d.total_lki!=null&&d.total_legal!=null)?`<b style="color:#0369a1">💼 LinkedIn ${d.total_lki.toLocaleString('fr-FR')}${d.total_lki_partiel?' (sur les 90 premières entreprises'+(d.nb_entreprises_secteur?' des '+d.nb_entreprises_secteur.toLocaleString('fr-FR')+' du secteur':'')+')':''}</b> · <b style="color:#0f766e">🏛️ registre ${d.total_legal.toLocaleString('fr-FR')}</b><br>`:''}comptage gratuit, recalculé à chaque filtre${d.nb_sirens?`<br>recherche sur les <b>${d.nb_sirens}</b> entreprises de tes listes`:''}${doublons?`<br>♻️ ${doublons} déjà extrait(s) — décochés`:''}</div>
     ${(d.total_sans_effectif&&d.total_sans_effectif>(d.total||0))?`<div style="font-size:12.5px;background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:8px 12px;color:#7a5510">📉 ton filtre effectif cache <b>${(d.total_sans_effectif-(d.total||0)).toLocaleString('fr-FR')}</b> personne(s) (effectif employeur inconnu)</div>`:''}
     ${enPlus.length?`<div style="font-size:12px;color:var(--ink-soft);width:100%">🔎 Secteur élargi automatiquement (registre ⇄ LinkedIn/Google) : ${enPlus.slice(0,4).map(esc).join(', ')}${enPlus.length>4?' (+'+(enPlus.length-4)+')':''}</div>`:''}
+    ${d.types_ignores?`<div style="font-size:12.5px;background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:8px 12px;color:#7a5510">🏷️ le filtre <b>type d'entreprise</b> vidait le comptage — ignoré pour cette recherche</div>`:''}
     ${alerteConcepts}
    </div>`;
    if(!(d.leads||[]).length){box.style.display='none';return;}
@@ -3775,18 +3852,25 @@ function avEntFiltresPersonas(){
  const map={'Dirigeant / PDG':['direction'],'Directeur Commercial':['commercial'],'Directeur Marketing':['marketing'],'Responsable Communication':['communication']};
  return {sirens:AV_ENT_SIRENS,decideur:!map[j],familles:map[j]||[],postes:[],concept_ids:[],source:'deux',exclure_extraits:true};
 }
+function avModale(titre,pied){
+ document.getElementById('av-modal-titre').innerHTML=titre+`<button aria-label="Fermer" onclick="document.getElementById('av-modal').style.display='none'" style="margin-left:auto;border:0;background:var(--paper);border-radius:8px;width:30px;height:30px;font-size:14px;cursor:pointer">✕</button>`;
+ document.getElementById('av-modal-pied').innerHTML=pied||'';
+ document.getElementById('av-modal').style.display='flex';
+}
 function avEntEntete(total){
- return `<div style="padding:11px 16px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--ink-soft)"><b style="color:var(--ink)">👥 Décideurs des entreprises trouvées</b>${total!=null?` — <b>${(total||0).toLocaleString('fr-FR')}</b> sur les ${AV_ENT_SIRENS.length} entreprises de la 1re page Pappers`:''} · les cochés seront <b>attachés aux fiches</b> à la génération</div>`;
+ return `<b>👥 Décideurs des entreprises trouvées</b><span style="font-size:12.5px;color:var(--ink-soft)">${total!=null?` — ${(total||0).toLocaleString('fr-FR')} sur les ${AV_ENT_SIRENS.length} entreprises de la 1re page`:''} · les cochés seront attachés aux fiches</span>`;
 }
 let AV_ENT_TOTAL=null;
 async function avApercuEnt(page){
- const box=document.getElementById('av-apercu');
+ const box=document.getElementById('av-modal-corps');
  const P=AV_PAG.ent;
  const reset=(page===undefined||page===false);
- if(!AV_ENT_SIRENS.length){box.style.display='none';return;}
- if(reset){P.pages=[];P.cur=0;P.suite=null;AV_ENT_LEADS=new Map();AV_ENT_TOTAL=null;box.innerHTML='<div style="padding:12px 16px;font-size:13px;color:var(--ink-soft)">⏳ Recherche des décideurs des entreprises trouvées…</div>';box.style.display='block';}
+ if(!AV_ENT_SIRENS.length){toast('Lance d\'abord une estimation (codes NAF)');return;}
+ if(reset){P.pages=[];P.cur=0;P.suite=null;AV_ENT_LEADS=new Map();AV_ENT_TOTAL=null;
+  avModale(avEntEntete(null),'<button class="btn btn-primary" onclick="document.getElementById(\'av-modal\').style.display=\'none\'">Valider la sélection (attachée à la génération)</button>');
+  box.innerHTML='<div style="padding:12px 16px;font-size:13px;color:var(--ink-soft)">⏳ Recherche des décideurs…</div>';}
  else if(page<0)return;
- else if(page<P.pages.length){P.cur=page;avRendrePage('ent','avApercuEnt',avEntEntete(AV_ENT_TOTAL));return;}
+ else if(page<P.pages.length){P.cur=page;avRendrePage('ent','avApercuEnt','');return;}
  else if(!P.suite)return;
  try{
   const r=await api('/api/recherche',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'apercu',filtres:avEntFiltresPersonas(),apercu_suite:reset?null:P.suite})});
@@ -3796,7 +3880,8 @@ async function avApercuEnt(page){
   P.pages.push(d.leads||[]);P.cur=P.pages.length-1;
   if(reset&&d.total!=null)AV_ENT_TOTAL=d.total;
   for(const l of (d.leads||[]))AV_ENT_LEADS.set(avCle(l),l);
-  avRendrePage('ent','avApercuEnt',avEntEntete(AV_ENT_TOTAL));
+  document.getElementById('av-modal-titre').firstChild&&avModale(avEntEntete(AV_ENT_TOTAL),'<button class="btn btn-primary" onclick="document.getElementById(\'av-modal\').style.display=\'none\'">Valider la sélection (attachée à la génération)</button>');
+  avRendrePage('ent','avApercuEnt','');
  }catch(e){box.innerHTML='<div style="padding:12px 16px;font-size:13px;color:#a32d2d">⚠️ Erreur réseau : '+e.message+'</div>';}
 }
 
@@ -3856,9 +3941,10 @@ async function avEstimerEnt(){
    <div style="font-size:12.5px;line-height:1.55;color:var(--ink-soft)">tu en généreras <b>${a===b?b:a+' à '+b}</b>${d.deja_extraites?`<br>♻️ ${d.deja_extraites} déjà extraites sur la 1re page (remplacées)`:''}<br>coût enrichissement : <b>${Math.round(d.cout_min||0)} – ${Math.round(d.cout_max||0)} €</b></div>
    ${(d.total_sans_effectif&&d.total_sans_effectif>(d.total_dispo||0))?`<div style="font-size:12.5px;background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:8px 12px;color:#7a5510">📉 ton filtre effectif cache <b>${(d.total_sans_effectif-(d.total_dispo||0)).toLocaleString('fr-FR')}</b> entreprise(s)</div>`:''}
   </div>`;
-  // Aperçu des décideurs (Basile par SIREN) sur les entreprises fraîches de la page mesurée
+  // Décideurs (Basile par SIREN) : en MODALE, sur demande — lien ajouté à la carte
   AV_ENT_SIRENS=d.echantillon_sirens||[];
-  avApercuEnt(false);
+  if(AV_ENT_SIRENS.length)count.insertAdjacentHTML('beforeend','<div style="margin-top:8px;font-size:13px"><a style="cursor:pointer;font-weight:600" onclick="avApercuEnt()">👥 Voir les décideurs des entreprises trouvées</a> — cochables, attachés aux fiches à la génération</div>');
+  document.getElementById('av-apercu').style.display='none';
  }catch(e){count.innerHTML='⚠️ Erreur réseau : '+e.message;}
 }
 
@@ -4049,72 +4135,136 @@ function avMajGmb(){
  if(!c.activites.length||!c.villes.length)return;
  AV_TIMER=setTimeout(avEstimerGmb,900);
 }
+// État Google : pages SerpApi chargées + coches (clé g:<place_id>) ; vu = modale ouverte
+let AV_GMB={pages:[],cur:0,aSuite:false,vu:false,balayes:0};
 async function avEstimerGmb(){
  const c=avCritGmb();
- const count=document.getElementById('av-count'),box=document.getElementById('av-apercu');
+ const count=document.getElementById('av-count');
  if(!c.activites.length||!c.villes.length){count.innerHTML='Renseigne une activité et une ou plusieurs villes.';return;}
- count.innerHTML='⏳ Estimation Google en cours (gratuit)…';
+ count.innerHTML='⏳ Recherche Google (SerpApi)…';
+ AV_GMB={pages:[],cur:0,aSuite:false,vu:false,balayes:0};
+ document.getElementById('av-apercu').style.display='none';
  try{
-  const r=await api('/api/gmb-liste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'estimer',...c})});
-  const d=await r.json();
-  if(d.erreur){count.innerHTML='⚠️ '+String(d.erreur).replace(/</g,'&lt;');return;}
-  const esc=s=>String(s||'').replace(/</g,'&lt;');
+  const d=await avGmbPage(0);
+  if(!d)return;
   count.innerHTML=`<div style="display:flex;gap:22px;align-items:center;flex-wrap:wrap">
-   <div><div style="font-size:12px;color:var(--ink-soft)">Établissements Google correspondants</div><div style="font-size:30px;font-weight:800;color:var(--ink)">${(d.nb_etablissements||0).toLocaleString('fr-FR')}</div></div>
-   <div style="font-size:12.5px;line-height:1.55;color:var(--ink-soft)">1re page de chaque ville${d.peut_aller_plus_loin?' — la génération ira jusqu\'à ~60/ville':''}<br>note + nb d'avis sur l'échantillon · tél, site, pire avis et email à la génération</div>
-  </div>`;
-  const ech=(d.echantillon||[]);
-  if(!ech.length){box.style.display='none';return;}
-  box.innerHTML=`<div style="padding:11px 16px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--ink-soft)"><b style="color:var(--ink)">Échantillon réel</b> — les personas seront cherchés par 🚀 après génération</div>`
-   +ech.map(e=>`<div style="display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid #f1f2f8;font-size:13px"><div style="min-width:0;flex-grow:1"><b>${esc(e.nom)}</b> <span style="color:var(--ink-soft)">· ${esc(e.ville)}${e.activite?' · '+esc(e.activite):''}</span></div><span style="font-weight:700;color:${(e.note!=null&&e.note<4)?'#b45309':'#15803d'}">${e.note!=null?e.note.toLocaleString('fr-FR')+' ★':'sans note'}</span><span style="color:var(--ink-soft);font-size:12px">${e.avis||0} avis</span></div>`).join('');
-  box.style.display='block';
+   <div><div style="font-size:12px;color:var(--ink-soft)">Établissements retenus (page 1)</div><div style="font-size:30px;font-weight:800;color:var(--ink)">${(AV_GMB.pages[0]||[]).length}</div></div>
+   <div style="font-size:12.5px;line-height:1.55;color:var(--ink-soft)">${AV_GMB.balayes} balayés · Google ne donne pas de total — pagine dans la fenêtre${d.recherches_serp?`<br>${d.recherches_serp} recherche(s) SerpApi consommée(s) par page (plafond 1 000/mois)`:''}</div>
+  </div>
+  <div style="margin-top:8px;font-size:13px"><a style="cursor:pointer;font-weight:600" onclick="avModalGmb()">📍 Voir les établissements</a> — cochables, la sélection devient la liste</div>`;
  }catch(e){count.innerHTML='⚠️ Erreur réseau : '+e.message;}
+}
+async function avGmbPage(p){
+ const c=avCritGmb();
+ const r=await api('/api/gmb-serp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'apercu',...c,pays:document.getElementById('av-gmb-pays').value,avis_min:document.getElementById('av-gmb-avismin').value||null,page:p})});
+ const d=await r.json();
+ if(d.erreur){toast('⚠️ '+d.erreur);return null;}
+ AV_GMB.pages[p]=d.etablissements||[];
+ AV_GMB.cur=p;AV_GMB.aSuite=!!d.a_suite;AV_GMB.balayes+=(p>=AV_GMB.pages.length-1?d.balayes||0:0);
+ return d;
+}
+function avGmbLigne(e){
+ const esc=s=>String(s||'').replace(/</g,'&lt;');
+ const cle='g:'+(e.place_id||e.nom);
+ const coche=!e.doublon&&!AV_DECOCHES.has(cle);
+ return `<div style="display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid #f1f2f8;font-size:13px;${e.doublon?'opacity:.45':''}">
+  <input type="checkbox" data-cle="${esc(cle).replace(/"/g,'&quot;')}" ${coche?'checked':''} onchange="avCocher(this)" aria-label="Garder ${esc(e.nom).replace(/"/g,'&quot;')}">
+  <div style="min-width:0;flex-grow:1"><b>${esc(e.nom)}</b> <span style="color:var(--ink-soft)">· ${esc(e.ville)}${e.activite?' · '+esc(e.activite):''}</span></div>
+  <span style="font-weight:700;color:${(e.note!=null&&e.note<4)?'#b45309':'#15803d'}">${e.note!=null?e.note.toLocaleString('fr-FR')+' ★':'—'}</span>
+  <span style="color:var(--ink-soft);font-size:12px">${e.avis||0} avis</span>
+  ${e.doublon?'<span class="badge" style="background:#fee2e2;color:#b91c1c">déjà extrait</span>':''}
+ </div>`;
+}
+async function avModalGmb(p){
+ if(p===undefined)p=AV_GMB.cur;
+ if(p<0)return;
+ AV_GMB.vu=true;
+ if(!AV_GMB.pages[p]){const d=await avGmbPage(p);if(!d)return;}
+ AV_GMB.cur=p;
+ const page=AV_GMB.pages[p]||[];
+ const droite=(p<AV_GMB.pages.length-1)||AV_GMB.aSuite;
+ avModale(`<b>📍 Établissements trouvés</b><span style="font-size:12.5px;color:var(--ink-soft)"> — coche = gardé · chaque page = ${Math.max(1,avCritGmb().activites.length*avCritGmb().villes.length)} recherche(s) SerpApi</span>`,
+  `<div style="display:flex;align-items:center;gap:12px">
+    <button class="btn" style="background:var(--paper)${p>0?'':';opacity:.4'}" ${p>0?'':'disabled'} onclick="avModalGmb(${p-1})">‹ Précédent</button>
+    <span style="font-size:12.5px;color:var(--ink-soft)">Page ${p+1}</span>
+    <button class="btn" style="background:var(--paper)${droite?'':';opacity:.4'}" ${droite?'':'disabled'} onclick="avModalGmb(${p+1})">Suivant ›</button>
+   </div>
+   <button class="btn btn-primary" onclick="document.getElementById('av-modal').style.display='none'">Valider la sélection</button>`);
+ document.getElementById('av-modal-corps').innerHTML=page.map(avGmbLigne).join('')||'<div style="padding:12px 16px;font-size:13px;color:var(--ink-soft)">Rien sur cette page (filtres note/avis).</div>';
 }
 async function avGenererGmb(nom,sdr){
  const c=avCritGmb();
  if(!c.activites.length||!c.villes.length){toast('Renseigne une activité et une ou plusieurs villes');return;}
+ // Sélection : si la modale a été ouverte, la liste = les établissements cochés des pages vues
+ let selection=null;
+ if(AV_GMB.vu){
+  selection=AV_GMB.pages.flat().filter(e=>!e.doublon&&!AV_DECOCHES.has('g:'+(e.place_id||e.nom)));
+  if(!selection.length){toast('Coche au moins un établissement dans la fenêtre 📍');return;}
+ }
  AV_EN_COURS=true;
- const btn=document.getElementById('av-btn-gen');btn.disabled=true;btn.textContent='⏳ Recherche Google Maps…';
+ const btn=document.getElementById('av-btn-gen');btn.disabled=true;btn.textContent='⏳ Google (SerpApi + détails)…';
  try{
-  const r=await api('/api/gmb-liste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'creer',...c})});
+  const r=await api('/api/gmb-serp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'creer',...c,pays:document.getElementById('av-gmb-pays').value,avis_min:document.getElementById('av-gmb-avismin').value||null,selection})});
   const d=await r.json();
-  if(d.erreur){toast('Erreur : '+d.erreur+(d.detail?' — '+d.detail:''));return;}
+  if(d.erreur){toast('Erreur : '+d.erreur);return;}
   const fiches=d.fiches||[];
-  if(!fiches.length){toast(d.message||'Aucun établissement trouvé — élargis la note ou les villes');return;}
+  if(!fiches.length){toast(d.message||'Aucun établissement retenu — élargis la note ou les villes');return;}
   btn.textContent='⏳ Sauvegarde…';
   const rc=await api('/api/listes',{method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({nom:'📍 '+nom,sdr,criteres:{gmb:true,activite:c.activites.map(a=>a.nom).join(', '),activites:c.activites.map(a=>a.nom),villes:c.villes,note_min:c.note_min,note_max:c.note_max,naf:[],pays:[]},entreprises:fiches,credits_estimes:0})});
   const dc=await rc.json();
   if(dc.erreur){toast('Erreur création : '+dc.erreur);return;}
-  toast('📍 Liste créée : '+fiches.length+' établissement'+(fiches.length>1?'s':'')+(d.emails_trouves?' · '+d.emails_trouves+' email(s) trouvés sur les sites':''));
+  toast('📍 Liste créée : '+fiches.length+' établissement'+(fiches.length>1?'s':'')+(d.emails_trouves?' · '+d.emails_trouves+' email(s) trouvés':''));
   setTimeout(()=>ouvrirListe(dc.id),300);
  }catch(e){toast('Erreur réseau : '+e.message);}
- finally{AV_EN_COURS=false;btn.disabled=false;btn.textContent='🚀 Générer la liste';}
+ finally{AV_EN_COURS=false;btn.disabled=false;btn.textContent='⚡ Les N premiers (auto)';}
 }
 
-// ── 👯 Lookalike RDV : pré-remplit le secteur depuis la dernière fiche « RDV pris » ──
-async function avLookalike(){
- toast('👯 Recherche de ton dernier RDV…');
+// ── 👯 Onglet Lookalike : les listes classées par succès (RDV pris), relance en un clic ──
+let AV_LK=[];
+async function avChargerLookalike(){
+ const count=document.getElementById('av-count'),box=document.getElementById('av-apercu');
  try{
-  const r=await api('/api/cockpit');const d=await r.json();
-  const ref=d.lookalike_ref;
-  if(!ref||!ref.naf){toast('Aucune fiche « RDV pris » avec un code NAF — prends un RDV, ou choisis le secteur à la main 😉');return;}
-  const code=String(ref.naf).replace('.','').toUpperCase();
-  if(!/^\d{4}[A-Z]$/.test(code)){toast('NAF de la fiche RDV illisible ('+ref.naf+')');return;}
-  const ent=NAF.find(n=>n[0]===code);
-  const lib=ent?ent[1]:'';
-  if(AV.onglet==='entreprises'){
-   AV.ent.nafs=AV.ent.nafs||[];
-   if(!AV.ent.nafs.some(n=>n.code===code))AV.ent.nafs.push({code,libelle:lib});
-   avRendreChips();avMajEnt();
-  }else{
-   if(AV.onglet==='gmb')avOnglet('prospects');
-   const id=avNafVersConcept(code);
-   if(!AV.concepts.some(x=>x.id===id))AV.concepts.push({id,label:code.slice(0,2)+'.'+code.slice(2)+' – '+(lib||'secteur de ton RDV')});
-   avRendreChips();avMaj();
-  }
-  toast('👯 Secteur de « '+(ref.enseigne||ref.nom||'ton dernier RDV')+' » appliqué ('+code+')');
- }catch(e){toast('Erreur réseau : '+e.message);}
+  const r=await api('/api/listes');const d=await r.json();
+  AV_LK=(d.listes||[]).filter(l=>!(l.criteres||{}).auto)
+   .map(l=>{const st=l.stats||{};const traites=st.traites||0,rdv=st.rdv||0;
+    return {id:l.id,nom:l.nom,sdr:l.sdr,total:l.total||0,traites,rdv,score:traites?rdv/traites:0,criteres:l.criteres||{},archivee:l.archivee};})
+   .sort((a,b)=>(b.rdv-a.rdv)||(b.score-a.score));
+  const esc=s=>String(s||'').replace(/</g,'&lt;');
+  count.innerHTML='Tes listes classées par <b>succès</b> (RDV pris, puis taux) — « 👯 Relancer » repart avec les critères de la liste, dédupliqué : que du neuf.';
+  box.innerHTML=`<div style="display:grid;grid-template-columns:40px minmax(0,1fr) 70px 80px 130px 110px;gap:8px;padding:11px 16px;border-bottom:1px solid var(--line);font-size:11px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em"><span>#</span><span>Liste</span><span>Fiches</span><span>RDV pris</span><span>Score (RDV/traitées)</span><span></span></div>`
+   +AV_LK.slice(0,25).map((l,k)=>`<div style="display:grid;grid-template-columns:40px minmax(0,1fr) 70px 80px 130px 110px;gap:8px;padding:12px 16px;border-bottom:1px solid #f1f2f8;font-size:13px;align-items:center${l.rdv===0?';opacity:.6':''}">
+     <b style="color:var(--accent,#185FA5)">${k+1}</b>
+     <div style="min-width:0"><b>${esc(l.nom)}</b> <span style="color:var(--ink-soft)">· ${esc(l.sdr||'?')}${l.archivee?' · archivée':''}</span></div>
+     <span>${l.total}</span><b style="color:${l.rdv?'#15803d':'var(--ink-soft)'}">${l.rdv}</b>
+     <div style="display:flex;align-items:center;gap:6px"><div style="flex-grow:1;height:8px;background:#eceef5;border-radius:99px"><div style="width:${Math.min(100,Math.round(l.score*600))}%;height:8px;background:${l.score>=0.1?'#15803d':l.score>0?'#b45309':'#d9dce7'};border-radius:99px"></div></div><b style="font-size:12px">${(l.score*100).toFixed(1)} %</b></div>
+     <button class="btn btn-primary" style="padding:7px 10px;font-size:12.5px" onclick="avRelancer(${l.id})">👯 Relancer</button>
+    </div>`).join('');
+  box.style.display='block';
+ }catch(e){count.innerHTML='⚠️ Erreur réseau : '+e.message;}
+}
+// Relance : mappe les critères de la liste d'origine vers les filtres, bascule sur le bon onglet
+async function avRelancer(id){
+ const l=AV_LK.find(x=>x.id===id);if(!l)return;
+ const c=l.criteres||{};
+ if(c.gmb){
+  avOnglet('gmb');
+  document.getElementById('av-gmb-act').value=(c.activites||[c.activite]).filter(Boolean).join(', ');
+  document.getElementById('av-gmb-villes').value=(c.villes||[]).join(', ');
+  if(c.note_max)document.getElementById('av-gmb-note-max').value=String(c.note_max);
+  avMajGmb();
+ }else if(c.avance&&c.filtres){
+  Object.assign(AV,{concepts:(c.filtres.concept_ids||[]).map((cid,k)=>({id:cid,label:(c.filtres.concept_labels||[])[k]||cid})),
+   postes:c.filtres.postes||[],decideur:!!c.filtres.decideur,villes:c.filtres.villes||[],
+   types:c.filtres.types_entreprise||[],lieux:c.filtres.lieux||[],listes:[]});
+  avOnglet('prospects');avRendreChips();avMaj();
+ }else if((c.criteres_ia&&(c.criteres_ia.naf_codes||[]).length)||Array.isArray(c.naf)&&c.naf.length){
+  const codes=((c.criteres_ia&&c.criteres_ia.naf_codes)||c.naf||[]).map(x=>String(x).replace('.','').toUpperCase()).filter(x=>/^\d{4}[A-Z]$/.test(x));
+  if(!codes.length){toast('Cette liste n\'a pas de critères relançables (manuelle ?)');return;}
+  AV.ent.nafs=codes.map(code=>{const e=NAF.find(n=>n[0]===code);return {code,libelle:e?e[1]:''};});
+  avOnglet('entreprises');avRendreChips();avMajEnt();
+ }else{toast('Cette liste n\'a pas de critères relançables (manuelle ou verticale)');return;}
+ toast('👯 Critères de « '+l.nom+' » appliqués — ajuste et regarde le comptage');
 }
 
 // ── Recherches enregistrées (localStorage : pas de migration DB, par navigateur) ──

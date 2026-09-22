@@ -1,4 +1,54 @@
-# HANDOFF — Reprise du travail (dernière mise à jour : 22 septembre 2026)
+# HANDOFF — Reprise du travail (dernière mise à jour : 22 septembre 2026, nuit)
+
+## 🎯 22 septembre 2026 (nuit) — 🔎 Recherche avancée v2 : les 4 onglets du wireframe v2 (GO Didier)
+
+Wireframe v2 : artifact canvas « Recherche avancée SofyScrap » (4 artboards Main/Comptes/Google/
+Lookalike + notes moteurs/règles/chantiers). Specs Didier 22/09 23 h : Prospects collé à la
+grammaire Sales Nav, personas Entreprises en modale, Google sur SerpApi, Lookalike en onglet plein.
+
+- **Prospects — rail réordonné façon Sales Nav** (`#av-rail-prospects` réécrit) :
+  1 postes · 2 secteur · 3 effectif en **tranches Sales Nav multi** (Indépendant → 5 001-10 000,
+  multi coché → enveloppe min des min / max des max, `SN_EFF`) · 4 **type d'entreprise**
+  (`TYPES_ENTREPRISE` → `legal_category` INSEE, mapping SPÉCULATIF → garde serveur : si le
+  comptage entreprises tombe à 0 avec le filtre, il est retiré et `types_ignores:true` remonte —
+  bandeau 🏷️ dans l'aperçu) · 5 **lieu du siège Inclure/Exclure** (régions par NOM canonique —
+  `region_code` est ⛔ ignoré par Basile —, DOM par préfixes CP énumérés, villes par
+  `headquarters_city` ; appliqué aux ENTREPRISES de la voie SIREN via `filtresEntreprises()`) ·
+  6 **la personne** : prénom/nom (`result_first_name/last_name`), entreprise actuelle (`employer`
+  exact+contains, pattern personas.js), langue (`languages`, map FR→EN) et ancienneté au poste
+  (`current_tenure_years` : <1 / 1-3 / 3+ / 🆕 nouveau poste) — ces DEUX derniers sont LKI-only :
+  `extrasLki()` ne les pose QUE sur les requêtes source LinkedIn (sur le registre ils videraient
+  tout). ⚠️ languages / current_tenure_years / legal_category / exclude géo n'ont JAMAIS été
+  validés en prod (countOnly à faire) — s'ils sont ignorés par Basile, dégradation sans casse.
+- **Entreprises** : les personas passent en **modale cochable paginée** (`#av-modal`, overlay
+  générique partagé, `avModale()`) — la carte d'estimation garde le lien « 👥 Voir les
+  décideurs » ; les cochés restent attachés à la génération (AV_DECOCHES, clés inchangées).
+- **Google → SerpApi** : **`api/gmb-serp.js` (nouveau)** remplace gmb-liste pour cet onglet.
+  Moteur `google_maps` via `appelSerpApi` (compteur + plafond 1 000/mois partagés) : 20/page,
+  ~120/ville, note+avis SANS Details, pays via `gl` (fr/be/ch/lu au front), `avis_min`.
+  Aperçu = « N balayés » (Google ne donne JAMAIS de total) + modale établissements cochable
+  paginée (chaque page = 1 recherche SerpApi par combinaison activité×ville, dit dans l'UI) ;
+  doublons par `place_id` contre les listes actives. Génération : `selection` (les cochés,
+  AUCUN re-scan SerpApi) sinon balayage pages 0-5 ; puis Details Google (tél/site/pire avis)
+  + email générique du site — `detailsPlace/versFiche/trouverEmailSite` EXPORTÉS de gmb-liste,
+  pipeline et format de fiches identiques. Plafond atteint → 429 relayé proprement.
+  L'ancien flux Places de gmb-liste reste intact pour la 3e carte (Google Maps classique).
+- **Lookalike = onglet plein** (`avChargerLookalike`) : GET /api/listes → tableau trié par
+  RDV pris puis taux (RDV/traitées, barre de score), 25 max ; **👯 Relancer** (`avRelancer`)
+  mappe les critères d'origine vers le bon onglet (avance→Prospects avec concepts/postes/types/
+  lieux restaurés, naf Pappers→Entreprises via la nomenclature locale, gmb→Google) ; liste
+  manuelle → toast « pas de critères relançables ».
+- **Vérifié** : node --check (5 API + front extrait) ; banc `test-v2.mjs` 5 scénarios (employer
+  exact+contains suffisant seul, extras LKI jamais sur le registre, mapping types+lieux sur
+  companies/find, garde types_ignores, nouveau poste) ; banc `test-gmb-serp.mjs` 7 scénarios
+  (pagination, filtres note/avis, sélection = 0 appel SerpApi, plafond→429, 400) ; régression
+  14 scénarios recherche OK ; smoke navigateur complet sur les 4 onglets (stub fetch : rail
+  rendu, enveloppe 11-200, chips lieux ✓/✕, alerte types_ignores, modale personas 8 lignes,
+  Google 20 étabs + pagination + sélection 38 = 40−doublon−décoché, Lookalike 4 lignes triées
+  + 3 relances cross-onglet).
+- **À valider en prod (countOnly gratuits)** : languages, current_tenure_years, legal_category,
+  exclude sur region/headquarters_* — snippets console à faire tourner ; et le quota SerpApi
+  réel sur une vraie recherche Google.
 
 ## 🎯 22 septembre 2026 (soir) — 🔎 Recherche avancée : la 6e carte (GO Didier, wireframe validé)
 

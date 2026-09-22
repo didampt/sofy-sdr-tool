@@ -95,7 +95,7 @@ function extraireEmail(html, domaine) {
   return pool[0] || null;
 }
 // Essaie accueil puis /contact puis /mentions-legales ; s'arrête au premier email trouvé.
-async function trouverEmailSite(urlSite, domaine) {
+export async function trouverEmailSite(urlSite, domaine) {
   let base;
   try { base = new URL(urlSite).origin; } catch (e) { return null; }
   const pages = [urlSite, base + '/contact', base + '/mentions-legales'];
@@ -107,7 +107,7 @@ async function trouverEmailSite(urlSite, domaine) {
 }
 
 // Garde une place ? (ouverte + filtre de note ; sans note = gardée seulement si aucun filtre)
-function passeFiltre(r, noteMin, noteMax) {
+export function passeFiltre(r, noteMin, noteMax) {
   if (r.business_status && r.business_status !== 'OPERATIONAL') return false;
   const aFiltre = (noteMin != null || noteMax != null);
   if (typeof r.rating !== 'number') return !aFiltre;

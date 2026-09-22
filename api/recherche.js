@@ -72,9 +72,16 @@ function filtresBasile(f, conceptIds, roles) {
   if (conceptIds.length) b.activity = { include: conceptIds };
   // Ville de la PERSONNE (result_city, multi-source) — le seul filtre géo qui existe sur
   // people/find (region/département n'existent pas ; result_postal_code est Legal-only et
-  // exclurait LinkedIn). Pour une zone entière : onglet Entreprises + 👥.
+  // exclurait LinkedIn). Pour une zone entière : filtre « lieu du siège » (voie SIREN).
   const villes = (Array.isArray(f.villes) ? f.villes : []).map(v => String(v || '').trim()).filter(Boolean).slice(0, 15);
   if (villes.length) b.result_city = { include: villes };
+  // La personne (wireframe v2) : prénom / nom / entreprise actuelle (employer exact+contains,
+  // même pattern que personas.js — multi-source, marche aussi en voie directe)
+  const prenom = String(f.prenom || '').trim(), nomP = String(f.nom_personne || '').trim();
+  if (prenom) b.result_first_name = { include: [prenom] };
+  if (nomP) b.result_last_name = { include: [nomP] };
+  const ent = String(f.entreprise || '').trim();
+  if (ent) b.employer = { include: ent.length >= 5 ? ['"' + ent + '"', ent] : ['"' + ent + '"'] };
   const effMin = parseInt(f.effectif_min, 10), effMax = parseInt(f.effectif_max, 10);
   if (effMin > 0 || effMax > 0) {
     b.company_headcount = {};
@@ -82,6 +89,22 @@ function filtresBasile(f, conceptIds, roles) {
     if (effMax > 0) b.company_headcount['<='] = effMax;
   }
   return b;
+}
+
+// Filtres LINKEDIN-ONLY (langue, ancienneté au poste) : appliqués UNIQUEMENT aux requêtes de la
+// source LinkedIn — un filtre LKI-only sur la source registre la viderait (doc Basile : activer
+// un filtre d'une source exclut l'autre). Jamais validés en prod → le comptage 💼 dira s'ils
+// mordent ; s'ils étaient ignorés, ils n'enlèvent rien (comportement dégradé sans casse).
+const LANGUES = { 'Français': 'French', 'Anglais': 'English', 'Espagnol': 'Spanish', 'Allemand': 'German' };
+function extrasLki(f, b) {
+  const o = { ...b };
+  const lg = LANGUES[String(f.langue || '').trim()];
+  if (lg) o.languages = { include: [lg] };
+  const anc = String(f.anciennete || '').trim();
+  if (f.nouveau_poste || anc === '<1') o.current_tenure_years = { '<': 1 };
+  else if (anc === '1-3') o.current_tenure_years = { '>=': 1, '<=': 3 };
+  else if (anc === '3+') o.current_tenure_years = { '>=': 3 };
+  return o;
 }
 
 const LOT_SIREN = 30;
@@ -97,8 +120,51 @@ function nafDepuisConcepts(ids) {
   return ids.filter(x => x.startsWith('naf:')).map(x => x.slice(4)).slice(0, 4);
 }
 function sansActivity(o) { const c = { ...o }; delete c.activity; return c; }
-async function sirensParNaf(nafs, key, limit, token) {
-  const body = { limit, filters: { naf_code: { include: nafs }, company_ceased: false } };
+
+// ── Wireframe v2 (23/09) : type d'entreprise + lieu du siège (inclure/exclure), appliqués aux
+// ENTREPRISES de la voie SIREN. legal_category = catégorie juridique INSEE ; le mapping
+// libellés → préfixes niveau 1/2 est SPÉCULATIF (jamais testé en prod) → garde anti-filtre-
+// fantôme dans le handler : si le comptage entreprises tombe à 0 avec le filtre, on l'ignore
+// et on le dit (`types_ignores`). Régions par NOM canonique (le code region_code est ⛔ ignoré,
+// cf. openapi Basile) ; DOM par préfixes de code postal ; villes par headquarters_city.
+const TYPES_ENTREPRISE = {
+  'Société commerciale': ['5'],
+  'Société cotée en bourse': ['55', '56'],
+  'Société civile': ['65'],
+  'À but non lucratif': ['9'],
+  'Société de personnes': ['52', '53'],
+  'Indépendant / EI': ['1'],
+  'Administration publique': ['4', '7']
+};
+const REGIONS_NOMS = ['Auvergne-Rhône-Alpes', 'Bourgogne-Franche-Comté', 'Bretagne', 'Centre-Val de Loire', 'Corse', 'Grand Est', 'Hauts-de-France', 'Île-de-France', 'Normandie', 'Nouvelle-Aquitaine', 'Occitanie', 'Pays de la Loire', "Provence-Alpes-Côte d'Azur"];
+const DOM_CP = { 'Guadeloupe': '971', 'Martinique': '972', 'Guyane': '973', 'Réunion': '974', 'Mayotte': '976' };
+function cpsDePrefixe(p) { const a = []; for (let i = 0; i < 100; i++) a.push(p + String(i).padStart(2, '0')); return a; }
+function filtresEntreprises(filtres) {
+  const f = { company_ceased: false };
+  // Type d'entreprise → legal_category (préfixes INSEE — validé par le garde du handler)
+  const cats = [];
+  for (const t of (Array.isArray(filtres.types_entreprise) ? filtres.types_entreprise : [])) {
+    for (const p of (TYPES_ENTREPRISE[t] || [])) if (!cats.includes(p)) cats.push(p);
+  }
+  if (cats.length) f.legal_category = { include: cats };
+  // Lieux du siège : {valeur, mode:'inclure'|'exclure'} — régions (nom canonique), DOM (CP), villes
+  const regIn = [], regEx = [], cpIn = [], cpEx = [], villeIn = [], villeEx = [];
+  for (const l of (Array.isArray(filtres.lieux) ? filtres.lieux : []).slice(0, 12)) {
+    const v = String((l && l.valeur) || '').trim(); if (!v) continue;
+    const ex = l.mode === 'exclure';
+    if (v === 'France métropolitaine') { REGIONS_NOMS.forEach(r => (ex ? regEx : regIn).push(r)); continue; }
+    if (REGIONS_NOMS.includes(v)) { (ex ? regEx : regIn).push(v); continue; }
+    if (DOM_CP[v]) { cpsDePrefixe(DOM_CP[v]).forEach(c => (ex ? cpEx : cpIn).push(c)); continue; }
+    (ex ? villeEx : villeIn).push(v);
+  }
+  if (regIn.length || regEx.length) { f.region = {}; if (regIn.length) f.region.include = regIn; if (regEx.length) f.region.exclude = regEx; }
+  if (cpIn.length || cpEx.length) { f.headquarters_postal_code = {}; if (cpIn.length) f.headquarters_postal_code.include = cpIn; if (cpEx.length) f.headquarters_postal_code.exclude = cpEx; }
+  if (villeIn.length || villeEx.length) { f.headquarters_city = {}; if (villeIn.length) f.headquarters_city.include = villeIn; if (villeEx.length) f.headquarters_city.exclude = villeEx; }
+  return f;
+}
+
+async function sirensParNaf(nafs, key, limit, token, extra) {
+  const body = { limit, filters: { naf_code: { include: nafs }, company_ceased: false, ...(extra || {}) } };
   if (token) body.paginationToken = token;
   const r = await basile('/companies/find', body, key);
   const d = r.data || {};
@@ -168,7 +234,8 @@ export default async function handler(req, res) {
       sirens = filtres.sirens.map(s => String(s || '').replace(/\D/g, '')).filter(s => s.length === 9).slice(0, 120);
     }
     const aVilles = Array.isArray(filtres.villes) && filtres.villes.some(v => String(v || '').trim());
-    if (!roles.length && !conceptIds.length && !sirens.length && !aVilles) {
+    const aPersonne = !!(String(filtres.prenom || '').trim() || String(filtres.nom_personne || '').trim() || String(filtres.entreprise || '').trim());
+    if (!roles.length && !conceptIds.length && !sirens.length && !aVilles && !aPersonne) {
       return res.status(400).json({ erreur: 'Ajoute au moins un filtre (secteur, poste, ville ou liste de comptes) — sans quoi la recherche couvrirait toute la France.' });
     }
     const base = filtresBasile(filtres, conceptIds, roles);
@@ -181,8 +248,22 @@ export default async function handler(req, res) {
     // (concepts naf:) et la voie SIREN pour LINKEDIN.
     const nafsConcepts = nafDepuisConcepts(conceptIds);
     const lkiParSiren = !sirens.length && nafsConcepts.length > 0;
-    // Filtres de la voie SIREN côté personnes : tout SAUF activity (Legal-only, redondant)
-    const baseLkiSiren = sansActivity(avecSource(base, 'lki'));
+    // Filtres de la voie SIREN côté personnes : tout SAUF activity (Legal-only, redondant),
+    // PLUS les filtres LinkedIn-only (langue, ancienneté — wireframe v2)
+    const baseLkiSiren = extrasLki(filtres, sansActivity(avecSource(base, 'lki')));
+    // Filtres ENTREPRISES de la voie SIREN (type d'entreprise, lieux du siège) avec garde :
+    // si legal_category (mapping spéculatif) vide le comptage, on le retire et on le signale.
+    const extraEnt = filtresEntreprises(filtres);
+    let typesIgnores = false;
+    async function sirensGarde(limit, token) {
+      let r = await sirensParNaf(nafsConcepts, key, limit, token, extraEnt);
+      if (!token && r.total === 0 && extraEnt.legal_category) {
+        const sans = { ...extraEnt }; delete sans.legal_category;
+        r = await sirensParNaf(nafsConcepts, key, limit, null, sans);
+        if (r.total > 0) { typesIgnores = true; delete extraEnt.legal_category; }
+      }
+      return r;
+    }
 
     // Source des contacts : 'lki' (profils LinkedIn seuls), 'legal' (dirigeants du registre),
     // 'deux' (défaut : LinkedIn D'ABORD, registre en complément). Sans ça, « N'importe quel
@@ -237,7 +318,7 @@ export default async function handler(req, res) {
           if (rC2.status === 401) return res.status(502).json({ erreur: 'Clé Basile refusée' });
           totalLegal = (rC2.data && rC2.data.total) || 0;
           if (lkiParSiren) {
-            const ent = await sirensParNaf(nafsConcepts, key, 90, null);
+            const ent = await sirensGarde(90, null);
             nbEntSecteur = ent.total; lkiPartiel = !!ent.next;
             totalLki = 0;
             for (let i = 0; i < ent.sirens.length; i += LOT_SIREN) {
@@ -245,12 +326,12 @@ export default async function handler(req, res) {
               if (rc.data && rc.data.success !== false) totalLki += rc.data.total || 0;
             }
           } else {
-            const rC1 = await basile('/people/find', { limit: 1, filters: avecSource(base, 'lki') }, key);
+            const rC1 = await basile('/people/find', { limit: 1, filters: extrasLki(filtres, avecSource(base, 'lki')) }, key);
             totalLki = (rC1.data && rC1.data.total) || 0;
           }
           total = source === 'lki' ? totalLki : source === 'legal' ? totalLegal : totalLki + totalLegal;
           if (base.company_headcount && !lkiParSiren) {
-            const sans = avecSource(base, source === 'deux' ? 'lki' : source); delete sans.company_headcount;
+            const sans = source === 'legal' ? avecSource(base, 'legal') : extrasLki(filtres, avecSource(base, 'lki')); delete sans.company_headcount;
             const r2 = await basile('/people/find', { limit: 1, filters: sans }, key);
             if (r2.data && r2.data.total != null) totalSansEffectif = r2.data.total;
           }
@@ -273,7 +354,7 @@ export default async function handler(req, res) {
           // companies/find rechargée via entToken, puis lot N)
           const entToken = suite ? (suite.entToken || null) : null;
           const lot = suite ? (suite.lot || 0) : 0;
-          const ent = await sirensParNaf(nafsConcepts, key, 90, entToken);
+          const ent = await sirensGarde(90, entToken);
           const lotSirens = ent.sirens.slice(lot * LOT_SIREN, (lot + 1) * LOT_SIREN);
           if (lotSirens.length) {
             const rP = await basile('/people/find', { limit: 100, filters: { ...baseLkiSiren, siren: { include: lotSirens } } }, key);
@@ -284,7 +365,7 @@ export default async function handler(req, res) {
           else if (ent.next) prochaineSuite = { phase: 'lki', lot: 0, entToken: ent.next };
           else if (source === 'deux') prochaineSuite = { phase: 'legal', token: null };
         } else {
-          const body = { limit: 20, filters: avecSource(base, 'lki') };
+          const body = { limit: 20, filters: extrasLki(filtres, avecSource(base, 'lki')) };
           if (suite && suite.token) body.paginationToken = suite.token;
           const rP = await basile('/people/find', body, key);
           if (!rP.data || rP.data.success === false) {
@@ -342,6 +423,7 @@ export default async function handler(req, res) {
         nb_roles: roles.length,
         nb_sirens: sirens.length || null,
         nb_entreprises_secteur: (typeof _nbEntSecteur !== 'undefined' && _nbEntSecteur != null) ? _nbEntSecteur : null,
+        types_ignores: typesIgnores || false, // legal_category vidait le comptage → retiré, à dire au SDR
         total_lki_partiel: (typeof _lkiPartiel !== 'undefined') ? !!_lkiPartiel : false, // LinkedIn compté sur les 90 premières entreprises seulement
         apercu_suite: prochaineSuite, // à repasser tel quel pour la page suivante (null = fin)
         leads
@@ -407,7 +489,7 @@ export default async function handler(req, res) {
           let epuiseSrc = false;
           for (let b = 0; b < 6; b++) {
             if (!tempsOk() || fiches.length >= cap) break;
-            const ent = await sirensParNaf(nafsConcepts, key, 300, entToken);
+            const ent = await sirensGarde(300, entToken);
             if (!ent.sirens.length) { epuiseSrc = true; break; }
             for (let i = 0; i < ent.sirens.length; i += LOT_SIREN) {
               if (!tempsOk() || fiches.length >= cap) break;
@@ -428,7 +510,7 @@ export default async function handler(req, res) {
           if (!epuiseSrc) toutEpuise = false;
           continue;
         }
-        const fSrc = avecSource(base, src);
+        const fSrc = src === 'lki' ? extrasLki(filtres, avecSource(base, 'lki')) : avecSource(base, src);
         const cle = 'av_curseur_' + hashDe({ r: [...roles].sort(), a: conceptIds, e: base.company_headcount || null, v: (base.result_city && base.result_city.include) || null, s: src });
         let cur = null;
         if (sql) { try { const r = await sql`SELECT valeur FROM config WHERE cle = ${cle}`; cur = (r.length && r[0].valeur) || null; } catch (_) {} }
