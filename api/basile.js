@@ -50,8 +50,10 @@ export default async function handler(req, res) {
   if (SUGGESTS[action]) {
     const q = String((req.body || {}).q || '').trim();
     if (!q) return res.status(400).json({ erreur: 'q requis' });
+    const lim = parseInt((req.body || {}).limit, 10);
+    const suffixe = (lim > 0) ? '&limit=' + Math.min(lim, 50) : '';
     try {
-      const r = await fetch(BASE + SUGGESTS[action] + '?q=' + encodeURIComponent(q), { headers: { 'Authorization': key } });
+      const r = await fetch(BASE + SUGGESTS[action] + '?q=' + encodeURIComponent(q) + suffixe, { headers: { 'Authorization': key } });
       let data = null; try { data = await r.json(); } catch (e) { data = null; }
       return res.status(200).json({ status: r.status, brut: data });
     } catch (e) {

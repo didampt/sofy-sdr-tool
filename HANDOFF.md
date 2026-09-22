@@ -1,5 +1,29 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 22 septembre 2026, nuit)
 
+## 🎯 22 septembre 2026 (nuit, 4e passe) — purge inter-onglets, plafond 100 000 Basile, dropdowns multi-choix
+
+Trois retours Didier :
+- **Bug : le comptage restait d'un onglet à l'autre** (Google affichait les 4 prospects de
+  Prospects). Cause : debounce partagé AV_TIMER + réponses en vol qui réécrivaient #av-count
+  après le switch. Fix : `avOnglet` purge tout (clearTimeout, AV_PAG.pro/ent remis à zéro —
+  ⚠️ AV_PAG est un const, MUTER, pas réassigner —, aperçu vidé, avMajSelection) + garde
+  `if(AV.onglet!=='…')return;` après CHAQUE await de avApercu/avEstimerEnt/avEstimerGmb/
+  avChargerLookalike.
+- **« Décideur = 200 000 ? »** : Basile PLAFONNE le total affiché à 100 000 par source (mesuré :
+  100 000 pile sur lki ET legal). Front : `avNb()` affiche « 100 000+ » + note « plafond
+  d'affichage Basile — le gisement réel est plus grand ». Jamais un faux total exact.
+- **UX multi-choix (demandé pour TOUS les champs)** : les 6 dropdowns (postes avancé, secteur
+  concepts, NAF entreprises, wizard étape 5, personas fiche/Ma journée) sont scrollables
+  (max-height 340px), restent OUVERTS après un choix, se re-rendent avec l'état (✓ Inclus plein
+  vert / ✕ Exclu plein rouge / ✓ ajouté fond vert), re-clic = retirer (toggle partout :
+  avAjouterPoste, avAjouterConcept, avEntAjouterNaf, jobToggle qui re-clique la chip existante,
+  personasAjouterFonction qui bascule la coche). roles_suggest passe limit:25 (paramètre ajouté
+  à /api/basile, plafonné 50). Fermeture : clic hors box + Échap (listeners globaux SUGG_BOXES).
+  ⚠️ PIÈGE : le re-render (suggAfficher) retire la ligne cliquée du DOM AVANT que le clic bubble
+  jusqu'à document → `contains` échoue → la box se refermait. Le listener ignore tout target
+  `!isConnected` (= clic interne re-rendu). Testé en VRAIS clics au navigateur, pas seulement
+  en appels JS directs.
+
 ## 🎯 22 septembre 2026 (nuit, 3e passe) — voie SIREN élargie, codes INSEE réels, intitulés Basile PARTOUT
 
 Retour Didier (test prod « commerce de voitures × Marketing Manager » → 4 prospects, bandeau 🏷️
