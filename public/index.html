@@ -4374,12 +4374,14 @@ async function avEstimerGmb(){
  const c=avCritGmb();
  const count=document.getElementById('av-count');
  if(!c.activites.length||!c.villes.length){count.innerHTML='Renseigne une activité et une ou plusieurs villes.';return;}
- count.innerHTML='⏳ Recherche Google (SerpApi)…';
+ const nbCombos=Math.min(6,Math.max(1,c.activites.length*c.villes.length));
+ count.innerHTML='⏳ '+nbCombos+' recherche'+(nbCombos>1?'s':'')+' Google en parallèle (~3-8 s)…';
  AV_GMB={pages:[],cur:0,aSuite:false,vu:false,balayes:0,lls:{}};
  document.getElementById('av-apercu').style.display='none';
  try{
   const d=await avGmbPage(0);
   if(!d||AV.onglet!=='gmb')return;
+  if(d.erreur){count.innerHTML='⚠️ '+String(d.erreur).replace(/</g,'&lt;');return;}
   count.innerHTML=`<div style="display:flex;gap:22px;align-items:center;flex-wrap:wrap">
    <div><div style="font-size:12px;color:var(--ink-soft)">Établissements retenus (page 1)</div><div style="font-size:30px;font-weight:800;color:var(--ink)">${(AV_GMB.pages[0]||[]).length}</div></div>
    <div style="font-size:12.5px;line-height:1.55;color:var(--ink-soft)">${AV_GMB.balayes} balayés · Google ne donne pas de total — pagine dans la fenêtre${d.recherches_serp?`<br>${d.recherches_serp} recherche(s) SerpApi consommée(s) par page (plafond 1 000/mois)`:''}</div>
@@ -4390,8 +4392,8 @@ async function avEstimerGmb(){
 async function avGmbPage(p){
  const c=avCritGmb();
  const r=await api('/api/gmb-serp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'apercu',...c,pays:document.getElementById('av-gmb-pays').value,avis_min:document.getElementById('av-gmb-avismin').value||null,page:p,lls:AV_GMB.lls})});
- const d=await r.json();
- if(d.erreur){toast('⚠️ '+d.erreur);return null;}
+ let d;try{d=await r.json();}catch(_){d={erreur:'réponse invalide ('+r.status+') — recommence dans quelques secondes'};}
+ if(d.erreur)return d; // l'appelant affiche (le sablier restait figé sur un simple toast)
  if(d.lls)AV_GMB.lls=d.lls; // coordonnées par combinaison — SerpApi les exige pour paginer
  AV_GMB.pages[p]=d.etablissements||[];
  AV_GMB.cur=p;AV_GMB.aSuite=!!d.a_suite;AV_GMB.balayes+=(p>=AV_GMB.pages.length-1?d.balayes||0:0);
@@ -4413,7 +4415,7 @@ async function avModalGmb(p){
  if(p===undefined)p=AV_GMB.cur;
  if(p<0)return;
  AV_GMB.vu=true;
- if(!AV_GMB.pages[p]){const d=await avGmbPage(p);if(!d)return;}
+ if(!AV_GMB.pages[p]){const d=await avGmbPage(p);if(!d)return;if(d.erreur){toast('⚠️ '+d.erreur);return;}}
  AV_GMB.cur=p;
  const page=AV_GMB.pages[p]||[];
  const droite=(p<AV_GMB.pages.length-1)||AV_GMB.aSuite;

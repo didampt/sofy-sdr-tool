@@ -108,8 +108,12 @@ export default async function handler(req, res) {
       const connus = await placeIdsConnus();
       const etablissements = [];
       let balayes = 0, aSuite = false;
-      for (const combo of combos.slice(0, 6)) {
-        const brut = await pageSerp(combo, p);
+      // Les combinaisons partent en PARALLÈLE : 6 recherches séquentielles ≈ 20-30 s de sablier
+      // (retour Didier « ne fonctionne pas ») ; en parallèle ≈ 3-5 s.
+      const lesCombos = combos.slice(0, 6);
+      const brutParCombo = await Promise.all(lesCombos.map(c => pageSerp(c, p)));
+      for (let ci = 0; ci < lesCombos.length; ci++) {
+        const combo = lesCombos[ci], brut = brutParCombo[ci];
         balayes += brut.length;
         if (brut.length >= 20) aSuite = true;
         for (const x of brut) {
@@ -151,9 +155,11 @@ export default async function handler(req, res) {
     } else {
       for (let p = 0; p <= 5 && candidats.length < cap; p++) {
         let vide = true;
-        for (const combo of combos.slice(0, 6)) {
+        const lesCombos = combos.slice(0, 6);
+        const brutParCombo = await Promise.all(lesCombos.map(c => pageSerp(c, p)));
+        for (let ci = 0; ci < lesCombos.length; ci++) {
           if (candidats.length >= cap) break;
-          const brut = await pageSerp(combo, p);
+          const combo = lesCombos[ci], brut = brutParCombo[ci];
           if (brut.length) vide = false;
           for (const x of brut) {
             if (candidats.length >= cap) break;

@@ -1,5 +1,14 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 22 septembre 2026, nuit)
 
+## 🎯 22 septembre 2026 (nuit, 12e passe) — SerpApi en parallèle + fin du sablier figé
+
+Retour Didier (« Recherche Google (SerpApi)… ne fonctionne pas » : sablier infini) :
+- Les combinaisons activité×ville partaient EN SÉQUENTIEL (6 × ~3-5 s ≈ 20-30 s de sablier).
+  → Promise.all sur les combos (aperçu ET génération auto) ≈ 3-8 s.
+- Le front laissait le sablier figé quand le serveur répondait une erreur (toast seulement) ou
+  une réponse non-JSON (timeout) → avGmbPage renvoie l'erreur, avEstimerGmb/avModalGmb
+  l'affichent dans la carte ; sablier informatif (« N recherches Google en parallèle (~3-8 s) »).
+
 ## 🎯 22 septembre 2026 (nuit, 11e passe) — « hasn't returned any results » = 0 résultat, pas une panne
 
 Retour Didier « même bug » : sa capture montre pourtant la page 1 RÉUSSIE (40 balayés, 4
