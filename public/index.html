@@ -725,6 +725,11 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
                 <p class="hint" id="av-eff-note" style="display:none;color:#B45309;margin-top:6px">⚠️ Filtrer par effectif écarte aussi les employeurs à effectif inconnu — l'écart s'affiche dans le comptage.</p>
               </div>
               <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
+                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Source des contacts</div>
+                <div id="av-source-chips" class="chips"></div>
+                <p class="hint" style="margin-top:6px">💼 = profils LinkedIn (poste réel, enrichissables Kaspr/FullEnrich). 🏛️ = dirigeants du registre légal (fiable, mais mandat ≠ poste). Par défaut : LinkedIn d'abord, registre en complément.</p>
+              </div>
+              <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
                 <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Postes ciblés <span style="font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;background:#fef3c7;color:#92400e">variantes IA incluses</span></div>
                 <div id="av-postes-chips" class="chips"></div>
                 <input class="field" id="av-poste-libre" placeholder="Autre intitulé… (Entrée pour ajouter)" style="width:100%;margin-top:8px" onkeydown="if(event.key==='Enter'){avAjouterPoste(this.value);this.value='';}">
@@ -3479,8 +3484,9 @@ function remplirSelectSdrManuelle(){return remplirSelectSdr('manuelle-sdr');}
    Onglet Prospects → /api/recherche (Basile people/find : concepts secteur, postes, effectif,
    listes de comptes par SIREN). Onglet Entreprises → /api/estimer + launch() (tuyauterie Pappers
    existante). Barre ✨ → /api/ia-liste (mêmes critères que la Liste intelligente). */
-const AV={onglet:'prospects',concepts:[],postes:[],decideur:false,eff:'Indifférent',listes:[],villes:[],
+const AV={onglet:'prospects',concepts:[],postes:[],decideur:false,eff:'Indifférent',listes:[],villes:[],source:'deux',
   ent:{nafs:[],eff:'Indifférent',zones:['France métropolitaine']}};
+const AV_SOURCES=[['deux','💼 LinkedIn d’abord + 🏛️ registre'],['lki','💼 LinkedIn uniquement'],['legal','🏛️ Registre uniquement']];
 const AV_EFF={'Indifférent':[null,null],'1–9':[1,9],'10–49':[10,49],'50–199':[50,199],'200+':[200,null]};
 const AV_POSTES_FIXES=["N'importe quel décideur","Directeur Commercial","Directeur Marketing","Directeur Relation Client","Directeur Expérience Client (CX)","Responsable Service Client","Directeur CRM","Responsable Communication","Directeur Réseau / Retail"];
 let AV_TIMER=null,AV_SUGG_TIMER=null,AV_EN_COURS=false,AV_LISTES=[],AV_APERCU=null;
@@ -3518,6 +3524,10 @@ function avRendreChips(){
  // Concepts secteur (c.mort = 0 personne côté Basile → chip rouge, à remplacer)
  document.getElementById('av-concepts-chips').innerHTML=AV.concepts.map((c,k)=>
   `<span class="chip sel" style="cursor:pointer${c.mort?';background:#fee2e2;border-color:#fca5a5;color:#b91c1c':''}" onclick="AV.concepts.splice(${k},1);avRendreChips();avMaj()" title="${esc(c.id)}">${c.mort?'⚠️ ':''}${esc(c.label)} ✕</span>`).join('');
+ // Source des contacts (LinkedIn d'abord par défaut)
+ AV.source=AV.source||'deux';
+ document.getElementById('av-source-chips').innerHTML=AV_SOURCES.map(([v,l])=>
+  `<button class="chip${AV.source===v?' sel':''}" onclick="AV.source='${v}';avRendreChips();avMaj()">${l}</button>`).join('');
  // Effectif (sélection simple, « Indifférent » par défaut)
  document.getElementById('av-eff-chips').innerHTML=Object.keys(AV_EFF).map(t=>
   `<button class="chip${AV.eff===t?' sel':''}" onclick="AV.eff='${t}';avRendreChips();avMaj()">${t}</button>`).join('');
@@ -3622,7 +3632,7 @@ function avFiltres(){
  const [effMin,effMax]=AV_EFF[AV.eff]||[null,null];
  return {concept_ids:AV.concepts.map(c=>c.id),concept_labels:AV.concepts.map(c=>c.label),
   postes:AV.postes,decideur:AV.decideur,effectif_min:effMin,effectif_max:effMax,
-  villes:(AV.villes||[]).slice(),
+  villes:(AV.villes||[]).slice(),source:AV.source||'deux',
   listes_ids:AV.listes.map(l=>l.id),exclure_extraits:document.getElementById('av-exclure').checked};
 }
 function avMaj(){
@@ -3652,17 +3662,20 @@ async function avApercu(){
   }else{AV.concepts.forEach(c=>{delete c.mort;});avRendreChips();}
   count.innerHTML=`<div style="display:flex;gap:22px;align-items:center;flex-wrap:wrap">
    <div><div style="font-size:12px;color:var(--ink-soft)">Prospects correspondants</div><div style="font-size:30px;font-weight:800;color:var(--ink)">${(d.total||0).toLocaleString('fr-FR')}</div></div>
-   <div style="font-size:12.5px;line-height:1.55;color:var(--ink-soft)">comptage gratuit, recalculé à chaque filtre${d.nb_sirens?`<br>recherche sur les <b>${d.nb_sirens}</b> entreprises de tes listes`:''}${doublons?`<br>♻️ ${doublons} déjà extrait(s) sur l'aperçu — décochés`:''}</div>
+   <div style="font-size:12.5px;line-height:1.55;color:var(--ink-soft)">${(d.total_lki!=null&&d.total_legal!=null)?`<b style="color:#0369a1">💼 LinkedIn ${d.total_lki.toLocaleString('fr-FR')}</b> · <b style="color:#0f766e">🏛️ registre ${d.total_legal.toLocaleString('fr-FR')}</b><br>`:''}comptage gratuit, recalculé à chaque filtre${d.nb_sirens?`<br>recherche sur les <b>${d.nb_sirens}</b> entreprises de tes listes`:''}${doublons?`<br>♻️ ${doublons} déjà extrait(s) sur l'aperçu — décochés`:''}</div>
    ${(d.total_sans_effectif&&d.total_sans_effectif>(d.total||0))?`<div style="font-size:12.5px;background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:8px 12px;color:#7a5510">📉 ton filtre effectif cache <b>${(d.total_sans_effectif-(d.total||0)).toLocaleString('fr-FR')}</b> personne(s) (effectif employeur inconnu)</div>`:''}
    ${alerteConcepts}
   </div>`;
   if(!(d.leads||[]).length){box.style.display='none';return;}
   box.innerHTML=`<div style="padding:11px 16px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--ink-soft)"><b style="color:var(--ink)">Aperçu réel (${d.leads.length} premiers)</b> — décoche pour écarter de la génération</div>`
-   +d.leads.map((l,k)=>`<div style="display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid #f1f2f8;${l.doublon?'opacity:.45':''}">
-     <input type="checkbox" data-slug="${esc(l.slug||'')}" ${l.doublon?'':'checked'} aria-label="Garder ${esc((l.prenom+' '+l.nom).trim())}">
+   +d.leads.map((l,k)=>{
+    // Clé d'exclusion : slug LinkedIn, sinon la même clé p: que le serveur (dirigeants registre)
+    const cleEx=l.slug||('p:'+((l.prenom||'')+' '+(l.nom||'')+'@'+(l.entreprise||'')).toLowerCase().replace(/\s+/g,' ').trim());
+    return `<div style="display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid #f1f2f8;${l.doublon?'opacity:.45':''}">
+     <input type="checkbox" data-slug="${esc(cleEx)}" ${l.doublon?'':'checked'} aria-label="Garder ${esc((l.prenom+' '+l.nom).trim())}">
      <div style="min-width:0;flex-grow:1;font-size:13px"><b>${esc((l.prenom+' '+l.nom).trim())}</b> <span style="color:var(--ink-soft)">— ${esc(l.fonction)}${l.entreprise?' · '+esc(l.entreprise):''}${l.ville?' ('+esc(l.ville)+')':''}</span></div>
      ${l.doublon?'<span class="badge" style="background:#fee2e2;color:#b91c1c">déjà extrait</span>':(l.linkedin?'<span class="badge b-gmb">💼 LinkedIn</span>':'<span class="badge b-gmb">🏛️ registre</span>')}
-    </div>`).join('');
+    </div>`;}).join('');
   box.style.display='block';
  }catch(e){count.innerHTML='⚠️ Erreur réseau : '+e.message;}
 }

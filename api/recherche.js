@@ -105,6 +105,32 @@ export default async function handler(req, res) {
       const r = await resoudreConcepts({ naf_codes: filtres.naf_codes }, key);
       conceptIds = r.ids; conceptLabels = r.labels;
     }
+    // ÉLARGISSEMENT : un concept naf: n'indexe que le REGISTRE — les personnes LinkedIn sont
+    // classées via les concepts lki:/gmb:. Constaté en prod 22/09 : naf:45.11Z + « Directeur
+    // Commercial » → 0 (aucun mandataire ne porte cet intitulé) alors que ces profils existent
+    // sur LinkedIn. Chaque naf: choisi est donc élargi en ses équivalents via activity-suggest
+    // (requête par le LIBELLÉ, la requête par code ne renvoie que le naf:), en union OR.
+    if (conceptIds.length && !conceptIds.some(x => x.startsWith('lki:') || x.startsWith('gmb:'))) {
+      const vus = new Set(conceptIds);
+      for (let i = 0; i < Math.min(conceptIds.length, 4); i++) {
+        const id = conceptIds[i];
+        if (!id.startsWith('naf:')) continue;
+        // Libellé sans le préfixe « 45.11Z – » ; repli sur le code si le libellé manque
+        const brut = String(conceptLabels[i] || '').replace(/^[\d.]{4,8}[A-Z]?\s*[–-]\s*/, '').trim();
+        const q = brut || id.slice(4);
+        try {
+          const r = await fetch('https://api.basile.cc/companies/activity-suggest?q=' + encodeURIComponent(q), { headers: { 'Authorization': key } });
+          const d = await r.json().catch(() => null);
+          for (const s of (((d || {}).suggestions) || [])) {
+            if (!s || !s.value || s.type === 'concept') continue;
+            const sid = String(s.value);
+            if (vus.has(sid)) continue;
+            vus.add(sid); conceptIds.push(sid); conceptLabels.push(String(s.label || sid));
+          }
+        } catch (_) {}
+      }
+      conceptIds = conceptIds.slice(0, 14); conceptLabels = conceptLabels.slice(0, 14);
+    }
     const roles = rolesDepuisFiltres(filtres);
     const sirens = await sirensDesListes(filtres.listes_ids);
     const aVilles = Array.isArray(filtres.villes) && filtres.villes.some(v => String(v || '').trim());
@@ -112,6 +138,18 @@ export default async function handler(req, res) {
       return res.status(400).json({ erreur: 'Ajoute au moins un filtre (secteur, poste, ville ou liste de comptes) — sans quoi la recherche couvrirait toute la France.' });
     }
     const base = filtresBasile(filtres, conceptIds, roles);
+
+    // Source des contacts : 'lki' (profils LinkedIn seuls), 'legal' (dirigeants du registre),
+    // 'deux' (défaut : LinkedIn D'ABORD, registre en complément). Sans ça, « N'importe quel
+    // décideur » ne sortait QUE des gérants du registre — leurs intitulés exacts (Président,
+    // Gérant) matchent en masse et Basile les sert en premier (retour Didier 22/09).
+    const source = (filtres.source === 'lki' || filtres.source === 'legal') ? filtres.source : 'deux';
+    function avecSource(b, s) {
+      const o = { ...b };
+      if (s === 'lki') o.with_linkedin_profile = true;
+      if (s === 'legal') o.with_legal_data = true;
+      return o;
+    }
 
     // Un appel people/find (comptage limit 1 ou page) avec, en mode listes, un lot de SIREN.
     async function trouver(extra, limit, token) {
@@ -122,7 +160,7 @@ export default async function handler(req, res) {
 
     // ── APERÇU : total + transparence effectif + 20 premiers profils, doublons signalés ──
     if (mode === 'apercu') {
-      let total = 0, totalSansEffectif = null, leadsBruts = [];
+      let total = 0, totalSansEffectif = null, leadsBruts = [], totalLki = null, totalLegal = null;
       if (sirens.length) {
         // Par lots de SIREN : total = somme, aperçu = premiers lots (comptages gratuits)
         for (let i = 0; i < sirens.length; i += LOT_SIREN) {
@@ -134,15 +172,31 @@ export default async function handler(req, res) {
           if (leadsBruts.length < 20) leadsBruts = leadsBruts.concat(r.data.leads || []);
         }
       } else {
-        const r = await trouver({}, 20);
-        if (r.status === 401) return res.status(502).json({ erreur: 'Clé Basile refusée' });
-        if (!r.data || r.data.success === false) return res.status(502).json({ erreur: 'Recherche Basile échouée', status: r.status });
-        total = r.data.total || 0;
-        leadsBruts = r.data.leads || [];
+        // Comptage par SOURCE + aperçu LinkedIn d'abord (mode 'deux')
+        const rLki = await basile('/people/find', { limit: source === 'legal' ? 1 : 20, filters: avecSource(base, 'lki') }, key);
+        if (rLki.status === 401) return res.status(502).json({ erreur: 'Clé Basile refusée' });
+        const rLeg = await basile('/people/find', { limit: source === 'lki' ? 1 : 20, filters: avecSource(base, 'legal') }, key);
+        if ((!rLki.data || rLki.data.success === false) && (!rLeg.data || rLeg.data.success === false)) {
+          return res.status(502).json({ erreur: 'Recherche Basile échouée' });
+        }
+        totalLki = (rLki.data && rLki.data.total) || 0;
+        totalLegal = (rLeg.data && rLeg.data.total) || 0;
+        const leadsLki = (rLki.data && rLki.data.leads) || [];
+        const leadsLeg = (rLeg.data && rLeg.data.leads) || [];
+        if (source === 'lki') { total = totalLki; leadsBruts = leadsLki; }
+        else if (source === 'legal') { total = totalLegal; leadsBruts = leadsLeg; }
+        else { total = totalLki + totalLegal; leadsBruts = leadsLki.concat(leadsLeg); }
         if (base.company_headcount && total >= 0) {
-          const sans = { ...base }; delete sans.company_headcount;
+          const sans = avecSource(base, source === 'deux' ? 'lki' : source); delete sans.company_headcount;
           const r2 = await basile('/people/find', { limit: 1, filters: sans }, key);
-          if (r2.data && r2.data.total != null) totalSansEffectif = r2.data.total;
+          if (r2.data && r2.data.total != null) {
+            totalSansEffectif = r2.data.total;
+            if (source === 'deux') {
+              const sansLeg = avecSource(base, 'legal'); delete sansLeg.company_headcount;
+              const r3 = await basile('/people/find', { limit: 1, filters: sansLeg }, key);
+              if (r3.data && r3.data.total != null) totalSansEffectif += r3.data.total;
+            }
+          }
         }
       }
 
@@ -175,6 +229,7 @@ export default async function handler(req, res) {
       });
       return res.status(200).json({
         total, total_sans_effectif: totalSansEffectif,
+        total_lki: totalLki, total_legal: totalLegal, // répartition par source (null en mode listes)
         concepts_labels: conceptLabels, concepts_ids: conceptIds,
         concepts_zero: conceptsZero, // ids sans AUCUNE personne (null si total > 0)
         nb_roles: roles.length,
@@ -192,7 +247,26 @@ export default async function handler(req, res) {
     }
     const debut = Date.now();
     const tempsOk = () => (Date.now() - debut) < 90000; // maxDuration 120 s, marge
-    let fiches = [], epuise = false, pages = 0, token = null;
+    let fiches = [], epuise = false, pages = 0;
+
+    // Clé de dédup d'un lead : slug LinkedIn, sinon (dirigeants du registre, sans profil)
+    // prénom+nom+entreprise — sans ce repli, la génération JETAIT tous les mandataires.
+    function cleLead(f) {
+      const c = f.contacts[0] || {};
+      const slug = slugLinkedin(c.enrich && c.enrich.linkedin);
+      if (slug) return slug;
+      const p = ((c.prenom || '') + ' ' + (c.nom || '') + '@' + (f.nom || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+      return p.length > 3 ? 'p:' + p : null;
+    }
+    function absorber(leads) {
+      for (const l of leads) {
+        const f = leadVersFichePersonne(l);
+        const k = cleLead(f);
+        if (!k || connus.has(k)) continue;
+        fiches.push(f); connus.add(k);
+        if (fiches.length >= cap) break;
+      }
+    }
 
     if (sirens.length) {
       // Mode listes de comptes : lots bornés (≤300 SIREN), pas de curseur nécessaire.
@@ -201,61 +275,57 @@ export default async function handler(req, res) {
         const r = await trouver({ siren: { include: sirens.slice(i, i + LOT_SIREN) } }, 100);
         if (!r.data || r.data.success === false) continue;
         pages++;
-        for (const l of (r.data.leads || [])) {
-          const f = leadVersFichePersonne(l);
-          const slug = slugLinkedin(f.contacts[0] && f.contacts[0].enrich && f.contacts[0].enrich.linkedin);
-          if (!slug || connus.has(slug)) continue;
-          fiches.push(f); connus.add(slug);
-          if (fiches.length >= cap) break;
-        }
+        absorber(r.data.leads || []);
       }
       epuise = true; // le vivier des listes est fini par construction
     } else {
-      // Mode filtres : pagination avec curseur persistant (même mécanique que la Liste intelligente).
-      const cle = 'av_curseur_' + (() => {
-        const basePlate = JSON.stringify({ r: [...roles].sort(), a: conceptIds, e: base.company_headcount || null });
-        let h = 0; for (let i = 0; i < basePlate.length; i++) { h = ((h << 5) - h + basePlate.charCodeAt(i)) | 0; }
-        return Math.abs(h).toString(36);
-      })();
-      let cur = (curseur && typeof curseur === 'object') ? curseur : null;
-      if (!cur && sql) {
-        try { const r = await sql`SELECT valeur FROM config WHERE cle = ${cle}`; cur = (r.length && r[0].valeur) || null; } catch (_) {}
-      }
-      if (cur && cur.epuise) cur = null;
-      token = (cur && cur.token) || null;
-      pages = (cur && cur.pages) || 0;
-      for (let p = 0; p < 8; p++) {
-        if (!tempsOk() || fiches.length >= cap) break;
-        let r = await trouver({}, 100, token);
-        if (token && (!r.data || r.data.success === false)) { token = null; pages = 0; r = await trouver({}, 100); }
-        if (r.status === 402) break;
-        if (!r.data || r.data.success === false) break;
-        const leads = r.data.leads || [];
-        if (!leads.length) { epuise = true; break; }
-        pages++;
-        token = (r.data.pagination && r.data.pagination.nextToken) || null;
-        for (const l of leads) {
-          const f = leadVersFichePersonne(l);
-          const slug = slugLinkedin(f.contacts[0] && f.contacts[0].enrich && f.contacts[0].enrich.linkedin);
-          if (!slug || connus.has(slug)) continue;
-          fiches.push(f); connus.add(slug);
-          if (fiches.length >= cap) break;
+      // Mode filtres : par SOURCE (LinkedIn D'ABORD en mode 'deux'), curseur persistant PAR
+      // source en table config. Le curseur renvoyé au front est un simple drapeau « continue » :
+      // la vraie reprise vit en base, donc l'enchaînement front marche même multi-sources.
+      const hashDe = (obj) => { const s = JSON.stringify(obj); let h = 0; for (let i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) | 0; } return Math.abs(h).toString(36); };
+      const sources = source === 'deux' ? ['lki', 'legal'] : [source];
+      let toutEpuise = true;
+      for (const src of sources) {
+        if (fiches.length >= cap || !tempsOk()) { toutEpuise = false; break; }
+        const fSrc = avecSource(base, src);
+        const cle = 'av_curseur_' + hashDe({ r: [...roles].sort(), a: conceptIds, e: base.company_headcount || null, v: (base.result_city && base.result_city.include) || null, s: src });
+        let cur = null;
+        if (sql) { try { const r = await sql`SELECT valeur FROM config WHERE cle = ${cle}`; cur = (r.length && r[0].valeur) || null; } catch (_) {} }
+        if (cur && cur.epuise) cur = null;
+        let token = (cur && cur.token) || null;
+        let pagesSrc = (cur && cur.pages) || 0;
+        let epuiseSrc = false;
+        for (let p = 0; p < 8; p++) {
+          if (!tempsOk() || fiches.length >= cap) break;
+          const body = { limit: 100, filters: fSrc };
+          if (token) body.paginationToken = token;
+          let r = await basile('/people/find', body, key);
+          if (token && (!r.data || r.data.success === false)) { token = null; pagesSrc = 0; r = await basile('/people/find', { limit: 100, filters: fSrc }, key); }
+          if (r.status === 402) break;
+          if (!r.data || r.data.success === false) break;
+          const leads = r.data.leads || [];
+          if (!leads.length) { epuiseSrc = true; break; }
+          pagesSrc++; pages++;
+          token = (r.data.pagination && r.data.pagination.nextToken) || null;
+          absorber(leads);
+          if (!token) { epuiseSrc = true; break; }
         }
-        if (!token) { epuise = true; break; }
+        if (sql) {
+          try {
+            const val = JSON.stringify({ token, pages: pagesSrc, epuise: epuiseSrc, maj: new Date().toISOString() });
+            await sql`INSERT INTO config (cle, valeur) VALUES (${cle}, ${val}) ON CONFLICT (cle) DO UPDATE SET valeur = ${val}`;
+          } catch (_) {}
+        }
+        if (!epuiseSrc) toutEpuise = false;
       }
-      if (sql) {
-        try {
-          await sql`INSERT INTO config (cle, valeur) VALUES (${cle}, ${JSON.stringify({ token, pages, epuise, maj: new Date().toISOString() })})
-                    ON CONFLICT (cle) DO UPDATE SET valeur = ${JSON.stringify({ token, pages, epuise, maj: new Date().toISOString() })}`;
-        } catch (_) {}
-      }
+      epuise = toutEpuise;
     }
 
     fiches = regrouperParEntreprise(fiches).slice(0, cap);
     await loggerConso(user, 'basile', 1, null);
     return res.status(200).json({
       fiches, nb: fiches.length,
-      curseur: sirens.length ? null : { token, pages, epuise },
+      curseur: (sirens.length || epuise) ? null : { suite: true },
       epuise,
       profils_parcourus: pages * 100,
       concepts_labels: conceptLabels,

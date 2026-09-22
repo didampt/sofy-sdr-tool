@@ -60,6 +60,29 @@ filtres manuels façon Sales Navigator, mixe Pappers × Basile × IA.
   ③ **Select SDR/AE** dans la barre de génération (remplirSelectSdr) — utilisé par les deux
   onglets pour l'assignation de la liste. Rejeu navigateur : « concessionnaire » → 45.11Z/45.19Z
   seuls (zéro Google), chip Entreprises OK, avCritEnt().naf=['4511Z'], sdr peuplé.
+- **Retour Didier n°3 (même soir) — « que des gérants, il me faut les profils LinkedIn »** :
+  DÉCOUVERTE STRUCTURANTE sur `activity` : un concept `naf:` n'indexe que la source REGISTRE
+  (preuve : naf:45.11Z + « N'importe quel décideur » = 932 mandataires ; + « Directeur
+  Commercial » = 0 alors que ces profils existent sur LinkedIn). Les personnes LinkedIn sont
+  classées via `lki:`/`gmb:`. Deux mécanismes ajoutés dans `api/recherche.js` :
+  ① **Élargissement serveur** : tout concept naf: sans équivalent lki:/gmb: dans la sélection est
+  élargi via activity-suggest interrogé par le LIBELLÉ (la requête par code ne renvoie que le
+  naf:) — union OR, plafond 14. ② **Filtre « Source des contacts »** (UI chips) :
+  `with_linkedin_profile`/`with_legal_data` — défaut « LinkedIn d'abord + registre » : aperçu et
+  génération servent la source LKI d'abord (curseurs persistants PAR source, suffixe s: dans le
+  hash), comptage affiché 💼 N · 🏛️ M. ③ Bug corrigé au passage : la génération JETAIT les
+  mandataires sans profil (dédup exigeait un slug) → clé de repli `p:prenom nom@entreprise`
+  (même clé côté front pour les décoches). ⚠️ La Liste intelligente V2 a le même angle mort
+  (resoudreConcepts interroge par CODE → naf: seuls → source registre surtout) — à élargir
+  pareil, non fait ce soir.
+- **Intentions d'achat (question Didier)** : Basile n'a PAS les signaux d'intent LinkedIn
+  (followers de ta page, vues de profil = data propriétaire Sales Nav, aucune API tierce ne
+  l'a légalement). Les équivalents SofyScrap existent déjà et sont FIRST-PARTY : RB2B/Snitcher
+  (visite du site sofy.fr → Hot Leads), webhook Lemlist (ouvertures/clics), import likers
+  LinkedIn (interactions), veille GMB. Proxys disponibles chez Basile : current_tenure_years
+  (< 1 an = nouveau poste), created_since_months (entreprise récente), followers de la PAGE
+  entreprise. Piste V2 : croiser l'aperçu Recherche avancée avec les signaux existants (badge
+  🔥 si l'entreprise a visité le site). Non arbitré.
 
 ## 🎯 22 septembre 2026 — « Solution Etienne » : personas par SIREN + choix des salariés (en attente de GO)
 
