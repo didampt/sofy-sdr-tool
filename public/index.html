@@ -4387,8 +4387,8 @@ async function avEstimerGmb(){
   if(!d||AV.onglet!=='gmb')return;
   if(d.erreur){count.innerHTML='⚠️ '+String(d.erreur).replace(/</g,'&lt;');return;}
   count.innerHTML=`<div style="display:flex;gap:22px;align-items:center;flex-wrap:wrap">
-   <div><div style="font-size:12px;color:var(--ink-soft)">Établissements retenus (page 1 sur ~6)</div><div style="font-size:30px;font-weight:800;color:var(--ink)">${(AV_GMB.pages[0]||[]).length}</div></div>
-   <div style="font-size:12.5px;line-height:1.55;color:var(--ink-soft)">${AV_GMB.balayes} balayés — Google Maps sert ~120 établissements max par recherche (6 pages de 20), c'est SA limite, pas le nombre de restaurants de la ville${d.recherches_serp?`<br>${d.recherches_serp} recherche(s) SerpApi par page (plafond 1 000/mois)`:''}</div>
+   <div><div style="font-size:12px;color:var(--ink-soft)">Établissements potentiels (estimation)</div><div style="font-size:30px;font-weight:800;color:var(--ink)">~${(nbCombos*120).toLocaleString('fr-FR')}</div></div>
+   <div style="font-size:12.5px;line-height:1.55;color:var(--ink-soft)">page 1 sur ~6 : <b>${(AV_GMB.pages[0]||[]).length} retenus</b> sur ${AV_GMB.balayes} balayés — Google Maps sert ~120 établissements max par recherche (sa limite, pas le nombre réel dans la ville)${d.recherches_serp?`<br>${d.recherches_serp} recherche(s) SerpApi par page (plafond 1 000/mois)`:''}</div>
   </div>
   ${(()=>{const ecartes=AV_GMB.balayes-(AV_GMB.pages[0]||[]).length;const nmax=document.getElementById('av-gmb-note-max').value;
    return (ecartes>0&&nmax)?`<div style="margin-top:8px;font-size:12.5px;background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:8px 12px;color:#7a5510">⭐ <b>${ecartes}</b> établissement(s) écarté(s) par le filtre note ≤ ${nmax} ★ — mets « Toutes » pour tout garder</div>`:'';})()}
@@ -4414,6 +4414,7 @@ function avGmbLigne(e){
   <div style="min-width:0;flex-grow:1"><b>${esc(e.nom)}</b> <span style="color:var(--ink-soft)">· ${esc(e.ville)}${e.activite?' · '+esc(e.activite):''}</span></div>
   <span style="font-weight:700;color:${(e.note!=null&&e.note<4)?'#b45309':'#15803d'}">${e.note!=null?e.note.toLocaleString('fr-FR')+' ★':'—'}</span>
   <span style="color:var(--ink-soft);font-size:12px">${e.avis||0} avis</span>
+  ${e.place_id?`<a href="https://www.google.com/maps/place/?q=place_id:${esc(e.place_id).replace(/"/g,'')}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="font-size:12px;font-weight:600;white-space:nowrap">📍 Maps ↗</a>`:''}
   ${e.doublon?'<span class="badge" style="background:#fee2e2;color:#b91c1c">déjà extrait</span>':''}
  </div>`;
 }
@@ -4428,7 +4429,7 @@ async function avModalGmb(p){
  avModale(`<b>📍 Établissements trouvés</b><span style="font-size:12.5px;color:var(--ink-soft)"> — coche = gardé · chaque page = ${Math.max(1,avCritGmb().activites.length*avCritGmb().villes.length)} recherche(s) SerpApi</span>`,
   `<div style="display:flex;align-items:center;gap:12px">
     <button class="btn" style="background:var(--paper)${p>0?'':';opacity:.4'}" ${p>0?'':'disabled'} onclick="avModalGmb(${p-1})">‹ Précédent</button>
-    <span style="font-size:12.5px;color:var(--ink-soft)">Page ${p+1}</span>
+    <span style="font-size:12.5px;color:var(--ink-soft)">Page ${p+1} / ${AV_GMB.aSuite?'~6':Math.max(AV_GMB.pages.length,p+1)}</span>
     <button class="btn" style="background:var(--paper)${droite?'':';opacity:.4'}" ${droite?'':'disabled'} onclick="avModalGmb(${p+1})">Suivant ›</button>
    </div>
    <button class="btn btn-primary" onclick="document.getElementById('av-modal').style.display='none'">Valider la sélection</button>`);
