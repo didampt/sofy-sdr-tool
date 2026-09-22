@@ -1,5 +1,19 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 22 septembre 2026, nuit)
 
+## 🎯 22 septembre 2026 (nuit, 13e passe) — « restaurant italien Paris = 0 » : SerpApi cherchait depuis les US
+
+Retour Didier : 0 balayé sur « restaurant italien × Paris » (aucune erreur). Cause : SANS `ll`,
+SerpApi lance la recherche google_maps depuis un datacenter AMÉRICAIN et `gl` est ignoré par ce
+moteur → Google Maps vu des US ne renvoie rien d'exploitable pour une requête française.
+- Fix gmb-serp : chaque ville est GÉOCODÉE (Places Text Search — la même API/clé que la carte 3,
+  `pageTextSearch` réutilisé) et toutes ses combinaisons reçoivent `ll='@lat,lng,12z'` dès la
+  PAGE 1 (recherche centrée ville). 1 Text Search par ville par appel sans lls ; le front repasse
+  lls → pagination et génération sans re-géocodage. `gl` n'est plus envoyé à SerpApi (ignoré),
+  il ne sert plus qu'à nommer le pays du géocodage (France/Belgique/Suisse/Luxembourg).
+- Dégradés : clé Google absente ou géocodage raté → recherche sans ll (comportement d'avant) +
+  ll de repli extrait des gps_coordinates du 1er résultat.
+- Banc gmb-serp : 10 scénarios (ll dès p0, pagination sans lls re-géocodée, geocode KO dégradé).
+
 ## 🎯 22 septembre 2026 (nuit, 12e passe) — SerpApi en parallèle + fin du sablier figé
 
 Retour Didier (« Recherche Google (SerpApi)… ne fonctionne pas » : sablier infini) :

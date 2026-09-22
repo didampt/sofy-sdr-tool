@@ -14,7 +14,7 @@
 
 import { verifierToken, loggerConso, sql } from './db.js';
 import { appelSerpApi } from './serpapi.js';
-import { detailsPlace, versFiche, trouverEmailSite } from './gmb-liste.js';
+import { detailsPlace, versFiche, trouverEmailSite, pageTextSearch } from './gmb-liste.js';
 
 export const config = { maxDuration: 120 };
 
@@ -77,12 +77,30 @@ export default async function handler(req, res) {
   // (transportées par le front dans body.lls, clé "activité|ville").
   const lls = (req.body.lls && typeof req.body.lls === 'object') ? req.body.lls : {};
   function cleCombo(combo) { return combo.a + '|' + combo.v; }
+  // ⚠️ SANS `ll`, SerpApi lance la recherche Maps depuis un datacenter US : « restaurant italien
+  // Paris » → 0 résultat (`gl` est ignoré par le moteur google_maps — bug prod Didier 22/09 n°2).
+  // → chaque ville est GÉOCODÉE une fois (Places Text Search, la même API que la carte 3) et
+  // toutes ses combinaisons reçoivent un ll dès la PAGE 1. Coût : 1 Text Search par ville et par
+  // appel sans lls (le front repasse lls ensuite → 0 re-géocodage en pagination/génération).
+  const PAYS_NOM = { fr: 'France', be: 'Belgique', ch: 'Suisse', lu: 'Luxembourg' };
+  async function geocoderVilles() {
+    const cleG = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+    if (!cleG) return; // dégradé : recherche sans ll (comportement d'avant)
+    const villesAFaire = [...new Set(combos.filter(c => !lls[cleCombo(c)]).map(c => c.v))];
+    await Promise.all(villesAFaire.map(async v => {
+      try {
+        const d = await pageTextSearch({ query: v + ', ' + (PAYS_NOM[gl] || 'France') }, cleG);
+        const g = d.results && d.results[0] && d.results[0].geometry && d.results[0].geometry.location;
+        if (g && g.lat != null) for (const c of combos) { if (c.v === v && !lls[cleCombo(c)]) lls[cleCombo(c)] = '@' + g.lat + ',' + g.lng + ',12z'; }
+      } catch (_) {/* géocodage raté : cette ville partira sans ll */}
+    }));
+  }
   async function pageSerp(combo, start) {
-    const params = { engine: 'google_maps', type: 'search', q: combo.a + ' ' + combo.v, hl: 'fr', gl };
+    const params = { engine: 'google_maps', type: 'search', q: combo.a + ' ' + combo.v, hl: 'fr' };
     const ll = lls[cleCombo(combo)];
+    if (ll) params.ll = ll; // dès la page 1 : centre la recherche sur la ville
     if (start > 0) {
-      if (!ll) return []; // pagination impossible sans ll (jamais eu de page 1 → rien à paginer)
-      params.ll = ll;
+      if (!ll) return []; // pagination impossible sans ll
       params.start = String(start * 20);
     }
     const r = await appelSerpApi(params, { qui: user.nom || 'recherche-avancee', motif: 'gmb-serp ' + combo.a + '/' + combo.v });
@@ -106,6 +124,7 @@ export default async function handler(req, res) {
     if (mode === 'apercu') {
       const p = Math.max(0, Math.min(parseInt(page, 10) || 0, 5)); // ~120 résultats max/ville chez Google
       const connus = await placeIdsConnus();
+      await geocoderVilles();
       const etablissements = [];
       let balayes = 0, aSuite = false;
       // Les combinaisons partent en PARALLÈLE : 6 recherches séquentielles ≈ 20-30 s de sablier
@@ -153,6 +172,7 @@ export default async function handler(req, res) {
         });
       }
     } else {
+      await geocoderVilles();
       for (let p = 0; p <= 5 && candidats.length < cap; p++) {
         let vide = true;
         const lesCombos = combos.slice(0, 6);
