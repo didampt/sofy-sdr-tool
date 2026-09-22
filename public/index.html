@@ -12186,7 +12186,7 @@ function rendreSignup(s){
  const enable=s.pending&&s.can_enable
   ?`<button class="act act-call" style="background:#10B981;color:#fff" onclick="event.stopPropagation();activerSignup('${jsArg(s.key)}',this)">✅ Activer le compte</button>`
   :'';
- const ban=s.pending&&state.user&&['admin','superadmin'].includes(state.user.role)
+ const ban=s.pending
   ?`<button class="act act-del" onclick="event.stopPropagation();bannirSignup('${jsArg(s.key)}')">Bannir</button>`
   :'';
  return `<div class="fiche" style="cursor:pointer" onclick="ouvrirSignupFiche(${Number(s.list_id)||0},'${ficheKey}')">
