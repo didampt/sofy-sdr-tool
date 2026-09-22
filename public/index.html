@@ -3895,6 +3895,8 @@ function avBarrePages(qui,fn){
  // Total de pages : exact quand la pagination est finie, sinon estimation gisement (~20/page)
  let total=P.suite?null:Math.max(P.pages.length,1);
  if(total===null&&qui==='pro'&&AV_EST_TOTAL>0)total='~'+Math.max(P.pages.length,Math.ceil(AV_EST_TOTAL/20));
+ // Modale décideurs (Entreprises) : une page = un lot de 30 entreprises de l'échantillon
+ if(total===null&&qui==='ent'&&AV_ENT_SIRENS.length)total='~'+Math.max(P.pages.length,Math.ceil(AV_ENT_SIRENS.length/30));
  return `<div class="av-pagination" style="display:flex;align-items:center;justify-content:center;gap:14px;padding:10px 16px">
    <button class="btn" style="background:var(--paper)${gauche?'':';opacity:.4'}" ${gauche?'':'disabled'} onclick="${fn}(${P.cur-1})">‹ Précédent</button>
    <span style="font-size:12.5px;color:var(--ink-soft)">Page ${P.cur+1}${total!==null?' / '+total:''}</span>
