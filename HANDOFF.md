@@ -1,5 +1,23 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 23 septembre 2026)
 
+## 🎯 23 septembre 2026 — clés RÉELLES des leads Basile (location_region !), FR ∪ DOM, avatars
+
+Fiche brute mesurée (Didier, action people) — CLÉS DISPONIBLES sur un lead : _id,
+location_country_code, people_first_name, location_region, languages, current_seniority,
+profile_url, location_country, employment_all, current_company_profile_url, educations,
+experiences, people_last_name, current_company_name, skills, location_city, current_job_title,
+profile_network_handle, current_started_at, people_full_name, current_company_id,
+has_legal_match. → **PAS de photo** (avatars à initiales ajoutés à l'aperçu, façon Sales Nav) ;
+**location_region EXISTE** sur les fiches → si un filtre region marche sur people/find, la
+Guadeloupe devient UN filtre propre (snippet envoyé : location_region vs result_region en
+countOnly, garde anti-filtre-ignoré par comparaison au contrôle). `employer` est FLOU (SFPR →
+« SFPM Préparation Mentale ») — le vrai Groupe SFPR introuvable par employer.
+- **Bug FR+DOM figé à 47** : cocher 🇫🇷 FR avec des îles doit ÉLARGIR (union) — les villes DOM
+  n'injectent plus rien quand FR est coché (banc P).
+- **Lieu du siège sans secteur = inactif silencieux** : bandeau 🧭 explicatif quand des lieux
+  (bloc 5) sont posés sans secteur (il filtre les ENTREPRISES, voie SIREN).
+- Aperçu : avatar rond à initiales colorées par lead (Basile ne fournit pas les photos).
+
 ## 🎯 23 septembre 2026 — pages registre fantômes supprimées ; Vincent Boulogne toujours introuvable (fiche à inspecter)
 
 - Le mode « ~ contient » × 🌴 Guadeloupe MARCHE en prod (16 profils achats guadeloupéens,

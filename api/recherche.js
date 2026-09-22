@@ -79,8 +79,11 @@ function filtresBasile(f, conceptIds, roles) {
   // Pays de la personne (result_country_code) — FR par défaut ; multi possible (BE, CH, LU…),
   // Basile étant une base française, un autre pays peut légitimement compter très peu.
   const paysBruts = (Array.isArray(f.pays) ? f.pays : []).map(p => String(p || '').trim().toUpperCase()).filter(p => /^[A-Z]{2}$/.test(p)).slice(0, 6);
-  const dom = paysBruts.filter(p => DOM_VILLES[p]);
+  let dom = paysBruts.filter(p => DOM_VILLES[p]);
   const pays = paysBruts.filter(p => !DOM_VILLES[p]);
+  // 🇫🇷 FR coché AVEC des îles = union → la France couvre les DOM (Basile les classe sous FR) :
+  // les villes DOM ne doivent plus RESTREINDRE (bug Didier 23/09 : FR+GP+MQ restait à 47).
+  if (pays.includes('FR')) dom = [];
   const b = { result_country_code: { include: pays.length ? pays : ['FR'] }, hide_legal_entities: true };
   if (roles.length) b.result_role = { include: roles };
   // Intitulés EXCLUS (wireframe v2 : postes ciblés Inclure/Exclure façon Sales Nav)
