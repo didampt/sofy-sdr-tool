@@ -1,5 +1,18 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 23 septembre 2026)
 
+## 🎯 23 septembre 2026 — pages registre fantômes supprimées ; Vincent Boulogne toujours introuvable (fiche à inspecter)
+
+- Le mode « ~ contient » × 🌴 Guadeloupe MARCHE en prod (16 profils achats guadeloupéens,
+  captures Didier) mais « Page 1 / 3 » avec 2 pages « Rien sur cette page » : registre = 0 et la
+  phase legal était quand même enchaînée. Fix : quand totalLegal===0 (mode deux), la phase legal
+  n'est JAMAIS émise — décidé au reset, drapeau `sansLegal` propagé dans apercu_suite. Banc O
+  (16 lki, suite null) + régression 10b (legal 600 → bascule conservée).
+- Vincent Boulogne absent des 16 : sa result_city Basile est probablement vide ou composée
+  (« Baie-Mahault, Basse-Terre, Guadeloupe » — le suggest villes montre des graphies BRUTES).
+  Snippet fiche par employer 'SFPR' envoyé à Didier — selon la réponse : ajouter les graphies
+  composées, ou (si city vide) documenter que les profils « région seule » échappent au filtre
+  ville et proposer le repli voie SIREN (entreprises 971) pour eux.
+
 ## 🎯 23 septembre 2026 — matrice n°3 : result_role exact/contains + mode « ~ contient » + casse des villes DOM
 
 Matrice Didier (debug_count) : géo DOM par villes OK (10 294 lki en Guadeloupe) · result_city

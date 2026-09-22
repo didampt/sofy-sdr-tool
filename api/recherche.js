@@ -480,6 +480,17 @@ export default async function handler(req, res) {
         var _nbEntSecteur = nbEntSecteur, _lkiPartiel = lkiPartiel, _nbEntBalayees = nbEntBalayees;
       }
 
+      // Pages registre FANTÔMES (retour Didier 23/09 : « 3 pages alors qu'il n'en existe qu'une »,
+      // registre 0 → 2 pages « Rien sur cette page ») : quand le registre compte 0, la phase
+      // legal n'est jamais émise. Décidé au reset (totalLegal connu), propagé par la suite.
+      if (prochaineSuite) {
+        const sansLegal = suite ? !!suite.sansLegal : (source === 'deux' && totalLegal === 0);
+        if (sansLegal) {
+          if (prochaineSuite.phase === 'legal') prochaineSuite = null;
+          else prochaineSuite.sansLegal = true;
+        }
+      }
+
       // Total 0 avec des concepts secteur : lequel est « mort » côté PERSONNES ? (constaté en prod
       // 22/09 : `gmb:Concessionnaire automobile` seul → 0 — les concepts Google Maps ne matchent
       // pas toujours des personnes, contrairement aux naf:/lki:). Comptages limit 1, gratuits :
