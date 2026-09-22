@@ -1,5 +1,18 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 23 septembre 2026)
 
+## 🎯 23 septembre 2026 (suite) — modale décideurs : l'échantillon se remplit même quand la page 1 est saturée de doublons
+
+Retour Didier : « 1 décideur sur 739 entreprises » (8291Z recouvrement, SON secteur de test :
+48/50 fiches de la page 1 déjà extraites). Cause : `echantillon_sirens` (estimer?avec_sirens=1)
+ne gardait que les SIREN frais de LA page 1 → 2 entreprises → la modale décideurs comptait sur
+rien. Fix estimer.js : si < 60 frais et total > page, on PAGINE la recherche Pappers (pages 2-5,
+par_page 100, même filtre effectif retenu par la cascade — `extraRetenu`) jusqu'à 90 SIREN
+frais ; les mesures de la 1re page (deja_extraites, seuils) restent inchangées. Titre de la
+modale reformulé : « sur les N premières entreprises fraîches (les déjà extraites sont
+écartées) ». Banc test-estimer.mjs (page 2 déclenchée, 90 frais) ; ⚠️ stub db.js du banc : `sql`
+est désormais une FONCTION renvoyant [] (les requêtes tarifs/limites d'estimer ne sont pas
+gardées par `if (sql)`), régression v2 revérifiée avec ce stub.
+
 ## 🎯 23 septembre 2026 — écran de choix v2 : la Recherche avancée en héro, cartes Pappers & Google Maps retirées (GO Didier)
 
 Wireframe validé (canvas, artboard « 0 · Choix de création v2 ») :

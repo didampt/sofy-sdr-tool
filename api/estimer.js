@@ -83,20 +83,20 @@ export default async function handler(req, res) {
 
     // Même cascade effectif que /api/liste (effectif → tranche_effectif → sans filtre) :
     // sans elle, l'estimation comptait une population que la génération n'utilise pas.
-    let result, filtreEffectif = 'aucun';
+    let result, filtreEffectif = 'aucun', extraRetenu = {};
     if (effectif_min || effectif_max) {
       const eff = {};
       if (effectif_min) eff.effectif_min = effectif_min;
       if (effectif_max) eff.effectif_max = effectif_max;
-      result = await call(eff); filtreEffectif = 'effectif';
+      result = await call(eff); filtreEffectif = 'effectif'; extraRetenu = eff;
       if (!result.ok || (result.data.total || 0) === 0) {
         const tr = {};
         if (effectif_min) tr.tranche_effectif_min = effectif_min;
         if (effectif_max) tr.tranche_effectif_max = effectif_max;
-        result = await call(tr); filtreEffectif = 'tranche_effectif';
+        result = await call(tr); filtreEffectif = 'tranche_effectif'; extraRetenu = tr;
       }
       if (!result.ok || (result.data.total || 0) === 0) {
-        result = await call({}); filtreEffectif = 'aucun (effectif souvent non renseigné — filtre élargi)';
+        result = await call({}); filtreEffectif = 'aucun (effectif souvent non renseigné — filtre élargi)'; extraRetenu = {};
       }
     } else {
       result = await call({});
@@ -192,6 +192,28 @@ export default async function handler(req, res) {
     const solde = plafond != null ? Math.round((plafond - consoMois) * 100) / 100 : null;
     // Assez de crédits ? (on compare le coût MAX au solde, pour être prudent)
     const assez = plafond == null ? true : (solde >= coutMax);
+
+    // Échantillon décideurs trop maigre (page 1 saturée de fiches déjà extraites — cas Didier
+    // 23/09 : 48/50 doublons → la modale ne comptait que sur 2 entreprises) : on pagine la
+    // recherche Pappers pour remplir jusqu'à 90 SIREN FRAIS, sans toucher aux mesures de la
+    // 1re page (deja_extraites, seuils) qui décrivent ce que la génération remplace.
+    if (req.query.avec_sirens && sirensFrais.length < 60 && (result.data.total || 0) > surPage) {
+      try {
+        for (let pg = 2; pg <= 5 && sirensFrais.length < 90; pg++) {
+          const rp = await call({ ...extraRetenu, par_page: '100', page: String(pg) });
+          if (!rp.ok) break;
+          const lot = rp.data.resultats || [];
+          if (!lot.length) break;
+          for (const e of lot) {
+            if (sirensFrais.length >= 90) break;
+            const sn = String(e.siren || '').replace(/\D/g, '');
+            if (sn.length !== 9 || sirensFrais.includes(sn)) continue;
+            if (sirensConnus && sirensConnus.get(String(e.siren))) continue;
+            sirensFrais.push(sn);
+          }
+        }
+      } catch (_) {/* échantillon partiel : la modale l'affichera tel quel */}
+    }
 
     return res.status(200).json({
       total_dispo: totalDispo,

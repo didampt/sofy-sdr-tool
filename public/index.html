@@ -4111,7 +4111,7 @@ function avModale(titre,pied){
  document.getElementById('av-modal').style.display='flex';
 }
 function avEntEntete(total){
- return `<b>👥 Décideurs des entreprises trouvées</b><span style="font-size:12.5px;color:var(--ink-soft)">${total!=null?` — ${(total||0).toLocaleString('fr-FR')} sur les ${AV_ENT_SIRENS.length} entreprises de la 1re page`:''} · les cochés seront attachés aux fiches</span>`;
+ return `<b>👥 Décideurs des entreprises trouvées</b><span style="font-size:12.5px;color:var(--ink-soft)">${total!=null?` — ${(total||0).toLocaleString('fr-FR')} sur les ${AV_ENT_SIRENS.length} premières entreprises fraîches (les déjà extraites sont écartées)`:''} · les cochés seront attachés aux fiches</span>`;
 }
 let AV_ENT_TOTAL=null;
 async function avApercuEnt(page){
