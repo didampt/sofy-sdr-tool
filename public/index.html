@@ -810,15 +810,22 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
                 <div id="av-ent-zones-chips" class="chips"></div>
               </div>
               <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
-                <div style="font-size:13.5px;font-weight:600;margin-bottom:6px">Fonctions à chercher ensuite (👥 personas)</div>
-                <select class="field" id="av-ent-jobs" style="width:100%" onchange="avApercuEnt(false)"><option>N'importe quel décideur</option><option>Dirigeant / PDG</option><option>Directeur Commercial</option><option>Directeur Marketing</option><option>Responsable Communication</option></select>
-                <p class="hint" style="margin-top:6px">Mémorisé sur la liste : le pipeline 🚀 et le bouton 👥 chercheront ces fonctions.</p>
+                <div style="font-size:13.5px;font-weight:600;margin-bottom:6px">Fonctions à chercher ensuite (👥 personas) <span style="font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;background:#dbeafe;color:#1d4ed8">INTITULÉS RÉELS BASILE</span></div>
+                <div style="position:relative">
+                  <input class="field" id="av-ent-jobs-libre" placeholder="Fonction… (suggestions Basile)" style="width:100%" autocomplete="off" oninput="avEntJobSuggest(this.value)" onkeydown="if(event.key==='Enter'){avEntJobAjouter(this.value,'inclure');this.value='';}">
+                  <div id="av-ent-jobs-results" style="display:none;position:absolute;left:0;right:0;top:44px;background:#fff;border:1px solid var(--line);border-radius:10px;z-index:12;overflow-y:auto;max-height:340px;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div>
+                </div>
+                <div id="av-ent-jobs-chips" style="margin-top:8px;display:flex;flex-direction:column;gap:5px"></div>
+                <p class="hint" style="margin-top:6px">Mémorisé sur la liste : le pipeline 🚀 et le bouton 👥 chercheront ces fonctions. Rien d'ajouté = n'importe quel décideur.</p>
               </div>
             </div>
             <div id="av-rail-gmb" style="display:none;flex-direction:column;gap:10px">
               <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
                 <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Activité(s) Google <span style="font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;background:#fee2e2;color:#b91c1c">GOOGLE MAPS</span></div>
-                <input class="field" id="av-gmb-act" placeholder="Ex : garage automobile, agence immobilière (max 3, virgules)" style="width:100%" oninput="avMajGmb()">
+                <div style="position:relative">
+                  <input class="field" id="av-gmb-act" placeholder="Ex : garage automobile, agence immobilière (max 3, virgules)" style="width:100%" autocomplete="off" oninput="avGmbActSuggest(this.value);avMajGmb()">
+                  <div id="av-gmb-act-results" style="display:none;position:absolute;left:0;right:0;top:44px;background:#fff;border:1px solid var(--line);border-radius:10px;z-index:12;overflow-y:auto;max-height:340px;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div>
+                </div>
               </div>
               <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
                 <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Ville(s)</div>
@@ -3555,7 +3562,7 @@ function remplirSelectSdrManuelle(){return remplirSelectSdr('manuelle-sdr');}
    listes de comptes par SIREN). Onglet Entreprises → /api/estimer + launch() (tuyauterie Pappers
    existante). Barre ✨ → /api/ia-liste (mêmes critères que la Liste intelligente). */
 const AV={onglet:'prospects',concepts:[],postes:[],postesEx:[],decideur:false,effSN:[],types:[],lieux:[],listes:[],villes:[],source:'deux',
-  ent:{nafs:[],eff:'Indifférent',zones:['France métropolitaine']}};
+  ent:{nafs:[],eff:'Indifférent',zones:['France métropolitaine'],jobs:[],jobsEx:[]}};
 // Tranches d'effectif SALES NAV (wireframe v2) — multi-sélection → enveloppe min/max
 const SN_EFF={'Indépendant':[1,1],'1-10':[1,10],'11-50':[11,50],'51-200':[51,200],'201-500':[201,500],'501-1 000':[501,1000],'1 001-5 000':[1001,5000],'5 001-10 000':[5001,10000]};
 const AV_TYPES=['Société commerciale','Société cotée en bourse','Société civile','À but non lucratif','Société de personnes','Indépendant / EI','Administration publique'];
@@ -3652,6 +3659,13 @@ function avRendreChips(){
  AV.ent.nafs=AV.ent.nafs||[];
  document.getElementById('av-ent-naf-chips').innerHTML=AV.ent.nafs.map((n,k)=>
   `<span class="chip sel" style="cursor:pointer" onclick="AV.ent.nafs.splice(${k},1);avRendreChips();avMajEnt()">${esc(n.code)} — ${esc((n.libelle||'').slice(0,38))} ✕</span>`).join('');
+ // Fonctions personas (Entreprises) : décideur par défaut + intitulés inclus/exclus
+ AV.ent.jobs=AV.ent.jobs||[];AV.ent.jobsEx=AV.ent.jobsEx||[];
+ const bje=document.getElementById('av-ent-jobs-chips');
+ if(bje)bje.innerHTML=
+  `<div class="chips"><button class="chip${AV.ent.jobs.length?'':' sel'}" onclick="avEntDecideur()">N'importe quel décideur</button></div>`
+  +AV.ent.jobs.map((p,k)=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;font-size:12.5px;background:#f0fdf4"><b style="flex-grow:1">${esc(p)}</b><span style="font-size:11px;font-weight:800;color:#15803d">✓ INCLUS</span><a style="font-size:11px;cursor:pointer" onclick="AV.ent.jobs.splice(${k},1);avRendreChips();avEntMajModale()">retirer</a></div>`).join('')
+  +AV.ent.jobsEx.map((p,k)=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;font-size:12.5px;background:#fef2f2"><b style="flex-grow:1">${esc(p)}</b><span style="font-size:11px;font-weight:800;color:#b91c1c">✕ EXCLU</span><a style="font-size:11px;cursor:pointer" onclick="AV.ent.jobsEx.splice(${k},1);avRendreChips();avEntMajModale()">retirer</a></div>`).join('');
  document.getElementById('av-ent-eff-chips').innerHTML=['Indifférent','1–9','10–19','20–49','50–199','200–499','500+'].map(t=>
   `<button class="chip${AV.ent.eff===t?' sel':''}" onclick="AV.ent.eff='${t}';avRendreChips();avMajEnt()">${t}</button>`).join('');
  document.getElementById('av-ent-zones-chips').innerHTML=['France métropolitaine','Guadeloupe','Martinique','Guyane française','Réunion','Mayotte'].map(z=>
@@ -3702,7 +3716,7 @@ function rolesSuggest(q,boxId,renduLigne){
  },350);
 }
 // Fermeture globale : clic hors de la box (les clics DANS la box restent multi-choix) + Échap
-const SUGG_BOXES={'av-poste-results':'av-poste-libre','av-secteur-results':'av-secteur','av-ent-naf-results':'av-ent-naf','job-custom-results':'job-custom','personas-autre-results':'personas-autre'};
+const SUGG_BOXES={'av-poste-results':'av-poste-libre','av-secteur-results':'av-secteur','av-ent-naf-results':'av-ent-naf','av-ent-jobs-results':'av-ent-jobs-libre','av-gmb-act-results':'av-gmb-act','job-custom-results':'job-custom','personas-autre-results':'personas-autre'};
 document.addEventListener('click',ev=>{
  // Un nœud déjà retiré du DOM = ligne re-rendue par suggAfficher pendant le bubbling → clic INTERNE
  if(ev.target&&!ev.target.isConnected)return;
@@ -3954,12 +3968,71 @@ function avMajSelection(){
  b.textContent='🚀 Générer ma sélection ('+n+')';
 }
 
+// ── Fonctions personas de l'onglet Entreprises : décideur (défaut) + intitulés réels Basile ──
+function avEntJobAjouter(v,mode){
+ const p=String(v||'').trim();if(!p)return;
+ const etaitInc=(AV.ent.jobs||[]).some(x=>x.toLowerCase()===p.toLowerCase());
+ const etaitExc=(AV.ent.jobsEx||[]).some(x=>x.toLowerCase()===p.toLowerCase());
+ AV.ent.jobs=(AV.ent.jobs||[]).filter(x=>x.toLowerCase()!==p.toLowerCase());
+ AV.ent.jobsEx=(AV.ent.jobsEx||[]).filter(x=>x.toLowerCase()!==p.toLowerCase());
+ if(mode==='exclure'&&!etaitExc)AV.ent.jobsEx.push(p);
+ else if(mode!=='exclure'&&!etaitInc){if(AV.ent.jobs.length>=20){toast('20 intitulés max');return;}AV.ent.jobs.push(p);}
+ avRendreChips();avEntMajModale();
+}
+function avEntDecideur(){AV.ent.jobs=[];avRendreChips();avEntMajModale();}
+function avEntMajModale(){if(AV.onglet==='entreprises'&&document.getElementById('av-modal').style.display==='flex')avApercuEnt();}
+function avEntJobSuggest(q){
+ const escA=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+ rolesSuggest(q,'av-ent-jobs-results',p=>{
+  const inc=(AV.ent.jobs||[]).includes(p),exc=(AV.ent.jobsEx||[]).includes(p);
+  return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);font-size:13px${(inc||exc)?';background:'+(inc?'#f0fdf4':'#fef2f2'):''}"><span style="flex-grow:1">${escA(p)}</span><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;${inc?'background:#15803d;color:#fff;border:1px solid #15803d':'background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0'}" onclick="avEntJobAjouter(this.dataset.p,'inclure');suggAfficher('av-ent-jobs-results')">${inc?'✓ Inclus':'✓ Inclure'}</button><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;${exc?'background:#b91c1c;color:#fff;border:1px solid #b91c1c':'background:#fef2f2;color:#b91c1c;border:1px solid #fecaca'}" onclick="avEntJobAjouter(this.dataset.p,'exclure');suggAfficher('av-ent-jobs-results')">${exc?'✕ Exclu':'✕ Exclure'}</button></div>`;
+ });
+}
+// ── Activités Google : autocomplete des catégories Google Maps (suggest Basile, type gmb:) ──
+function avGmbActs(){return document.getElementById('av-gmb-act').value.split(',').map(x=>x.trim()).filter(Boolean);}
+function avGmbActToggle(label){
+ let acts=avGmbActs();
+ const i=acts.findIndex(a=>a.toLowerCase()===String(label).toLowerCase());
+ if(i>=0)acts.splice(i,1);
+ else{
+  // le segment en cours de frappe (« resta ») est remplacé par la suggestion cliquée
+  if(acts.length&&String(label).toLowerCase().includes(acts[acts.length-1].toLowerCase()))acts.pop();
+  if(acts.length>=3){toast('3 activités max');return;}
+  acts.push(label);
+ }
+ document.getElementById('av-gmb-act').value=acts.join(', ');
+ avMajGmb();
+}
+let AV_GMBACT_TIMER=null;
+function avGmbActSuggest(q){
+ clearTimeout(AV_GMBACT_TIMER);
+ const box=document.getElementById('av-gmb-act-results');
+ const seg=String(q||'').split(',').pop().trim(); // on complète le DERNIER segment
+ if(seg.length<2){box.style.display='none';return;}
+ AV_GMBACT_TIMER=setTimeout(async()=>{
+  const escA=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  let items=[];
+  try{
+   const r=await api('/api/basile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'activity_suggest',q:seg})});
+   const d=await r.json();
+   items=(((d.brut||{}).suggestions)||[]).filter(s=>s&&s.type==='gmb')
+    .map(s=>({label:String(s.label||'').trim()||String(s.value||'').replace(/^gmb:/,''),cat:String(s.value||'').replace(/^gmb:/,'')})).slice(0,20);
+  }catch(_){}
+  if(!items.length){box.style.display='none';return;}
+  SUGG_ETAT['av-gmb-act-results']={items,rendu:it=>{
+   const pris=avGmbActs().some(a=>a.toLowerCase()===it.label.toLowerCase());
+   return `<div data-p="${escA(it.label)}" onclick="avGmbActToggle(this.dataset.p);suggAfficher('av-gmb-act-results')" style="padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px${pris?';background:#f0fdf4':''}">${pris?'✓ ':''}${escA(it.label)} <span style="font-size:10.5px;color:var(--ink-soft)">📍 ${escA(it.cat)}</span></div>`;
+  }};
+  suggAfficher('av-gmb-act-results');
+ },350);
+}
+
 // ── Aperçu « décideurs des entreprises trouvées » (onglet Entreprises), mêmes pages ──
 let AV_ENT_SIRENS=[];
 function avEntFiltresPersonas(){
- const j=document.getElementById('av-ent-jobs').value;
- const map={'Dirigeant / PDG':['direction'],'Directeur Commercial':['commercial'],'Directeur Marketing':['marketing'],'Responsable Communication':['communication']};
- return {sirens:AV_ENT_SIRENS,decideur:!map[j],familles:map[j]||[],postes:[],concept_ids:[],source:'deux',exclure_extraits:true};
+ const jobs=(AV.ent.jobs||[]).slice();
+ return {sirens:AV_ENT_SIRENS,decideur:!jobs.length,familles:[],postes:jobs,
+  postes_exclus:(AV.ent.jobsEx||[]).slice(),concept_ids:[],source:'deux',exclure_extraits:true};
 }
 function avModale(titre,pied){
  document.getElementById('av-modal-titre').innerHTML=titre+`<button aria-label="Fermer" onclick="document.getElementById('av-modal').style.display='none'" style="margin-left:auto;border:0;background:var(--paper);border-radius:8px;width:30px;height:30px;font-size:14px;cursor:pointer">✕</button>`;
@@ -4025,7 +4098,9 @@ function avCritEnt(){
  const naf=(AV.ent.nafs||[]).map(n=>n.code);
  return {naf,size:parseInt(document.getElementById('av-nb').value)||50,
   emp:AV.ent.eff==='Indifférent'?['Indifférent']:[AV.ent.eff],
-  ca:document.getElementById('av-ent-ca').value,jobs:[document.getElementById('av-ent-jobs').value],
+  ca:document.getElementById('av-ent-ca').value,
+  jobs:(AV.ent.jobs&&AV.ent.jobs.length)?AV.ent.jobs.slice():["N'importe quel décideur"],
+  jobs_exclus:(AV.ent.jobsEx||[]).slice(),
   pays:AV.ent.zones.slice(),etab:document.getElementById('av-ent-etab').value,ville:''};
 }
 async function avEstimerEnt(){
@@ -4375,6 +4450,8 @@ async function avRelancer(id){
   const codes=((c.criteres_ia&&c.criteres_ia.naf_codes)||c.naf||[]).map(x=>String(x).replace('.','').toUpperCase()).filter(x=>/^\d{4}[A-Z]$/.test(x));
   if(!codes.length){toast('Cette liste n\'a pas de critères relançables (manuelle ?)');return;}
   AV.ent.nafs=codes.map(code=>{const e=NAF.find(n=>n[0]===code);return {code,libelle:e?e[1]:''};});
+  AV.ent.jobs=(c.jobs||[]).filter(j=>!/n'importe quel décideur/i.test(j));
+  AV.ent.jobsEx=(c.jobs_exclus||[]).slice();
   avOnglet('entreprises');avRendreChips();avMajEnt();
  }else{toast('Cette liste n\'a pas de critères relançables (manuelle ou verticale)');return;}
  toast('👯 Critères de « '+l.nom+' » appliqués — ajuste et regarde le comptage');

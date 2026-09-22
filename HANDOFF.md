@@ -1,5 +1,24 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 22 septembre 2026, nuit)
 
+## 🎯 22 septembre 2026 (nuit, 9e passe) — catégories Google en autocomplete + personas Basile sur l'onglet Entreprises
+
+Retours Didier :
+- **Onglet Google : l'« auto-implémentation des catégories » manquait** — le champ Activité(s)
+  était un input nu. Branché sur le suggest Basile (`activity_suggest`, type `gmb:` seulement) :
+  dropdown multi-choix (pattern commun), clic = ajoute le LABEL français dans l'input (séparé
+  par virgules, max 3, le segment en cours de frappe est REMPLACÉ par la suggestion), ✓ si déjà
+  présent, re-clic = retire. Le label FR part tel quel dans `q` SerpApi (google_maps est bon en
+  français). `avGmbActToggle`/`avGmbActSuggest`, box `av-gmb-act-results` dans SUGG_BOXES.
+- **Onglet Entreprises : « Fonctions à chercher ensuite » passait par un select figé d'intitulés
+  inventés** → remplacé par le pattern commun : chip « N'importe quel décideur » (défaut = jobs
+  vides) + champ intitulés RÉELS Basile ✓ Inclure / ✕ Exclure (AV.ent.jobs / AV.ent.jobsEx).
+  `avEntFiltresPersonas` envoie `postes`/`postes_exclus` (plus de mapping familles) — la modale
+  décideurs se recharge au changement (`avEntMajModale`). `avCritEnt` mémorise `jobs` (décideur
+  si vide) + `jobs_exclus` dans les critères de la liste ; `avRelancer` les restaure.
+- Vérifié : node --check + smoke navigateur (décideur par défaut, Inclure/Exclure ent avec
+  postes_exclus dans les filtres personas, suggestions gmb « restaurant / restauration rapide »,
+  segment tapé remplacé, multi-choix box ouverte).
+
 ## 🎯 22 septembre 2026 (nuit, 8e passe) — pager « / ~M », « mesurés », étiquette N max vivante, dédup d'affichage
 
 Retours Didier n°3 :
