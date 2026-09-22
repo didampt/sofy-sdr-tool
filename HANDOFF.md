@@ -48,6 +48,18 @@ filtres manuels façon Sales Navigator, mixe Pappers × Basile × IA.
   NAF → LinkedIn → Google pour que le choix par défaut matche des personnes.
   Vérifié : banc scénarios 6-7 (concept gmb mort, villes seules) + rejeu navigateur du parcours
   exact de Didier (alerte + chip rouge + villes).
+- **Retour Didier n°2 (même soir)** : le tri ne suffisait pas — pour « concessionnaire », suggest
+  Basile ne renvoie QUE des concepts Google (aucun naf:/lki:), l'utilisateur ne pouvait choisir
+  que du mort. Corrections : ① l'autocomplete Prospects **exclut les concepts 📍 Google** et
+  fusionne la **nomenclature NAF embarquée** (`avNafHits()`, même logique que searchNaf v217 :
+  synonymes + libellés) → « concessionnaire » propose « 45.11Z – Commerce de voitures » (id
+  construit `naf:45.11Z`, format identique à suggest ; si un naf: construit ne matche pas de
+  personnes en prod, le diagnostic concepts_zero le marque ⚠️ — à observer). ② Onglet
+  Entreprises : **autocomplete NAF par libellé** (chips code+libellé, 6 max) au lieu de l'input
+  codes bruts ; le pré-remplissage ✨ pose les chips avec les libellés de la nomenclature.
+  ③ **Select SDR/AE** dans la barre de génération (remplirSelectSdr) — utilisé par les deux
+  onglets pour l'assignation de la liste. Rejeu navigateur : « concessionnaire » → 45.11Z/45.19Z
+  seuls (zéro Google), chip Entreprises OK, avCritEnt().naf=['4511Z'], sdr peuplé.
 
 ## 🎯 22 septembre 2026 — « Solution Etienne » : personas par SIREN + choix des salariés (en attente de GO)
 

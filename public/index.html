@@ -717,7 +717,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
                   <div id="av-secteur-results" style="display:none;position:absolute;left:0;right:0;top:44px;background:#fff;border:1px solid var(--line);border-radius:10px;z-index:12;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div>
                 </div>
                 <div id="av-concepts-chips" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
-                <p class="hint" style="margin-top:6px">Concepts unifiés registre + LinkedIn + Google Maps. Plusieurs = OU.</p>
+                <p class="hint" style="margin-top:6px">Tape le métier (« concessionnaire ») ou le code NAF : secteurs du registre 🏛️ et de LinkedIn 💼. Plusieurs = OU.</p>
               </div>
               <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
                 <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Effectif de l'employeur</div>
@@ -747,9 +747,13 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
             </div>
             <div id="av-rail-entreprises" style="display:none;flex-direction:column;gap:10px">
               <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
-                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Codes NAF <span style="font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;background:#d1fae5;color:#0f766e">PAPPERS</span></div>
-                <input class="field" id="av-ent-naf" placeholder="Ex : 8291Z, 6910Z — séparés par des virgules" style="width:100%" oninput="avMajEnt()">
-                <p class="hint" style="margin-top:6px">La barre ✨ sait les trouver pour toi (« sociétés de recouvrement » → 82.91Z).</p>
+                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Secteur (codes NAF) <span style="font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;background:#d1fae5;color:#0f766e">PAPPERS</span></div>
+                <div style="position:relative">
+                  <input class="field" id="av-ent-naf" placeholder="Métier ou code NAF — ex : concessionnaire" style="width:100%" autocomplete="off" oninput="avEntNafSuggest(this.value)">
+                  <div id="av-ent-naf-results" style="display:none;position:absolute;left:0;right:0;top:44px;background:#fff;border:1px solid var(--line);border-radius:10px;z-index:12;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div>
+                </div>
+                <div id="av-ent-naf-chips" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
+                <p class="hint" style="margin-top:6px">Tape le métier, la nomenclature trouve le code (« concessionnaire » → 45.11Z). La barre ✨ sait aussi le faire.</p>
               </div>
               <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
                 <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Effectif</div>
@@ -777,8 +781,9 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
             <div id="av-count" style="background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px;font-size:13px;color:var(--ink-soft)">Ajoute un secteur, des postes ou une liste de comptes — le comptage est gratuit et se met à jour tout seul.</div>
             <div id="av-apercu" style="display:none;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden"></div>
             <div style="background:#fff;border:1px solid var(--line);border-radius:12px;padding:13px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-              <input class="field" id="av-nom" placeholder="📝 Nom de la liste *" style="width:280px">
-              <select class="field" id="av-nb" style="width:110px"><option>25</option><option selected>50</option><option>100</option><option>200</option></select>
+              <input class="field" id="av-nom" placeholder="📝 Nom de la liste *" style="width:260px">
+              <select class="field" id="av-sdr" style="width:160px" title="SDR / AE assigné à la liste"></select>
+              <select class="field" id="av-nb" style="width:100px"><option>25</option><option selected>50</option><option>100</option><option>200</option></select>
               <span style="font-size:12px;color:var(--ink-soft)">fiches max</span>
               <button class="btn" onclick="avEnregistrer()" style="background:var(--paper);margin-left:auto">💾 Enregistrer la recherche</button>
               <button class="btn btn-primary" id="av-btn-gen" onclick="avGenerer()">🚀 Générer la liste</button>
@@ -3475,7 +3480,7 @@ function remplirSelectSdrManuelle(){return remplirSelectSdr('manuelle-sdr');}
    listes de comptes par SIREN). Onglet Entreprises → /api/estimer + launch() (tuyauterie Pappers
    existante). Barre ✨ → /api/ia-liste (mêmes critères que la Liste intelligente). */
 const AV={onglet:'prospects',concepts:[],postes:[],decideur:false,eff:'Indifférent',listes:[],villes:[],
-  ent:{eff:'Indifférent',zones:['France métropolitaine']}};
+  ent:{nafs:[],eff:'Indifférent',zones:['France métropolitaine']}};
 const AV_EFF={'Indifférent':[null,null],'1–9':[1,9],'10–49':[10,49],'50–199':[50,199],'200+':[200,null]};
 const AV_POSTES_FIXES=["N'importe quel décideur","Directeur Commercial","Directeur Marketing","Directeur Relation Client","Directeur Expérience Client (CX)","Responsable Service Client","Directeur CRM","Responsable Communication","Directeur Réseau / Retail"];
 let AV_TIMER=null,AV_SUGG_TIMER=null,AV_EN_COURS=false,AV_LISTES=[],AV_APERCU=null;
@@ -3485,6 +3490,7 @@ function avInit(){
  avRendreChips();
  avChargerSelectListes();
  avRafraichirSaved();
+ remplirSelectSdr('av-sdr');
 }
 function avOnglet(t){
  AV.onglet=t;
@@ -3528,7 +3534,10 @@ function avRendreChips(){
  // Villes de la personne
  document.getElementById('av-villes-chips').innerHTML=(AV.villes||[]).map((v,k)=>
   `<span class="chip sel" style="cursor:pointer" onclick="AV.villes.splice(${k},1);avRendreChips();avMaj()">📍 ${esc(v)} ✕</span>`).join('');
- // Entreprises : effectif + zones
+ // Entreprises : NAF + effectif + zones
+ AV.ent.nafs=AV.ent.nafs||[];
+ document.getElementById('av-ent-naf-chips').innerHTML=AV.ent.nafs.map((n,k)=>
+  `<span class="chip sel" style="cursor:pointer" onclick="AV.ent.nafs.splice(${k},1);avRendreChips();avMajEnt()">${esc(n.code)} — ${esc((n.libelle||'').slice(0,38))} ✕</span>`).join('');
  document.getElementById('av-ent-eff-chips').innerHTML=['Indifférent','1–9','10–19','20–49','50–199','200–499','500+'].map(t=>
   `<button class="chip${AV.ent.eff===t?' sel':''}" onclick="AV.ent.eff='${t}';avRendreChips();avMajEnt()">${t}</button>`).join('');
  document.getElementById('av-ent-zones-chips').innerHTML=['France métropolitaine','Guadeloupe','Martinique','Guyane française','Réunion','Mayotte'].map(z=>
@@ -3551,28 +3560,53 @@ function avAjouterListe(id){
 }
 function avToggleZone(z){const zs=AV.ent.zones;const i=zs.indexOf(z);if(i>=0)zs.splice(i,1);else zs.push(z);avRendreChips();avMajEnt();}
 
-// ── Autocomplete secteur (activity-suggest, types fins seulement) ──
+// ── Nomenclature NAF embarquée (même logique que searchNaf du wizard, réutilisée telle quelle) ──
+function avNafHits(q){
+ q=String(q||'').trim().toLowerCase();
+ if(q.length<2)return [];
+ const qCode=normCodeNaf(q);
+ if(/^\d{2}/.test(qCode)){
+  let hits=NAF.filter(([c])=>c.startsWith(qCode)).slice(0,6);
+  if(!hits.length&&/^\d{4}[A-Z]$/.test(qCode))hits=[[qCode,'Code NAF saisi manuellement']];
+  return hits;
+ }
+ const qn=sansAccents(q);
+ const codesSyno=[];
+ for(const mot in NAF_SYNO){if(mot.includes(qn)||qn.includes(mot))for(const c of NAF_SYNO[mot])if(!codesSyno.includes(c))codesSyno.push(c);}
+ const vus=new Set();
+ return [
+  ...codesSyno.map(c=>NAF.find(n=>n[0]===c)).filter(Boolean),
+  ...NAF.filter(([c,l])=>sansAccents(l.toLowerCase()).includes(qn))
+ ].filter(([c])=>vus.has(c)?false:(vus.add(c),true)).slice(0,6);
+}
+// Code nomenclature "4511Z" → id concept Basile "naf:45.11Z" (format observé chez suggest)
+function avNafVersConcept(code){return 'naf:'+code.slice(0,2)+'.'+code.slice(2);}
+
+// ── Autocomplete secteur (Prospects) : concepts Basile NAF/LinkedIn + nomenclature NAF locale.
+//    Les concepts 📍 Google sont EXCLUS : ils décrivent des lieux et ne matchent pas de personnes
+//    (retour Didier 22/09 : « concessionnaire automobile » ne proposait QUE du Google → 0). ──
 function avSuggest(q){
  clearTimeout(AV_SUGG_TIMER);
  const box=document.getElementById('av-secteur-results');
  if(!q||q.trim().length<2){box.style.display='none';return;}
  AV_SUGG_TIMER=setTimeout(async()=>{
+  const escA=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  let items=[];
   try{
    const r=await api('/api/basile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'activity_suggest',q:q.trim()})});
    const d=await r.json();
-   // Types fins seulement, NAF/LinkedIn d'abord : les concepts 📍 Google décrivent des LIEUX et
-   // matchent rarement des personnes (constaté en prod 22/09 : gmb: seul → 0 prospect).
-   const ORDRE={naf:0,lki:1,gmb:2};
-   const items=((d.brut||{}).suggestions||[]).filter(s=>s&&s.value&&s.type!=='concept'&&!String(s.value).startsWith('concept:'))
-    .sort((a,b)=>(ORDRE[a.type]??9)-(ORDRE[b.type]??9));
-   if(!items.length){box.innerHTML='<div style="padding:10px 12px;font-size:13px;color:var(--ink-soft)">Aucun concept — essaie un autre mot ou un code NAF.</div>';box.style.display='block';return;}
-   const escA=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
-   box.innerHTML=items.slice(0,8).map(s=>{
-    const src=({naf:'🏛️ NAF',lki:'💼 LinkedIn',gmb:'📍 Google'})[s.type]||s.type;
-    return `<div data-id="${escA(s.value)}" data-label="${escA(s.label||s.value)}" onclick="avAjouterConcept(this.dataset.id,this.dataset.label)" style="padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='#fff'">${escA(s.label||s.value)} <span style="font-size:10.5px;color:var(--ink-soft)">${src}</span></div>`;
-   }).join('');
-   box.style.display='block';
-  }catch(_){box.style.display='none';}
+   items=((d.brut||{}).suggestions||[]).filter(s=>s&&s.value&&(s.type==='naf'||s.type==='lki'))
+    .map(s=>({id:String(s.value),label:String(s.label||s.value),src:s.type==='naf'?'🏛️ NAF':'💼 LinkedIn'}));
+  }catch(_){/* suggest indisponible : la nomenclature locale prend le relais */}
+  // Complète avec la nomenclature NAF embarquée (732 codes, libellés en français)
+  for(const [code,lib] of avNafHits(q)){
+   const id=avNafVersConcept(code);
+   if(!items.some(x=>x.id===id))items.push({id,label:code.slice(0,2)+'.'+code.slice(2)+' – '+lib,src:'🏛️ NAF'});
+  }
+  if(!items.length){box.innerHTML='<div style="padding:10px 12px;font-size:13px;color:var(--ink-soft)">Aucun secteur trouvé — essaie un autre mot ou tape un code NAF (ex : 4511Z).</div>';box.style.display='block';return;}
+  box.innerHTML=items.slice(0,9).map(s=>
+   `<div data-id="${escA(s.id)}" data-label="${escA(s.label)}" onclick="avAjouterConcept(this.dataset.id,this.dataset.label)" style="padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='#fff'">${escA(s.label)} <span style="font-size:10.5px;color:var(--ink-soft)">${s.src}</span></div>`).join('');
+  box.style.display='block';
  },350);
 }
 function avAjouterConcept(id,label){
@@ -3639,8 +3673,28 @@ function avMajEnt(){
  clearTimeout(AV_TIMER);
  AV_TIMER=setTimeout(avEstimerEnt,900);
 }
+// Autocomplete NAF (nomenclature embarquée) de l'onglet Entreprises
+function avEntNafSuggest(q){
+ clearTimeout(AV_SUGG_TIMER);
+ const box=document.getElementById('av-ent-naf-results');
+ const hits=avNafHits(q);
+ if(!hits.length){box.style.display='none';return;}
+ const escA=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+ box.innerHTML=hits.map(([c,l])=>
+  `<div data-code="${escA(c)}" data-lib="${escA(l)}" onclick="avEntAjouterNaf(this.dataset.code,this.dataset.lib)" style="padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px;display:flex;justify-content:space-between;gap:10px" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='#fff'"><span>${escA(l)}</span><span style="color:var(--ink-soft);font-weight:700">${escA(c)}</span></div>`).join('');
+ box.style.display='block';
+}
+function avEntAjouterNaf(code,lib){
+ document.getElementById('av-ent-naf-results').style.display='none';
+ document.getElementById('av-ent-naf').value='';
+ AV.ent.nafs=AV.ent.nafs||[];
+ if(AV.ent.nafs.some(n=>n.code===code))return;
+ if(AV.ent.nafs.length>=6){toast('6 codes NAF max');return;}
+ AV.ent.nafs.push({code,libelle:lib});
+ avRendreChips();avMajEnt();
+}
 function avCritEnt(){
- const naf=document.getElementById('av-ent-naf').value.split(',').map(x=>x.trim().toUpperCase().replace('.','')).filter(x=>/^\d{4}[A-Z]$/.test(x));
+ const naf=(AV.ent.nafs||[]).map(n=>n.code);
  return {naf,size:parseInt(document.getElementById('av-nb').value)||50,
   emp:AV.ent.eff==='Indifférent'?['Indifférent']:[AV.ent.eff],
   ca:document.getElementById('av-ent-ca').value,jobs:[document.getElementById('av-ent-jobs').value],
@@ -3701,7 +3755,13 @@ async function avPreremplir(){
    avRendreChips();avMaj();
    toast('✨ Filtres pré-remplis ('+(d.reformulation||'').slice(0,80)+'…) — ajuste et regarde le comptage');
   }else{
-   document.getElementById('av-ent-naf').value=(c.naf_codes||[]).map(x=>String(x).replace('.','')).join(', ');
+   AV.ent.nafs=[];
+   for(const x of (c.naf_codes||[]).slice(0,6)){
+    const code=String(x).replace('.','').toUpperCase();
+    if(!/^\d{4}[A-Z]$/.test(code))continue;
+    const ent=NAF.find(n=>n[0]===code);
+    AV.ent.nafs.push({code,libelle:ent?ent[1]:'Code NAF proposé par l\'IA'});
+   }
    const zs=(c.zones||[]);AV.ent.zones=[];
    if(zs.includes('metropole'))AV.ent.zones.push('France métropolitaine');
    const NZ={'971':'Guadeloupe','972':'Martinique','973':'Guyane française','974':'Réunion','976':'Mayotte'};
@@ -3719,10 +3779,11 @@ async function avGenerer(){
  if(AV_EN_COURS)return;
  const nom=document.getElementById('av-nom').value.trim();
  if(!nom){toast('⚠️ Donne un nom à ta liste');document.getElementById('av-nom').focus();return;}
+ const sdrChoisi=(document.getElementById('av-sdr')||{}).value||(state.user?state.user.nom:'');
  if(AV.onglet==='entreprises'){
   const c=avCritEnt();
-  if(!c.naf.length){toast('Renseigne au moins un code NAF');return;}
-  state.listeNom='🔎 '+nom;state.sdr=state.user?state.user.nom:'';
+  if(!c.naf.length){toast('Renseigne au moins un secteur (code NAF)');return;}
+  state.listeNom='🔎 '+nom;state.sdr=sdrChoisi;
   launch(Object.assign({avance:true},c),true); // tuyauterie Pappers existante (détail, dédup, sauvegarde)
   return;
  }
@@ -3768,8 +3829,7 @@ async function avGenerer(){
   const nbDup=fiches.filter(fi=>fi.dedup_liste).length;
   fiches=fiches.filter(fi=>!fi.dedup_liste);
   if(!fiches.length){toast('Tout est déjà dans d\'autres listes ('+nbDup+' doublons). Rien à créer.');return;}
-  const sdr=state.user?state.user.nom:'';
-  const rc=await api('/api/listes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nom:'🔎 '+nom,sdr,criteres:{avance:true,onglet:'prospects',filtres:f,jobs:f.decideur?["N'importe quel décideur"]:f.postes,naf:[],pays:[]},entreprises:fiches,credits_estimes:0})});
+  const rc=await api('/api/listes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nom:'🔎 '+nom,sdr:sdrChoisi,criteres:{avance:true,onglet:'prospects',filtres:f,jobs:f.decideur?["N'importe quel décideur"]:f.postes,naf:[],pays:[]},entreprises:fiches,credits_estimes:0})});
   const dc=await rc.json();
   if(dc.erreur){toast('Erreur création : '+dc.erreur);return;}
   toast('🔎 Liste créée : '+fiches.length+' fiche'+(fiches.length>1?'s':'')+(nbDup?' · '+nbDup+' doublon(s) retiré(s)':''));
@@ -3789,7 +3849,7 @@ function avEnregistrer(){
  if(!nom)return;
  let saved=[];try{saved=JSON.parse(localStorage.getItem('av_recherches')||'[]');}catch(_){}
  saved.unshift({nom,date:new Date().toISOString(),av:JSON.parse(JSON.stringify(AV)),
-  ent_naf:document.getElementById('av-ent-naf').value,ent_ca:document.getElementById('av-ent-ca').value,ent_etab:document.getElementById('av-ent-etab').value});
+  ent_ca:document.getElementById('av-ent-ca').value,ent_etab:document.getElementById('av-ent-etab').value});
  try{localStorage.setItem('av_recherches',JSON.stringify(saved.slice(0,20)));}catch(_){}
  avRafraichirSaved();
  toast('💾 Recherche enregistrée (sur ce navigateur)');
@@ -3799,7 +3859,6 @@ function avChargerRecherche(k){
  let saved=[];try{saved=JSON.parse(localStorage.getItem('av_recherches')||'[]');}catch(_){}
  const s=saved[parseInt(k)];if(!s)return;
  Object.assign(AV,s.av||{});
- document.getElementById('av-ent-naf').value=s.ent_naf||'';
  document.getElementById('av-ent-ca').value=s.ent_ca||'Indifférent';
  document.getElementById('av-ent-etab').value=s.ent_etab||'Indifférent';
  avOnglet(AV.onglet||'prospects');avRendreChips();
