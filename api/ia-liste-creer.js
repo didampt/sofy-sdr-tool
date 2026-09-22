@@ -81,20 +81,51 @@ function filtresPersonnes(c) {
 }
 
 // V2 (22/09/2026, « refonte Liste intelligente ») : l'API Basile filtre désormais les PERSONNES
-// par secteur FIN (`activity` avec préfixe naf:) et par taille d'employeur (`company_headcount`,
+// par secteur FIN (`activity` = IDs de concept) et par taille d'employeur (`company_headcount`,
 // RangeFilter >=/<=) — cf. docs.basile.cc/openapi.yaml relue le 22/09. Remplace le tri sectoriel
 // IA de v210 quand des naf_codes existent, SOUS RÉSERVE du garde anti-« filtre ignoré » du
 // handler (Basile ignore silencieusement les filtres qu'il ne connaît pas — leçon du 21/07).
+// ⚠️ Les codes NAF bruts (préfixe naf: de la doc OpenAPI) ne sont PAS acceptés — testé en prod le
+// 22/09, toutes les variantes → 0. Les concepts se résolvent via /companies/activity-suggest.
 // ⚠️ company_headcount écarte AUSSI les employeurs à effectif inconnu (~21 % des fiches, doc
 // Basile) — même piège que Pappers (cas Romain 22/09) : l'écart est mesuré et affiché au SDR.
-function filtresPersonnesV2(c) {
-  const nafs = Array.isArray(c.naf_codes) ? c.naf_codes.map(x => String(x || '').trim()).filter(Boolean) : [];
-  if (!nafs.length) return null;
+
+// Résout NAF/activité libre → IDs de concept `activity`. Réponse NON documentée → parsing
+// défensif (tableau de chaînes ou d'objets, champs id/slug/label devinés) ; en cas de raté, le
+// garde comptage avec/sans activity du handler renvoie sur v210 — rien ne casse.
+// Ordre : chaque code NAF (précis) d'abord, top 3 par code ; l'activité libre en repli seulement.
+async function resoudreConcepts(criteres, key) {
+  const requetes = (Array.isArray(criteres.naf_codes) ? criteres.naf_codes : [])
+    .map(x => String(x || '').trim()).filter(Boolean).slice(0, 4);
+  const libre = String(criteres.activite_libre || '').trim();
+  const ids = [], labels = [], vus = new Set();
+  async function suggere(q) {
+    try {
+      const r = await fetch('https://api.basile.cc/companies/activity-suggest?q=' + encodeURIComponent(q), { headers: { 'Authorization': key } });
+      const d = await r.json().catch(() => null);
+      if (!r.ok || !d) return;
+      const items = Array.isArray(d) ? d : (d.suggestions || d.results || d.concepts || d.items || d.activities || d.leads || []);
+      for (const it of (Array.isArray(items) ? items.slice(0, 3) : [])) {
+        const id = typeof it === 'string' ? it : (it.id || it._id || it.concept_id || it.conceptId || it.slug || it.value || null);
+        if (!id || vus.has(String(id))) continue;
+        vus.add(String(id)); ids.push(String(id));
+        const lbl = (typeof it === 'object' && (it.label || it.name || it.title || it.libelle)) || '';
+        labels.push(lbl ? String(lbl) : String(id));
+      }
+    } catch (_) {}
+  }
+  for (const q of requetes) await suggere(q);
+  if (!ids.length && libre) await suggere(libre);
+  return { ids: ids.slice(0, 8), labels: labels.slice(0, 8) };
+}
+
+function filtresPersonnesV2(c, conceptIds) {
+  if (!Array.isArray(conceptIds) || !conceptIds.length) return null;
   const f = {};
   const roles = rolesDepuisFamilles(c);
   if (roles.length) f.result_role = { include: roles };
   f.result_country_code = { include: Array.isArray(c.pays) && c.pays.length ? c.pays : ['FR'] };
-  f.activity = { include: nafs.map(x => 'naf:' + x) };
+  f.activity = { include: conceptIds };
   const effMin = parseInt(c.effectif_min, 10), effMax = parseInt(c.effectif_max, 10);
   if (effMin > 0 || effMax > 0) {
     f.company_headcount = {};
@@ -434,12 +465,13 @@ export default async function handler(req, res) {
     // pas croiser SIREN et postes LinkedIn. On cherche donc par POSTE (+ macro-secteur), puis
     // Claude trie les entreprises des profils trouvés selon le secteur visé, page par page.
     if (hybride) {
-      // ── V2 (22/09/2026) : filtre secteur FIN natif sur les personnes (`activity` naf:) ──
-      // Garde anti-« filtre ignoré » : comptage AVEC puis SANS `activity` (limit 1, gratuit).
-      // Égaux → le filtre ne restreint rien (ignoré, ou concepts naf: inconnus) ; 0 → rien ne
-      // matche. Dans les deux cas on retombe sur le chemin v210 (macro + tri IA), l'ancien
-      // comportement sûr. Restreint → plus de tri IA : direct, rapide, déterministe.
-      const filtresV2 = filtresPersonnesV2(criteres);
+      // ── V2 (22/09/2026) : filtre secteur FIN natif sur les personnes (concepts `activity`) ──
+      // Concepts résolus via activity-suggest, puis garde anti-« filtre ignoré » : comptage AVEC
+      // puis SANS `activity` (limit 1, gratuit). Égaux → le filtre ne restreint rien (ignoré, ou
+      // concepts inconnus) ; 0 → rien ne matche. Dans les deux cas on retombe sur le chemin v210
+      // (macro + tri IA), l'ancien comportement sûr. Restreint → plus de tri IA : direct, rapide.
+      const concepts = await resoudreConcepts(criteres, key);
+      const filtresV2 = filtresPersonnesV2(criteres, concepts.ids);
       let v2 = null; // {filtres, total, totalSansActivity, totalSansEffectif}
       if (filtresV2) {
         const rAvec = await basile('/people/find', { limit: 1, filters: filtresV2 }, key);
@@ -484,6 +516,7 @@ export default async function handler(req, res) {
             postes: (v2.filtres.result_role && v2.filtres.result_role.include) || [],
             naf_codes: naf.include,
             activity: v2.filtres.activity.include,
+            concepts: concepts.labels, // libellés des concepts Basile appliqués (affichés au SDR)
             effectif: v2.filtres.company_headcount || null,
             zones
           }

@@ -36,6 +36,21 @@ export default async function handler(req, res) {
   if (!key) return res.status(500).json({ erreur: 'BASILE_API_KEY manquante' });
 
   const { action, filters, limit, paginationToken } = req.body || {};
+
+  // 'activity_suggest' : IDs de concept pour le filtre `activity` (people ET companies).
+  // Réponse renvoyée BRUTE (non documentée chez Basile) — sert aussi de debug console.
+  if (action === 'activity_suggest') {
+    const q = String((req.body || {}).q || '').trim();
+    if (!q) return res.status(400).json({ erreur: 'q requis' });
+    try {
+      const r = await fetch(BASE + '/companies/activity-suggest?q=' + encodeURIComponent(q), { headers: { 'Authorization': key } });
+      let data = null; try { data = await r.json(); } catch (e) { data = null; }
+      return res.status(200).json({ status: r.status, brut: data });
+    } catch (e) {
+      return res.status(502).json({ erreur: 'Basile injoignable', detail: String(e.message || e).slice(0, 120) });
+    }
+  }
+
   if (!action || !filters || typeof filters !== 'object') {
     return res.status(400).json({ erreur: 'action et filters requis' });
   }

@@ -3116,7 +3116,7 @@ function ouvrirEstimationIA(d){
   const nbTous=d.nb_personnes_sans_secteur||0;
   const nbSansEff=d.nb_personnes_sans_effectif; // null si pas de filtre effectif
   const ech=d.echantillon_personnes||[];
-  const f=d._filtres||{}; const postes=f.postes||[]; const nafs=f.naf_codes||[];
+  const f=d._filtres||{}; const postes=f.postes||[]; const nafs=f.naf_codes||[]; const concepts=f.concepts||[];
   const NOMS={'971':'Guadeloupe','972':'Martinique','973':'Guyane','974':'La Réunion','976':'Mayotte',metropole:'Métropole'};
   const zones=(f.zones||[]).map(z=>NOMS[z]||z).join(', ');
   const eff=f.effectif?[f.effectif['>=']?'≥ '+f.effectif['>=']:null,f.effectif['<=']?'≤ '+f.effectif['<=']:null].filter(Boolean).join(' et '):'';
@@ -3136,7 +3136,8 @@ function ouvrirEstimationIA(d){
    ${(nbSansEff&&nbSansEff>nb)?`<div style="background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:12.5px;line-height:1.5;color:#7a5510">📉 Ton filtre effectif cache <b>${(nbSansEff-nb).toLocaleString('fr-FR')}</b> personne(s) : Basile écarte aussi les employeurs dont il ne connaît pas l'effectif (${nbSansEff.toLocaleString('fr-FR')} sans ce filtre). Retire l'effectif de ta demande pour les inclure.</div>`:''}
    <div style="background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:var(--ink-soft)">
     <div style="font-weight:700;color:var(--ink);margin-bottom:5px">🔎 Filtres réellement envoyés à Basile</div>
-    <div><b>Secteur NAF</b> (${nafs.length}) : ${nafs.length?nafs.slice(0,6).map(esc).join(', '):'—'}</div>
+    <div><b>Secteur Basile appliqué</b> (${concepts.length}) : ${concepts.length?concepts.slice(0,4).map(esc).join(', ')+(concepts.length>4?` <span style="color:var(--ink-soft)">(+${concepts.length-4})</span>`:''):'—'}</div>
+    <div style="margin-top:3px"><b>Depuis les codes NAF</b> (${nafs.length}) : ${nafs.length?nafs.slice(0,6).map(esc).join(', '):'—'}</div>
     <div style="margin-top:3px"><b>Postes ciblés</b> (${postes.length}) : ${postes.length?postes.slice(0,4).map(esc).join(', ')+(postes.length>4?` <span style="color:var(--ink-soft)">(+${postes.length-4})</span>`:''):'<span style="color:var(--danger)">aucun (tous postes)</span>'}</div>
     ${eff?`<div style="margin-top:3px"><b>Effectif employeur :</b> ${esc(eff)} salariés</div>`:''}
     <div style="margin-top:3px"><b>Zone :</b> ${zones?esc(zones):'—'}</div>

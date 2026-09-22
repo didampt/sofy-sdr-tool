@@ -59,10 +59,20 @@ nouveaux filtres people/find AU LIEU du tri sectoriel IA de v210 :
 - **Vérifié** : banc complet dans le scratchpad (handler réel + db stub + fetch factice, 5
   scénarios : V2 estimer/creer, activity ignoré → v210, activity 0 → v210, sans effectif) ;
   node --check ; modale testée visuellement en local.
-- **Validation prod à la première utilisation** : si `naf:` n'est pas reconnu par l'API réelle, la
-  garde fait tout retomber sur v210 silencieusement — la modale d'estimation dit quel chemin a
-  servi (« filtre Basile natif » vs « tri sectoriel par IA »), c'est LE témoin. Snippet countOnly
-  donné à Didier pour trancher en 30 s.
+- **Validation prod du 22/09 (Didier, countOnly)** : les préfixes `naf:` de la doc OpenAPI ne sont
+  PAS acceptés (toutes variantes → 0 ; contrôle `commerce_global` = 1 410 sur 31 004). Le filtre
+  `activity` sur les personnes ne prend que des **IDs de concept** → correctif le jour même :
+  `resoudreConcepts()` dans `ia-liste-creer.js` interroge `/companies/activity-suggest` (chaque
+  code NAF d'abord, top 3 ; activité libre en repli), parsing DÉFENSIF (réponse non documentée :
+  tableau de chaînes ou d'objets id/slug/label devinés), libellés affichés dans la modale
+  (« Secteur Basile appliqué »). Suggest en panne ou concepts inconnus → v210, banc re-passé
+  (7 scénarios). `api/basile.js` : action `activity_suggest` (renvoie la réponse BRUTE — sert de
+  debug console pour voir la vraie forme et ajuster le parsing si besoin).
+- **Validation prod à la première utilisation** : la modale d'estimation dit quel chemin a servi
+  (« filtre Basile natif » + libellés des concepts vs « tri sectoriel par IA ») — c'est LE témoin.
+  Si elle reste sur le tri IA, faire tourner
+  `api('/api/basile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'activity_suggest',q:'recouvrement'})})`
+  et regarder `brut` : la forme réelle dira quoi ajuster dans `resoudreConcepts()`.
 - **Non fait, à arbitrer** : chemin DOM (toujours dirigeants légaux par SIREN — la voie salariés
   LinkedIn par siren + result_role l'améliorerait) ; géo fine sur les personnes en V2
   (`result_postal_code` est Legal-only : l'activer exclurait la source LinkedIn, on s'est abstenu).
