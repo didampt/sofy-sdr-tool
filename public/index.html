@@ -4007,7 +4007,10 @@ function avVilleSuggest(q,inputId){
    const d=await r.json();
    const brut=(d.brut||{});
    items=(brut.suggestions||brut.cities||brut.results||(Array.isArray(brut)?brut:[]))
-    .map(s=>typeof s==='string'?s:(s.value||s.label||s.name||'')).filter(Boolean).slice(0,15);
+    .map(s=>typeof s==='string'?s:(s.value||s.label||s.name||'')).filter(Boolean);
+   // Le référentiel Basile a des doublons de casse (Paris/PARIS/paris) : une seule variante
+   const vusV=new Set();
+   items=items.filter(v=>{const k=v.toLowerCase();if(vusV.has(k))return false;vusV.add(k);return true;}).slice(0,15);
   }catch(_){}
   if(!items.length){if(box)box.style.display='none';return;}
   SUGG_ETAT[boxId]={items,rendu:v=>{

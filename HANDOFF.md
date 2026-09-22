@@ -1,5 +1,16 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 22 septembre 2026, nuit)
 
+## 🎯 22 septembre 2026 (nuit, 11e passe) — « hasn't returned any results » = 0 résultat, pas une panne
+
+Retour Didier « même bug » : sa capture montre pourtant la page 1 RÉUSSIE (40 balayés, 4
+retenus) + le toast d'erreur — très probablement la fenêtre de déploiement Vercel (mix
+d'instances ancien/nouveau code pendant ~1 min). Blindage quand même :
+- gmb-serp : SerpApi sert « Google hasn't returned any results for this query » en erreur HTTP
+  alors que c'est UN ZÉRO RÉSULTAT → traité comme page vide propre (return []), plus jamais de
+  toast d'erreur pour ça (banc n°9).
+- Villes : le référentiel Basile a des doublons de casse (Paris/PARIS/paris cochables 3 fois,
+  capture) → dédup case-insensitive des suggestions.
+
 ## 🎯 22 septembre 2026 (nuit, 10e passe) — SerpApi réparé (start exige ll), autocomplete villes, feedback catégories Google
 
 Retours Didier (« bug récurrent sur Google ») :

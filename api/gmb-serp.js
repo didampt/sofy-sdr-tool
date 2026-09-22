@@ -87,7 +87,13 @@ export default async function handler(req, res) {
     }
     const r = await appelSerpApi(params, { qui: user.nom || 'recherche-avancee', motif: 'gmb-serp ' + combo.a + '/' + combo.v });
     if (r.refuse || r.sansCle) { const e = new Error((r.d && r.d.error) || 'SerpApi indisponible'); e.plafond = !!r.refuse; throw e; }
-    if (!r.ok) throw new Error('SerpApi : ' + ((r.d && r.d.error) || r.status));
+    if (!r.ok) {
+      // « Google hasn't returned any results » = ZÉRO résultat pour cette combinaison, pas une
+      // panne (SerpApi le sert en erreur HTTP) → page vide propre, jamais de toast d'erreur.
+      const msg = String((r.d && r.d.error) || '');
+      if (/hasn't returned any results/i.test(msg)) return [];
+      throw new Error('SerpApi : ' + (msg || r.status));
+    }
     const brut = (r.d && r.d.local_results) || [];
     // Mémorise le ll pour les pages suivantes de cette combinaison
     const g = brut[0] && brut[0].gps_coordinates;
