@@ -1,5 +1,20 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 23 septembre 2026)
 
+## 🎯 23 septembre 2026 — le filtre RÉGION marche (74 vs 41 245) : les chips 🌴 passent dessus
+
+Mesure Didier : location_region / result_region / region 'Guadeloupe' = 74 (contrôle 41 245) →
+le filtre région EXISTE sur people/find (non documenté). 74 vs 16 par villes : les profils
+« région seule » (dont Vincent Boulogne) échappaient au filtre ville. Bascule :
+- chips 🌴 → `location_region` (graphies min/MAJ) sur les requêtes LinkedIn, `result_postal_code`
+  971xx-976xx (Legal-only, cpsDePrefixe) sur les requêtes registre — appliqués PAR SOURCE dans
+  `avecSource()` (⚠️ TDZ : domSel déclaré juste après base, avant tout appel d'avecSource
+  hoistée). DOM_VILLES supprimé (DOM_REGIONS + DOM_ISO_CP). Union FR conservée. Le mode listes
+  SIREN (`trouver`, source TOUS) n'applique pas la géo DOM (voulu).
+- OPPORTUNITÉ notée : location_region marche sûrement aussi pour les régions MÉTROPOLITAINES
+  des personnes (« Auvergne-Rhône-Alpes »…) — un futur filtre « région de la personne ».
+- Banc M/Q/Q2 (region lki + cpPers legal + union FR), régression complète OK.
+ATTENDU EN PROD : « ~acha × 🌴 Guadeloupe » ≈ 74 LinkedIn (16 avant), Vincent Boulogne dedans.
+
 ## 🎯 23 septembre 2026 — clés RÉELLES des leads Basile (location_region !), FR ∪ DOM, avatars
 
 Fiche brute mesurée (Didier, action people) — CLÉS DISPONIBLES sur un lead : _id,

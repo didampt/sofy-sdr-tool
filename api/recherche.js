@@ -65,25 +65,24 @@ async function sirensDesListes(ids) {
 }
 
 // Construit les filtres Basile communs (hors siren, géré par lots).
-// DOM : MESURÉ 23/09 (Didier) — result_country_code 'GP' = 0, 'FR' = 889 : Basile classe les
-// DOM sous FR (contrairement à LinkedIn). Les chips 🌴 filtrent donc par VILLES de la personne
-// (result_city, multi-source), « Guadeloupe » inclus car beaucoup de profils ne mettent que la région.
-const DOM_VILLES = {
-  GP: ['Guadeloupe', 'Baie-Mahault', 'Les Abymes', 'Pointe-à-Pitre', 'Basse-Terre', 'Le Gosier', 'Petit-Bourg', 'Sainte-Anne', 'Le Moule', 'Saint-François', 'Capesterre-Belle-Eau', 'Lamentin', 'Sainte-Rose', "Morne-à-l'Eau"],
-  MQ: ['Martinique', 'Fort-de-France', 'Le Lamentin', 'Schoelcher', 'Le Robert', 'Sainte-Marie', 'La Trinité', 'Le François', 'Ducos', 'Rivière-Salée', 'Saint-Joseph'],
-  GF: ['Guyane', 'Guyane française', 'Cayenne', 'Matoury', 'Saint-Laurent-du-Maroni', 'Kourou', 'Remire-Montjoly', 'Macouria'],
-  RE: ['Réunion', 'La Réunion', 'Saint-Denis', 'Saint-Paul', 'Saint-Pierre', 'Le Tampon', 'Saint-André', 'Saint-Louis', 'Le Port', 'Saint-Benoît', 'Saint-Joseph', 'Sainte-Marie'],
-  YT: ['Mayotte', 'Mamoudzou', 'Koungou', 'Dzaoudzi', 'Dembeni']
+// DOM : MESURÉS 23/09 (Didier) — ① result_country_code 'GP' = 0 (Basile classe les DOM sous FR) ;
+// ② le filtre RÉGION marche sur people/find : location_region 'Guadeloupe' = 74 vs contrôle
+// 41 245 (les villes n'attrapaient que 16 : les profils « région seule », dont Vincent Boulogne,
+// échappaient au filtre ville). Côté LinkedIn : location_region ; côté REGISTRE : codes postaux
+// (result_postal_code, Legal-only) — appliqués PAR SOURCE dans avecSource().
+const DOM_REGIONS = {
+  GP: ['Guadeloupe', 'GUADELOUPE'],
+  MQ: ['Martinique', 'MARTINIQUE'],
+  GF: ['Guyane', 'GUYANE', 'Guyane française'],
+  RE: ['La Réunion', 'Réunion', 'LA REUNION', 'REUNION'],
+  YT: ['Mayotte', 'MAYOTTE']
 };
+const DOM_ISO_CP = { GP: '971', MQ: '972', GF: '973', RE: '974', YT: '976' };
 function filtresBasile(f, conceptIds, roles) {
   // Pays de la personne (result_country_code) — FR par défaut ; multi possible (BE, CH, LU…),
   // Basile étant une base française, un autre pays peut légitimement compter très peu.
   const paysBruts = (Array.isArray(f.pays) ? f.pays : []).map(p => String(p || '').trim().toUpperCase()).filter(p => /^[A-Z]{2}$/.test(p)).slice(0, 6);
-  let dom = paysBruts.filter(p => DOM_VILLES[p]);
-  const pays = paysBruts.filter(p => !DOM_VILLES[p]);
-  // 🇫🇷 FR coché AVEC des îles = union → la France couvre les DOM (Basile les classe sous FR) :
-  // les villes DOM ne doivent plus RESTREINDRE (bug Didier 23/09 : FR+GP+MQ restait à 47).
-  if (pays.includes('FR')) dom = [];
+  const pays = paysBruts.filter(p => !DOM_REGIONS[p]);
   const b = { result_country_code: { include: pays.length ? pays : ['FR'] }, hide_legal_entities: true };
   if (roles.length) b.result_role = { include: roles };
   // Intitulés EXCLUS (wireframe v2 : postes ciblés Inclure/Exclure façon Sales Nav)
@@ -94,11 +93,6 @@ function filtresBasile(f, conceptIds, roles) {
   // people/find (region/département n'existent pas ; result_postal_code est Legal-only et
   // exclurait LinkedIn). Pour une zone entière : filtre « lieu du siège » (voie SIREN).
   const villes = (Array.isArray(f.villes) ? f.villes : []).map(v => String(v || '').trim()).filter(Boolean).slice(0, 15);
-  for (const d of dom) for (const v0 of DOM_VILLES[d]) {
-    // Le référentiel villes Basile duplique les graphies (Guadeloupe / GUADELOUPE /
-    // « GUADELOUPE (FRANCE) », mesuré au suggest) : on couvre les trois.
-    for (const v of [v0, v0.toUpperCase(), v0.toUpperCase() + ' (FRANCE)']) if (!villes.includes(v)) villes.push(v);
-  }
   if (villes.length) b.result_city = { include: villes };
   // La personne (wireframe v2) : prénom / nom / entreprise actuelle (employer exact+contains,
   // même pattern que personas.js — multi-source, marche aussi en voie directe)
@@ -298,11 +292,15 @@ export default async function handler(req, res) {
     }
     const aVilles = Array.isArray(filtres.villes) && filtres.villes.some(v => String(v || '').trim());
     const aPersonne = !!(String(filtres.prenom || '').trim() || String(filtres.nom_personne || '').trim() || String(filtres.entreprise || '').trim());
-    const aDom = Array.isArray(filtres.pays) && filtres.pays.some(p => DOM_VILLES[String(p || '').trim().toUpperCase()]); // un DOM injecte des villes
+    const aDom = Array.isArray(filtres.pays) && filtres.pays.some(p => DOM_REGIONS[String(p || '').trim().toUpperCase()]); // un DOM = filtre région/CP
     if (!roles.length && !conceptIds.length && !sirens.length && !aVilles && !aPersonne && !aDom) {
       return res.status(400).json({ erreur: 'Ajoute au moins un filtre (secteur, poste, ville ou liste de comptes) — sans quoi la recherche couvrirait toute la France.' });
     }
     const base = filtresBasile(filtres, conceptIds, roles);
+    // DOM sélectionnés (chips 🌴) — FR coché en même temps = union, la France couvre les îles.
+    // Déclaré ICI (avant tout appel d'avecSource, hoistée) — TDZ sinon.
+    const paysB = (Array.isArray(filtres.pays) ? filtres.pays : []).map(p => String(p || '').trim().toUpperCase());
+    const domSel = paysB.includes('FR') ? [] : paysB.filter(p => DOM_REGIONS[p]);
     // Part LinkedIn par la voie « entreprises → SIREN → personnes » dès qu'un secteur NAF est
     // posé sans SIREN explicites : la voie directe activity×role est structurellement vide
     // (matrice du 22/09). S'il existe des concepts lki: on tente quand même la voie directe en
@@ -345,8 +343,14 @@ export default async function handler(req, res) {
     const source = (filtres.source === 'lki' || filtres.source === 'legal') ? filtres.source : 'deux';
     function avecSource(b, s) {
       const o = { ...b };
-      if (s === 'lki') o.with_linkedin_profile = true;
-      if (s === 'legal') o.with_legal_data = true;
+      if (s === 'lki') {
+        o.with_linkedin_profile = true;
+        if (domSel.length) o.location_region = { include: domSel.flatMap(d => DOM_REGIONS[d]) };
+      }
+      if (s === 'legal') {
+        o.with_legal_data = true;
+        if (domSel.length) o.result_postal_code = { include: domSel.flatMap(d => cpsDePrefixe(DOM_ISO_CP[d])) };
+      }
       return o;
     }
 
