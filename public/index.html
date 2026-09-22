@@ -776,7 +776,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
               </div>
               <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
                 <div style="font-size:13.5px;font-weight:600;margin-bottom:6px">Fonctions à chercher ensuite (👥 personas)</div>
-                <select class="field" id="av-ent-jobs" style="width:100%"><option>N'importe quel décideur</option><option>Dirigeant / PDG</option><option>Directeur Commercial</option><option>Directeur Marketing</option><option>Responsable Communication</option></select>
+                <select class="field" id="av-ent-jobs" style="width:100%" onchange="avApercuEnt(false)"><option>N'importe quel décideur</option><option>Dirigeant / PDG</option><option>Directeur Commercial</option><option>Directeur Marketing</option><option>Responsable Communication</option></select>
                 <p class="hint" style="margin-top:6px">Mémorisé sur la liste : le pipeline 🚀 et le bouton 👥 chercheront ces fonctions.</p>
               </div>
             </div>
@@ -3642,15 +3642,37 @@ function avMaj(){
  if(!f.concept_ids.length&&!f.postes.length&&!f.decideur&&!f.listes_ids.length&&!f.villes.length)return;
  AV_TIMER=setTimeout(avApercu,800);
 }
-async function avApercu(){
+let AV_SUITE=null; // pagination de l'aperçu Prospects (apercu_suite du serveur)
+function avLigneLead(l,avecCase){
+ const esc=s=>String(s||'').replace(/</g,'&lt;');
+ const cleEx=l.slug||('p:'+((l.prenom||'')+' '+(l.nom||'')+'@'+(l.entreprise||'')).toLowerCase().replace(/\s+/g,' ').trim());
+ return `<div style="display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid #f1f2f8;${l.doublon?'opacity:.45':''}">
+   ${avecCase?`<input type="checkbox" data-slug="${esc(cleEx).replace(/"/g,'&quot;')}" ${l.doublon?'':'checked'} aria-label="Garder ${esc((l.prenom+' '+l.nom).trim()).replace(/"/g,'&quot;')}">`:''}
+   <div style="min-width:0;flex-grow:1;font-size:13px"><b>${esc((l.prenom+' '+l.nom).trim())}</b> <span style="color:var(--ink-soft)">— ${esc(l.fonction)}${l.entreprise?' · '+esc(l.entreprise):''}${l.ville?' ('+esc(l.ville)+')':''}</span></div>
+   ${l.doublon?'<span class="badge" style="background:#fee2e2;color:#b91c1c">déjà extrait</span>':(l.linkedin?'<span class="badge b-gmb">💼 LinkedIn</span>':'<span class="badge b-gmb">🏛️ registre</span>')}
+  </div>`;
+}
+function avVoirPlusHtml(fn,suite){
+ return suite?`<div class="av-voirplus" style="padding:10px 16px;text-align:center"><button class="btn" style="background:var(--paper)" onclick="${fn}(true)">➕ Voir la suite${suite.phase==='legal'?' (🏛️ registre)':suite.phase==='siren'?' (30 entreprises suivantes)':''}</button></div>`:'';
+}
+async function avApercu(voirPlus){
  const count=document.getElementById('av-count'),box=document.getElementById('av-apercu');
- count.innerHTML='⏳ Comptage en cours (gratuit)…';
+ const suite=voirPlus?AV_SUITE:null;
+ if(voirPlus&&!suite)return;
+ if(!voirPlus)count.innerHTML='⏳ Comptage en cours (gratuit)…';
  try{
-  const r=await api('/api/recherche',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'apercu',filtres:avFiltres()})});
+  const r=await api('/api/recherche',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'apercu',filtres:avFiltres(),apercu_suite:suite})});
   const d=await r.json();
-  if(d.erreur){count.innerHTML='⚠️ '+String(d.erreur).replace(/</g,'&lt;');box.style.display='none';return;}
-  AV_APERCU=d;
+  if(d.erreur){if(!voirPlus){count.innerHTML='⚠️ '+String(d.erreur).replace(/</g,'&lt;');box.style.display='none';}else toast('⚠️ '+d.erreur);return;}
+  AV_SUITE=d.apercu_suite||null;
   const esc=s=>String(s||'').replace(/</g,'&lt;');
+  const lignes=(d.leads||[]).map(l=>avLigneLead(l,true)).join('');
+  if(voirPlus){
+   box.querySelectorAll('.av-voirplus').forEach(x=>x.remove());
+   box.insertAdjacentHTML('beforeend',lignes+avVoirPlusHtml('avApercu',AV_SUITE));
+   return;
+  }
+  AV_APERCU=d;
   const doublons=(d.leads||[]).filter(l=>l.doublon).length;
   // Concepts « morts » côté personnes (ex : un concept Google Maps seul) : nommés + chips marquées
   let alerteConcepts='';
@@ -3660,24 +3682,52 @@ async function avApercu(){
    const morts=AV.concepts.filter(c=>c.mort).map(c=>c.label);
    alerteConcepts=`<div style="font-size:12.5px;background:#fcebeb;border-radius:8px;padding:8px 12px;color:#a32d2d">⚠️ ${morts.length?('« '+morts.map(esc).join(' », « ')+' » ne matche'+(morts.length>1?'nt':'')+' aucune personne'):'Ces concepts ne matchent aucune personne'} — retape le métier et choisis la variante <b>🏛️ NAF</b> ou <b>💼 LinkedIn</b> (les concepts 📍 Google décrivent des lieux, pas des employeurs).</div>`;
   }else{AV.concepts.forEach(c=>{delete c.mort;});avRendreChips();}
+  // Secteur réellement appliqué (concepts élargis LinkedIn/Google par le serveur) : affiché
+  const applique=(d.concepts_labels||[]);
+  const enPlus=applique.length>AV.concepts.length?applique.slice(AV.concepts.length):[];
   count.innerHTML=`<div style="display:flex;gap:22px;align-items:center;flex-wrap:wrap">
    <div><div style="font-size:12px;color:var(--ink-soft)">Prospects correspondants</div><div style="font-size:30px;font-weight:800;color:var(--ink)">${(d.total||0).toLocaleString('fr-FR')}</div></div>
    <div style="font-size:12.5px;line-height:1.55;color:var(--ink-soft)">${(d.total_lki!=null&&d.total_legal!=null)?`<b style="color:#0369a1">💼 LinkedIn ${d.total_lki.toLocaleString('fr-FR')}</b> · <b style="color:#0f766e">🏛️ registre ${d.total_legal.toLocaleString('fr-FR')}</b><br>`:''}comptage gratuit, recalculé à chaque filtre${d.nb_sirens?`<br>recherche sur les <b>${d.nb_sirens}</b> entreprises de tes listes`:''}${doublons?`<br>♻️ ${doublons} déjà extrait(s) sur l'aperçu — décochés`:''}</div>
    ${(d.total_sans_effectif&&d.total_sans_effectif>(d.total||0))?`<div style="font-size:12.5px;background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:8px 12px;color:#7a5510">📉 ton filtre effectif cache <b>${(d.total_sans_effectif-(d.total||0)).toLocaleString('fr-FR')}</b> personne(s) (effectif employeur inconnu)</div>`:''}
+   ${enPlus.length?`<div style="font-size:12px;color:var(--ink-soft);width:100%">🔎 Secteur élargi automatiquement côté LinkedIn/Google : ${enPlus.slice(0,4).map(esc).join(', ')}${enPlus.length>4?' (+'+(enPlus.length-4)+')':''} — si l'aperçu sort du secteur, retire le concept trop large en retapant le métier.</div>`:''}
    ${alerteConcepts}
   </div>`;
   if(!(d.leads||[]).length){box.style.display='none';return;}
-  box.innerHTML=`<div style="padding:11px 16px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--ink-soft)"><b style="color:var(--ink)">Aperçu réel (${d.leads.length} premiers)</b> — décoche pour écarter de la génération</div>`
-   +d.leads.map((l,k)=>{
-    // Clé d'exclusion : slug LinkedIn, sinon la même clé p: que le serveur (dirigeants registre)
-    const cleEx=l.slug||('p:'+((l.prenom||'')+' '+(l.nom||'')+'@'+(l.entreprise||'')).toLowerCase().replace(/\s+/g,' ').trim());
-    return `<div style="display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid #f1f2f8;${l.doublon?'opacity:.45':''}">
-     <input type="checkbox" data-slug="${esc(cleEx)}" ${l.doublon?'':'checked'} aria-label="Garder ${esc((l.prenom+' '+l.nom).trim())}">
-     <div style="min-width:0;flex-grow:1;font-size:13px"><b>${esc((l.prenom+' '+l.nom).trim())}</b> <span style="color:var(--ink-soft)">— ${esc(l.fonction)}${l.entreprise?' · '+esc(l.entreprise):''}${l.ville?' ('+esc(l.ville)+')':''}</span></div>
-     ${l.doublon?'<span class="badge" style="background:#fee2e2;color:#b91c1c">déjà extrait</span>':(l.linkedin?'<span class="badge b-gmb">💼 LinkedIn</span>':'<span class="badge b-gmb">🏛️ registre</span>')}
-    </div>`;}).join('');
+  box.innerHTML=`<div style="padding:11px 16px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--ink-soft)"><b style="color:var(--ink)">Aperçu réel</b> — décoche pour écarter de la génération · 💼 d'abord, 🏛️ ensuite</div>`
+   +lignes+avVoirPlusHtml('avApercu',AV_SUITE);
   box.style.display='block';
- }catch(e){count.innerHTML='⚠️ Erreur réseau : '+e.message;}
+ }catch(e){if(!voirPlus)count.innerHTML='⚠️ Erreur réseau : '+e.message;}
+}
+
+// ── Aperçu « décideurs des entreprises trouvées » (onglet Entreprises) ──
+let AV_ENT_SIRENS=[],AV_ENT_SUITE=null;
+function avEntFiltresPersonas(){
+ const j=document.getElementById('av-ent-jobs').value;
+ const map={'Dirigeant / PDG':['direction'],'Directeur Commercial':['commercial'],'Directeur Marketing':['marketing'],'Responsable Communication':['communication']};
+ return {sirens:AV_ENT_SIRENS,decideur:!map[j],familles:map[j]||[],postes:[],concept_ids:[],source:'deux',exclure_extraits:true};
+}
+async function avApercuEnt(voirPlus){
+ const box=document.getElementById('av-apercu');
+ const suite=voirPlus?AV_ENT_SUITE:null;
+ if(!AV_ENT_SIRENS.length){box.style.display='none';return;}
+ if(voirPlus&&!suite)return;
+ if(!voirPlus){box.innerHTML='<div style="padding:12px 16px;font-size:13px;color:var(--ink-soft)">⏳ Recherche des décideurs des entreprises trouvées…</div>';box.style.display='block';}
+ try{
+  const r=await api('/api/recherche',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'apercu',filtres:avEntFiltresPersonas(),apercu_suite:suite})});
+  const d=await r.json();
+  if(d.erreur){box.innerHTML='<div style="padding:12px 16px;font-size:13px;color:#a32d2d">⚠️ '+String(d.erreur).replace(/</g,'&lt;')+'</div>';return;}
+  AV_ENT_SUITE=d.apercu_suite||null;
+  const lignes=(d.leads||[]).map(l=>avLigneLead(l,false)).join('');
+  if(voirPlus){
+   box.querySelectorAll('.av-voirplus').forEach(x=>x.remove());
+   box.insertAdjacentHTML('beforeend',lignes+avVoirPlusHtml('avApercuEnt',AV_ENT_SUITE));
+   return;
+  }
+  box.innerHTML=`<div style="padding:11px 16px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--ink-soft)"><b style="color:var(--ink)">👥 Décideurs des entreprises trouvées</b>${d.total!=null?` — <b>${(d.total||0).toLocaleString('fr-FR')}</b> sur les ${AV_ENT_SIRENS.length} entreprises de la 1re page`:''} · après génération, le pipeline 🚀 les ajoute aux fiches</div>`
+   +(lignes||'<div style="padding:12px 16px;font-size:13px;color:var(--ink-soft)">Aucun décideur trouvé sur ce lot — la fiche Pappers fournira le dirigeant légal.</div>')
+   +avVoirPlusHtml('avApercuEnt',AV_ENT_SUITE);
+  box.style.display='block';
+ }catch(e){box.innerHTML='<div style="padding:12px 16px;font-size:13px;color:#a32d2d">⚠️ Erreur réseau : '+e.message+'</div>';}
 }
 
 // ── Onglet Entreprises : estimation Pappers auto ──
@@ -3727,6 +3777,7 @@ async function avEstimerEnt(){
   const ca=CA_MAP[c.ca]||['',''];if(ca[0])p.set('ca_min',ca[0]);if(ca[1])p.set('ca_max',ca[1]);
   const em=({'2+':'2','5+':'5','10+':'10'})[c.etab];if(em)p.set('nb_etab_min',em);
   p.set('nb_souhaite',c.size);
+  p.set('avec_sirens','1'); // SIREN frais de la page mesurée → aperçu « décideurs » Basile
   const r=await api('/api/estimer?'+p.toString());const d=await r.json();
   if(d.erreur){count.innerHTML='⚠️ '+String(d.erreur).replace(/</g,'&lt;');return;}
   const a=d.nb_genere_min??0,b=d.nb_genere_max??0;
@@ -3735,7 +3786,9 @@ async function avEstimerEnt(){
    <div style="font-size:12.5px;line-height:1.55;color:var(--ink-soft)">tu en généreras <b>${a===b?b:a+' à '+b}</b>${d.deja_extraites?`<br>♻️ ${d.deja_extraites} déjà extraites sur la 1re page (remplacées)`:''}<br>coût enrichissement : <b>${Math.round(d.cout_min||0)} – ${Math.round(d.cout_max||0)} €</b></div>
    ${(d.total_sans_effectif&&d.total_sans_effectif>(d.total_dispo||0))?`<div style="font-size:12.5px;background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:8px 12px;color:#7a5510">📉 ton filtre effectif cache <b>${(d.total_sans_effectif-(d.total_dispo||0)).toLocaleString('fr-FR')}</b> entreprise(s)</div>`:''}
   </div>`;
-  document.getElementById('av-apercu').style.display='none';
+  // Aperçu des décideurs (Basile par SIREN) sur les entreprises fraîches de la page mesurée
+  AV_ENT_SIRENS=d.echantillon_sirens||[];
+  avApercuEnt(false);
  }catch(e){count.innerHTML='⚠️ Erreur réseau : '+e.message;}
 }
 

@@ -93,7 +93,7 @@ export default async function handler(req, res) {
   const lim = await limiteAtteinte(user);
   if (lim) return res.status(403).json({ erreur: `Limite mensuelle atteinte : ${lim.conso} € / ${lim.limite} €` });
 
-  const { mode, filtres = {}, nb = 50, curseur = null, exclus_slugs = [] } = req.body || {};
+  const { mode, filtres = {}, nb = 50, curseur = null, exclus_slugs = [], apercu_suite = null } = req.body || {};
   if (mode !== 'apercu' && mode !== 'generer') return res.status(400).json({ erreur: 'mode inconnu (apercu|generer)' });
 
   try {
@@ -132,7 +132,12 @@ export default async function handler(req, res) {
       conceptIds = conceptIds.slice(0, 14); conceptLabels = conceptLabels.slice(0, 14);
     }
     const roles = rolesDepuisFiltres(filtres);
-    const sirens = await sirensDesListes(filtres.listes_ids);
+    let sirens = await sirensDesListes(filtres.listes_ids);
+    // SIREN passés directement (aperçu « décideurs des entreprises trouvées » de l'onglet
+    // Entreprises : /api/estimer?avec_sirens=1 fournit les SIREN frais de sa page mesurée).
+    if (!sirens.length && Array.isArray(filtres.sirens)) {
+      sirens = filtres.sirens.map(s => String(s || '').replace(/\D/g, '')).filter(s => s.length === 9).slice(0, 120);
+    }
     const aVilles = Array.isArray(filtres.villes) && filtres.villes.some(v => String(v || '').trim());
     if (!roles.length && !conceptIds.length && !sirens.length && !aVilles) {
       return res.status(400).json({ erreur: 'Ajoute au moins un filtre (secteur, poste, ville ou liste de comptes) — sans quoi la recherche couvrirait toute la France.' });
@@ -158,45 +163,65 @@ export default async function handler(req, res) {
       return basile('/people/find', body, key);
     }
 
-    // ── APERÇU : total + transparence effectif + 20 premiers profils, doublons signalés ──
+    // ── APERÇU : total + transparence effectif + 20 profils par appel, doublons signalés.
+    //    PAGINÉ : `apercu_suite` (renvoyé par l'appel précédent) donne la page suivante —
+    //    {phase:'siren', lot:N} en mode SIREN, {phase:'lki'|'legal', token} en mode filtres
+    //    (LinkedIn d'abord, puis le registre). Les comptages ne sont faits qu'au 1er appel. ──
     if (mode === 'apercu') {
-      let total = 0, totalSansEffectif = null, leadsBruts = [], totalLki = null, totalLegal = null;
+      const suite = (apercu_suite && typeof apercu_suite === 'object') ? apercu_suite : null;
+      let total = null, totalSansEffectif = null, leadsBruts = [], totalLki = null, totalLegal = null;
+      let prochaineSuite = null;
       if (sirens.length) {
-        // Par lots de SIREN : total = somme, aperçu = premiers lots (comptages gratuits)
-        for (let i = 0; i < sirens.length; i += LOT_SIREN) {
-          const lot = sirens.slice(i, i + LOT_SIREN);
-          const r = await trouver({ siren: { include: lot } }, leadsBruts.length < 20 ? 100 : 1);
-          if (r.status === 401) return res.status(502).json({ erreur: 'Clé Basile refusée' });
-          if (!r.data || r.data.success === false) continue;
-          total += r.data.total || 0;
-          if (leadsBruts.length < 20) leadsBruts = leadsBruts.concat(r.data.leads || []);
+        const nbLots = Math.ceil(sirens.length / LOT_SIREN);
+        const lot0 = (suite && suite.phase === 'siren' && suite.lot > 0) ? Math.min(suite.lot, nbLots - 1) : 0;
+        if (!suite) {
+          // 1er appel : total = somme des lots (comptages limit 1, gratuits)
+          total = 0;
+          for (let li = 0; li < nbLots; li++) {
+            const r = await trouver({ siren: { include: sirens.slice(li * LOT_SIREN, (li + 1) * LOT_SIREN) } }, 1);
+            if (r.status === 401) return res.status(502).json({ erreur: 'Clé Basile refusée' });
+            if (r.data && r.data.success !== false) total += r.data.total || 0;
+          }
         }
+        // Page = UN lot de 30 entreprises (jusqu'à 100 personnes, on en montre 20)
+        const rL = await trouver({ siren: { include: sirens.slice(lot0 * LOT_SIREN, (lot0 + 1) * LOT_SIREN) } }, 100);
+        if (rL.data && rL.data.success !== false) leadsBruts = rL.data.leads || [];
+        if (lot0 + 1 < nbLots) prochaineSuite = { phase: 'siren', lot: lot0 + 1 };
       } else {
-        // Comptage par SOURCE + aperçu LinkedIn d'abord (mode 'deux')
-        const rLki = await basile('/people/find', { limit: source === 'legal' ? 1 : 20, filters: avecSource(base, 'lki') }, key);
-        if (rLki.status === 401) return res.status(502).json({ erreur: 'Clé Basile refusée' });
-        const rLeg = await basile('/people/find', { limit: source === 'lki' ? 1 : 20, filters: avecSource(base, 'legal') }, key);
-        if ((!rLki.data || rLki.data.success === false) && (!rLeg.data || rLeg.data.success === false)) {
-          return res.status(502).json({ erreur: 'Recherche Basile échouée' });
-        }
-        totalLki = (rLki.data && rLki.data.total) || 0;
-        totalLegal = (rLeg.data && rLeg.data.total) || 0;
-        const leadsLki = (rLki.data && rLki.data.leads) || [];
-        const leadsLeg = (rLeg.data && rLeg.data.leads) || [];
-        if (source === 'lki') { total = totalLki; leadsBruts = leadsLki; }
-        else if (source === 'legal') { total = totalLegal; leadsBruts = leadsLeg; }
-        else { total = totalLki + totalLegal; leadsBruts = leadsLki.concat(leadsLeg); }
-        if (base.company_headcount && total >= 0) {
-          const sans = avecSource(base, source === 'deux' ? 'lki' : source); delete sans.company_headcount;
-          const r2 = await basile('/people/find', { limit: 1, filters: sans }, key);
-          if (r2.data && r2.data.total != null) {
-            totalSansEffectif = r2.data.total;
-            if (source === 'deux') {
-              const sansLeg = avecSource(base, 'legal'); delete sansLeg.company_headcount;
-              const r3 = await basile('/people/find', { limit: 1, filters: sansLeg }, key);
-              if (r3.data && r3.data.total != null) totalSansEffectif += r3.data.total;
+        const phase0 = suite ? suite.phase : (source === 'legal' ? 'legal' : 'lki');
+        const token0 = suite ? (suite.token || null) : null;
+        if (!suite) {
+          // Comptages par source, une seule fois
+          const rC1 = await basile('/people/find', { limit: 1, filters: avecSource(base, 'lki') }, key);
+          if (rC1.status === 401) return res.status(502).json({ erreur: 'Clé Basile refusée' });
+          const rC2 = await basile('/people/find', { limit: 1, filters: avecSource(base, 'legal') }, key);
+          totalLki = (rC1.data && rC1.data.total) || 0;
+          totalLegal = (rC2.data && rC2.data.total) || 0;
+          total = source === 'lki' ? totalLki : source === 'legal' ? totalLegal : totalLki + totalLegal;
+          if (base.company_headcount) {
+            const sans = avecSource(base, source === 'deux' ? 'lki' : source); delete sans.company_headcount;
+            const r2 = await basile('/people/find', { limit: 1, filters: sans }, key);
+            if (r2.data && r2.data.total != null) {
+              totalSansEffectif = r2.data.total;
+              if (source === 'deux') {
+                const sansLeg = avecSource(base, 'legal'); delete sansLeg.company_headcount;
+                const r3 = await basile('/people/find', { limit: 1, filters: sansLeg }, key);
+                if (r3.data && r3.data.total != null) totalSansEffectif += r3.data.total;
+              }
             }
           }
+        }
+        // Page de 20 sur la phase courante ; phase lki épuisée → passe au registre (mode 'deux')
+        const body = { limit: 20, filters: avecSource(base, phase0) };
+        if (token0) body.paginationToken = token0;
+        const rP = await basile('/people/find', body, key);
+        if (!rP.data || rP.data.success === false) {
+          if (!suite) return res.status(502).json({ erreur: 'Recherche Basile échouée' });
+        } else {
+          leadsBruts = rP.data.leads || [];
+          const next = (rP.data.pagination && rP.data.pagination.nextToken) || null;
+          if (next) prochaineSuite = { phase: phase0, token: next };
+          else if (phase0 === 'lki' && source === 'deux') prochaineSuite = { phase: 'legal', token: null };
         }
       }
 
@@ -205,7 +230,7 @@ export default async function handler(req, res) {
       // pas toujours des personnes, contrairement aux naf:/lki:). Comptages limit 1, gratuits :
       // on renvoie les ids sans résultat pour que le front les marque et propose la variante.
       let conceptsZero = null;
-      if (mode === 'apercu' && total === 0 && conceptIds.length && !sirens.length) {
+      if (!suite && total === 0 && conceptIds.length && !sirens.length) {
         conceptsZero = [];
         for (const cid of conceptIds.slice(0, 8)) {
           const seul = { ...base, activity: { include: [cid] } };
@@ -228,12 +253,13 @@ export default async function handler(req, res) {
         };
       });
       return res.status(200).json({
-        total, total_sans_effectif: totalSansEffectif,
-        total_lki: totalLki, total_legal: totalLegal, // répartition par source (null en mode listes)
+        total, total_sans_effectif: totalSansEffectif, // null sur les pages suivantes (comptés au 1er appel)
+        total_lki: totalLki, total_legal: totalLegal,  // répartition par source (null en mode listes)
         concepts_labels: conceptLabels, concepts_ids: conceptIds,
         concepts_zero: conceptsZero, // ids sans AUCUNE personne (null si total > 0)
         nb_roles: roles.length,
         nb_sirens: sirens.length || null,
+        apercu_suite: prochaineSuite, // à repasser tel quel pour la page suivante (null = fin)
         leads
       });
     }

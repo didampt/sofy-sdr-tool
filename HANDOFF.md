@@ -83,6 +83,23 @@ filtres manuels façon Sales Navigator, mixe Pappers × Basile × IA.
   (< 1 an = nouveau poste), created_since_months (entreprise récente), followers de la PAGE
   entreprise. Piste V2 : croiser l'aperçu Recherche avancée avec les signaux existants (badge
   🔥 si l'entreprise a visité le site). Non arbitré.
+- **Retour Didier n°4 (même soir) — aperçus personas + pagination** : ① l'aperçu prospects est
+  désormais PAGINÉ (« ➕ Voir la suite ») : `apercu_suite` {phase:'lki'|'legal', token} renvoyé
+  par le serveur et repassé tel quel — LinkedIn d'abord, puis registre ; comptages faits au 1er
+  appel seulement. ② **L'onglet Entreprises montre les décideurs des entreprises trouvées** :
+  `/api/estimer?avec_sirens=1` renvoie `echantillon_sirens` (≤90 SIREN FRAIS de la page mesurée),
+  le front appelle `/api/recherche` apercu avec `filtres.sirens` directs (≤120) → liste paginée
+  par lots de 30 entreprises ({phase:'siren', lot:N}), fonctions pilotées par le select
+  « Fonctions à chercher ensuite ». Lignes factorisées (`avLigneLead`), sans cases côté
+  Entreprises (les contacts y viennent du pipeline 🚀 après génération — dit dans l'en-tête).
+  ③ Transparence : le comptage prospects affiche « Secteur élargi automatiquement côté
+  LinkedIn/Google : … » quand le serveur a élargi les concepts (l'aperçu Didier montrait des Dir
+  Co hors secteur : Orange, Nexity — l'élargissement par libellé peut être trop large, le SDR le
+  voit maintenant et peut resserrer). Banc scénarios 10-11 (pagination lki→legal, lots sirens),
+  aperçu Entreprises rejoué au navigateur (append + bouton persistant).
+- ⚠️ Affinage restant (constat aperçu Didier) : l'élargissement lki: par libellé NAF long ramène
+  du hors-secteur. Piste : élargir CÔTÉ FRONT au clic (chips lki: visibles et retirables) plutôt
+  que silencieusement côté serveur. Non fait.
 
 ## 🎯 22 septembre 2026 — « Solution Etienne » : personas par SIREN + choix des salariés (en attente de GO)
 

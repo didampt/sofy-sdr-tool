@@ -139,11 +139,16 @@ export default async function handler(req, res) {
         doublonsMesures = true;
       } catch (_) { sirensConnus = null; }
     }
+    // SIREN frais de la page mesurée (Recherche avancée : aperçu « décideurs des entreprises
+    // trouvées » via Basile people/find par SIREN — demandé par Didier le 22/09).
+    const sirensFrais = [];
     for (const e of echantillon) {
       if (sirensConnus) {
         const ou = sirensConnus.get(String(e.siren));
         if (ou) { dejaExtraites++; listesDoublons.add(ou); continue; }
       }
+      const sn = String(e.siren || '').replace(/\D/g, '');
+      if (sn.length === 9 && sirensFrais.length < 90) sirensFrais.push(sn);
       // Seuil d'établissements, compté sur les fiches fraîches uniquement (même ordre que la
       // génération). Une fiche sans info au comptage n'est PAS écartée ici — mais elle pourra
       // l'être à la génération, où la fiche détaillée renseigne toujours le nombre : on compte
@@ -210,7 +215,8 @@ export default async function handler(req, res) {
       doublons_mesures: doublonsMesures,          // false → base inaccessible, doublons non mesurés
       balayage_max: balayageMax,                  // fiches que la génération peut balayer au maximum
       filtre_effectif: filtreEffectif,
-      total_sans_effectif: totalSansEffectif      // vivier sans le filtre effectif (null si filtre absent/élargi)
+      total_sans_effectif: totalSansEffectif,     // vivier sans le filtre effectif (null si filtre absent/élargi)
+      echantillon_sirens: req.query.avec_sirens ? sirensFrais : undefined // SIREN frais de la page (aperçu décideurs)
     });
   } catch (e) {
     return res.status(500).json({ erreur: 'Erreur estimation', detail: String(e.message || e).slice(0, 200) });
