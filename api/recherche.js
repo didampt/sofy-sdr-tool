@@ -188,6 +188,17 @@ export default async function handler(req, res) {
   if (lim) return res.status(403).json({ erreur: `Limite mensuelle atteinte : ${lim.conso} € / ${lim.limite} €` });
 
   const { mode, filtres = {}, nb = 50, curseur = null, exclus_slugs = [], apercu_suite = null } = req.body || {};
+
+  // ── Mode matrice (superadmin) : countOnly Basile arbitraire — la boucle de validation prod
+  // du 22/09 (languages ✓, tenure ✓, exclude géo ✓, legal_category ✗ préfixes). limit forcé
+  // à 1, aucun lead renvoyé : gratuit et sans fuite de données.
+  if (mode === 'debug_count') {
+    if (user.role !== 'superadmin') return res.status(401).json({ erreur: 'Réservé au superadmin' });
+    const path = req.body.path === '/companies/find' ? '/companies/find' : '/people/find';
+    const r = await basile(path, { limit: 1, filters: req.body.filters || {} }, key);
+    const d = r.data || {};
+    return res.status(200).json({ path, total: d.total ?? null, success: d.success !== false, brut: d.success === false ? d : undefined });
+  }
   if (mode !== 'apercu' && mode !== 'generer') return res.status(400).json({ erreur: 'mode inconnu (apercu|generer)' });
 
   try {

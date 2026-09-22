@@ -46,9 +46,17 @@ grammaire Sales Nav, personas Entreprises en modale, Google sur SerpApi, Lookali
   rendu, enveloppe 11-200, chips lieux ✓/✕, alerte types_ignores, modale personas 8 lignes,
   Google 20 étabs + pagination + sélection 38 = 40−doublon−décoché, Lookalike 4 lignes triées
   + 3 relances cross-onglet).
-- **À valider en prod (countOnly gratuits)** : languages, current_tenure_years, legal_category,
-  exclude sur region/headquarters_* — snippets console à faire tourner ; et le quota SerpApi
-  réel sur une vraie recherche Google.
+- **Validation prod (matrice Didier, 22/09 nuit — 68.31Z × Directeur Commercial, témoin 30)** :
+  `languages` MORD (30→5 Français) ✓ · `current_tenure_years` MORD (30→11 sur 1-3 ans) ✓ ·
+  `exclude` sur region MORD (30→23 sans IDF) ✓ · **`legal_category` en préfixes = 0** ✗ (la
+  garde a joué, `types_ignores:true` remonté — l'écart 22 vs 30 du témoin n'est que
+  l'échantillon des 90 premières entreprises qui bouge entre appels) · **`employer` suspect** :
+  Renault = 2 seulement → hypothèse : l'include `['"Renault"','Renault']` est traité en ET
+  (exact ∧ contains) et non en OU. → Nouveau `mode:'debug_count'` sur /api/recherche
+  (superadmin, countOnly limit forcé à 1, path people|companies) pour trancher les deux en
+  matrice ; selon verdict : mapping legal_category à refaire (codes complets ? libellés ?) et
+  employer à passer en une seule valeur (contains seul, guillemets = choix du SDR).
+  Reste aussi : quota SerpApi réel sur une vraie recherche Google.
 
 ## 🎯 22 septembre 2026 (soir) — 🔎 Recherche avancée : la 6e carte (GO Didier, wireframe validé)
 
