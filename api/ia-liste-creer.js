@@ -19,7 +19,7 @@
 
 const BASE = 'https://api.basile.cc';
 
-async function basile(path, body, key) {
+export async function basile(path, body, key) {
   const r = await fetch(BASE + path, {
     method: 'POST',
     headers: { 'Authorization': key, 'Content-Type': 'application/json' },
@@ -43,7 +43,7 @@ const SECTEURS_BASILE = {
   finance: 'finance_global', manufacturing: 'manufacturing_global'
 };
 // Familles de postes -> intitulés FIGÉS (déterministe : même famille => mêmes intitulés => même comptage).
-const FAMILLES_POSTE = {
+export const FAMILLES_POSTE = {
   direction: ['Président', 'Présidente', 'Directeur Général', 'Directrice Générale', 'PDG', 'CEO', 'Chief Executive Officer', 'Fondateur', 'Fondatrice', 'Co-fondateur', 'Gérant', 'Gérante'],
   commercial: ['Directeur Commercial', 'Directrice Commerciale', 'Directeur des Ventes', 'Directrice des Ventes', 'Responsable Commercial', 'Head of Sales', 'VP Sales', 'Sales Director'],
   marketing: ['Directeur Marketing', 'Directrice Marketing', 'Responsable Marketing', 'Chief Marketing Officer', 'CMO', 'Head of Marketing', 'VP Marketing', 'Directeur Marketing Digital'],
@@ -97,7 +97,7 @@ function filtresPersonnes(c) {
 // financiers… » pour le recouvrement) → JAMAIS retenue : elle noierait la liste ; s'il n'existe
 // rien de fin, on préfère le repli v210 (tri IA, plus précis qu'une macro).
 // Parsing défensif malgré tout ; en cas de raté, le garde avec/sans activity renvoie sur v210.
-async function resoudreConcepts(criteres, key) {
+export async function resoudreConcepts(criteres, key) {
   const requetes = (Array.isArray(criteres.naf_codes) ? criteres.naf_codes : [])
     .map(x => String(x || '').trim()).filter(Boolean).slice(0, 4);
   const libre = String(criteres.activite_libre || '').trim();
@@ -142,7 +142,7 @@ function filtresPersonnesV2(c, conceptIds) {
   return f;
 }
 
-function leadVersFichePersonne(lead) {
+export function leadVersFichePersonne(lead) {
   const d = lead.data || lead || {};
   const prenom = d.people_first_name || d.result_first_name || '';
   const nomContact = d.people_last_name || d.result_last_name || '';
@@ -282,13 +282,13 @@ function leadsVersCandidats(leads) {
 
 // ---------- Dédup serveur + curseur de pagination (chemin hybride) ----------
 // Identifiant LinkedIn normalisé (même logique que api/dedup.js).
-function slugLinkedin(url) {
+export function slugLinkedin(url) {
   const m = String(url || '').match(/linkedin\.com\/in\/([^/?#]+)/i);
   if (!m) return null;
   try { return decodeURIComponent(m[1]).toLowerCase(); } catch (e) { return m[1].toLowerCase(); }
 }
 // Tous les LinkedIn déjà présents dans les listes actives -> la recherche ne ressort que du NEUF.
-async function linkedinsConnus(sql) {
+export async function linkedinsConnus(sql) {
   const connus = new Set();
   try {
     const rows = sql ? await sql`SELECT entreprises FROM listes WHERE archivee = FALSE` : [];
@@ -367,7 +367,7 @@ async function dirigeantsParSiren(sirens, infoBySiren, key, capFiches) {
   return out;
 }
 
-function regrouperParEntreprise(fiches) {
+export function regrouperParEntreprise(fiches) {
   const parNom = new Map();
   for (const f of fiches) {
     const cle = (f.nom || '').toLowerCase().trim() || ('x' + Math.random());

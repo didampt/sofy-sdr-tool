@@ -1,5 +1,42 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 22 septembre 2026)
 
+## 🎯 22 septembre 2026 (soir) — 🔎 Recherche avancée : la 6e carte (GO Didier, wireframe validé)
+
+Wireframe : artifact « Recherche avancée SofyScrap » (canvas Claude, 2 artboards + arbitrages).
+Didier a arbitré : le mode S'AJOUTE en 6e carte (ne remplace rien). Le « Sales Nav » de SofyScrap :
+filtres manuels façon Sales Navigator, mixe Pappers × Basile × IA.
+
+- **`api/recherche.js` (nouveau)** — onglet Prospects, moteur Basile people/find :
+  `{mode:'apercu'|'generer', filtres:{naf_codes, concept_ids/labels, postes, familles, decideur,
+  effectif_min/max, listes_ids, exclure_extraits}, nb, curseur, exclus_slugs}`.
+  Aperçu = total + `total_sans_effectif` (transparence) + 20 profils avec drapeau `doublon`
+  (slugs LinkedIn des listes actives) — gratuit. Génération = pagination curseur persistant
+  (`av_curseur_<hash>` en table config) + dédup + `exclus_slugs` (les décochés de l'aperçu),
+  fiches au format Sofy (`leadVersFichePersonne`), cap 200, maxDuration 120.
+  **Filtre « listes de comptes »** : `listes_ids` → SIREN des listes (≤300) → people/find par
+  lots de 30 (l'équivalent des account lists Sales Nav — salariés LinkedIn + dirigeants).
+  « N'importe quel décideur » = union des intitulés de TOUTES les `FAMILLES_POSTE`.
+  Garde : ≥1 filtre obligatoire (sinon 400). `ia-liste-creer.js` exporte désormais ses helpers
+  (basile, FAMILLES_POSTE, resoudreConcepts, leadVersFichePersonne, slugLinkedin,
+  linkedinsConnus, regrouperParEntreprise) — réutilisés, pas dupliqués.
+- **Front (`mode-avance`)** : 6e carte + vue large (onglets Prospects/Entreprises, barre ✨ →
+  `/api/ia-liste` puis mapping vers les filtres, autocomplete secteur → `/api/basile
+  activity_suggest` types FINS seulement, chips concepts/postes/effectif/listes, comptage +
+  aperçu auto-debounce ~800 ms, génération → dédup HubSpot/listes puis POST /api/listes puis
+  `ouvrirListe`). **Onglet Entreprises = la tuyauterie Pappers existante** : estimation auto via
+  `/api/estimer` (avec l'écart effectif), génération via `launch(crit, true)` (détail, dédup,
+  sauvegarde, écran résultats inchangés). Recherches enregistrées = **localStorage**
+  (`av_recherches`, 20 max, par navigateur — choix délibéré : zéro DDL, cf. piège SCHEMA_VERSION).
+- **Vérifié** : node --check (recherche.js, ia-liste-creer.js, front) ; banc serveur 5 scénarios
+  (aperçu filtres/décideur seul, 400 sans filtre, génération paginée, exclus_slugs) ; vue testée
+  au navigateur avec api() bouchonné (suggest filtre les macros, chips, comptage avec 📉 et
+  doublons décochés, bascule d'onglet, avCritEnt valide).
+- **À valider en prod** (aperçus gratuits) : ① le mode « listes de comptes » (le banc n'a pas de
+  SQL stub — la mécanique par lots est celle de dirigeantsParSiren, éprouvée) ; ② le rendement
+  réel d'un aperçu décideur seul (65 intitulés d'un coup). Piège connu : le champ `region`/géo
+  n'existe pas sur people/find → l'onglet Prospects est France entière (dit dans l'UI), la géo
+  fine passe par l'onglet Entreprises.
+
 ## 🎯 22 septembre 2026 — « Solution Etienne » : personas par SIREN + choix des salariés (en attente de GO)
 
 Remontée : Etienne (AE) filtre dans Sales Nav, « obtient plus de contacts » et enrichit depuis

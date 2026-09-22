@@ -561,7 +561,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
       <div class="eyebrow">Nouvelle liste d'appel</div>
       <div id="mode-choix" style="max-width:680px">
         <h1 style="margin-bottom:6px">Comment veux-tu créer ta liste ?</h1>
-        <p class="sub" style="margin-bottom:22px">Cinq façons : décris ta cible à l'IA, extrais depuis Pappers, cible par note Google Maps, vise un réseau ou un groupe entier, ou crée une liste vide à remplir à la main.</p>
+        <p class="sub" style="margin-bottom:22px">Six façons : décris ta cible à l'IA, filtre façon Sales Navigator, extrais depuis Pappers, cible par note Google Maps, vise un réseau ou un groupe entier, ou crée une liste vide à remplir à la main.</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
           <div onclick="choisirMode('ia')" style="cursor:pointer;border:2px solid #185FA5;border-radius:14px;padding:22px;transition:.15s;background:var(--card);position:relative" onmouseover="this.style.background='#f5f9fe'" onmouseout="this.style.background='var(--card)'">
             <div style="position:absolute;top:12px;right:12px;font-size:10px;font-weight:700;color:#fff;background:#185FA5;padding:2px 8px;border-radius:20px">NOUVEAU</div>
@@ -585,6 +585,12 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
             <div style="font-size:30px;margin-bottom:10px">🏢</div>
             <div style="font-size:16px;font-weight:700;margin-bottom:5px">Liste Verticale (réseau / groupe)</div>
             <div style="font-size:13px;color:var(--ink-soft);line-height:1.5">Une franchise (BigMat…) ou un groupe multi-enseignes (GBH…) : toutes ses entités en une liste — points de vente, filiales, dirigeants.</div>
+          </div>
+          <div onclick="choisirMode('avance')" style="cursor:pointer;border:1px solid var(--line);border-radius:14px;padding:22px;transition:.15s;background:var(--card);position:relative" onmouseover="this.style.borderColor='#185FA5'" onmouseout="this.style.borderColor='var(--line)'">
+            <div style="position:absolute;top:12px;right:12px;font-size:10px;font-weight:700;color:#fff;background:#7C3AED;padding:2px 8px;border-radius:20px">NOUVEAU</div>
+            <div style="font-size:30px;margin-bottom:10px">🔎</div>
+            <div style="font-size:16px;font-weight:700;margin-bottom:5px">Recherche avancée</div>
+            <div style="font-size:13px;color:var(--ink-soft);line-height:1.5">Les filtres façon Sales Navigator : postes, secteur, effectif, listes de comptes — comptage gratuit en direct, aperçu réel, tu coches qui tu veux.</div>
           </div>
           <div onclick="choisirMode('manuelle')" style="cursor:pointer;border:1px solid var(--line);border-radius:14px;padding:22px;transition:.15s;background:var(--card)" onmouseover="this.style.borderColor='#185FA5'" onmouseout="this.style.borderColor='var(--line)'">
             <div style="font-size:30px;margin-bottom:10px">✍️</div>
@@ -680,6 +686,98 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
           <div class="wiz-foot" style="margin-top:22px">
             <span></span>
             <button class="btn btn-primary" id="btn-creer-manuelle" onclick="creerListeManuelle()">✍️ Créer la liste vide</button>
+          </div>
+        </div>
+      </div>
+      <div id="mode-avance" style="display:none;max-width:1180px">
+        <div class="head-row">
+          <div><h1>🔎 Recherche avancée</h1><p class="sub">Les filtres façon Sales Navigator — registre légal, LinkedIn et Google réunis, assistés par l'IA.</p></div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select class="field" id="av-saved" style="max-width:230px" onchange="avChargerRecherche(this.value)"><option value="">💾 Recherches enregistrées…</option></select>
+            <button class="btn-reset" onclick="retourChoixMode()">↺ Retour</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:4px;width:max-content;margin-bottom:12px">
+          <button class="btn" id="av-tab-prospects" onclick="avOnglet('prospects')" style="padding:8px 18px">👤 Prospects</button>
+          <button class="btn" id="av-tab-entreprises" onclick="avOnglet('entreprises')" style="padding:8px 18px">🏢 Entreprises</button>
+        </div>
+        <div style="background:linear-gradient(90deg,#f3efff,#fff);border:1px solid #ddd3f8;border-radius:12px;padding:10px 14px;display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <span style="font-size:17px">✨</span>
+          <input class="field" id="av-ia" placeholder="Décris ta cible — l'IA pré-remplit les filtres, tu ajustes tout à la main" style="flex-grow:1;border:0;background:transparent;box-shadow:none" onkeydown="if(event.key==='Enter')avPreremplir()">
+          <button class="btn btn-primary" id="av-btn-ia" onclick="avPreremplir()" style="padding:8px 14px;font-size:13px">Pré-remplir</button>
+        </div>
+        <div style="display:flex;gap:16px;align-items:flex-start">
+          <!-- ── Rail de filtres ── -->
+          <div style="width:430px;flex-shrink:0;display:flex;flex-direction:column;gap:10px">
+            <div id="av-rail-prospects" style="display:flex;flex-direction:column;gap:10px">
+              <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
+                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Secteur / activité <span style="font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;background:#ede9fe;color:#6d28d9">BASILE</span></div>
+                <div style="position:relative">
+                  <input class="field" id="av-secteur" placeholder="Métier, secteur ou code NAF…" style="width:100%" autocomplete="off" oninput="avSuggest(this.value)">
+                  <div id="av-secteur-results" style="display:none;position:absolute;left:0;right:0;top:44px;background:#fff;border:1px solid var(--line);border-radius:10px;z-index:12;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div>
+                </div>
+                <div id="av-concepts-chips" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
+                <p class="hint" style="margin-top:6px">Concepts unifiés registre + LinkedIn + Google Maps. Plusieurs = OU.</p>
+              </div>
+              <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
+                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Effectif de l'employeur</div>
+                <div id="av-eff-chips" class="chips"></div>
+                <p class="hint" id="av-eff-note" style="display:none;color:#B45309;margin-top:6px">⚠️ Filtrer par effectif écarte aussi les employeurs à effectif inconnu — l'écart s'affiche dans le comptage.</p>
+              </div>
+              <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
+                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Postes ciblés <span style="font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;background:#fef3c7;color:#92400e">variantes IA incluses</span></div>
+                <div id="av-postes-chips" class="chips"></div>
+                <input class="field" id="av-poste-libre" placeholder="Autre intitulé… (Entrée pour ajouter)" style="width:100%;margin-top:8px" onkeydown="if(event.key==='Enter'){avAjouterPoste(this.value);this.value='';}">
+              </div>
+              <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
+                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Depuis des listes de comptes SofyScrap <span style="font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;background:#ede9fe;color:#6d28d9">SIREN</span></div>
+                <select class="field" id="av-listes-select" style="width:100%" onchange="avAjouterListe(this.value)"><option value="">Ajouter une liste…</option></select>
+                <div id="av-listes-chips" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
+                <p class="hint" style="margin-top:6px">L'équivalent des « account lists » Sales Nav : les salariés LinkedIn + dirigeants des entreprises de ces listes (300 SIREN max).</p>
+              </div>
+              <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+                <label style="display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer"><input type="checkbox" id="av-exclure" checked onchange="avMaj()"> Masquer les contacts <b>déjà extraits</b> par un SDR</label>
+                <p class="hint" style="margin:0">🇫🇷 France entière — la géo fine par personne n'existe pas côté LinkedIn : pour cibler une zone, passe par l'onglet Entreprises.</p>
+              </div>
+            </div>
+            <div id="av-rail-entreprises" style="display:none;flex-direction:column;gap:10px">
+              <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
+                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Codes NAF <span style="font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;background:#d1fae5;color:#0f766e">PAPPERS</span></div>
+                <input class="field" id="av-ent-naf" placeholder="Ex : 8291Z, 6910Z — séparés par des virgules" style="width:100%" oninput="avMajEnt()">
+                <p class="hint" style="margin-top:6px">La barre ✨ sait les trouver pour toi (« sociétés de recouvrement » → 82.91Z).</p>
+              </div>
+              <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
+                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Effectif</div>
+                <div id="av-ent-eff-chips" class="chips"></div>
+              </div>
+              <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+                <div><div style="font-size:13.5px;font-weight:600;margin-bottom:6px">Chiffre d'affaires <span style="font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;background:#d1fae5;color:#0f766e">PAPPERS</span></div>
+                <select class="field" id="av-ent-ca" style="width:100%" onchange="avMajEnt()"><option>Indifférent</option><option>&lt; 500 K€</option><option>500 K€ – 2 M€</option><option>2 – 10 M€</option><option>10 – 50 M€</option><option>50 M€ +</option></select></div>
+                <div><div style="font-size:13.5px;font-weight:600;margin-bottom:6px">Nombre d'établissements <span style="font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;background:#d1fae5;color:#0f766e">PAPPERS</span></div>
+                <select class="field" id="av-ent-etab" style="width:100%" onchange="avMajEnt()"><option>Indifférent</option><option>2+</option><option>5+</option><option>10+</option></select></div>
+              </div>
+              <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
+                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Zone</div>
+                <div id="av-ent-zones-chips" class="chips"></div>
+              </div>
+              <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
+                <div style="font-size:13.5px;font-weight:600;margin-bottom:6px">Fonctions à chercher ensuite (👥 personas)</div>
+                <select class="field" id="av-ent-jobs" style="width:100%"><option>N'importe quel décideur</option><option>Dirigeant / PDG</option><option>Directeur Commercial</option><option>Directeur Marketing</option><option>Responsable Communication</option></select>
+                <p class="hint" style="margin-top:6px">Mémorisé sur la liste : le pipeline 🚀 et le bouton 👥 chercheront ces fonctions.</p>
+              </div>
+            </div>
+          </div>
+          <!-- ── Panneau résultats ── -->
+          <div style="flex-grow:1;min-width:0;display:flex;flex-direction:column;gap:12px">
+            <div id="av-count" style="background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px;font-size:13px;color:var(--ink-soft)">Ajoute un secteur, des postes ou une liste de comptes — le comptage est gratuit et se met à jour tout seul.</div>
+            <div id="av-apercu" style="display:none;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden"></div>
+            <div style="background:#fff;border:1px solid var(--line);border-radius:12px;padding:13px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+              <input class="field" id="av-nom" placeholder="📝 Nom de la liste *" style="width:280px">
+              <select class="field" id="av-nb" style="width:110px"><option>25</option><option selected>50</option><option>100</option><option>200</option></select>
+              <span style="font-size:12px;color:var(--ink-soft)">fiches max</span>
+              <button class="btn" onclick="avEnregistrer()" style="background:var(--paper);margin-left:auto">💾 Enregistrer la recherche</button>
+              <button class="btn btn-primary" id="av-btn-gen" onclick="avGenerer()">🚀 Générer la liste</button>
+            </div>
           </div>
         </div>
       </div>
@@ -2928,8 +3026,12 @@ function choisirMode(mode){
  document.getElementById('mode-ia').style.display='none';
  document.getElementById('mode-gmb').style.display='none';
  document.getElementById('mode-verticale').style.display='none';
+ document.getElementById('mode-avance').style.display='none';
  if(mode==='pappers'){
   document.getElementById('wizard-pappers').style.display='block';
+ }else if(mode==='avance'){
+  document.getElementById('mode-avance').style.display='block';
+  avInit();
  }else if(mode==='ia'){
   document.getElementById('mode-ia').style.display='block';
   // On repart toujours de l'étape prompt
@@ -2953,6 +3055,7 @@ function retourChoixMode(){
  document.getElementById('mode-ia').style.display='none';
  document.getElementById('mode-gmb').style.display='none';
  document.getElementById('mode-verticale').style.display='none';
+ document.getElementById('mode-avance').style.display='none';
 }
 // ── Liste lookalike : Liste intelligente préremplie avec les données réelles d'une fiche ──
 // (l'IA gère déjà « comme X » dans son prompt ; ici on lui donne le NAF/effectif/zone exacts au lieu de la laisser deviner)
@@ -3361,6 +3464,324 @@ async function remplirSelectSdr(idSelect){
  }catch(e){sel.innerHTML=`<option value="${moi}">${moi}</option>`;}
 }
 function remplirSelectSdrManuelle(){return remplirSelectSdr('manuelle-sdr');}
+
+/* ───────── 🔎 RECHERCHE AVANCÉE (6e carte, 22/09) — le « Sales Nav » de SofyScrap ─────────
+   Onglet Prospects → /api/recherche (Basile people/find : concepts secteur, postes, effectif,
+   listes de comptes par SIREN). Onglet Entreprises → /api/estimer + launch() (tuyauterie Pappers
+   existante). Barre ✨ → /api/ia-liste (mêmes critères que la Liste intelligente). */
+const AV={onglet:'prospects',concepts:[],postes:[],decideur:false,eff:'Indifférent',listes:[],
+  ent:{eff:'Indifférent',zones:['France métropolitaine']}};
+const AV_EFF={'Indifférent':[null,null],'1–9':[1,9],'10–49':[10,49],'50–199':[50,199],'200+':[200,null]};
+const AV_POSTES_FIXES=["N'importe quel décideur","Directeur Commercial","Directeur Marketing","Directeur Relation Client","Directeur Expérience Client (CX)","Responsable Service Client","Directeur CRM","Responsable Communication","Directeur Réseau / Retail"];
+let AV_TIMER=null,AV_SUGG_TIMER=null,AV_EN_COURS=false,AV_LISTES=[],AV_APERCU=null;
+
+function avInit(){
+ avOnglet(AV.onglet);
+ avRendreChips();
+ avChargerSelectListes();
+ avRafraichirSaved();
+}
+function avOnglet(t){
+ AV.onglet=t;
+ document.getElementById('av-rail-prospects').style.display=t==='prospects'?'flex':'none';
+ document.getElementById('av-rail-entreprises').style.display=t==='entreprises'?'flex':'none';
+ const on='border:0;background:var(--accent,#185FA5);color:#fff;font-weight:600',off='border:0;background:transparent;color:var(--ink-soft)';
+ document.getElementById('av-tab-prospects').style.cssText='padding:8px 18px;border-radius:7px;'+(t==='prospects'?on:off);
+ document.getElementById('av-tab-entreprises').style.cssText='padding:8px 18px;border-radius:7px;'+(t==='entreprises'?on:off);
+ document.getElementById('av-apercu').style.display='none';
+ document.getElementById('av-count').innerHTML=t==='prospects'
+  ?'Ajoute un secteur, des postes ou une liste de comptes — le comptage est gratuit et se met à jour tout seul.'
+  :'Renseigne au moins un code NAF — l\'estimation Pappers est gratuite et se met à jour toute seule.';
+ avMaj();
+}
+async function avChargerSelectListes(){
+ try{
+  const r=await api('/api/listes');const d=await r.json();
+  AV_LISTES=(d.listes||[]).filter(l=>!l.archivee&&!(l.criteres||{}).auto);
+  const sel=document.getElementById('av-listes-select');
+  sel.innerHTML='<option value="">Ajouter une liste…</option>'+AV_LISTES.map(l=>`<option value="${l.id}">${String(l.nom||'').replace(/</g,'&lt;')} (${l.sdr||'?'} · ${l.total||0} fiches)</option>`).join('');
+ }catch(_){/* base indisponible : le filtre listes restera vide */}
+}
+function avRendreChips(){
+ const esc=s=>String(s||'').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+ // Concepts secteur
+ document.getElementById('av-concepts-chips').innerHTML=AV.concepts.map((c,k)=>
+  `<span class="chip sel" style="cursor:pointer" onclick="AV.concepts.splice(${k},1);avRendreChips();avMaj()" title="${esc(c.id)}">${esc(c.label)} ✕</span>`).join('');
+ // Effectif (sélection simple, « Indifférent » par défaut)
+ document.getElementById('av-eff-chips').innerHTML=Object.keys(AV_EFF).map(t=>
+  `<button class="chip${AV.eff===t?' sel':''}" onclick="AV.eff='${t}';avRendreChips();avMaj()">${t}</button>`).join('');
+ document.getElementById('av-eff-note').style.display=AV.eff!=='Indifférent'?'block':'none';
+ // Postes : décideur exclusif des intitulés précis
+ document.getElementById('av-postes-chips').innerHTML=AV_POSTES_FIXES.map(p=>{
+  const sel=p==="N'importe quel décideur"?AV.decideur:AV.postes.includes(p);
+  return `<button class="chip${sel?' sel':''}" onclick="avTogglePoste(this.textContent)">${p}</button>`;
+ }).join('')+AV.postes.filter(p=>!AV_POSTES_FIXES.includes(p)).map(p=>
+  `<button class="chip sel" onclick="avTogglePoste(this.textContent.replace(/ ✕$/,''))">${esc(p)} ✕</button>`).join('');
+ // Listes de comptes
+ document.getElementById('av-listes-chips').innerHTML=AV.listes.map((l,k)=>
+  `<span class="chip sel" style="cursor:pointer" onclick="AV.listes.splice(${k},1);avRendreChips();avMaj()">📋 ${esc(l.nom)} ✕</span>`).join('');
+ // Entreprises : effectif + zones
+ document.getElementById('av-ent-eff-chips').innerHTML=['Indifférent','1–9','10–19','20–49','50–199','200–499','500+'].map(t=>
+  `<button class="chip${AV.ent.eff===t?' sel':''}" onclick="AV.ent.eff='${t}';avRendreChips();avMajEnt()">${t}</button>`).join('');
+ document.getElementById('av-ent-zones-chips').innerHTML=['France métropolitaine','Guadeloupe','Martinique','Guyane française','Réunion','Mayotte'].map(z=>
+  `<button class="chip${AV.ent.zones.includes(z)?' sel':''}" onclick="avToggleZone('${z}')">${z}</button>`).join('');
+}
+function avTogglePoste(p){
+ p=String(p||'').replace(/ ✕$/,'').trim();if(!p)return;
+ if(p==="N'importe quel décideur"){AV.decideur=!AV.decideur;if(AV.decideur)AV.postes=[];}
+ else{AV.decideur=false;const i=AV.postes.indexOf(p);if(i>=0)AV.postes.splice(i,1);else AV.postes.push(p);}
+ avRendreChips();avMaj();
+}
+function avAjouterPoste(v){const p=String(v||'').trim();if(!p)return;AV.decideur=false;if(!AV.postes.includes(p))AV.postes.push(p);avRendreChips();avMaj();}
+function avAjouterListe(id){
+ const sel=document.getElementById('av-listes-select');sel.value='';
+ const l=AV_LISTES.find(x=>String(x.id)===String(id));
+ if(!l||AV.listes.some(x=>x.id===l.id))return;
+ if(AV.listes.length>=10){toast('10 listes max');return;}
+ AV.listes.push({id:l.id,nom:l.nom});avRendreChips();avMaj();
+}
+function avToggleZone(z){const zs=AV.ent.zones;const i=zs.indexOf(z);if(i>=0)zs.splice(i,1);else zs.push(z);avRendreChips();avMajEnt();}
+
+// ── Autocomplete secteur (activity-suggest, types fins seulement) ──
+function avSuggest(q){
+ clearTimeout(AV_SUGG_TIMER);
+ const box=document.getElementById('av-secteur-results');
+ if(!q||q.trim().length<2){box.style.display='none';return;}
+ AV_SUGG_TIMER=setTimeout(async()=>{
+  try{
+   const r=await api('/api/basile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'activity_suggest',q:q.trim()})});
+   const d=await r.json();
+   const items=((d.brut||{}).suggestions||[]).filter(s=>s&&s.value&&s.type!=='concept'&&!String(s.value).startsWith('concept:'));
+   if(!items.length){box.innerHTML='<div style="padding:10px 12px;font-size:13px;color:var(--ink-soft)">Aucun concept — essaie un autre mot ou un code NAF.</div>';box.style.display='block';return;}
+   const escA=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+   box.innerHTML=items.slice(0,8).map(s=>{
+    const src=({naf:'🏛️ NAF',lki:'💼 LinkedIn',gmb:'📍 Google'})[s.type]||s.type;
+    return `<div data-id="${escA(s.value)}" data-label="${escA(s.label||s.value)}" onclick="avAjouterConcept(this.dataset.id,this.dataset.label)" style="padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='#fff'">${escA(s.label||s.value)} <span style="font-size:10.5px;color:var(--ink-soft)">${src}</span></div>`;
+   }).join('');
+   box.style.display='block';
+  }catch(_){box.style.display='none';}
+ },350);
+}
+function avAjouterConcept(id,label){
+ document.getElementById('av-secteur-results').style.display='none';
+ document.getElementById('av-secteur').value='';
+ if(AV.concepts.some(c=>c.id===id))return;
+ if(AV.concepts.length>=10){toast('10 concepts max');return;}
+ AV.concepts.push({id,label});avRendreChips();avMaj();
+}
+
+// ── Comptage + aperçu (gratuits), avec debounce ──
+function avFiltres(){
+ const [effMin,effMax]=AV_EFF[AV.eff]||[null,null];
+ return {concept_ids:AV.concepts.map(c=>c.id),concept_labels:AV.concepts.map(c=>c.label),
+  postes:AV.postes,decideur:AV.decideur,effectif_min:effMin,effectif_max:effMax,
+  listes_ids:AV.listes.map(l=>l.id),exclure_extraits:document.getElementById('av-exclure').checked};
+}
+function avMaj(){
+ if(AV.onglet!=='prospects')return;
+ clearTimeout(AV_TIMER);
+ const f=avFiltres();
+ if(!f.concept_ids.length&&!f.postes.length&&!f.decideur&&!f.listes_ids.length)return;
+ AV_TIMER=setTimeout(avApercu,800);
+}
+async function avApercu(){
+ const count=document.getElementById('av-count'),box=document.getElementById('av-apercu');
+ count.innerHTML='⏳ Comptage en cours (gratuit)…';
+ try{
+  const r=await api('/api/recherche',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'apercu',filtres:avFiltres()})});
+  const d=await r.json();
+  if(d.erreur){count.innerHTML='⚠️ '+String(d.erreur).replace(/</g,'&lt;');box.style.display='none';return;}
+  AV_APERCU=d;
+  const esc=s=>String(s||'').replace(/</g,'&lt;');
+  const doublons=(d.leads||[]).filter(l=>l.doublon).length;
+  count.innerHTML=`<div style="display:flex;gap:22px;align-items:center;flex-wrap:wrap">
+   <div><div style="font-size:12px;color:var(--ink-soft)">Prospects correspondants</div><div style="font-size:30px;font-weight:800;color:var(--ink)">${(d.total||0).toLocaleString('fr-FR')}</div></div>
+   <div style="font-size:12.5px;line-height:1.55;color:var(--ink-soft)">comptage gratuit, recalculé à chaque filtre${d.nb_sirens?`<br>recherche sur les <b>${d.nb_sirens}</b> entreprises de tes listes`:''}${doublons?`<br>♻️ ${doublons} déjà extrait(s) sur l'aperçu — décochés`:''}</div>
+   ${(d.total_sans_effectif&&d.total_sans_effectif>(d.total||0))?`<div style="font-size:12.5px;background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:8px 12px;color:#7a5510">📉 ton filtre effectif cache <b>${(d.total_sans_effectif-(d.total||0)).toLocaleString('fr-FR')}</b> personne(s) (effectif employeur inconnu)</div>`:''}
+  </div>`;
+  if(!(d.leads||[]).length){box.style.display='none';return;}
+  box.innerHTML=`<div style="padding:11px 16px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--ink-soft)"><b style="color:var(--ink)">Aperçu réel (${d.leads.length} premiers)</b> — décoche pour écarter de la génération</div>`
+   +d.leads.map((l,k)=>`<div style="display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid #f1f2f8;${l.doublon?'opacity:.45':''}">
+     <input type="checkbox" data-slug="${esc(l.slug||'')}" ${l.doublon?'':'checked'} aria-label="Garder ${esc((l.prenom+' '+l.nom).trim())}">
+     <div style="min-width:0;flex-grow:1;font-size:13px"><b>${esc((l.prenom+' '+l.nom).trim())}</b> <span style="color:var(--ink-soft)">— ${esc(l.fonction)}${l.entreprise?' · '+esc(l.entreprise):''}${l.ville?' ('+esc(l.ville)+')':''}</span></div>
+     ${l.doublon?'<span class="badge" style="background:#fee2e2;color:#b91c1c">déjà extrait</span>':(l.linkedin?'<span class="badge b-gmb">💼 LinkedIn</span>':'<span class="badge b-gmb">🏛️ registre</span>')}
+    </div>`).join('');
+  box.style.display='block';
+ }catch(e){count.innerHTML='⚠️ Erreur réseau : '+e.message;}
+}
+
+// ── Onglet Entreprises : estimation Pappers auto ──
+function avMajEnt(){
+ if(AV.onglet!=='entreprises')return;
+ clearTimeout(AV_TIMER);
+ AV_TIMER=setTimeout(avEstimerEnt,900);
+}
+function avCritEnt(){
+ const naf=document.getElementById('av-ent-naf').value.split(',').map(x=>x.trim().toUpperCase().replace('.','')).filter(x=>/^\d{4}[A-Z]$/.test(x));
+ return {naf,size:parseInt(document.getElementById('av-nb').value)||50,
+  emp:AV.ent.eff==='Indifférent'?['Indifférent']:[AV.ent.eff],
+  ca:document.getElementById('av-ent-ca').value,jobs:[document.getElementById('av-ent-jobs').value],
+  pays:AV.ent.zones.slice(),etab:document.getElementById('av-ent-etab').value,ville:''};
+}
+async function avEstimerEnt(){
+ const c=avCritEnt();
+ const count=document.getElementById('av-count');
+ if(!c.naf.length||!c.pays.length){count.innerHTML='Renseigne au moins un code NAF et une zone.';return;}
+ count.innerHTML='⏳ Estimation Pappers en cours (gratuit)…';
+ try{
+  const p=new URLSearchParams();
+  p.set('naf',c.naf.join(','));
+  const deps=c.pays.map(x=>DEP_MAP[x]).filter(Boolean);if(deps.length)p.set('dep',deps.join(','));
+  if(c.pays.includes('France métropolitaine'))p.set('region',REGIONS_METRO.join(','));
+  const eff=effEnveloppe(c.emp);if(eff[0])p.set('effectif_min',eff[0]);if(eff[1])p.set('effectif_max',eff[1]);
+  const ca=CA_MAP[c.ca]||['',''];if(ca[0])p.set('ca_min',ca[0]);if(ca[1])p.set('ca_max',ca[1]);
+  const em=({'2+':'2','5+':'5','10+':'10'})[c.etab];if(em)p.set('nb_etab_min',em);
+  p.set('nb_souhaite',c.size);
+  const r=await api('/api/estimer?'+p.toString());const d=await r.json();
+  if(d.erreur){count.innerHTML='⚠️ '+String(d.erreur).replace(/</g,'&lt;');return;}
+  const a=d.nb_genere_min??0,b=d.nb_genere_max??0;
+  count.innerHTML=`<div style="display:flex;gap:22px;align-items:center;flex-wrap:wrap">
+   <div><div style="font-size:12px;color:var(--ink-soft)">Entreprises trouvées (Pappers)</div><div style="font-size:30px;font-weight:800;color:var(--ink)">${(d.total_dispo||0).toLocaleString('fr-FR')}</div></div>
+   <div style="font-size:12.5px;line-height:1.55;color:var(--ink-soft)">tu en généreras <b>${a===b?b:a+' à '+b}</b>${d.deja_extraites?`<br>♻️ ${d.deja_extraites} déjà extraites sur la 1re page (remplacées)`:''}<br>coût enrichissement : <b>${Math.round(d.cout_min||0)} – ${Math.round(d.cout_max||0)} €</b></div>
+   ${(d.total_sans_effectif&&d.total_sans_effectif>(d.total_dispo||0))?`<div style="font-size:12.5px;background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:8px 12px;color:#7a5510">📉 ton filtre effectif cache <b>${(d.total_sans_effectif-(d.total_dispo||0)).toLocaleString('fr-FR')}</b> entreprise(s)</div>`:''}
+  </div>`;
+  document.getElementById('av-apercu').style.display='none';
+ }catch(e){count.innerHTML='⚠️ Erreur réseau : '+e.message;}
+}
+
+// ── Barre ✨ : mêmes critères que la Liste intelligente, appliqués aux filtres ──
+async function avPreremplir(){
+ const prompt=document.getElementById('av-ia').value.trim();
+ if(!prompt){toast('Décris ta cible d\'abord');return;}
+ const btn=document.getElementById('av-btn-ia');btn.disabled=true;btn.textContent='⏳ Analyse…';
+ try{
+  const r=await api('/api/ia-liste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt})});
+  const d=await r.json();
+  if(d.erreur){toast('IA : '+d.erreur);return;}
+  const c=d.criteres||{};
+  if(AV.onglet==='prospects'){
+   // Concepts : résolus depuis les NAF via activity-suggest (types fins), éditables ensuite
+   AV.concepts=[];
+   for(const code of (c.naf_codes||[]).slice(0,3)){
+    try{
+     const rs=await api('/api/basile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'activity_suggest',q:code})});
+     const ds=await rs.json();
+     for(const s of (((ds.brut||{}).suggestions)||[]).filter(x=>x&&x.value&&x.type!=='concept').slice(0,3)){
+      if(!AV.concepts.some(x=>x.id===s.value))AV.concepts.push({id:s.value,label:s.label||s.value});
+     }
+    }catch(_){}
+   }
+   AV.postes=(c.postes||[]).slice(0,6);
+   AV.decideur=!AV.postes.length&&(c.familles_poste||[]).includes('direction');
+   const em=parseInt(c.effectif_min,10)||null;
+   AV.eff=em?(em>=200?'200+':em>=50?'50–199':em>=10?'10–49':'1–9'):'Indifférent';
+   avRendreChips();avMaj();
+   toast('✨ Filtres pré-remplis ('+(d.reformulation||'').slice(0,80)+'…) — ajuste et regarde le comptage');
+  }else{
+   document.getElementById('av-ent-naf').value=(c.naf_codes||[]).map(x=>String(x).replace('.','')).join(', ');
+   const zs=(c.zones||[]);AV.ent.zones=[];
+   if(zs.includes('metropole'))AV.ent.zones.push('France métropolitaine');
+   const NZ={'971':'Guadeloupe','972':'Martinique','973':'Guyane française','974':'Réunion','976':'Mayotte'};
+   zs.forEach(z=>{if(NZ[z])AV.ent.zones.push(NZ[z]);});
+   if(!AV.ent.zones.length)AV.ent.zones=['France métropolitaine'];
+   avRendreChips();avMajEnt();
+   toast('✨ Filtres pré-remplis — ajuste et regarde l\'estimation');
+  }
+ }catch(e){toast('Erreur réseau : '+e.message);}
+ finally{btn.disabled=false;btn.textContent='Pré-remplir';}
+}
+
+// ── Génération ──
+async function avGenerer(){
+ if(AV_EN_COURS)return;
+ const nom=document.getElementById('av-nom').value.trim();
+ if(!nom){toast('⚠️ Donne un nom à ta liste');document.getElementById('av-nom').focus();return;}
+ if(AV.onglet==='entreprises'){
+  const c=avCritEnt();
+  if(!c.naf.length){toast('Renseigne au moins un code NAF');return;}
+  state.listeNom='🔎 '+nom;state.sdr=state.user?state.user.nom:'';
+  launch(Object.assign({avance:true},c),true); // tuyauterie Pappers existante (détail, dédup, sauvegarde)
+  return;
+ }
+ const f=avFiltres();
+ if(!f.concept_ids.length&&!f.postes.length&&!f.decideur&&!f.listes_ids.length){toast('Ajoute au moins un filtre');return;}
+ AV_EN_COURS=true;
+ const btn=document.getElementById('av-btn-gen');btn.disabled=true;
+ const cap=parseInt(document.getElementById('av-nb').value)||50;
+ const exclus=[...document.querySelectorAll('#av-apercu input[type=checkbox]:not(:checked)')].map(x=>x.getAttribute('data-slug')).filter(Boolean);
+ try{
+  let fiches=[],curseur=null,dernierMsg='';
+  for(let appel=0;appel<4;appel++){
+   btn.textContent='⏳ Recherche… '+fiches.length+'/'+cap;
+   const r=await api('/api/recherche',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'generer',filtres:f,nb:cap-fiches.length,curseur,exclus_slugs:exclus})});
+   const d=await r.json();
+   if(d.erreur){if(!fiches.length){toast('Erreur : '+d.erreur);return;}break;}
+   dernierMsg=d.message||'';
+   for(const fi of (d.fiches||[])){
+    const cle=(fi.nom||'').toLowerCase().trim();
+    const exist=fiches.find(x=>(x.nom||'').toLowerCase().trim()===cle);
+    if(!exist){fiches.push(fi);continue;}
+    const noms=new Set(exist.contacts.map(ct=>((ct.prenom||'')+' '+(ct.nom||'')).toLowerCase()));
+    for(const ct of (fi.contacts||[])){const k=((ct.prenom||'')+' '+(ct.nom||'')).toLowerCase();if(!noms.has(k)){exist.contacts.push(ct);noms.add(k);}}
+   }
+   curseur=d.curseur||null;
+   if(fiches.length>=cap||d.epuise||!curseur)break;
+  }
+  fiches=fiches.slice(0,cap);
+  if(!fiches.length){toast(dernierMsg||'Aucune fiche trouvée — élargis les filtres');return;}
+  // Dédup HubSpot / listes (même passe que la Liste intelligente : marque, retire les doublons de liste)
+  btn.textContent='⏳ Vérification doublons…';
+  try{
+   const contacts=fiches.map(fi=>{const ct=(fi.contacts||[])[0]||{};return {email:null,telephone:null,linkedin:ct.enrich?.linkedin||null,nom:ct.nom||'',prenom:ct.prenom||'',siren:fi.siren||''};});
+   const rd=await api('/api/dedup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contacts})});
+   const rez=((await rd.json())||{}).resultats||{};
+   fiches.forEach(fi=>{
+    const ct=(fi.contacts||[])[0]||{};
+    const cle=((ct.prenom||'')+' '+(ct.nom||'')).trim().toLowerCase();
+    const rr=rez[cle];
+    if(rr){if(rr.hubspot){fi.dedup_hubspot=rr.hubspot;fi.skip_enrich=true;}if(rr.liste){fi.dedup_liste=rr.liste;fi.skip_enrich=true;}}
+   });
+  }catch(_){/* dédup non bloquante */}
+  const nbDup=fiches.filter(fi=>fi.dedup_liste).length;
+  fiches=fiches.filter(fi=>!fi.dedup_liste);
+  if(!fiches.length){toast('Tout est déjà dans d\'autres listes ('+nbDup+' doublons). Rien à créer.');return;}
+  const sdr=state.user?state.user.nom:'';
+  const rc=await api('/api/listes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nom:'🔎 '+nom,sdr,criteres:{avance:true,onglet:'prospects',filtres:f,jobs:f.decideur?["N'importe quel décideur"]:f.postes,naf:[],pays:[]},entreprises:fiches,credits_estimes:0})});
+  const dc=await rc.json();
+  if(dc.erreur){toast('Erreur création : '+dc.erreur);return;}
+  toast('🔎 Liste créée : '+fiches.length+' fiche'+(fiches.length>1?'s':'')+(nbDup?' · '+nbDup+' doublon(s) retiré(s)':''));
+  setTimeout(()=>ouvrirListe(dc.id),300);
+ }catch(e){toast('Erreur réseau : '+e.message);}
+ finally{AV_EN_COURS=false;btn.disabled=false;btn.textContent='🚀 Générer la liste';}
+}
+
+// ── Recherches enregistrées (localStorage : pas de migration DB, par navigateur) ──
+function avRafraichirSaved(){
+ let saved=[];try{saved=JSON.parse(localStorage.getItem('av_recherches')||'[]');}catch(_){}
+ const sel=document.getElementById('av-saved');
+ sel.innerHTML='<option value="">💾 Recherches enregistrées…</option>'+saved.map((s,k)=>`<option value="${k}">${String(s.nom||'').replace(/</g,'&lt;')}</option>`).join('');
+}
+function avEnregistrer(){
+ const nom=window.prompt('Nom de cette recherche ?');
+ if(!nom)return;
+ let saved=[];try{saved=JSON.parse(localStorage.getItem('av_recherches')||'[]');}catch(_){}
+ saved.unshift({nom,date:new Date().toISOString(),av:JSON.parse(JSON.stringify(AV)),
+  ent_naf:document.getElementById('av-ent-naf').value,ent_ca:document.getElementById('av-ent-ca').value,ent_etab:document.getElementById('av-ent-etab').value});
+ try{localStorage.setItem('av_recherches',JSON.stringify(saved.slice(0,20)));}catch(_){}
+ avRafraichirSaved();
+ toast('💾 Recherche enregistrée (sur ce navigateur)');
+}
+function avChargerRecherche(k){
+ if(k==='')return;
+ let saved=[];try{saved=JSON.parse(localStorage.getItem('av_recherches')||'[]');}catch(_){}
+ const s=saved[parseInt(k)];if(!s)return;
+ Object.assign(AV,s.av||{});
+ document.getElementById('av-ent-naf').value=s.ent_naf||'';
+ document.getElementById('av-ent-ca').value=s.ent_ca||'Indifférent';
+ document.getElementById('av-ent-etab').value=s.ent_etab||'Indifférent';
+ avOnglet(AV.onglet||'prospects');avRendreChips();
+ toast('💾 « '+s.nom+' » chargée');
+}
 let CREATION_MANUELLE_EN_COURS=false;
 async function creerListeManuelle(){
  // Verrou anti double-clic : si une création est déjà en cours, on ignore
