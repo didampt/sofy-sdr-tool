@@ -12156,7 +12156,7 @@ function signupStatut(s){
  return '<span class="badge b-signal">⏳ À valider</span>';
 }
 function signupSmsInfo(s){
- if(s.sms_verification_status==='not_received')return `<span class="badge" style="background:#FFF4D6;color:#9A6700">⚠️ Code SMS non reçu${s.sms_verification_code?' · Code '+htmlSafe(s.sms_verification_code):''}</span>`;
+ if(s.sms_verification_status==='not_received')return `<span class="badge" style="background:#FEECEC;color:var(--danger)">⚠️ Code SMS non reçu${s.sms_verification_code?' · Code '+htmlSafe(s.sms_verification_code):''}</span>`;
  return '';
 }
 function signupTitle(s){
