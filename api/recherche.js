@@ -64,7 +64,10 @@ async function sirensDesListes(ids) {
 
 // Construit les filtres Basile communs (hors siren, géré par lots).
 function filtresBasile(f, conceptIds, roles) {
-  const b = { result_country_code: { include: ['FR'] }, hide_legal_entities: true };
+  // Pays de la personne (result_country_code) — FR par défaut ; multi possible (BE, CH, LU…),
+  // Basile étant une base française, un autre pays peut légitimement compter très peu.
+  const pays = (Array.isArray(f.pays) ? f.pays : []).map(p => String(p || '').trim().toUpperCase()).filter(p => /^[A-Z]{2}$/.test(p)).slice(0, 6);
+  const b = { result_country_code: { include: pays.length ? pays : ['FR'] }, hide_legal_entities: true };
   if (roles.length) b.result_role = { include: roles };
   if (conceptIds.length) b.activity = { include: conceptIds };
   // Ville de la PERSONNE (result_city, multi-source) — le seul filtre géo qui existe sur
@@ -105,19 +108,20 @@ export default async function handler(req, res) {
       const r = await resoudreConcepts({ naf_codes: filtres.naf_codes }, key);
       conceptIds = r.ids; conceptLabels = r.labels;
     }
-    // ÉLARGISSEMENT : un concept naf: n'indexe que le REGISTRE — les personnes LinkedIn sont
-    // classées via les concepts lki:/gmb:. Constaté en prod 22/09 : naf:45.11Z + « Directeur
-    // Commercial » → 0 (aucun mandataire ne porte cet intitulé) alors que ces profils existent
-    // sur LinkedIn. Chaque naf: choisi est donc élargi en ses équivalents via activity-suggest
-    // (requête par le LIBELLÉ, la requête par code ne renvoie que le naf:), en union OR.
-    if (conceptIds.length && !conceptIds.some(x => x.startsWith('lki:') || x.startsWith('gmb:'))) {
+    // ÉLARGISSEMENT BIDIRECTIONNEL : un concept naf: n'indexe que le REGISTRE, un concept
+    // lki:/gmb: n'indexe que LinkedIn/Google — constaté en prod 22/09 dans les deux sens
+    // (naf:45.11Z + « Directeur Commercial » → 0 ; lki:Collection Agencies seul → 2 profils et
+    // 🏛️ registre 0). Dès qu'un des deux mondes manque dans la sélection, chaque concept est
+    // élargi en ses équivalents via activity-suggest interrogé par le LIBELLÉ (la requête par
+    // code ne renvoie que le naf:), en union OR.
+    const aLkiGmb = conceptIds.some(x => x.startsWith('lki:') || x.startsWith('gmb:'));
+    const aNaf = conceptIds.some(x => x.startsWith('naf:'));
+    if (conceptIds.length && (!aLkiGmb || !aNaf)) {
       const vus = new Set(conceptIds);
       for (let i = 0; i < Math.min(conceptIds.length, 4); i++) {
-        const id = conceptIds[i];
-        if (!id.startsWith('naf:')) continue;
-        // Libellé sans le préfixe « 45.11Z – » ; repli sur le code si le libellé manque
+        // Libellé sans le préfixe « 45.11Z – » ; repli sur la fin de l'id si le libellé manque
         const brut = String(conceptLabels[i] || '').replace(/^[\d.]{4,8}[A-Z]?\s*[–-]\s*/, '').trim();
-        const q = brut || id.slice(4);
+        const q = brut || String(conceptIds[i]).replace(/^[a-z]+:/, '');
         try {
           const r = await fetch('https://api.basile.cc/companies/activity-suggest?q=' + encodeURIComponent(q), { headers: { 'Authorization': key } });
           const d = await r.json().catch(() => null);
@@ -248,6 +252,7 @@ export default async function handler(req, res) {
           prenom: c.prenom || '', nom: c.nom || '', fonction: c.fonction || '',
           entreprise: fiche.nom || '', ville: fiche.ville || '',
           linkedin: (c.enrich && c.enrich.linkedin) || null,
+          siren: fiche.siren || null, // fusion des décideurs cochés dans les fiches (onglet Entreprises)
           slug: slug || null,
           doublon: !!(slug && connus.has(slug))
         };

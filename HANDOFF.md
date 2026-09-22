@@ -97,6 +97,25 @@ filtres manuels façon Sales Navigator, mixe Pappers × Basile × IA.
   Co hors secteur : Orange, Nexity — l'élargissement par libellé peut être trop large, le SDR le
   voit maintenant et peut resserrer). Banc scénarios 10-11 (pagination lki→legal, lots sirens),
   aperçu Entreprises rejoué au navigateur (append + bouton persistant).
+- **Retour Didier n°5 (même soir) — lot UX + 2 anomalies ouvertes** : ① pagination des aperçus
+  PAR PAGES (‹ Page x/y ›, cache front `AV_PAG`, décoches persistantes `AV_DECOCHES` par clé de
+  contact — slug ou p:) sur les DEUX onglets ; ② l'aperçu Entreprises a des cases et les
+  décideurs COCHÉS sont ATTACHÉS aux fiches à la génération (fusion post-launch par SIREN puis
+  nom normalisé, source contact `recherche-avancee`) ; ③ lien LinkedIn cliquable sur chaque
+  ligne ; ④ chips Pays (FR/BE/CH/LU, result_country_code) ; ⑤ bouton 👯 Lookalike RDV
+  (cockpit lookalike_ref → NAF de la dernière fiche « RDV pris » posé en concept/chip) ;
+  ⑥ onglet 📍 Google = façade de /api/gmb-liste (activités, villes, note, échantillon avec nb
+  d'avis ; personas via 🚀 après génération — pas de SIREN sur les fiches Google) ; élargissement
+  concepts rendu BIDIRECTIONNEL (lki: seul → naf: ajoutés, cas « Collection Agencies = 2 »).
+  ⚠️ DEUX ANOMALIES PROD OUVERTES (diag demandé à Didier, snippets fournis) :
+  (a) `activity naf:` × `with_linkedin_profile` = 0 partout (45.11Z, 68.31Z…) — le mapping
+  personnes-LinkedIn ↔ concepts naf: semble inexistant ; suggest ne renvoie pas toujours de lki:
+  (immobilier → naf: exotiques « 70.3A », « 79.06 ») ; si la matrice le confirme, il faudra une
+  AUTRE voie pour le secteur côté LinkedIn (companies/find par activity → siren → people, comme
+  le plan v209-bis, MAIS people/find(siren) marche désormais pour les salariés).
+  (b) comptage 14 148 (tout registre) mais GÉNÉRATION 0 sur 68.31Z + décideur — divergence
+  compter/générer côté serveur à reproduire avec le snippet generer nb:10 (profils_parcourus dira
+  si la boucle reçoit des leads).
 - ⚠️ Affinage restant (constat aperçu Didier) : l'élargissement lki: par libellé NAF long ramène
   du hors-secteur. Piste : élargir CÔTÉ FRONT au clic (chips lki: visibles et retirables) plutôt
   que silencieusement côté serveur. Non fait.
