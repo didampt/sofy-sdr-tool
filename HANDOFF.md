@@ -1,5 +1,17 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 22 septembre 2026, nuit)
 
+## 🎯 22 septembre 2026 (nuit, 14e passe) — Google : le « 2 sur 20 » expliqué (filtre note + plafond Maps)
+
+Retour Didier (« il n'y a pas que 2 ou 20 restaurants italiens à Paris !! ») : le moteur MARCHE
+depuis le géocodage — 20 balayés = la PAGE 1 de Google Maps (qui plafonne à ~120 résultats par
+recherche, 6 pages de 20 : limite GOOGLE, pas le gisement réel de la ville) ; 2 retenus = après
+le filtre « note ≤ 4,5★ » par défaut (18/20 restos parisiens sont mieux notés). Rien ne le
+disait. Carte de comptage refondue : « page 1 sur ~6 », la limite Maps expliquée, bandeau ⭐
+« N écartés par le filtre note — mets Toutes pour tout garder » quand le filtre mord, et
+mention explicite que Suivant › charge les pages 2-6 et que la génération balaye les 6 d'office.
+Pour un VRAI gisement large sur une grande ville : plusieurs villes/arrondissements ou
+plusieurs formulations d'activité (chacune rouvre ~120 résultats Google).
+
 ## 🎯 22 septembre 2026 (nuit, 13e passe) — « restaurant italien Paris = 0 » : SerpApi cherchait depuis les US
 
 Retour Didier : 0 balayé sur « restaurant italien × Paris » (aucune erreur). Cause : SANS `ll`,

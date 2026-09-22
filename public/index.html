@@ -4383,10 +4383,12 @@ async function avEstimerGmb(){
   if(!d||AV.onglet!=='gmb')return;
   if(d.erreur){count.innerHTML='⚠️ '+String(d.erreur).replace(/</g,'&lt;');return;}
   count.innerHTML=`<div style="display:flex;gap:22px;align-items:center;flex-wrap:wrap">
-   <div><div style="font-size:12px;color:var(--ink-soft)">Établissements retenus (page 1)</div><div style="font-size:30px;font-weight:800;color:var(--ink)">${(AV_GMB.pages[0]||[]).length}</div></div>
-   <div style="font-size:12.5px;line-height:1.55;color:var(--ink-soft)">${AV_GMB.balayes} balayés · Google ne donne pas de total — pagine dans la fenêtre${d.recherches_serp?`<br>${d.recherches_serp} recherche(s) SerpApi consommée(s) par page (plafond 1 000/mois)`:''}</div>
+   <div><div style="font-size:12px;color:var(--ink-soft)">Établissements retenus (page 1 sur ~6)</div><div style="font-size:30px;font-weight:800;color:var(--ink)">${(AV_GMB.pages[0]||[]).length}</div></div>
+   <div style="font-size:12.5px;line-height:1.55;color:var(--ink-soft)">${AV_GMB.balayes} balayés — Google Maps sert ~120 établissements max par recherche (6 pages de 20), c'est SA limite, pas le nombre de restaurants de la ville${d.recherches_serp?`<br>${d.recherches_serp} recherche(s) SerpApi par page (plafond 1 000/mois)`:''}</div>
   </div>
-  <div style="margin-top:8px;font-size:13px"><a style="cursor:pointer;font-weight:600" onclick="avModalGmb()">📍 Voir les établissements</a> — cochables, la sélection devient la liste</div>`;
+  ${(()=>{const ecartes=AV_GMB.balayes-(AV_GMB.pages[0]||[]).length;const nmax=document.getElementById('av-gmb-note-max').value;
+   return (ecartes>0&&nmax)?`<div style="margin-top:8px;font-size:12.5px;background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:8px 12px;color:#7a5510">⭐ <b>${ecartes}</b> établissement(s) écarté(s) par le filtre note ≤ ${nmax} ★ — mets « Toutes » pour tout garder</div>`:'';})()}
+  <div style="margin-top:8px;font-size:13px"><a style="cursor:pointer;font-weight:600" onclick="avModalGmb()">📍 Voir les établissements</a> — cochables, la sélection devient la liste · <b>Suivant ›</b> dans la fenêtre charge les pages 2-6 · la génération balaye les 6 pages d'office</div>`;
  }catch(e){count.innerHTML='⚠️ Erreur réseau : '+e.message;}
 }
 async function avGmbPage(p){
