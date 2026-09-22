@@ -735,9 +735,14 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
                 <div id="av-listes-chips" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
                 <p class="hint" style="margin-top:6px">L'équivalent des « account lists » Sales Nav : les salariés LinkedIn + dirigeants des entreprises de ces listes (300 SIREN max).</p>
               </div>
-              <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+              <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
+                <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Ville(s) de la personne</div>
+                <input class="field" id="av-ville-libre" placeholder="Ex : Lyon (Entrée pour ajouter)" style="width:100%" onkeydown="if(event.key==='Enter'){avAjouterVille(this.value);this.value='';}">
+                <div id="av-villes-chips" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
+                <p class="hint" style="margin-top:6px">Ville du profil LinkedIn ou de la personne au registre. Pas de filtre région/département sur les personnes — pour une zone entière, passe par l'onglet Entreprises.</p>
+              </div>
+              <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
                 <label style="display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer"><input type="checkbox" id="av-exclure" checked onchange="avMaj()"> Masquer les contacts <b>déjà extraits</b> par un SDR</label>
-                <p class="hint" style="margin:0">🇫🇷 France entière — la géo fine par personne n'existe pas côté LinkedIn : pour cibler une zone, passe par l'onglet Entreprises.</p>
               </div>
             </div>
             <div id="av-rail-entreprises" style="display:none;flex-direction:column;gap:10px">
@@ -3469,7 +3474,7 @@ function remplirSelectSdrManuelle(){return remplirSelectSdr('manuelle-sdr');}
    Onglet Prospects → /api/recherche (Basile people/find : concepts secteur, postes, effectif,
    listes de comptes par SIREN). Onglet Entreprises → /api/estimer + launch() (tuyauterie Pappers
    existante). Barre ✨ → /api/ia-liste (mêmes critères que la Liste intelligente). */
-const AV={onglet:'prospects',concepts:[],postes:[],decideur:false,eff:'Indifférent',listes:[],
+const AV={onglet:'prospects',concepts:[],postes:[],decideur:false,eff:'Indifférent',listes:[],villes:[],
   ent:{eff:'Indifférent',zones:['France métropolitaine']}};
 const AV_EFF={'Indifférent':[null,null],'1–9':[1,9],'10–49':[10,49],'50–199':[50,199],'200+':[200,null]};
 const AV_POSTES_FIXES=["N'importe quel décideur","Directeur Commercial","Directeur Marketing","Directeur Relation Client","Directeur Expérience Client (CX)","Responsable Service Client","Directeur CRM","Responsable Communication","Directeur Réseau / Retail"];
@@ -3504,9 +3509,9 @@ async function avChargerSelectListes(){
 }
 function avRendreChips(){
  const esc=s=>String(s||'').replace(/</g,'&lt;').replace(/"/g,'&quot;');
- // Concepts secteur
+ // Concepts secteur (c.mort = 0 personne côté Basile → chip rouge, à remplacer)
  document.getElementById('av-concepts-chips').innerHTML=AV.concepts.map((c,k)=>
-  `<span class="chip sel" style="cursor:pointer" onclick="AV.concepts.splice(${k},1);avRendreChips();avMaj()" title="${esc(c.id)}">${esc(c.label)} ✕</span>`).join('');
+  `<span class="chip sel" style="cursor:pointer${c.mort?';background:#fee2e2;border-color:#fca5a5;color:#b91c1c':''}" onclick="AV.concepts.splice(${k},1);avRendreChips();avMaj()" title="${esc(c.id)}">${c.mort?'⚠️ ':''}${esc(c.label)} ✕</span>`).join('');
  // Effectif (sélection simple, « Indifférent » par défaut)
  document.getElementById('av-eff-chips').innerHTML=Object.keys(AV_EFF).map(t=>
   `<button class="chip${AV.eff===t?' sel':''}" onclick="AV.eff='${t}';avRendreChips();avMaj()">${t}</button>`).join('');
@@ -3520,6 +3525,9 @@ function avRendreChips(){
  // Listes de comptes
  document.getElementById('av-listes-chips').innerHTML=AV.listes.map((l,k)=>
   `<span class="chip sel" style="cursor:pointer" onclick="AV.listes.splice(${k},1);avRendreChips();avMaj()">📋 ${esc(l.nom)} ✕</span>`).join('');
+ // Villes de la personne
+ document.getElementById('av-villes-chips').innerHTML=(AV.villes||[]).map((v,k)=>
+  `<span class="chip sel" style="cursor:pointer" onclick="AV.villes.splice(${k},1);avRendreChips();avMaj()">📍 ${esc(v)} ✕</span>`).join('');
  // Entreprises : effectif + zones
  document.getElementById('av-ent-eff-chips').innerHTML=['Indifférent','1–9','10–19','20–49','50–199','200–499','500+'].map(t=>
   `<button class="chip${AV.ent.eff===t?' sel':''}" onclick="AV.ent.eff='${t}';avRendreChips();avMajEnt()">${t}</button>`).join('');
@@ -3533,6 +3541,7 @@ function avTogglePoste(p){
  avRendreChips();avMaj();
 }
 function avAjouterPoste(v){const p=String(v||'').trim();if(!p)return;AV.decideur=false;if(!AV.postes.includes(p))AV.postes.push(p);avRendreChips();avMaj();}
+function avAjouterVille(v){const x=String(v||'').trim();if(!x)return;AV.villes=AV.villes||[];if(AV.villes.length>=15){toast('15 villes max');return;}if(!AV.villes.some(y=>y.toLowerCase()===x.toLowerCase()))AV.villes.push(x);avRendreChips();avMaj();}
 function avAjouterListe(id){
  const sel=document.getElementById('av-listes-select');sel.value='';
  const l=AV_LISTES.find(x=>String(x.id)===String(id));
@@ -3551,7 +3560,11 @@ function avSuggest(q){
   try{
    const r=await api('/api/basile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'activity_suggest',q:q.trim()})});
    const d=await r.json();
-   const items=((d.brut||{}).suggestions||[]).filter(s=>s&&s.value&&s.type!=='concept'&&!String(s.value).startsWith('concept:'));
+   // Types fins seulement, NAF/LinkedIn d'abord : les concepts 📍 Google décrivent des LIEUX et
+   // matchent rarement des personnes (constaté en prod 22/09 : gmb: seul → 0 prospect).
+   const ORDRE={naf:0,lki:1,gmb:2};
+   const items=((d.brut||{}).suggestions||[]).filter(s=>s&&s.value&&s.type!=='concept'&&!String(s.value).startsWith('concept:'))
+    .sort((a,b)=>(ORDRE[a.type]??9)-(ORDRE[b.type]??9));
    if(!items.length){box.innerHTML='<div style="padding:10px 12px;font-size:13px;color:var(--ink-soft)">Aucun concept — essaie un autre mot ou un code NAF.</div>';box.style.display='block';return;}
    const escA=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
    box.innerHTML=items.slice(0,8).map(s=>{
@@ -3575,13 +3588,14 @@ function avFiltres(){
  const [effMin,effMax]=AV_EFF[AV.eff]||[null,null];
  return {concept_ids:AV.concepts.map(c=>c.id),concept_labels:AV.concepts.map(c=>c.label),
   postes:AV.postes,decideur:AV.decideur,effectif_min:effMin,effectif_max:effMax,
+  villes:(AV.villes||[]).slice(),
   listes_ids:AV.listes.map(l=>l.id),exclure_extraits:document.getElementById('av-exclure').checked};
 }
 function avMaj(){
  if(AV.onglet!=='prospects')return;
  clearTimeout(AV_TIMER);
  const f=avFiltres();
- if(!f.concept_ids.length&&!f.postes.length&&!f.decideur&&!f.listes_ids.length)return;
+ if(!f.concept_ids.length&&!f.postes.length&&!f.decideur&&!f.listes_ids.length&&!f.villes.length)return;
  AV_TIMER=setTimeout(avApercu,800);
 }
 async function avApercu(){
@@ -3594,10 +3608,19 @@ async function avApercu(){
   AV_APERCU=d;
   const esc=s=>String(s||'').replace(/</g,'&lt;');
   const doublons=(d.leads||[]).filter(l=>l.doublon).length;
+  // Concepts « morts » côté personnes (ex : un concept Google Maps seul) : nommés + chips marquées
+  let alerteConcepts='';
+  if(Array.isArray(d.concepts_zero)&&d.concepts_zero.length){
+   AV.concepts.forEach(c=>{c.mort=d.concepts_zero.includes(c.id);});
+   avRendreChips();
+   const morts=AV.concepts.filter(c=>c.mort).map(c=>c.label);
+   alerteConcepts=`<div style="font-size:12.5px;background:#fcebeb;border-radius:8px;padding:8px 12px;color:#a32d2d">⚠️ ${morts.length?('« '+morts.map(esc).join(' », « ')+' » ne matche'+(morts.length>1?'nt':'')+' aucune personne'):'Ces concepts ne matchent aucune personne'} — retape le métier et choisis la variante <b>🏛️ NAF</b> ou <b>💼 LinkedIn</b> (les concepts 📍 Google décrivent des lieux, pas des employeurs).</div>`;
+  }else{AV.concepts.forEach(c=>{delete c.mort;});avRendreChips();}
   count.innerHTML=`<div style="display:flex;gap:22px;align-items:center;flex-wrap:wrap">
    <div><div style="font-size:12px;color:var(--ink-soft)">Prospects correspondants</div><div style="font-size:30px;font-weight:800;color:var(--ink)">${(d.total||0).toLocaleString('fr-FR')}</div></div>
    <div style="font-size:12.5px;line-height:1.55;color:var(--ink-soft)">comptage gratuit, recalculé à chaque filtre${d.nb_sirens?`<br>recherche sur les <b>${d.nb_sirens}</b> entreprises de tes listes`:''}${doublons?`<br>♻️ ${doublons} déjà extrait(s) sur l'aperçu — décochés`:''}</div>
    ${(d.total_sans_effectif&&d.total_sans_effectif>(d.total||0))?`<div style="font-size:12.5px;background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:8px 12px;color:#7a5510">📉 ton filtre effectif cache <b>${(d.total_sans_effectif-(d.total||0)).toLocaleString('fr-FR')}</b> personne(s) (effectif employeur inconnu)</div>`:''}
+   ${alerteConcepts}
   </div>`;
   if(!(d.leads||[]).length){box.style.display='none';return;}
   box.innerHTML=`<div style="padding:11px 16px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--ink-soft)"><b style="color:var(--ink)">Aperçu réel (${d.leads.length} premiers)</b> — décoche pour écarter de la génération</div>`

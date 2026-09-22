@@ -67,6 +67,11 @@ function filtresBasile(f, conceptIds, roles) {
   const b = { result_country_code: { include: ['FR'] }, hide_legal_entities: true };
   if (roles.length) b.result_role = { include: roles };
   if (conceptIds.length) b.activity = { include: conceptIds };
+  // Ville de la PERSONNE (result_city, multi-source) — le seul filtre géo qui existe sur
+  // people/find (region/département n'existent pas ; result_postal_code est Legal-only et
+  // exclurait LinkedIn). Pour une zone entière : onglet Entreprises + 👥.
+  const villes = (Array.isArray(f.villes) ? f.villes : []).map(v => String(v || '').trim()).filter(Boolean).slice(0, 15);
+  if (villes.length) b.result_city = { include: villes };
   const effMin = parseInt(f.effectif_min, 10), effMax = parseInt(f.effectif_max, 10);
   if (effMin > 0 || effMax > 0) {
     b.company_headcount = {};
@@ -102,8 +107,9 @@ export default async function handler(req, res) {
     }
     const roles = rolesDepuisFiltres(filtres);
     const sirens = await sirensDesListes(filtres.listes_ids);
-    if (!roles.length && !conceptIds.length && !sirens.length) {
-      return res.status(400).json({ erreur: 'Ajoute au moins un filtre (secteur, poste ou liste de comptes) — sans quoi la recherche couvrirait toute la France.' });
+    const aVilles = Array.isArray(filtres.villes) && filtres.villes.some(v => String(v || '').trim());
+    if (!roles.length && !conceptIds.length && !sirens.length && !aVilles) {
+      return res.status(400).json({ erreur: 'Ajoute au moins un filtre (secteur, poste, ville ou liste de comptes) — sans quoi la recherche couvrirait toute la France.' });
     }
     const base = filtresBasile(filtres, conceptIds, roles);
 
@@ -139,6 +145,20 @@ export default async function handler(req, res) {
           if (r2.data && r2.data.total != null) totalSansEffectif = r2.data.total;
         }
       }
+
+      // Total 0 avec des concepts secteur : lequel est « mort » côté PERSONNES ? (constaté en prod
+      // 22/09 : `gmb:Concessionnaire automobile` seul → 0 — les concepts Google Maps ne matchent
+      // pas toujours des personnes, contrairement aux naf:/lki:). Comptages limit 1, gratuits :
+      // on renvoie les ids sans résultat pour que le front les marque et propose la variante.
+      let conceptsZero = null;
+      if (mode === 'apercu' && total === 0 && conceptIds.length && !sirens.length) {
+        conceptsZero = [];
+        for (const cid of conceptIds.slice(0, 8)) {
+          const seul = { ...base, activity: { include: [cid] } };
+          const rc = await basile('/people/find', { limit: 1, filters: seul }, key);
+          if (!rc.data || !(rc.data.total > 0)) conceptsZero.push(cid);
+        }
+      }
       // Doublons : slugs LinkedIn déjà extraits dans les listes actives
       const connus = await linkedinsConnus(sql);
       const leads = leadsBruts.slice(0, 20).map(l => {
@@ -155,7 +175,9 @@ export default async function handler(req, res) {
       });
       return res.status(200).json({
         total, total_sans_effectif: totalSansEffectif,
-        concepts_labels: conceptLabels, nb_roles: roles.length,
+        concepts_labels: conceptLabels, concepts_ids: conceptIds,
+        concepts_zero: conceptsZero, // ids sans AUCUNE personne (null si total > 0)
+        nb_roles: roles.length,
         nb_sirens: sirens.length || null,
         leads
       });

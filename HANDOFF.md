@@ -33,9 +33,21 @@ filtres manuels façon Sales Navigator, mixe Pappers × Basile × IA.
   doublons décochés, bascule d'onglet, avCritEnt valide).
 - **À valider en prod** (aperçus gratuits) : ① le mode « listes de comptes » (le banc n'a pas de
   SQL stub — la mécanique par lots est celle de dirigeantsParSiren, éprouvée) ; ② le rendement
-  réel d'un aperçu décideur seul (65 intitulés d'un coup). Piège connu : le champ `region`/géo
-  n'existe pas sur people/find → l'onglet Prospects est France entière (dit dans l'UI), la géo
-  fine passe par l'onglet Entreprises.
+  réel d'un aperçu décideur seul (65 intitulés d'un coup).
+- **Retour Didier (1er test prod, même soir)** : « concessionnaire automobile » → 0 prospect, et
+  « pas de localisation ? ». Deux corrections :
+  ① **Filtre « Ville(s) de la personne »** — `result_city` existe bien sur people/find
+  (multi-source), je l'avais écarté à tort ; chips libres (15 max), suffisant seul comme filtre.
+  Region/département n'existent toujours pas sur les personnes (dit dans l'UI) ; zone entière =
+  onglet Entreprises.
+  ② **Diagnostic « concept mort »** : le 0 venait du concept `gmb:` choisi seul — les concepts
+  📍 Google décrivent des LIEUX et matchent rarement des personnes (dans l'union de la Liste
+  intelligente ça passait, seuls ça fait 0). L'aperçu à total 0 re-compte chaque concept
+  individuellement (limit 1, gratuit) et renvoie `concepts_zero` → chips marquées ⚠️ rouges +
+  alerte qui dit de prendre la variante NAF/LinkedIn ; l'autocomplete trie désormais
+  NAF → LinkedIn → Google pour que le choix par défaut matche des personnes.
+  Vérifié : banc scénarios 6-7 (concept gmb mort, villes seules) + rejeu navigateur du parcours
+  exact de Didier (alerte + chip rouge + villes).
 
 ## 🎯 22 septembre 2026 — « Solution Etienne » : personas par SIREN + choix des salariés (en attente de GO)
 
