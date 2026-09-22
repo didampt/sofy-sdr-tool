@@ -1,4 +1,37 @@
-# HANDOFF — Reprise du travail (dernière mise à jour : 18 septembre 2026)
+# HANDOFF — Reprise du travail (dernière mise à jour : 22 septembre 2026)
+
+## 🎯 22 septembre 2026 — « SofyScrap trouve moins qu'une recherche manuelle » (cas Romain, 82.91Z)
+
+Romain : annuaire-entreprises = 835 sociétés de recouvrement actives, SofyScrap = « 126 trouvées
+(49 déjà prises) » puis **0 fiche générée**. Cause reproduite au chiffre près sur le moteur Pappers
+(via le proxy public `www.pappers.fr/api/search`, testable sans clé API — cf. mémoire) :
+82.91Z actives métropole = **738** ; + `effectif_min=1&effectif_max=9` = **126 exactement**.
+Deux mécanismes combinés :
+1. **Le wizard OBLIGEAIT à cocher une tranche d'effectif** (gate `state.emp.length>0`, pas
+   d'« Indifférent » contrairement au CA et aux établissements). Romain voulait « pas de minimum »
+   → il a coché 1–9.
+2. **Filtrer par effectif chez Pappers écarte AUSSI toutes les entreprises à effectif inconnu**
+   (la majorité des petites structures : ~500 sur 738 ici). La cascade effectif → tranche → aucun
+   ne s'élargit qu'à total **0** : à 126 elle ne bronche pas, le SDR perd 83 % du vivier sans le
+   savoir. Les 126 restantes étant déjà toutes extraites (vertical recouvrement très travaillé,
+   « recouvrement 13 » de Franck…), génération = 0. C'est le motif générique derrière « SofyScrap
+   sous-performe une recherche manuelle » : tout le monde tape dans le même sous-vivier filtré.
+
+Correctif (en attente de GO pour commit/push) :
+- **Front** : chip « Indifférent » en tête des tranches d'effectif, exclusive des autres (aucun
+  filtre envoyé → vivier complet) ; hint d'avertissement `emp-pappers-note` dès qu'une tranche est
+  cochée ; libellés via `empTexte()` (« effectif indifférent » au lieu de « Indifférent salariés »).
+- **`api/estimer.js` + `api/liste.js`** : quand un filtre effectif a tenu (niveau 1 ou 2 de la
+  cascade), 1 appel recherche `par_page=1` SANS le filtre → `total_sans_effectif` dans la réponse.
+- **Front** : la modale d'estimation, le bandeau d'exclusions et le message de liste vide affichent
+  « 📉 ton filtre effectif cache N entreprises … repasse sur Indifférent » — le conseil remplace
+  l'ancien « élargis le département/NAF » quand c'est l'effectif le coupable.
+⚠️ On n'élargit JAMAIS automatiquement (un SDR qui veut du 50+ salariés l'a choisi) : on mesure et
+on affiche. Vérifié : `node --check` sur les 3 fichiers + tests fonctionnels navigateur (chips,
+les 3 messages avec le payload exact du cas Romain) + capture de la carte effectif.
+Reste à faire : rejouer l'estimation de Romain en prod après déploiement (attendu : 126 → 738 avec
+« Indifférent ») ; remontée d'Etienne (Sales Nav plus fourni en CONTACTS) = sujet distinct, non
+traité ici.
 
 ## 🎯 18 septembre 2026 — Hot lead manuel pour les AE (plan « sièges Lemlist »)
 

@@ -103,6 +103,19 @@ export default async function handler(req, res) {
     }
     if (!result.ok) return res.status(result.status).json({ erreur: 'Erreur Pappers', detail: result.data });
 
+    // Le filtre effectif Pappers écarte AUSSI toutes les entreprises dont l'effectif lui est
+    // inconnu — la majorité des petites structures (cas Romain 09/2026 : 82.91Z métropole =
+    // 738 sociétés, 126 avec « 1–9 »). La cascade ne s'élargit qu'à total 0 : entre les deux,
+    // le SDR perdait le gros du vivier sans le savoir. On mesure donc le vivier SANS ce filtre
+    // (1 appel recherche par_page=1, coût marginal) pour afficher l'écart.
+    let totalSansEffectif = null;
+    if (filtreEffectif === 'effectif' || filtreEffectif === 'tranche_effectif') {
+      try {
+        const r2 = await call({ par_page: '1' });
+        if (r2.ok) totalSansEffectif = r2.data.total || 0;
+      } catch (_) {}
+    }
+
     const totalDispo = result.data.total || 0;
     const echantillon = result.data.resultats || [];
     const surPage = echantillon.length;
@@ -196,7 +209,8 @@ export default async function handler(req, res) {
       filtre_etablissements_min: etabMinNum || null,
       doublons_mesures: doublonsMesures,          // false → base inaccessible, doublons non mesurés
       balayage_max: balayageMax,                  // fiches que la génération peut balayer au maximum
-      filtre_effectif: filtreEffectif
+      filtre_effectif: filtreEffectif,
+      total_sans_effectif: totalSansEffectif      // vivier sans le filtre effectif (null si filtre absent/élargi)
     });
   } catch (e) {
     return res.status(500).json({ erreur: 'Erreur estimation', detail: String(e.message || e).slice(0, 200) });

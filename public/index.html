@@ -756,8 +756,9 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
         <div class="qnum"><b>3</b> Taille de la société</div>
         <h2>Quel effectif ?</h2>
         <div class="chips" id="emp-chips"></div>
-        <p class="hint">ICP Sofy multi-sites : 20+ salariés recommandé. Plusieurs tranches possibles.</p>
+        <p class="hint">ICP Sofy multi-sites : 20+ salariés recommandé. Plusieurs tranches possibles — « Indifférent » = vivier complet.</p>
         <p class="hint" id="emp-note" style="display:none;color:#B45309">⚠️ Tranches non adjacentes : Pappers filtre par fourchette continue, les tranches intermédiaires seront incluses aussi.</p>
+        <p class="hint" id="emp-pappers-note" style="display:none;color:#B45309">⚠️ Pappers ne connaît pas l'effectif de la plupart des sociétés : filtrer par effectif écarte AUSSI toutes celles à effectif inconnu. L'estimation te montrera combien tu en perds.</p>
         <h2 style="margin-top:22px">Nombre d'établissements ?</h2>
         <div class="chips" id="etab-chips"></div>
         <p class="hint">ICP Sofy = multi-sites. « 2+ » cible les entreprises à plusieurs points de vente. Optionnel.</p>
@@ -3710,11 +3711,25 @@ function chips(id,opts,key,multi){
  });
 }
 chips('size-chips',["25","50","100","250","500"],'size');
-chips('emp-chips',["1–9","10–19","20–49","50–199","200–499","500+"],'emp',true);
-// Avertit si les tranches cochées ne se suivent pas (Pappers filtre par fourchette continue)
-document.getElementById('emp-chips').addEventListener('click',()=>{
+chips('emp-chips',["Indifférent","1–9","10–19","20–49","50–199","200–499","500+"],'emp',true);
+// « Indifférent » (vivier complet) est exclusif des tranches, et réciproquement. La question
+// obligeait à cocher une tranche : Pappers écartait alors toutes les entreprises à effectif
+// INCONNU — la majorité des petites structures (cas Romain 09/2026 : 82.91Z métropole =
+// 738 sociétés, 126 avec « 1–9 » — et 0 fiche livrée, vivier réduit déjà tout extrait).
+document.getElementById('emp-chips').addEventListener('click',(ev)=>{
+ const chip=ev.target&&ev.target.classList&&ev.target.classList.contains('chip')?ev.target.textContent:null;
+ if(chip){
+  if(chip==='Indifférent'){if(state.emp.includes('Indifférent'))state.emp=['Indifférent'];}
+  else state.emp=state.emp.filter(x=>x!=='Indifférent');
+  [...ev.currentTarget.children].forEach(c=>c.classList.toggle('sel',state.emp.includes(c.textContent)));
+  validate();
+ }
+ // Avertit si les tranches cochées ne se suivent pas (Pappers filtre par fourchette continue)
  const n=document.getElementById('emp-note');
  if(n)n.style.display=empAvecTrous(state.emp)?'block':'none';
+ // Avertit qu'un filtre effectif écarte aussi les effectifs inconnus chez Pappers
+ const p=document.getElementById('emp-pappers-note');
+ if(p)p.style.display=state.emp.some(x=>EFF_MAP[x])?'block':'none';
 });
 chips('etab-chips',["Indifférent","2+","5+","10+"],'etab');
 chips('ca-chips',["< 500 K€","500 K€ – 2 M€","2 – 10 M€","10 – 50 M€","50 M€ +","Indifférent"],'ca');
@@ -3873,6 +3888,8 @@ function effEnveloppe(emp){
  return [String(Math.min(...mins)),max===Infinity?'':String(max)];
 }
 function empLabel(emp){return Array.isArray(emp)?emp.join(', '):(emp||'');}
+// Libellé complet pour les bandeaux : « 20–49 salariés » ou « effectif indifférent »
+function empTexte(emp){const l=empLabel(emp);return (!l||l==='Indifférent')?'effectif indifférent':l+' salariés';}
 // Tranches non adjacentes cochées (ex : 1–9 + 200–499) → Pappers inclura aussi l'intervalle entre les deux
 function empAvecTrous(emp){
  if(!Array.isArray(emp)||emp.length<2)return false;
@@ -4120,7 +4137,7 @@ async function estimerListe(){
  {const em=({"2+":"2","5+":"5","10+":"10"})[c.etab];if(em)p.set('nb_etab_min',em);}
  p.set('nb_souhaite',Math.min(parseInt(c.size)||25,500));
  // Affiche la modale en mode chargement
- document.getElementById('estim-criteres').textContent=`${(c.naf||[]).join(', ')} · ${(c.pays||[]).join(' + ')} · ${empLabel(c.emp)} salariés${c.ca&&c.ca!=='Indifférent'?' · CA '+c.ca:''}${c.etab&&c.etab!=='Indifférent'?' · '+c.etab+' établissements':''}`;
+ document.getElementById('estim-criteres').textContent=`${(c.naf||[]).join(', ')} · ${(c.pays||[]).join(' + ')} · ${empTexte(c.emp)}${c.ca&&c.ca!=='Indifférent'?' · CA '+c.ca:''}${c.etab&&c.etab!=='Indifférent'?' · '+c.etab+' établissements':''}`;
  document.getElementById('estim-loader').style.display='block';
  document.getElementById('estim-contenu').style.display='none';
  document.getElementById('estim-modal').style.display='flex';
@@ -4190,6 +4207,9 @@ function afficherDetailEstimation(d){
   l.push(`⚠️ Dédoublonnage inter-listes non vérifiable pour l'instant : des fiches déjà extraites peuvent encore être remplacées ou manquer.`);
  if(String(d.filtre_effectif||'').startsWith('aucun ('))
   l.push(`ℹ️ Effectif non renseigné chez Pappers sur ce NAF : le filtre effectif a été élargi, sinon le résultat était vide.`);
+ // Le filtre effectif écarte aussi les effectifs INCONNUS : montrer le vivier caché (mesuré serveur).
+ if(d.total_sans_effectif&&d.total_sans_effectif>(d.total_dispo||0))
+  l.push(`📉 Ton filtre effectif cache <b>${(d.total_sans_effectif-(d.total_dispo||0)).toLocaleString('fr-FR')}</b> entreprise(s) : Pappers écarte toutes celles dont il ne connaît pas l'effectif (vivier complet sans ce filtre : <b>${d.total_sans_effectif.toLocaleString('fr-FR')}</b>). Repasse l'effectif sur « Indifférent » pour les inclure.`);
  // Les cessées / procédures collectives ne sont visibles qu'en ouvrant les fiches détaillées :
  // on ne les devine pas ici, on prévient que le chiffre peut encore baisser un peu.
  if(nbMax>0)l.push(`ℹ️ Les sociétés cessées ou en liquidation ne se voient qu'à la génération : quelques fiches en moins possible.`);
@@ -4412,6 +4432,8 @@ function afficherExclusions(d,total){
    l.push(`🏬 <b>${d.exclus_sous_seuil_etablissements}</b> sous le seuil « ${d.filtre_etablissements_min}+ établissements »`);
   if(d.exclues_cessees_ou_liquidation>0)
    l.push(`⚰️ <b>${d.exclues_cessees_ou_liquidation}</b> cessée(s) ou en procédure collective`);
+  if(d.total_sans_effectif&&d.total_sans_effectif>(d.total||0))
+   l.push(`📉 filtre effectif : <b>${(d.total_sans_effectif-(d.total||0)).toLocaleString('fr-FR')}</b> entreprise(s) hors vivier (effectif inconnu chez Pappers = écartée) — « Indifférent » pour les inclure`);
  }
  if(!l.length){box.style.display='none';box.innerHTML='';return;}
  const demande=d.nb_demande?` sur ${d.nb_demande} demandée(s)`:'';
@@ -4425,7 +4447,11 @@ function messageListeVide(d){
  const causes=[];const conseils=[];
  if(d&&d.doublons_inter_listes>0){
   causes.push(`les ${d.doublons_inter_listes} société(s) balayée(s) étaient déjà extraites dans une autre liste`);
-  conseils.push(`élargis le département ou le code NAF (le vivier actuel est épuisé)`);
+  // Si un filtre effectif cache une partie du vivier, c'est LE conseil à donner en premier :
+  // le vivier « épuisé » ne l'est souvent que dans sa version filtrée (cas Romain 09/2026).
+  if(d.total_sans_effectif&&d.total_sans_effectif>(d.total||0))
+   conseils.push(`repasse l'effectif sur « Indifférent » : ${(d.total_sans_effectif-(d.total||0)).toLocaleString('fr-FR')} entreprise(s) de plus sans ce filtre (Pappers écarte celles à effectif inconnu)`);
+  else conseils.push(`élargis le département ou le code NAF (le vivier actuel est épuisé)`);
  }
  if(d&&d.exclus_sous_seuil_etablissements>0){
   causes.push(`le filtre « ${d.filtre_etablissements_min}+ établissements » a écarté ${d.exclus_sous_seuil_etablissements} société(s) mono-site`);
@@ -4456,7 +4482,7 @@ function showRealResults(total,c){
   ?`🔥 Liste automatique des Hot Leads · ${REAL.length} fiche(s)${state.savedId?' · #'+state.savedId:''}`
   :c.gmb
   ?`📍 Google Maps · ${c.activite||''}${(c.villes||[]).length?' · '+c.villes.join(', '):''}${c.note_max?' · note ≤ '+c.note_max+' ★':''}${c.note_min?' · note ≥ '+c.note_min+' ★':''} — ${REAL.length} établissement${REAL.length>1?'s':''}${state.savedId?' · Sauvegardée ✓ (#'+state.savedId+')':''}`
-  :`${_naf}${_naf?' · ':''}${total} entreprises trouvées (Pappers) · ${empLabel(c.emp)} salariés · CA ${c.ca||'—'}${_pays?' · '+_pays:''}${c.ville?' / '+c.ville:''} — affichage : ${REAL.length}${state.savedId?' · Sauvegardée ✓ (#'+state.savedId+')':''}`;
+  :`${_naf}${_naf?' · ':''}${total} entreprises trouvées (Pappers) · ${empTexte(c.emp)} · CA ${c.ca||'—'}${_pays?' · '+_pays:''}${c.ville?' / '+c.ville:''} — affichage : ${REAL.length}${state.savedId?' · Sauvegardée ✓ (#'+state.savedId+')':''}`;
  afficherExclusions(estAuto||c.gmb?null:DIAG_GENERATION,total);
  document.getElementById('kpis').style.display='flex';
  // Envoi groupé Lemlist : réservé aux listes Google Maps. Recherche d'emails IA : toutes les listes

@@ -134,6 +134,17 @@ export default async function handler(req, res) {
 
     if (!result.ok) return res.status(result.status).json({ erreur: 'Erreur Pappers', detail: result.data });
 
+    // Vivier sans le filtre effectif : Pappers écarte aussi les entreprises à effectif inconnu
+    // (cas Romain 09/2026 — même mesure que /api/estimer, pour que l'écran de résultats et le
+    // message de liste vide nomment la vraie cause). 1 appel recherche par_page=1, marginal.
+    let totalSansEffectif = null;
+    if (filtreEffectif === 'effectif' || filtreEffectif === 'tranche_effectif') {
+      try {
+        const r2 = await call({ par_page: '1' });
+        if (r2.ok) totalSansEffectif = r2.data.total || 0;
+      } catch (_) {}
+    }
+
     // ── Dédoublonnage inter-listes : SIREN déjà extraits par un SDR, chargés AVANT la
     //    pagination pour que chaque doublon écarté soit remplacé par une fiche plus loin
     //    dans le vivier (au lieu d'amputer la liste livrée). ──
@@ -232,6 +243,8 @@ export default async function handler(req, res) {
       filtre_etablissements_min: etabMinNum || null,
       doublons_inter_listes: doublonsInterListes,
       listes_doublons: [...listesTouchees].slice(0, 5),
+      total_sans_effectif: totalSansEffectif,
+
       nb_demande: nbDemande,
       fiches_balayees: fichesBalayees,
       credits_estimes: nDetail + 1,
