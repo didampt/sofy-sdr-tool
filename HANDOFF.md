@@ -1,5 +1,32 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 22 septembre 2026, nuit)
 
+## 🎯 22 septembre 2026 (nuit, 5e passe) — fin des intitulés préétablis + le secteur Basile pèse ENFIN sur les entreprises
+
+Retours Didier (captures modale personas + wizard raturés, puis « 2 profils LinkedIn seulement,
+couples-tu bien les secteurs Basile avec Pappers ? ») :
+- **Intitulés préétablis SUPPRIMÉS partout** (ils étaient inventés → erreurs) : wizard Pappers
+  étape 5, modale « 👥 Quelles fonctions chercher ? » (fiche + Ma journée). Ne restent que
+  « N'importe quel décideur » + le champ d'intitulés RÉELS Basile avec **✓ Inclure / ✕ Exclure**
+  par suggestion (comme le mode avancé). Exclusions : chips rouges `#job-ex-chips` /
+  `#personas-ex-chips`, `state.jobsEx` / `PERSONAS_EX` (reset à chaque ouverture de modale),
+  transmises en `jobs_exclus` aux POST /api/personas, mémorisées dans `criteres.jobs_exclus`
+  (PUT /api/listes étendu). Côté serveur personas.js : un lead dont la fonction contient un
+  intitulé exclu (normalisé) est écarté d'office ; le prompt IA de repli reçoit la liste
+  « à EXCLURE absolument ». Les jobs mémorisés d'une liste s'affichent toujours en cases cochées
+  (le template rend `[...new Set([...JOBS_PERSONAS,...deja])]`).
+- **Réponse au « 2 profils LinkedIn »** : la voie SIREN ne construisait le périmètre entreprises
+  QUE par naf_code (concepts naf:) — un concept LinkedIn (« automobile », lki:) ne pesait RIEN
+  sur companies/find → périmètre 338 entreprises au lieu du secteur réel. Or companies/find
+  documente `activity` = concepts unifiés MULTI-SOURCE (« le meilleur filtre secteur »). Corrigé :
+  `sirensParNaf` envoie `activity:{include:conceptIds}` (tous les concepts choisis) d'abord,
+  repli `naf_code` si activity rend 0 (garde n°1, jamais validé en prod sur companies) ; la
+  garde legal_category reste (n°2). Et `lkiParSiren` s'active dès qu'un concept est posé (avant :
+  seulement si un naf: existait). ⚠️ À VALIDER en prod : le comptage doit exploser vs 338.
+- **Vérifié** : node --check (recherche, personas, listes, front) ; banc test-v2 scénarios H
+  (concept lki seul → activity sur companies) et I (activity→0 → repli naf_code) + régression
+  17 sections ; smoke navigateur (wizard : 1 chip fixe + 2 boutons/suggestion + bascule
+  inclure↔exclure ; modale personas : 1 case fixe, coche + chip rouge d'exclusion).
+
 ## 🎯 22 septembre 2026 (nuit, 4e passe) — purge inter-onglets, plafond 100 000 Basile, dropdowns multi-choix
 
 Trois retours Didier :

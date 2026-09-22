@@ -185,8 +185,16 @@ function filtresEntreprises(filtres) {
   return f;
 }
 
-async function sirensParNaf(nafs, key, limit, token, extra) {
-  const body = { limit, filters: { naf_code: { include: nafs }, company_ceased: false, ...(extra || {}) } };
+// Entreprises du secteur : par CONCEPTS UNIFIÉS (`activity` sur companies/find est documenté
+// multi-source « le meilleur filtre secteur » — il couvre les entreprises taguées LinkedIn/Google
+// qui n'ont pas le bon NAF), avec repli naf_code si `activity` ne rend rien (garde anti-filtre-
+// fantôme, jamais validé en prod sur companies). Retour Didier 22/09 nuit : « automobile » (concept
+// LinkedIn) ne pesait RIEN sur le périmètre entreprises → 338 entreprises au lieu du secteur réel.
+async function sirensParNaf(nafs, key, limit, token, extra, concepts) {
+  const filtreSecteur = (concepts && concepts.length)
+    ? { activity: { include: concepts } }
+    : { naf_code: { include: nafs } };
+  const body = { limit, filters: { ...filtreSecteur, company_ceased: false, ...(extra || {}) } };
   if (token) body.paginationToken = token;
   const r = await basile('/companies/find', body, key);
   const d = r.data || {};
@@ -280,7 +288,9 @@ export default async function handler(req, res) {
     // registre ? Non plus (activity=Legal-only ≠ lki:). On garde activity pour le REGISTRE
     // (concepts naf:) et la voie SIREN pour LINKEDIN.
     const nafsConcepts = nafDepuisConcepts(conceptIds);
-    const lkiParSiren = !sirens.length && nafsConcepts.length > 0;
+    // La voie SIREN s'active dès qu'un SECTEUR est posé (concepts unifiés OU codes NAF) : avant,
+    // un concept purement LinkedIn (lki:) n'ouvrait pas la voie entreprises → périmètre amputé.
+    const lkiParSiren = !sirens.length && (conceptIds.length > 0 || nafsConcepts.length > 0);
     // Filtres de la voie SIREN côté personnes : tout SAUF activity (Legal-only, redondant),
     // PLUS les filtres LinkedIn-only (langue, ancienneté — wireframe v2)
     const baseLkiSiren = extrasLki(filtres, sansActivity(avecSource(base, 'lki')));
@@ -288,11 +298,18 @@ export default async function handler(req, res) {
     // si legal_category (mapping spéculatif) vide le comptage, on le retire et on le signale.
     const extraEnt = filtresEntreprises(filtres);
     let typesIgnores = false;
+    let secteurConcepts = conceptIds.slice(0, 10); // essayé d'abord ; vidé si activity ne rend rien
     async function sirensGarde(limit, token) {
-      let r = await sirensParNaf(nafsConcepts, key, limit, token, extraEnt);
+      let r = await sirensParNaf(nafsConcepts, key, limit, token, extraEnt, secteurConcepts);
+      // Garde n°1 : `activity` sur companies ignoré/vide → repli naf_code (concepts naf: seuls)
+      if (!token && r.total === 0 && secteurConcepts.length && nafsConcepts.length) {
+        r = await sirensParNaf(nafsConcepts, key, limit, null, extraEnt, null);
+        if (r.total > 0) secteurConcepts = [];
+      }
+      // Garde n°2 : legal_category (types d'entreprise) vide le comptage → retiré + signalé
       if (!token && r.total === 0 && extraEnt.legal_category) {
         const sans = { ...extraEnt }; delete sans.legal_category;
-        r = await sirensParNaf(nafsConcepts, key, limit, null, sans);
+        r = await sirensParNaf(nafsConcepts, key, limit, null, sans, secteurConcepts.length ? secteurConcepts : null);
         if (r.total > 0) { typesIgnores = true; delete extraEnt.legal_category; }
       }
       return r;

@@ -956,6 +956,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
           <input class="field" id="job-custom" placeholder="Autre fonction… (suggestions Basile, Entrée pour ajouter)" style="width:100%" autocomplete="off" onkeydown="addCustomJob(event)" oninput="jobSuggest(this.value)">
           <div id="job-custom-results" style="display:none;position:absolute;left:0;right:0;top:44px;background:#fff;border:1px solid var(--line);border-radius:10px;z-index:12;overflow-y:auto;max-height:340px;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div>
         </div>
+        <div class="chips" id="job-ex-chips" style="margin-top:8px"></div>
       </div>
 
       <div class="qcard" data-q="5" style="display:none">
@@ -2409,7 +2410,7 @@ const STATUTS_APPEL=[
  {v:'Hors prospection',e:'🛑',score:0,cat:'neutre'},
  {v:'En séquence Lemlist',e:'📨',score:5,cat:'good'}
 ];
-const state={naf:[],size:null,emp:[],ca:null,jobs:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
+const state={naf:[],size:null,emp:[],ca:null,jobs:[],jobsEx:[],pays:[],sdr:null,listeNom:'',step:0,keys:{},sort:'signal',savedId:null,user:null};
 
 /* ───────── SESSION & AUTHENTIFICATION ───────── */
 async function api(url,opts={}){
@@ -4797,7 +4798,9 @@ document.getElementById('emp-chips').addEventListener('click',(ev)=>{
 });
 chips('etab-chips',["Indifférent","2+","5+","10+"],'etab');
 chips('ca-chips',["< 500 K€","500 K€ – 2 M€","2 – 10 M€","10 – 50 M€","50 M€ +","Indifférent"],'ca');
-chips('job-chips',["N'importe quel décideur","Dirigeant / PDG","Directeur Marketing","Directeur Relation Client","Directeur Expérience Client (CX)","Directeur Omnicanal / Digital","Responsable Service Client","Directeur CRM","Directeur Commercial","Responsable Communication","Directeur Réseau / Retail"],'jobs',true);
+// Retour Didier 22/09 nuit : les intitulés préétablis (inventés) créaient des erreurs → seuls
+// restent « N'importe quel décideur » et le champ d'intitulés RÉELS Basile (inclure/exclure).
+chips('job-chips',["N'importe quel décideur"],'jobs',true);
 // « N'importe quel décideur » (cas Etienne/Romain 22/09 : la question forçait un poste précis,
 // ce qui RESTREINT la recherche personas) est exclusif des fonctions précises, et réciproquement.
 // Côté serveur, ce libellé est 100 % générique → personas cible tout décideur (fondateur, DG,
@@ -4852,11 +4855,24 @@ function jobToggle(o){
  if(chip){chip.click();return;}
  jobAjouter(o);
 }
+function jobExToggle(o){
+ o=String(o||'').trim();if(!o)return;
+ state.jobsEx=state.jobsEx||[];
+ const i=state.jobsEx.findIndex(x=>x.toLowerCase()===o.toLowerCase());
+ if(i>=0)state.jobsEx.splice(i,1);
+ else{const chip=[...document.querySelectorAll('#job-chips button')].find(b=>b.textContent.trim().toLowerCase()===o.toLowerCase()&&b.classList.contains('sel'));if(chip)chip.click();state.jobs=state.jobs.filter(x=>x.toLowerCase()!==o.toLowerCase());state.jobsEx.push(o);}
+ jobExRendre();validate();
+}
+function jobExRendre(){
+ const esc=s=>String(s||'').replace(/</g,'&lt;');
+ document.getElementById('job-ex-chips').innerHTML=(state.jobsEx||[]).map((o,k)=>
+  `<span class="chip sel" style="background:#fef2f2;border-color:#fecaca;color:#b91c1c;cursor:pointer" onclick="state.jobsEx.splice(${k},1);jobExRendre();validate()">✕ ${esc(o)} — exclu</span>`).join('');
+}
 function jobSuggest(q){
  const escA=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
  rolesSuggest(q,'job-custom-results',p=>{
-  const pris=state.jobs.includes(p);
-  return `<div data-p="${escA(p)}" onclick="jobToggle(this.dataset.p);suggAfficher('job-custom-results')" style="padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px${pris?';background:#f0fdf4':''}">${pris?'✓ ':''}${escA(p)} <span style="font-size:10.5px;color:var(--ink-soft)">💼 intitulé Basile</span></div>`;
+  const inc=state.jobs.includes(p),exc=(state.jobsEx||[]).some(x=>x.toLowerCase()===p.toLowerCase());
+  return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);font-size:13px${(inc||exc)?';background:'+(inc?'#f0fdf4':'#fef2f2'):''}"><span style="flex-grow:1">${escA(p)} <span style="font-size:10.5px;color:var(--ink-soft)">💼 intitulé Basile</span></span><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;${inc?'background:#15803d;color:#fff;border:1px solid #15803d':'background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0'}" onclick="jobToggle(this.dataset.p);suggAfficher('job-custom-results')">${inc?'✓ Inclus':'✓ Inclure'}</button><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;${exc?'background:#b91c1c;color:#fff;border:1px solid #b91c1c':'background:#fef2f2;color:#b91c1c;border:1px solid #fecaca'}" onclick="jobExToggle(this.dataset.p);suggAfficher('job-custom-results')">${exc?'✕ Exclu':'✕ Exclure'}</button></div>`;
  });
 }
 function addCustomJob(e){
@@ -4952,7 +4968,7 @@ function move(dir){
 
 /* ───────── RESET ───────── */
 function resetWizard(){
- state.naf=[];state.size=null;state.emp=[];state.ca=null;state.jobs=[];state.pays=[];state.etab=null;state.step=0;state.sdr=null;state.listeNom='';state.savedId=null;
+ state.naf=[];state.size=null;state.emp=[];state.ca=null;state.jobs=[];state.jobsEx=[];document.getElementById('job-ex-chips').innerHTML='';state.pays=[];state.etab=null;state.step=0;state.sdr=null;state.listeNom='';state.savedId=null;
  document.getElementById('liste-nom').value='';
  document.querySelectorAll('.chip.sel').forEach(c=>c.classList.remove('sel'));
  document.querySelectorAll('.custom-chip').forEach(c=>c.remove());
@@ -5004,7 +5020,7 @@ function confirmerCoutListe(taille){
 }
 
 function criteresActuels(){
- return {naf:state.naf,size:state.size,emp:state.emp,ca:state.ca,jobs:state.jobs,pays:state.pays,etab:state.etab,
+ return {naf:state.naf,size:state.size,emp:state.emp,ca:state.ca,jobs:state.jobs,jobs_exclus:(state.jobsEx||[]).slice(),pays:state.pays,etab:state.etab,
          ville:document.getElementById('loc-ville').value.trim()};
 }
 
@@ -9859,6 +9875,7 @@ function jobsCibles(){
 function personasAjouterFonction(v){
  v=String(v||'').trim();if(!v)return;
  const boite=document.getElementById('personas-choix');
+ PERSONAS_EX=PERSONAS_EX.filter(x=>x.toLowerCase()!==v.toLowerCase());personasExRendre();
  const deja=[...boite.querySelectorAll('input[type=checkbox]')].find(c=>c.value.toLowerCase()===v.toLowerCase());
  if(deja){deja.checked=!deja.checked;suggAfficher('personas-autre-results');return;}
  const l=document.createElement('label');
@@ -9877,23 +9894,38 @@ function personasCochee(v){
 function personasSuggest(q){
  const escA=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
  rolesSuggest(q,'personas-autre-results',p=>{
-  const pris=personasCochee(p);
-  return `<div data-p="${escA(p)}" onclick="personasAjouterFonction(this.dataset.p)" style="padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px${pris?';background:#f0fdf4':''}">${pris?'✓ ':''}${escA(p)} <span style="font-size:10.5px;color:var(--ink-soft)">💼 intitulé Basile</span></div>`;
+  const inc=personasCochee(p),exc=PERSONAS_EX.some(x=>x.toLowerCase()===p.toLowerCase());
+  return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);font-size:13px${(inc||exc)?';background:'+(inc?'#f0fdf4':'#fef2f2'):''}"><span style="flex-grow:1">${escA(p)} <span style="font-size:10.5px;color:var(--ink-soft)">💼 intitulé Basile</span></span><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;${inc?'background:#15803d;color:#fff;border:1px solid #15803d':'background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0'}" onclick="personasAjouterFonction(this.dataset.p)">${inc?'✓ Inclus':'✓ Inclure'}</button><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;${exc?'background:#b91c1c;color:#fff;border:1px solid #b91c1c':'background:#fef2f2;color:#b91c1c;border:1px solid #fecaca'}" onclick="personasExclure(this.dataset.p)">${exc?'✕ Exclu':'✕ Exclure'}</button></div>`;
  });
 }
-const JOBS_PERSONAS=["N'importe quel décideur","Directeur Commercial","Directeur Marketing","Responsable Communication","Directeur Relation Client","Directeur Expérience Client (CX)","Directeur Omnicanal / Digital","Responsable Service Client","Directeur CRM","Directeur Réseau / Retail"];
+const JOBS_PERSONAS=["N'importe quel décideur"]; // les intitulés préétablis (inventés) ont sauté — champ Basile
+let PERSONAS_EX=[]; // fonctions exclues de la modale en cours
+function personasExclure(v){
+ v=String(v||'').trim();if(!v)return;
+ const i=PERSONAS_EX.findIndex(x=>x.toLowerCase()===v.toLowerCase());
+ if(i>=0)PERSONAS_EX.splice(i,1);
+ else{const c=[...document.querySelectorAll('#personas-choix input[type=checkbox]')].find(x=>x.value.toLowerCase()===v.toLowerCase());if(c)c.checked=false;PERSONAS_EX.push(v);}
+ personasExRendre();suggAfficher('personas-autre-results');
+}
+function personasExRendre(){
+ const esc=s=>String(s||'').replace(/</g,'&lt;');
+ const el=document.getElementById('personas-ex-chips');if(!el)return;
+ el.innerHTML=PERSONAS_EX.map((o,k)=>`<span class="chip sel" style="background:#fef2f2;border-color:#fecaca;color:#b91c1c;cursor:pointer" onclick="PERSONAS_EX.splice(${k},1);personasExRendre()">✕ ${esc(o)} — exclu</span>`).join('');
+}
 function ouvrirChoixPersonas(i){
  const deja=new Set(jobsCibles());
  // Hot Lead (Signaux / Signups) sans fonctions mémorisées : personas C-level pré-cochés
  if(!deja.size&&REAL[i]&&estVisiteSite(REAL[i])){['Directeur Commercial','Directeur Marketing','Responsable Communication'].forEach(function(j){deja.add(j);});}
+ PERSONAS_EX=[];
  document.getElementById('personas-choix').innerHTML=`
   <div style="font-size:18px;font-weight:700;margin-bottom:6px">👥 Quelles fonctions chercher ?</div>
   <div style="font-size:13px;color:var(--ink-soft);line-height:1.5;margin-bottom:14px">Cette liste ne cible que « Dirigeant / PDG » — il est déjà fourni par Pappers sur chaque fiche. Coche les fonctions à chercher sur LinkedIn : elles seront <b>mémorisées pour toute la liste</b> (bouton 👥 et enrichissement).</div>
-  ${JOBS_PERSONAS.map(j=>`<label style="display:flex;align-items:center;gap:8px;padding:7px 4px;font-size:13.5px;cursor:pointer;border-top:1px solid var(--line)"><input type="checkbox" value="${j}" ${deja.has(j)?'checked':''}>${j}</label>`).join('')}
+  ${[...new Set([...JOBS_PERSONAS,...deja])].map(j=>`<label style="display:flex;align-items:center;gap:8px;padding:7px 4px;font-size:13.5px;cursor:pointer;border-top:1px solid var(--line)"><input type="checkbox" value="${j}" ${deja.has(j)?'checked':''}>${j}</label>`).join('')}
   <div style="position:relative;margin-top:10px">
-   <input class="field" id="personas-autre" placeholder="Autre fonction… (suggestions Basile)" style="width:100%" autocomplete="off" oninput="personasSuggest(this.value)" onkeydown="if(event.key==='Enter'){personasAjouterFonction(this.value);}">
+   <input class="field" id="personas-autre" placeholder="Fonction… (intitulés réels Basile, Inclure/Exclure)" style="width:100%" autocomplete="off" oninput="personasSuggest(this.value)" onkeydown="if(event.key==='Enter'){personasAjouterFonction(this.value);}">
    <div id="personas-autre-results" style="display:none;position:absolute;left:0;right:0;top:44px;background:#fff;border:1px solid var(--line);border-radius:10px;z-index:12;overflow-y:auto;max-height:340px;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div>
   </div>
+  <div class="chips" id="personas-ex-chips" style="margin-top:8px"></div>
   <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px">
    <button class="btn" onclick="document.getElementById('personas-modal').style.display='none'" style="background:var(--paper)">Annuler</button>
    <button class="btn btn-primary" onclick="validerChoixPersonas(${i})">👥 Chercher</button>
@@ -9909,8 +9941,9 @@ async function validerChoixPersonas(i){
  const jobs=Array.isArray(state.criteres.jobs)?state.criteres.jobs:[];
  for(const j of choix)if(!jobs.includes(j))jobs.push(j);
  state.criteres.jobs=jobs;
+ state.criteres.jobs_exclus=PERSONAS_EX.slice();
  if(state.savedId){
-  try{await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:state.savedId,jobs})});}catch(e){}
+  try{await api('/api/listes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:state.savedId,jobs,jobs_exclus:PERSONAS_EX})});}catch(e){}
  }
  toast('✓ Fonctions mémorisées pour cette liste');
  // Relance la recherche sur la fiche
@@ -9927,7 +9960,7 @@ async function chercherPersonas(i,manuel){
  if(!jobs.length){ouvrirChoixPersonas(i);return false;} // aucun poste ciblé → le SDR choisit à la volée
  try{
   const r=await api('/api/personas',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({liste_id:state.savedId,entreprise:{nom:e.nom,enseigne:enseigneDe(e),site:domaineDe(e),ville:e.ville||'',linkedin:e.linkedin_entreprise||'',siren:e.siren||''},jobs})});
+   body:JSON.stringify({liste_id:state.savedId,entreprise:{nom:e.nom,enseigne:enseigneDe(e),site:domaineDe(e),ville:e.ville||'',linkedin:e.linkedin_entreprise||'',siren:e.siren||''},jobs,jobs_exclus:(state.criteres&&state.criteres.jobs_exclus)||[]})});
   let d;
   try{d=await r.json();}catch(_){toast('Personas : réponse invalide ('+r.status+')');return false;}
   if(d.erreur){toast('Personas : '+d.erreur+(d.detail?' — '+d.detail:''));return false;}
@@ -9965,6 +9998,7 @@ function ouvrirSalariesBasile(i,salaries,dejaAjoutes){
  SALARIES_BASILE={i,liste:salaries};
  const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
  const e=REAL[i];
+ PERSONAS_EX=[];
  document.getElementById('personas-choix').innerHTML=`
   <h2 style="margin-bottom:4px">👥 ${salaries.length} autre(s) salarié(s) chez ${esc(enseigneDe(e)||e.nom)}</h2>
   <p class="hint" style="margin-bottom:10px">${dejaAjoutes?dejaAjoutes+' décideur(s) déjà ajouté(s) à la fiche. ':''}Coche ceux à ajouter comme contacts (source Basile : salariés LinkedIn + registre). L'enrichissement email/mobile se lance ensuite depuis la fiche.</p>
@@ -12154,14 +12188,16 @@ function ckPersonas(rid){
  const it=CK_ITEMS[rid];if(!it||!it.liste_id||!it.cle)return;
  if(it._busy){toast('Recherche déjà en cours sur cette fiche ⏳');return;}
  const deja=new Set(['Directeur Commercial','Directeur Marketing','Responsable Communication']);
+ PERSONAS_EX=[];
  document.getElementById('personas-choix').innerHTML=`
   <div style="font-size:18px;font-weight:700;margin-bottom:6px">👥 Quelles fonctions chercher ?</div>
   <div style="font-size:13px;color:var(--ink-soft);line-height:1.5;margin-bottom:14px">Recherche LinkedIn (Basile, puis IA en repli) pour <b>${htmlSafe(it.nom||'')}</b> — les contacts trouvés s'ajoutent directement à la fiche.</div>
-  ${JOBS_PERSONAS.map(j=>`<label style="display:flex;align-items:center;gap:8px;padding:7px 4px;font-size:13.5px;cursor:pointer;border-top:1px solid var(--line)"><input type="checkbox" value="${j}" ${deja.has(j)?'checked':''}>${j}</label>`).join('')}
+  ${[...new Set([...JOBS_PERSONAS,...deja])].map(j=>`<label style="display:flex;align-items:center;gap:8px;padding:7px 4px;font-size:13.5px;cursor:pointer;border-top:1px solid var(--line)"><input type="checkbox" value="${j}" ${deja.has(j)?'checked':''}>${j}</label>`).join('')}
   <div style="position:relative;margin-top:10px">
-   <input class="field" id="personas-autre" placeholder="Autre fonction… (suggestions Basile)" style="width:100%" autocomplete="off" oninput="personasSuggest(this.value)" onkeydown="if(event.key==='Enter'){personasAjouterFonction(this.value);}">
+   <input class="field" id="personas-autre" placeholder="Fonction… (intitulés réels Basile, Inclure/Exclure)" style="width:100%" autocomplete="off" oninput="personasSuggest(this.value)" onkeydown="if(event.key==='Enter'){personasAjouterFonction(this.value);}">
    <div id="personas-autre-results" style="display:none;position:absolute;left:0;right:0;top:44px;background:#fff;border:1px solid var(--line);border-radius:10px;z-index:12;overflow-y:auto;max-height:340px;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div>
   </div>
+  <div class="chips" id="personas-ex-chips" style="margin-top:8px"></div>
   <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px">
    <button class="btn" onclick="document.getElementById('personas-modal').style.display='none'" style="background:var(--paper)">Annuler</button>
    <button class="btn btn-primary" onclick="ckValiderPersonas('${rid}')">👥 Chercher</button>
@@ -12178,7 +12214,7 @@ async function ckValiderPersonas(rid){
  ckProgres(rid,'👥 Recherche des décideurs (Basile, puis IA en repli)… ~10-30 s');
  try{
   const r=await api('/api/personas',{method:'POST',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({liste_id:it.liste_id,entreprise:{nom:it.nom_officiel||it.nom,enseigne:it.nom,site:it.site||'',ville:it.ville||'',linkedin:it.linkedin_entreprise||'',siren:it.siren||''},jobs:choix})});
+   body:JSON.stringify({liste_id:it.liste_id,entreprise:{nom:it.nom_officiel||it.nom,enseigne:it.nom,site:it.site||'',ville:it.ville||'',linkedin:it.linkedin_entreprise||'',siren:it.siren||''},jobs:choix,jobs_exclus:PERSONAS_EX})});
   let d;try{d=await r.json();}catch(_){toast('Personas : réponse invalide ('+r.status+')');return;}
   if(d.erreur){toast('Personas : '+d.erreur+(d.detail?' — '+d.detail:''));return;}
   const ps=((d.resultat||{}).personas)||[];

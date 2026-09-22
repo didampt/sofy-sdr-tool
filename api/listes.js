@@ -519,6 +519,7 @@ export default async function handler(req, res) {
         if (!rows.length) return res.status(404).json({ erreur: 'Liste introuvable' });
         const c = rows[0].criteres || {};
         c.jobs = req.body.jobs.filter(j => typeof j === 'string' && j.trim()).slice(0, 20);
+        if (Array.isArray(req.body.jobs_exclus)) c.jobs_exclus = req.body.jobs_exclus.filter(j => typeof j === 'string' && j.trim()).slice(0, 20);
         await sql`UPDATE listes SET criteres = ${JSON.stringify(c)} WHERE id = ${lid}`;
         return res.status(200).json({ ok: true, jobs: c.jobs });
       }

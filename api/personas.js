@@ -94,7 +94,7 @@ async function leadsBasile(filters, cle) {
 //      (page LinkedIn non liée au SIREN chez Basile → meta.noticeCode siren_no_linkedin_company).
 // Sort AUSSI la liste complète des salariés valides (`salaries`, plafond 30) pour que le SDR/AE
 // puisse choisir lui-même « façon Sales Nav » — l'auto-ajout reste limité à 5 (pipeline inchangé).
-async function personasBasile(entreprise, jobs, cle) {
+async function personasBasile(entreprise, jobs, cle, jobsExclus) {
   const siren = String(entreprise.siren || '').replace(/\D/g, '');
   const refs = [entreprise.enseigne, entreprise.nom, racineDomaine(entreprise.site)]
     .map(x => normaliser(x || '').replace(/ /g, '')).filter(x => x.length >= 4);
@@ -123,6 +123,8 @@ async function personasBasile(entreprise, jobs, cle) {
       const fonction = x.result_role || x.current_job_title || '';
       if (EXCLUS_FONCTION.test(fonction)) continue;
       const fn = normaliser(fonction);
+      // Fonctions EXCLUES par le SDR (champ Basile ✕ Exclure) : écartées d'office
+      if ((jobsExclus || []).some(e => fn.includes(normaliser(e)))) continue;
 
       const p = {
         prenom, nom: nomC, fonction: fonction || 'Contact',
@@ -184,6 +186,8 @@ export default async function handler(req, res) {
   if (!apiKey) return res.status(500).json({ erreur: 'ANTHROPIC_API_KEY manquante dans Vercel' });
 
   const { entreprise = {}, jobs = [] } = req.body || {};
+  const jobsExclus = (Array.isArray(req.body.jobs_exclus) ? req.body.jobs_exclus : [])
+    .map(x => String(x || '').trim()).filter(Boolean).slice(0, 20);
   if (!entreprise.nom || !jobs.length) return res.status(400).json({ erreur: 'entreprise.nom et jobs requis' });
 
   try {
@@ -191,7 +195,7 @@ export default async function handler(req, res) {
     let salariesBasile = null; // salariés trouvés sans décideur classé : joints au repli Claude
     if (process.env.BASILE_API_KEY) {
       let viaBasile = null;
-      try { viaBasile = await personasBasile(entreprise, jobs, process.env.BASILE_API_KEY); } catch (_) { viaBasile = null; }
+      try { viaBasile = await personasBasile(entreprise, jobs, process.env.BASILE_API_KEY, jobsExclus); } catch (_) { viaBasile = null; }
       if (viaBasile) {
         await loggerConso(user, 'basile', 1, (req.body && req.body.liste_id) || req.query.liste_id);
         if ((viaBasile.personas || []).length) {
@@ -210,7 +214,7 @@ Entreprise : ${entreprise.nom}${entreprise.enseigne ? ` (enseigne : ${entreprise
 ${entreprise.site ? `Site web : ${entreprise.site}` : ''}
 ${entreprise.linkedin ? `Page LinkedIn de l'entreprise (déjà connue, utilise-la directement) : ${entreprise.linkedin}` : ''}
 Ville : ${entreprise.ville || ''}
-Postes recherchés en priorité : ${jobs.join(', ')}
+Postes recherchés en priorité : ${jobs.join(', ')}${jobsExclus.length ? `\nPostes à EXCLURE absolument : ${jobsExclus.join(', ')}` : ''}
 Postes acceptés en repli (décideurs locaux, à proposer même s'ils ne correspondent pas exactement) : Directeur, Directeur Adjoint, Directeur d'exploitation, Responsable (marketing/commercial/communication/établissement), Gérant, DG, CEO, COO, Fondateur
 
 Méthode :
