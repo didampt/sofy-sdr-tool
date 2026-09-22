@@ -952,7 +952,10 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
         <div class="qnum"><b>5</b> Fonction recherchée</div>
         <h2>Qui veux-tu avoir au téléphone ?</h2>
         <div class="chips" id="job-chips"></div>
-        <input class="field" id="job-custom" placeholder="Autre fonction… (Entrée pour ajouter)" style="margin-top:14px" onkeydown="addCustomJob(event)">
+        <div style="position:relative;margin-top:14px">
+          <input class="field" id="job-custom" placeholder="Autre fonction… (suggestions Basile, Entrée pour ajouter)" style="width:100%" autocomplete="off" onkeydown="addCustomJob(event)" oninput="jobSuggest(this.value)">
+          <div id="job-custom-results" style="display:none;position:absolute;left:0;right:0;top:44px;background:#fff;border:1px solid var(--line);border-radius:10px;z-index:12;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div>
+        </div>
       </div>
 
       <div class="qcard" data-q="5" style="display:none">
@@ -3656,12 +3659,14 @@ function avAjouterPoste(v,mode){
 }
 // Autocomplete des intitulés RÉELS Basile (/people/roles/suggest) — chaque ligne : Inclure / Exclure
 let AV_POSTE_TIMER=null;
-function avPosteSuggest(q){
- clearTimeout(AV_POSTE_TIMER);
- const box=document.getElementById('av-poste-results');
+// Suggestions d'intitulés RÉELS Basile, générique (mode avancé, wizard Pappers, modale personas).
+// renduLigne(intitulé) → HTML d'une ligne ; la box se ferme au clic (les lignes appellent leur action).
+let ROLES_SUGG_TIMER=null;
+function rolesSuggest(q,boxId,renduLigne){
+ clearTimeout(ROLES_SUGG_TIMER);
+ const box=document.getElementById(boxId);if(!box)return;
  if(!q||q.trim().length<2){box.style.display='none';return;}
- AV_POSTE_TIMER=setTimeout(async()=>{
-  const escA=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+ ROLES_SUGG_TIMER=setTimeout(async()=>{
   let items=[];
   try{
    const r=await api('/api/basile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'roles_suggest',q:q.trim()})});
@@ -3669,12 +3674,16 @@ function avPosteSuggest(q){
    const brut=(d.brut||{});
    items=(brut.suggestions||brut.roles||brut.results||(Array.isArray(brut)?brut:[]))
     .map(s=>typeof s==='string'?s:(s.value||s.label||s.name||'')).filter(Boolean).slice(0,9);
-  }catch(_){/* suggest indisponible : Entrée ajoute le texte tapé tel quel */}
-  if(!items.length){box.innerHTML='<div style="padding:10px 12px;font-size:13px;color:var(--ink-soft)">Aucun intitulé Basile — Entrée pour ajouter « '+escA(q.trim())+' » tel quel.</div>';box.style.display='block';return;}
-  box.innerHTML=items.map(p=>
-   `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);font-size:13px"><span style="flex-grow:1">${escA(p)}</span><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0" onclick="avAjouterPoste(this.dataset.p,'inclure');avPosteFerme()">✓ Inclure</button><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="avAjouterPoste(this.dataset.p,'exclure');avPosteFerme()">✕ Exclure</button></div>`).join('');
+  }catch(_){}
+  if(!items.length){box.style.display='none';return;}
+  box.innerHTML=items.map(renduLigne).join('');
   box.style.display='block';
  },350);
+}
+function avPosteSuggest(q){
+ const escA=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+ rolesSuggest(q,'av-poste-results',p=>
+  `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);font-size:13px"><span style="flex-grow:1">${escA(p)}</span><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0" onclick="avAjouterPoste(this.dataset.p,'inclure');avPosteFerme()">✓ Inclure</button><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca" onclick="avAjouterPoste(this.dataset.p,'exclure');avPosteFerme()">✕ Exclure</button></div>`);
 }
 function avPosteFerme(){document.getElementById('av-poste-results').style.display='none';document.getElementById('av-poste-libre').value='';}
 function avToggleEff(x){x=String(x||'').trim();const i=AV.effSN.indexOf(x);if(i>=0)AV.effSN.splice(i,1);else AV.effSN.push(x);avRendreChips();avMaj();}
@@ -3844,7 +3853,8 @@ async function avApercu(page){
    const enPlus=applique.length>AV.concepts.length?applique.slice(AV.concepts.length):[];
    count.innerHTML=`<div style="display:flex;gap:22px;align-items:center;flex-wrap:wrap">
     <div><div style="font-size:12px;color:var(--ink-soft)">Prospects correspondants</div><div style="font-size:30px;font-weight:800;color:var(--ink)">${(d.total||0).toLocaleString('fr-FR')}</div></div>
-    <div style="font-size:12.5px;line-height:1.55;color:var(--ink-soft)">${(d.total_lki!=null&&d.total_legal!=null)?`<b style="color:#0369a1">💼 LinkedIn ${d.total_lki.toLocaleString('fr-FR')}${d.total_lki_partiel?' (sur les 90 premières entreprises'+(d.nb_entreprises_secteur?' des '+d.nb_entreprises_secteur.toLocaleString('fr-FR')+' du secteur':'')+')':''}</b> · <b style="color:#0f766e">🏛️ registre ${d.total_legal.toLocaleString('fr-FR')}</b><br>`:''}comptage gratuit, recalculé à chaque filtre${d.nb_sirens?`<br>recherche sur les <b>${d.nb_sirens}</b> entreprises de tes listes`:''}${doublons?`<br>♻️ ${doublons} déjà extrait(s) — décochés`:''}</div>
+    <div style="font-size:12.5px;line-height:1.55;color:var(--ink-soft)">${(d.total_lki!=null&&d.total_legal!=null)?`<b style="color:#0369a1">💼 LinkedIn ${d.total_lki.toLocaleString('fr-FR')}${d.total_lki_partiel?' (sur les '+(d.nb_entreprises_balayees||90)+' premières entreprises'+(d.nb_entreprises_secteur?' des '+d.nb_entreprises_secteur.toLocaleString('fr-FR')+' du secteur':'')+')':''}</b> · <b style="color:#0f766e">🏛️ registre ${d.total_legal.toLocaleString('fr-FR')}</b><br>`:''}comptage gratuit, recalculé à chaque filtre${d.nb_sirens?`<br>recherche sur les <b>${d.nb_sirens}</b> entreprises de tes listes`:''}${doublons?`<br>♻️ ${doublons} déjà extrait(s) — décochés`:''}</div>
+    ${(d.total_lki_partiel&&d.nb_entreprises_balayees&&d.nb_entreprises_secteur>d.nb_entreprises_balayees&&d.total_lki>0)?`<div style="font-size:12.5px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px 12px;color:#1d4ed8">📈 ≈ <b>${Math.round(d.total_lki/d.nb_entreprises_balayees*d.nb_entreprises_secteur).toLocaleString('fr-FR')}</b> estimés sur le secteur entier — la génération balaye jusqu'à ~1 800 entreprises par tour${(AV.effSN||[]).length?'':' · coche un <b>effectif</b> pour concentrer le balayage sur les bonnes tailles'}</div>`:''}
     ${(d.total_sans_effectif&&d.total_sans_effectif>(d.total||0))?`<div style="font-size:12.5px;background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:8px 12px;color:#7a5510">📉 ton filtre effectif cache <b>${(d.total_sans_effectif-(d.total||0)).toLocaleString('fr-FR')}</b> personne(s) (effectif employeur inconnu)</div>`:''}
     ${enPlus.length?`<div style="font-size:12px;color:var(--ink-soft);width:100%">🔎 Secteur élargi automatiquement (registre ⇄ LinkedIn/Google) : ${enPlus.slice(0,4).map(esc).join(', ')}${enPlus.length>4?' (+'+(enPlus.length-4)+')':''}</div>`:''}
     ${d.types_ignores?`<div style="font-size:12.5px;background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:8px 12px;color:#7a5510">🏷️ le filtre <b>type d'entreprise</b> vidait le comptage — ignoré pour cette recherche</div>`:''}
@@ -4781,13 +4791,24 @@ function addCustomSdr(e){
  state.sdr=o;validate();
 }
 
-function addCustomJob(e){
- if(e.key!=='Enter'||!e.target.value.trim())return;
- const o=e.target.value.trim();e.target.value='';
+// Ajoute un intitulé (chip cochée) à l'étape 5 du wizard — depuis Entrée ou une suggestion Basile
+function jobAjouter(o){
+ o=String(o||'').trim();if(!o||state.jobs.includes(o))return;
  const b=document.createElement('button');b.className='chip sel custom-chip';b.textContent=o;
  b.onclick=()=>{b.classList.toggle('sel');state.jobs=b.classList.contains('sel')?[...state.jobs,o]:state.jobs.filter(j=>j!==o);validate();};
  document.getElementById('job-chips').appendChild(b);
  state.jobs.push(o);validate();
+}
+function jobSuggest(q){
+ const escA=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+ rolesSuggest(q,'job-custom-results',p=>
+  `<div data-p="${escA(p)}" onclick="jobAjouter(this.dataset.p);document.getElementById('job-custom-results').style.display='none';document.getElementById('job-custom').value=''" style="padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='#fff'">${escA(p)} <span style="font-size:10.5px;color:var(--ink-soft)">💼 intitulé Basile</span></div>`);
+}
+function addCustomJob(e){
+ if(e.key!=='Enter'||!e.target.value.trim())return;
+ const o=e.target.value.trim();e.target.value='';
+ document.getElementById('job-custom-results').style.display='none';
+ jobAjouter(o);
 }
 function addCustomPays(e){
  if(e.key!=='Enter'||!e.target.value.trim())return;
@@ -9779,6 +9800,25 @@ function jobsCibles(){
  return ((state.criteres&&state.criteres.jobs)||[]).filter(j=>!/dirigeant|pdg/i.test(j));
 }
 // Fonctions proposées quand la liste n'a aucun poste ciblé (mêmes choix que l'étape 5, hors Dirigeant/PDG)
+// Fonction ajoutée à la main / via suggestion Basile → checkbox cochée en fin de liste
+function personasAjouterFonction(v){
+ v=String(v||'').trim();if(!v)return;
+ const boite=document.getElementById('personas-choix');
+ if([...boite.querySelectorAll('input[type=checkbox]')].some(c=>c.value.toLowerCase()===v.toLowerCase()))return;
+ const l=document.createElement('label');
+ l.style.cssText='display:flex;align-items:center;gap:8px;padding:7px 4px;font-size:13.5px;cursor:pointer;border-top:1px solid var(--line)';
+ l.innerHTML='<input type="checkbox" checked>💼 ';
+ l.querySelector('input').value=v;
+ l.appendChild(document.createTextNode(v));
+ boite.insertBefore(l,document.getElementById('personas-autre').parentNode);
+ document.getElementById('personas-autre').value='';
+ document.getElementById('personas-autre-results').style.display='none';
+}
+function personasSuggest(q){
+ const escA=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+ rolesSuggest(q,'personas-autre-results',p=>
+  `<div data-p="${escA(p)}" onclick="personasAjouterFonction(this.dataset.p)" style="padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='#fff'">${escA(p)} <span style="font-size:10.5px;color:var(--ink-soft)">💼 intitulé Basile</span></div>`);
+}
 const JOBS_PERSONAS=["N'importe quel décideur","Directeur Commercial","Directeur Marketing","Responsable Communication","Directeur Relation Client","Directeur Expérience Client (CX)","Directeur Omnicanal / Digital","Responsable Service Client","Directeur CRM","Directeur Réseau / Retail"];
 function ouvrirChoixPersonas(i){
  const deja=new Set(jobsCibles());
@@ -9788,6 +9828,10 @@ function ouvrirChoixPersonas(i){
   <div style="font-size:18px;font-weight:700;margin-bottom:6px">👥 Quelles fonctions chercher ?</div>
   <div style="font-size:13px;color:var(--ink-soft);line-height:1.5;margin-bottom:14px">Cette liste ne cible que « Dirigeant / PDG » — il est déjà fourni par Pappers sur chaque fiche. Coche les fonctions à chercher sur LinkedIn : elles seront <b>mémorisées pour toute la liste</b> (bouton 👥 et enrichissement).</div>
   ${JOBS_PERSONAS.map(j=>`<label style="display:flex;align-items:center;gap:8px;padding:7px 4px;font-size:13.5px;cursor:pointer;border-top:1px solid var(--line)"><input type="checkbox" value="${j}" ${deja.has(j)?'checked':''}>${j}</label>`).join('')}
+  <div style="position:relative;margin-top:10px">
+   <input class="field" id="personas-autre" placeholder="Autre fonction… (suggestions Basile)" style="width:100%" autocomplete="off" oninput="personasSuggest(this.value)" onkeydown="if(event.key==='Enter'){personasAjouterFonction(this.value);}">
+   <div id="personas-autre-results" style="display:none;position:absolute;left:0;right:0;top:44px;background:#fff;border:1px solid var(--line);border-radius:10px;z-index:12;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div>
+  </div>
   <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px">
    <button class="btn" onclick="document.getElementById('personas-modal').style.display='none'" style="background:var(--paper)">Annuler</button>
    <button class="btn btn-primary" onclick="validerChoixPersonas(${i})">👥 Chercher</button>
@@ -12052,6 +12096,10 @@ function ckPersonas(rid){
   <div style="font-size:18px;font-weight:700;margin-bottom:6px">👥 Quelles fonctions chercher ?</div>
   <div style="font-size:13px;color:var(--ink-soft);line-height:1.5;margin-bottom:14px">Recherche LinkedIn (Basile, puis IA en repli) pour <b>${htmlSafe(it.nom||'')}</b> — les contacts trouvés s'ajoutent directement à la fiche.</div>
   ${JOBS_PERSONAS.map(j=>`<label style="display:flex;align-items:center;gap:8px;padding:7px 4px;font-size:13.5px;cursor:pointer;border-top:1px solid var(--line)"><input type="checkbox" value="${j}" ${deja.has(j)?'checked':''}>${j}</label>`).join('')}
+  <div style="position:relative;margin-top:10px">
+   <input class="field" id="personas-autre" placeholder="Autre fonction… (suggestions Basile)" style="width:100%" autocomplete="off" oninput="personasSuggest(this.value)" onkeydown="if(event.key==='Enter'){personasAjouterFonction(this.value);}">
+   <div id="personas-autre-results" style="display:none;position:absolute;left:0;right:0;top:44px;background:#fff;border:1px solid var(--line);border-radius:10px;z-index:12;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div>
+  </div>
   <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px">
    <button class="btn" onclick="document.getElementById('personas-modal').style.display='none'" style="background:var(--paper)">Annuler</button>
    <button class="btn btn-primary" onclick="ckValiderPersonas('${rid}')">👥 Chercher</button>

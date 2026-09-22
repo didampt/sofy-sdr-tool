@@ -1,5 +1,33 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 22 septembre 2026, nuit)
 
+## 🎯 22 septembre 2026 (nuit, 3e passe) — voie SIREN élargie, codes INSEE réels, intitulés Basile PARTOUT
+
+Retour Didier (test prod « commerce de voitures × Marketing Manager » → 4 prospects, bandeau 🏷️
+encore là) :
+- **legal_category : 3e leçon** — 4 codes marchent (46 775), mais mes 500 codes énumérés 00-99
+  VIDENT aussi le comptage (limite de taille d'include, quelque part > 100 valeurs). Corrigé :
+  listes des VRAIS codes INSEE niveau 3 embarquées (`CJ_SARL/CJ_SA_CA/CJ_SA_DIR/CJ_SAS`, 75
+  codes pour « Société commerciale », toutes les listes < 100). Test : recocher un type — le
+  bandeau 🏷️ doit disparaître ; sinon la limite est plus basse (réduire aux gros codes).
+- **« 4 prospects »** : le comptage LinkedIn de la voie SIREN ne balayait que 90 entreprises sur
+  80 792. Trois remèdes : ① aperçu balaye **210** entreprises (`ENT_PAR_PAGE`, 7 lots countOnly
+  gratuits, `nb_entreprises_balayees` renvoyé) ; ② bandeau 📈 **extrapolation** (« ≈ N estimés
+  sur le secteur entier », règle de trois affichée honnêtement) + rappel que la génération
+  balaye ~1 800 entreprises/tour (boucle 6×300 temps-bornée, curseur persistant — déjà en
+  place) ; ③ les tranches d'effectif cochées poussent désormais **headcount_min/max sur
+  companies/find** (la voie SIREN ne balaye plus QUE des boîtes de la bonne taille, au lieu de
+  filtrer après coup côté personnes).
+- **Intitulés réels Basile partout** (demande explicite) : helper générique `rolesSuggest(q,
+  boxId, renduLigne)` branché sur ③ le mode avancé (déjà fait), ② l'étape 5 du wizard Pappers
+  (suggestions sous « Autre fonction… », `jobSuggest`/`jobAjouter`) et ① la modale « 👥 Quelles
+  fonctions chercher ? » des fiches ET de Ma journée (champ + suggestions, checkbox cochée
+  ajoutée, `personasSuggest`/`personasAjouterFonction` — partagés par ouvrirChoixPersonas et
+  ckPersonas). NB : roles_suggest est validé en prod (l'autocomplete du mode avancé a servi
+  « Marketing Manager » à Didier).
+- **Vérifié** : node --check ; banc test-v2 7 scénarios (75 codes transmis, headcount=11-200 sur
+  companies, limit 210) ; smoke navigateur (extrapolation affichée, suggestions wizard 3 lignes,
+  modale personas : suggestion → checkbox cochée).
+
 ## 🎯 22 septembre 2026 (nuit, suite) — Verdicts matrice n°2 appliqués + postes ciblés sur les intitulés RÉELS Basile
 
 Matrice debug_count de Didier (68.31Z, contrôle 100 000 entreprises) :

@@ -114,6 +114,7 @@ function extrasLki(f, b) {
 }
 
 const LOT_SIREN = 30;
+const ENT_PAR_PAGE = 210; // entreprises balayées par page d'aperçu voie SIREN (7 lots de 30)
 
 // ── Voie « entreprises → SIREN → personnes » pour la part LinkedIn ──────────────────────────
 // MATRICE PROD DU 22/09 (test Didier, 68.31Z × Directeur Commercial) : le filtre `activity`
@@ -134,29 +135,38 @@ function sansActivity(o) { const c = { ...o }; delete c.activity; return c; }
 // et on le dit (`types_ignores`). Régions par NOM canonique (le code region_code est ⛔ ignoré,
 // cf. openapi Basile) ; DOM par préfixes de code postal ; villes par headquarters_city.
 // ⚠️ MESURÉ (matrice Didier 22/09 nuit) : legal_category attend des codes INSEE NIVEAU 3
-// (4 chiffres — ['5710','5720','5499','5498'] → 46 775 ✓) ; les préfixes ('5', '57') et les
-// libellés ('SAS') donnent 0. On énumère donc TOUS les 4-chiffres de chaque préfixe niveau 2
-// (les codes inexistants ne matchent rien — même pattern que les CP des DOM) ; la garde
-// types_ignores du handler reste le filet de sécurité.
+// (4 chiffres — ['5710','5720','5499','5498'] → 46 775 ✓) ; préfixes et libellés donnent 0.
+// 2e leçon (bandeau 🏷️ en prod) : énumérer 500 codes 00-99 vide AUSSI le comptage (limite de
+// taille d'include quelque part au-dessus de 100 valeurs) → listes des VRAIS codes de la
+// nomenclature INSEE (les gros du parc en tête) ; la garde types_ignores reste le filet.
+const CJ_SARL = ['5499', '5498', '5410', '5415', '5422', '5426', '5430', '5431', '5432', '5442', '5443', '5451', '5453', '5454', '5455', '5458', '5459', '5460', '5470', '5485'];
+const CJ_SA_CA = ['5599', '5505', '5510', '5515', '5520', '5522', '5525', '5530', '5531', '5532', '5542', '5543', '5546', '5547', '5548', '5551', '5552', '5553', '5554', '5555', '5558', '5559', '5560', '5570', '5585'];
+const CJ_SA_DIR = ['5699', '5605', '5610', '5615', '5620', '5622', '5625', '5630', '5631', '5632', '5642', '5643', '5646', '5647', '5648', '5651', '5652', '5653', '5654', '5655', '5658', '5659', '5660', '5670', '5685'];
+const CJ_SAS = ['5710', '5720', '5770', '5785', '5800'];
 const TYPES_ENTREPRISE = {
-  'Société commerciale': ['54', '55', '56', '57', '58'],
-  'Société cotée en bourse': ['55', '56'],
-  'Société civile': ['65'],
-  'À but non lucratif': ['91', '92', '93'],
-  'Société de personnes': ['52', '53'],
-  'Indépendant / EI': ['10'],
-  'Administration publique': ['41', '71', '72', '73', '74']
+  'Société commerciale': [...CJ_SARL, ...CJ_SA_CA, ...CJ_SA_DIR, ...CJ_SAS],
+  'Société cotée en bourse': [...CJ_SA_CA, ...CJ_SA_DIR],
+  'Société civile': ['6540', '6541', '6542', '6543', '6544', '6551', '6554', '6558', '6560', '6561', '6562', '6563', '6564', '6565', '6566', '6567', '6568', '6569', '6571', '6572', '6573', '6574', '6575', '6576', '6577', '6578', '6585', '6588', '6589', '6595', '6596', '6597', '6598', '6599', '6521', '6532', '6533', '6534', '6535', '6536', '6537', '6538', '6539'],
+  'À but non lucratif': ['9220', '9210', '9221', '9222', '9223', '9224', '9230', '9240', '9260', '9300'],
+  'Société de personnes': ['5202', '5203', '5306', '5307', '5308', '5309', '5370', '5385'],
+  'Indépendant / EI': ['1000'],
+  'Administration publique': ['4110', '4120', '4130', '4140', '4150', '4160', '7210', '7220', '7225', '7229', '7230', '7343', '7344', '7346', '7348', '7364', '7366', '7371', '7372', '7379', '7381', '7382', '7383', '7384', '7385', '7389', '7410', '7490']
 };
-function catsDePrefixe(p) { const a = []; for (let i = 0; i < 100; i++) a.push(p + String(i).padStart(2, '0')); return a; }
 const REGIONS_NOMS = ['Auvergne-Rhône-Alpes', 'Bourgogne-Franche-Comté', 'Bretagne', 'Centre-Val de Loire', 'Corse', 'Grand Est', 'Hauts-de-France', 'Île-de-France', 'Normandie', 'Nouvelle-Aquitaine', 'Occitanie', 'Pays de la Loire', "Provence-Alpes-Côte d'Azur"];
 const DOM_CP = { 'Guadeloupe': '971', 'Martinique': '972', 'Guyane': '973', 'Réunion': '974', 'Mayotte': '976' };
 function cpsDePrefixe(p) { const a = []; for (let i = 0; i < 100; i++) a.push(p + String(i).padStart(2, '0')); return a; }
 function filtresEntreprises(filtres) {
   const f = { company_ceased: false };
+  // Tranches d'effectif cochées → headcount_min/max sur les ENTREPRISES balayées (Legal + LKI) :
+  // la voie SIREN ne balaye plus que des boîtes de la bonne taille (au lieu de compter sur le
+  // seul company_headcount côté personnes, qui filtrait APRÈS un balayage dilué).
+  const eMin = parseInt(filtres.effectif_min, 10), eMax = parseInt(filtres.effectif_max, 10);
+  if (eMin > 0) f.headcount_min = eMin;
+  if (eMax > 0) f.headcount_max = eMax;
   // Type d'entreprise → legal_category en codes niveau 3 énumérés (cf. TYPES_ENTREPRISE)
   const cats = [];
   for (const t of (Array.isArray(filtres.types_entreprise) ? filtres.types_entreprise : [])) {
-    for (const p of (TYPES_ENTREPRISE[t] || [])) for (const c of catsDePrefixe(p)) if (!cats.includes(c)) cats.push(c);
+    for (const c of (TYPES_ENTREPRISE[t] || [])) if (!cats.includes(c)) cats.push(c);
   }
   if (cats.length) f.legal_category = { include: cats };
   // Lieux du siège : {valeur, mode:'inclure'|'exclure'} — régions (nom canonique), DOM (CP), villes
@@ -333,7 +343,7 @@ export default async function handler(req, res) {
         if (lot0 + 1 < nbLots) prochaineSuite = { phase: 'siren', lot: lot0 + 1 };
       } else {
         const phase0 = suite ? suite.phase : (source === 'legal' ? 'legal' : 'lki');
-        let nbEntSecteur = null, lkiPartiel = false;
+        let nbEntSecteur = null, lkiPartiel = false, nbEntBalayees = null;
         if (!suite) {
           // Comptages, une seule fois. Part LinkedIn : voie directe (sans secteur NAF) ou voie
           // SIREN (comptage sur les 90 premières entreprises du secteur — partiel mais VRAI).
@@ -341,8 +351,9 @@ export default async function handler(req, res) {
           if (rC2.status === 401) return res.status(502).json({ erreur: 'Clé Basile refusée' });
           totalLegal = (rC2.data && rC2.data.total) || 0;
           if (lkiParSiren) {
-            const ent = await sirensGarde(90, null);
+            const ent = await sirensGarde(ENT_PAR_PAGE, null);
             nbEntSecteur = ent.total; lkiPartiel = !!ent.next;
+            nbEntBalayees = ent.sirens.length; // vrai nombre (Basile peut plafonner la page)
             totalLki = 0;
             for (let i = 0; i < ent.sirens.length; i += LOT_SIREN) {
               const rc = await basile('/people/find', { limit: 1, filters: { ...baseLkiSiren, siren: { include: ent.sirens.slice(i, i + LOT_SIREN) } } }, key);
@@ -377,7 +388,7 @@ export default async function handler(req, res) {
           // companies/find rechargée via entToken, puis lot N)
           const entToken = suite ? (suite.entToken || null) : null;
           const lot = suite ? (suite.lot || 0) : 0;
-          const ent = await sirensGarde(90, entToken);
+          const ent = await sirensGarde(ENT_PAR_PAGE, entToken);
           const lotSirens = ent.sirens.slice(lot * LOT_SIREN, (lot + 1) * LOT_SIREN);
           if (lotSirens.length) {
             const rP = await basile('/people/find', { limit: 100, filters: { ...baseLkiSiren, siren: { include: lotSirens } } }, key);
@@ -407,7 +418,7 @@ export default async function handler(req, res) {
           await pageLegal(null);
         }
         if (nbEntSecteur != null) { /* exposés dans la réponse ci-dessous */ }
-        var _nbEntSecteur = nbEntSecteur, _lkiPartiel = lkiPartiel;
+        var _nbEntSecteur = nbEntSecteur, _lkiPartiel = lkiPartiel, _nbEntBalayees = nbEntBalayees;
       }
 
       // Total 0 avec des concepts secteur : lequel est « mort » côté PERSONNES ? (constaté en prod
@@ -447,7 +458,8 @@ export default async function handler(req, res) {
         nb_sirens: sirens.length || null,
         nb_entreprises_secteur: (typeof _nbEntSecteur !== 'undefined' && _nbEntSecteur != null) ? _nbEntSecteur : null,
         types_ignores: typesIgnores || false, // legal_category vidait le comptage → retiré, à dire au SDR
-        total_lki_partiel: (typeof _lkiPartiel !== 'undefined') ? !!_lkiPartiel : false, // LinkedIn compté sur les 90 premières entreprises seulement
+        total_lki_partiel: (typeof _lkiPartiel !== 'undefined') ? !!_lkiPartiel : false, // LinkedIn compté sur les premières entreprises seulement
+        nb_entreprises_balayees: (typeof _nbEntBalayees !== 'undefined' && _nbEntBalayees != null) ? _nbEntBalayees : null, // pour l'extrapolation front
         apercu_suite: prochaineSuite, // à repasser tel quel pour la page suivante (null = fin)
         leads
       });
