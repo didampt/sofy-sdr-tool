@@ -1,5 +1,26 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 22 septembre 2026, nuit)
 
+## 🎯 22 septembre 2026 (nuit, 10e passe) — SerpApi réparé (start exige ll), autocomplete villes, feedback catégories Google
+
+Retours Didier (« bug récurrent sur Google ») :
+- **« SerpApi : Google hasn't returned any results »** : la doc SerpApi (google_maps) interdit
+  `start` sans `ll` — on envoyait `start=0` SYSTÉMATIQUEMENT → même la page 1 échouait. Fix
+  gmb-serp : page 1 = q seul ; `ll` est extrait des `gps_coordinates` du 1er résultat et
+  transporté par combinaison (`lls` clé « activité|ville » : réponse → AV_GMB.lls front → repassé
+  aux appels apercu/creer) ; pages > 0 SANS ll = page vide propre (pas d'erreur). Banc 8a-8c.
+- **Autocomplete villes** : nouveau helper générique `avVilleSuggest/avVilleToggle` (suggest
+  Basile `cities_suggest`, input à virgules, segment tapé remplacé, 5 max, multi-choix box
+  ouverte) branché sur av-gmb-villes. Réutilisable sur d'autres inputs villes (id+'-results').
+- **Catégories Google « je dois valider »** : probablement testé avant le déploiement 65e2ef5 ;
+  ajouté quand même un feedback explicite quand AUCUNE catégorie officielle ne matche (« ta
+  saisie partira telle quelle ») au lieu du silence. À revalider en prod.
+- **Modale Entreprises « Rien sur cette page » avec 0** (captures) : PAS un bug de plomberie —
+  intitulé pointu (« Directeur Marketing et Commercial ») × 50 petites boîtes mesurées = 0 réel.
+  Message actionnable ajouté quand 0 avec des intitulés : « retire un intitulé ou repasse sur
+  N'importe quel décideur ».
+- Vérifié : node --check ; banc gmb-serp 8 scénarios (dont ll) ; smoke navigateur (villes
+  suggest+toggle, lls envoyés dans les requêtes).
+
 ## 🎯 22 septembre 2026 (nuit, 9e passe) — catégories Google en autocomplete + personas Basile sur l'onglet Entreprises
 
 Retours Didier :

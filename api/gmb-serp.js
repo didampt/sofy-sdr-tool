@@ -70,16 +70,29 @@ export default async function handler(req, res) {
   const combos = [];
   for (const a of acts) for (const v of vls) combos.push({ a, v });
 
-  // Une page SerpApi google_maps pour une combinaison. appelSerpApi gère compteur + plafond et
-  // renvoie {ok, d, refuse} sans lever : on transforme le refus de plafond en erreur claire.
+  // Une page SerpApi google_maps pour une combinaison. ⚠️ Doc SerpApi : `start` (pagination)
+  // n'est accepté QU'AVEC `ll` — envoyé seul, Google répond « hasn't returned any results »
+  // (bug prod Didier 22/09 : même la page 1 échouait car start=0 était toujours envoyé).
+  // Page 1 : q seul. Pages suivantes : ll = coordonnées GPS du 1er résultat de la page 1
+  // (transportées par le front dans body.lls, clé "activité|ville").
+  const lls = (req.body.lls && typeof req.body.lls === 'object') ? req.body.lls : {};
+  function cleCombo(combo) { return combo.a + '|' + combo.v; }
   async function pageSerp(combo, start) {
-    const r = await appelSerpApi(
-      { engine: 'google_maps', type: 'search', q: combo.a + ' ' + combo.v, hl: 'fr', gl, start: String(start * 20) },
-      { qui: user.nom || 'recherche-avancee', motif: 'gmb-serp ' + combo.a + '/' + combo.v }
-    );
+    const params = { engine: 'google_maps', type: 'search', q: combo.a + ' ' + combo.v, hl: 'fr', gl };
+    const ll = lls[cleCombo(combo)];
+    if (start > 0) {
+      if (!ll) return []; // pagination impossible sans ll (jamais eu de page 1 → rien à paginer)
+      params.ll = ll;
+      params.start = String(start * 20);
+    }
+    const r = await appelSerpApi(params, { qui: user.nom || 'recherche-avancee', motif: 'gmb-serp ' + combo.a + '/' + combo.v });
     if (r.refuse || r.sansCle) { const e = new Error((r.d && r.d.error) || 'SerpApi indisponible'); e.plafond = !!r.refuse; throw e; }
     if (!r.ok) throw new Error('SerpApi : ' + ((r.d && r.d.error) || r.status));
-    return (r.d && r.d.local_results) || [];
+    const brut = (r.d && r.d.local_results) || [];
+    // Mémorise le ll pour les pages suivantes de cette combinaison
+    const g = brut[0] && brut[0].gps_coordinates;
+    if (!lls[cleCombo(combo)] && g && g.latitude != null) lls[cleCombo(combo)] = '@' + g.latitude + ',' + g.longitude + ',14z';
+    return brut;
   }
 
   try {
@@ -107,6 +120,7 @@ export default async function handler(req, res) {
       }
       return res.status(200).json({
         etablissements, balayes, page: p, a_suite: aSuite,
+        lls, // coordonnées par combinaison — à repasser tel quel pour paginer (exigé par SerpApi)
         recherches_serp: combos.length // consommation SerpApi de cet appel (plafond 1000/mois)
       });
     }

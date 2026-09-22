@@ -829,7 +829,10 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
               </div>
               <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
                 <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">Ville(s)</div>
-                <input class="field" id="av-gmb-villes" placeholder="Ex : Bordeaux, Mérignac (max 5, virgules)" style="width:100%" oninput="avMajGmb()">
+                <div style="position:relative">
+                  <input class="field" id="av-gmb-villes" placeholder="Ex : Bordeaux, Mérignac (max 5, virgules)" style="width:100%" autocomplete="off" oninput="avVilleSuggest(this.value,'av-gmb-villes');avMajGmb()">
+                  <div id="av-gmb-villes-results" style="display:none;position:absolute;left:0;right:0;top:44px;background:#fff;border:1px solid var(--line);border-radius:10px;z-index:12;overflow-y:auto;max-height:340px;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div>
+                </div>
               </div>
               <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:10px">
                 <div><div style="font-size:13.5px;font-weight:600;margin-bottom:6px">Note Google</div>
@@ -3716,7 +3719,7 @@ function rolesSuggest(q,boxId,renduLigne){
  },350);
 }
 // Fermeture globale : clic hors de la box (les clics DANS la box restent multi-choix) + Échap
-const SUGG_BOXES={'av-poste-results':'av-poste-libre','av-secteur-results':'av-secteur','av-ent-naf-results':'av-ent-naf','av-ent-jobs-results':'av-ent-jobs-libre','av-gmb-act-results':'av-gmb-act','job-custom-results':'job-custom','personas-autre-results':'personas-autre'};
+const SUGG_BOXES={'av-poste-results':'av-poste-libre','av-secteur-results':'av-secteur','av-ent-naf-results':'av-ent-naf','av-ent-jobs-results':'av-ent-jobs-libre','av-gmb-act-results':'av-gmb-act','av-gmb-villes-results':'av-gmb-villes','job-custom-results':'job-custom','personas-autre-results':'personas-autre'};
 document.addEventListener('click',ev=>{
  // Un nœud déjà retiré du DOM = ligne re-rendue par suggAfficher pendant le bubbling → clic INTERNE
  if(ev.target&&!ev.target.isConnected)return;
@@ -3881,7 +3884,8 @@ function avRendrePage(qui,fn,entete){
  const box=document.getElementById(qui==='pro'?'av-apercu':'av-modal-corps');
  const P=AV_PAG[qui];
  const page=P.pages[P.cur]||[];
- box.innerHTML=entete+(page.map(avLigneLead).join('')||'<div style="padding:12px 16px;font-size:13px;color:var(--ink-soft)">Rien sur cette page.</div>')+avBarrePages(qui,fn);
+ const vide=(qui==='ent'&&!page.length&&(AV.ent.jobs||[]).length)?'<div style="padding:12px 16px;font-size:13px;color:#7a5510;background:#fff7e6">Aucun décideur à ces intitulés dans les entreprises mesurées — retire un intitulé (☝️ rail de gauche) ou repasse sur « N\'importe quel décideur ».</div>':'<div style="padding:12px 16px;font-size:13px;color:var(--ink-soft)">Rien sur cette page.</div>';
+ box.innerHTML=entete+(page.map(avLigneLead).join('')||vide)+avBarrePages(qui,fn);
  box.style.display='block';
 }
 async function avApercu(page){
@@ -3988,6 +3992,45 @@ function avEntJobSuggest(q){
   return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);font-size:13px${(inc||exc)?';background:'+(inc?'#f0fdf4':'#fef2f2'):''}"><span style="flex-grow:1">${escA(p)}</span><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;${inc?'background:#15803d;color:#fff;border:1px solid #15803d':'background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0'}" onclick="avEntJobAjouter(this.dataset.p,'inclure');suggAfficher('av-ent-jobs-results')">${inc?'✓ Inclus':'✓ Inclure'}</button><button class="btn" data-p="${escA(p)}" style="padding:4px 9px;font-size:11.5px;${exc?'background:#b91c1c;color:#fff;border:1px solid #b91c1c':'background:#fef2f2;color:#b91c1c;border:1px solid #fecaca'}" onclick="avEntJobAjouter(this.dataset.p,'exclure');suggAfficher('av-ent-jobs-results')">${exc?'✕ Exclu':'✕ Exclure'}</button></div>`;
  });
 }
+// ── Villes : autocomplete Basile (/people/cities/suggest) sur un input à virgules ──
+let AV_VILLE_TIMER=null;
+function avVilleSuggest(q,inputId){
+ clearTimeout(AV_VILLE_TIMER);
+ const boxId=inputId+'-results',box=document.getElementById(boxId);
+ const seg=String(q||'').split(',').pop().trim();
+ if(seg.length<2){if(box)box.style.display='none';return;}
+ AV_VILLE_TIMER=setTimeout(async()=>{
+  const escA=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  let items=[];
+  try{
+   const r=await api('/api/basile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'cities_suggest',q:seg,limit:15})});
+   const d=await r.json();
+   const brut=(d.brut||{});
+   items=(brut.suggestions||brut.cities||brut.results||(Array.isArray(brut)?brut:[]))
+    .map(s=>typeof s==='string'?s:(s.value||s.label||s.name||'')).filter(Boolean).slice(0,15);
+  }catch(_){}
+  if(!items.length){if(box)box.style.display='none';return;}
+  SUGG_ETAT[boxId]={items,rendu:v=>{
+   const prises=document.getElementById(inputId).value.split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
+   const pris=prises.includes(String(v).toLowerCase());
+   return `<div data-p="${escA(v)}" data-i="${escA(inputId)}" onclick="avVilleToggle(this.dataset.p,this.dataset.i);suggAfficher('${escA(boxId)}')" style="padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px${pris?';background:#f0fdf4':''}">${pris?'✓ ':''}${escA(v)} <span style="font-size:10.5px;color:var(--ink-soft)">📍 ville Basile</span></div>`;
+  }};
+  suggAfficher(boxId);
+ },350);
+}
+function avVilleToggle(v,inputId){
+ const inp=document.getElementById(inputId);
+ let vals=inp.value.split(',').map(x=>x.trim()).filter(Boolean);
+ const i=vals.findIndex(x=>x.toLowerCase()===String(v).toLowerCase());
+ if(i>=0)vals.splice(i,1);
+ else{
+  if(vals.length&&String(v).toLowerCase().includes(vals[vals.length-1].toLowerCase()))vals.pop(); // remplace le segment tapé
+  if(inputId==='av-gmb-villes'&&vals.length>=5){toast('5 villes max');return;}
+  vals.push(v);
+ }
+ inp.value=vals.join(', ');
+ if(inputId==='av-gmb-villes')avMajGmb();
+}
 // ── Activités Google : autocomplete des catégories Google Maps (suggest Basile, type gmb:) ──
 function avGmbActs(){return document.getElementById('av-gmb-act').value.split(',').map(x=>x.trim()).filter(Boolean);}
 function avGmbActToggle(label){
@@ -4018,7 +4061,7 @@ function avGmbActSuggest(q){
    items=(((d.brut||{}).suggestions)||[]).filter(s=>s&&s.type==='gmb')
     .map(s=>({label:String(s.label||'').trim()||String(s.value||'').replace(/^gmb:/,''),cat:String(s.value||'').replace(/^gmb:/,'')})).slice(0,20);
   }catch(_){}
-  if(!items.length){box.style.display='none';return;}
+  if(!items.length){box.innerHTML='<div style="padding:10px 12px;font-size:13px;color:var(--ink-soft)">Pas de catégorie Google officielle pour « '+seg.replace(/</g,'&lt;')+' » — ta saisie partira telle quelle dans la recherche Maps.</div>';box.style.display='block';return;}
   SUGG_ETAT['av-gmb-act-results']={items,rendu:it=>{
    const pris=avGmbActs().some(a=>a.toLowerCase()===it.label.toLowerCase());
    return `<div data-p="${escA(it.label)}" onclick="avGmbActToggle(this.dataset.p);suggAfficher('av-gmb-act-results')" style="padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px${pris?';background:#f0fdf4':''}">${pris?'✓ ':''}${escA(it.label)} <span style="font-size:10.5px;color:var(--ink-soft)">📍 ${escA(it.cat)}</span></div>`;
@@ -4323,13 +4366,13 @@ function avMajGmb(){
  AV_TIMER=setTimeout(avEstimerGmb,900);
 }
 // État Google : pages SerpApi chargées + coches (clé g:<place_id>) ; vu = modale ouverte
-let AV_GMB={pages:[],cur:0,aSuite:false,vu:false,balayes:0};
+let AV_GMB={pages:[],cur:0,aSuite:false,vu:false,balayes:0,lls:{}};
 async function avEstimerGmb(){
  const c=avCritGmb();
  const count=document.getElementById('av-count');
  if(!c.activites.length||!c.villes.length){count.innerHTML='Renseigne une activité et une ou plusieurs villes.';return;}
  count.innerHTML='⏳ Recherche Google (SerpApi)…';
- AV_GMB={pages:[],cur:0,aSuite:false,vu:false,balayes:0};
+ AV_GMB={pages:[],cur:0,aSuite:false,vu:false,balayes:0,lls:{}};
  document.getElementById('av-apercu').style.display='none';
  try{
   const d=await avGmbPage(0);
@@ -4343,9 +4386,10 @@ async function avEstimerGmb(){
 }
 async function avGmbPage(p){
  const c=avCritGmb();
- const r=await api('/api/gmb-serp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'apercu',...c,pays:document.getElementById('av-gmb-pays').value,avis_min:document.getElementById('av-gmb-avismin').value||null,page:p})});
+ const r=await api('/api/gmb-serp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'apercu',...c,pays:document.getElementById('av-gmb-pays').value,avis_min:document.getElementById('av-gmb-avismin').value||null,page:p,lls:AV_GMB.lls})});
  const d=await r.json();
  if(d.erreur){toast('⚠️ '+d.erreur);return null;}
+ if(d.lls)AV_GMB.lls=d.lls; // coordonnées par combinaison — SerpApi les exige pour paginer
  AV_GMB.pages[p]=d.etablissements||[];
  AV_GMB.cur=p;AV_GMB.aSuite=!!d.a_suite;AV_GMB.balayes+=(p>=AV_GMB.pages.length-1?d.balayes||0:0);
  return d;
@@ -4391,7 +4435,7 @@ async function avGenererGmb(nom,sdr){
  AV_EN_COURS=true;
  const btn=document.getElementById('av-btn-gen');btn.disabled=true;btn.textContent='⏳ Google (SerpApi + détails)…';
  try{
-  const r=await api('/api/gmb-serp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'creer',...c,pays:document.getElementById('av-gmb-pays').value,avis_min:document.getElementById('av-gmb-avismin').value||null,selection})});
+  const r=await api('/api/gmb-serp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'creer',...c,pays:document.getElementById('av-gmb-pays').value,avis_min:document.getElementById('av-gmb-avismin').value||null,selection,lls:AV_GMB.lls})});
   const d=await r.json();
   if(d.erreur){toast('Erreur : '+d.erreur);return;}
   const fiches=d.fiches||[];
