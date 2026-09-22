@@ -63,10 +63,22 @@ async function sirensDesListes(ids) {
 }
 
 // Construit les filtres Basile communs (hors siren, géré par lots).
+// DOM : MESURÉ 23/09 (Didier) — result_country_code 'GP' = 0, 'FR' = 889 : Basile classe les
+// DOM sous FR (contrairement à LinkedIn). Les chips 🌴 filtrent donc par VILLES de la personne
+// (result_city, multi-source), « Guadeloupe » inclus car beaucoup de profils ne mettent que la région.
+const DOM_VILLES = {
+  GP: ['Guadeloupe', 'Baie-Mahault', 'Les Abymes', 'Pointe-à-Pitre', 'Basse-Terre', 'Le Gosier', 'Petit-Bourg', 'Sainte-Anne', 'Le Moule', 'Saint-François', 'Capesterre-Belle-Eau', 'Lamentin', 'Sainte-Rose', "Morne-à-l'Eau"],
+  MQ: ['Martinique', 'Fort-de-France', 'Le Lamentin', 'Schoelcher', 'Le Robert', 'Sainte-Marie', 'La Trinité', 'Le François', 'Ducos', 'Rivière-Salée', 'Saint-Joseph'],
+  GF: ['Guyane', 'Guyane française', 'Cayenne', 'Matoury', 'Saint-Laurent-du-Maroni', 'Kourou', 'Remire-Montjoly', 'Macouria'],
+  RE: ['Réunion', 'La Réunion', 'Saint-Denis', 'Saint-Paul', 'Saint-Pierre', 'Le Tampon', 'Saint-André', 'Saint-Louis', 'Le Port', 'Saint-Benoît', 'Saint-Joseph', 'Sainte-Marie'],
+  YT: ['Mayotte', 'Mamoudzou', 'Koungou', 'Dzaoudzi', 'Dembeni']
+};
 function filtresBasile(f, conceptIds, roles) {
   // Pays de la personne (result_country_code) — FR par défaut ; multi possible (BE, CH, LU…),
   // Basile étant une base française, un autre pays peut légitimement compter très peu.
-  const pays = (Array.isArray(f.pays) ? f.pays : []).map(p => String(p || '').trim().toUpperCase()).filter(p => /^[A-Z]{2}$/.test(p)).slice(0, 6);
+  const paysBruts = (Array.isArray(f.pays) ? f.pays : []).map(p => String(p || '').trim().toUpperCase()).filter(p => /^[A-Z]{2}$/.test(p)).slice(0, 6);
+  const dom = paysBruts.filter(p => DOM_VILLES[p]);
+  const pays = paysBruts.filter(p => !DOM_VILLES[p]);
   const b = { result_country_code: { include: pays.length ? pays : ['FR'] }, hide_legal_entities: true };
   if (roles.length) b.result_role = { include: roles };
   // Intitulés EXCLUS (wireframe v2 : postes ciblés Inclure/Exclure façon Sales Nav)
@@ -77,6 +89,7 @@ function filtresBasile(f, conceptIds, roles) {
   // people/find (region/département n'existent pas ; result_postal_code est Legal-only et
   // exclurait LinkedIn). Pour une zone entière : filtre « lieu du siège » (voie SIREN).
   const villes = (Array.isArray(f.villes) ? f.villes : []).map(v => String(v || '').trim()).filter(Boolean).slice(0, 15);
+  for (const d of dom) for (const v of DOM_VILLES[d]) if (!villes.includes(v)) villes.push(v);
   if (villes.length) b.result_city = { include: villes };
   // La personne (wireframe v2) : prénom / nom / entreprise actuelle (employer exact+contains,
   // même pattern que personas.js — multi-source, marche aussi en voie directe)
@@ -276,7 +289,8 @@ export default async function handler(req, res) {
     }
     const aVilles = Array.isArray(filtres.villes) && filtres.villes.some(v => String(v || '').trim());
     const aPersonne = !!(String(filtres.prenom || '').trim() || String(filtres.nom_personne || '').trim() || String(filtres.entreprise || '').trim());
-    if (!roles.length && !conceptIds.length && !sirens.length && !aVilles && !aPersonne) {
+    const aDom = Array.isArray(filtres.pays) && filtres.pays.some(p => DOM_VILLES[String(p || '').trim().toUpperCase()]); // un DOM injecte des villes
+    if (!roles.length && !conceptIds.length && !sirens.length && !aVilles && !aPersonne && !aDom) {
       return res.status(400).json({ erreur: 'Ajoute au moins un filtre (secteur, poste, ville ou liste de comptes) — sans quoi la recherche couvrirait toute la France.' });
     }
     const base = filtresBasile(filtres, conceptIds, roles);

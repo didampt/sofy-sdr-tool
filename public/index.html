@@ -786,6 +786,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
                   <div id="av-villes-chips" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
                   <div style="font-size:12.5px;font-weight:600;margin:10px 0 6px">Pays</div>
                   <div id="av-pays-chips" class="chips"></div>
+                <p class="hint" id="av-pays-note" style="display:none;margin-top:6px">🌴 Les DOM filtrent par les villes de la personne (Basile les classe sous FR) — le comptage dit ce que ça donne.</p>
                 </div>
               </div>
               <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
@@ -3681,6 +3682,7 @@ function avRendreChips(){
  // (test comparatif Sales Nav de Didier : « Guadeloupe » y est une zone géographique à part)
  document.getElementById('av-pays-chips').innerHTML=[['FR','🇫🇷 FR'],['BE','🇧🇪 BE'],['CH','🇨🇭 CH'],['LU','🇱🇺 LU'],['GP','🌴 Guadeloupe'],['MQ','🌴 Martinique'],['GF','🌴 Guyane'],['RE','🌴 Réunion'],['YT','🌴 Mayotte']].map(([p,l])=>
   `<button class="chip${AV.paysP.includes(p)?' sel':''}" onclick="avTogglePays('${p}')">${l}</button>`).join('');
+ const notePays=document.getElementById('av-pays-note');if(notePays)notePays.style.display=(AV.paysP||[]).some(p=>['GP','MQ','GF','RE','YT'].includes(p))?'block':'none';
  // Entreprises : NAF + effectif + zones
  AV.ent.nafs=AV.ent.nafs||[];
  document.getElementById('av-ent-naf-chips').innerHTML=AV.ent.nafs.map((n,k)=>
@@ -3868,7 +3870,8 @@ function avMaj(){
  if(AV.onglet!=='prospects')return;
  clearTimeout(AV_TIMER);
  const f=avFiltres();
- if(!f.concept_ids.length&&!f.postes.length&&!f.decideur&&!f.listes_ids.length&&!f.villes.length&&!f.prenom&&!f.nom_personne&&!f.entreprise)return;
+ const domSeul=(f.pays||[]).some(p=>['GP','MQ','GF','RE','YT'].includes(p));
+ if(!f.concept_ids.length&&!f.postes.length&&!f.decideur&&!f.listes_ids.length&&!f.villes.length&&!f.prenom&&!f.nom_personne&&!f.entreprise&&!domSeul)return;
  AV_TIMER=setTimeout(avApercu,800);
 }
 /* ── Aperçus paginés PAR PAGES (cache front : ‹ › naviguent dans les pages chargées, la

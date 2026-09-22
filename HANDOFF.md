@@ -1,5 +1,16 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 23 septembre 2026)
 
+## 🎯 23 septembre 2026 — DOM : result_country_code 'GP' = 0 chez Basile → les chips 🌴 filtrent par VILLES
+
+Mesure Didier : « directeur achats » × pays GP = 0, × FR = 889 → Basile classe les DOM sous FR
+(contrairement à LinkedIn qui en fait des zones distinctes). Fix : les chips 🌴 (GP/MQ/GF/RE/YT)
+injectent les VILLES du DOM dans result_city (multi-source) — « Guadeloupe »/« Martinique »…
+inclus en tête car beaucoup de profils ne mettent que la région — et le pays reste FR
+(DOM_VILLES dans recherche.js, ~10-14 villes/DOM). Un DOM coché seul est un filtre suffisant
+(gardes front ET serveur). Hint sous les chips. ⚠️ result_city sur ces valeurs : à confirmer au
+comptage prod (« directeur achats × 🌴 Guadeloupe » doit sortir Vincent Boulogne).
+Banc M/M2 (villes=14 injectées, pays=FR, DOM seul accepté).
+
 ## 🎯 23 septembre 2026 — test comparatif Sales Nav (cas Vincent Boulogne) : la sortie « sans secteur » + DOM en pays personne
 
 Test Didier : Sales Nav « Développement commercial × Guadeloupe » trouve Vincent Boulogne
