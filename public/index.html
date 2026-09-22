@@ -3710,7 +3710,7 @@ function avRendrePage(qui,fn,entete){
 async function avApercu(page){
  const count=document.getElementById('av-count'),box=document.getElementById('av-apercu');
  const P=AV_PAG.pro;
- const reset=(page===undefined);
+ const reset=(page===undefined||page===false);
  if(reset){P.pages=[];P.cur=0;P.suite=null;count.innerHTML='⏳ Comptage en cours (gratuit)…';}
  else if(page<0)return;
  else if(page<P.pages.length){P.cur=page;avRendrePage('pro','avApercu',AV_ENTETE_PRO);return;}
@@ -3736,7 +3736,7 @@ async function avApercu(page){
    const enPlus=applique.length>AV.concepts.length?applique.slice(AV.concepts.length):[];
    count.innerHTML=`<div style="display:flex;gap:22px;align-items:center;flex-wrap:wrap">
     <div><div style="font-size:12px;color:var(--ink-soft)">Prospects correspondants</div><div style="font-size:30px;font-weight:800;color:var(--ink)">${(d.total||0).toLocaleString('fr-FR')}</div></div>
-    <div style="font-size:12.5px;line-height:1.55;color:var(--ink-soft)">${(d.total_lki!=null&&d.total_legal!=null)?`<b style="color:#0369a1">💼 LinkedIn ${d.total_lki.toLocaleString('fr-FR')}</b> · <b style="color:#0f766e">🏛️ registre ${d.total_legal.toLocaleString('fr-FR')}</b><br>`:''}comptage gratuit, recalculé à chaque filtre${d.nb_sirens?`<br>recherche sur les <b>${d.nb_sirens}</b> entreprises de tes listes`:''}${doublons?`<br>♻️ ${doublons} déjà extrait(s) — décochés`:''}</div>
+    <div style="font-size:12.5px;line-height:1.55;color:var(--ink-soft)">${(d.total_lki!=null&&d.total_legal!=null)?`<b style="color:#0369a1">💼 LinkedIn ${d.total_lki.toLocaleString('fr-FR')}${d.total_lki_partiel?' (sur les 90 premières entreprises'+(d.nb_entreprises_secteur?' des '+d.nb_entreprises_secteur.toLocaleString('fr-FR')+' du secteur':'')+')':''}</b> · <b style="color:#0f766e">🏛️ registre ${d.total_legal.toLocaleString('fr-FR')}</b><br>`:''}comptage gratuit, recalculé à chaque filtre${d.nb_sirens?`<br>recherche sur les <b>${d.nb_sirens}</b> entreprises de tes listes`:''}${doublons?`<br>♻️ ${doublons} déjà extrait(s) — décochés`:''}</div>
     ${(d.total_sans_effectif&&d.total_sans_effectif>(d.total||0))?`<div style="font-size:12.5px;background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:8px 12px;color:#7a5510">📉 ton filtre effectif cache <b>${(d.total_sans_effectif-(d.total||0)).toLocaleString('fr-FR')}</b> personne(s) (effectif employeur inconnu)</div>`:''}
     ${enPlus.length?`<div style="font-size:12px;color:var(--ink-soft);width:100%">🔎 Secteur élargi automatiquement (registre ⇄ LinkedIn/Google) : ${enPlus.slice(0,4).map(esc).join(', ')}${enPlus.length>4?' (+'+(enPlus.length-4)+')':''}</div>`:''}
     ${alerteConcepts}
@@ -3762,7 +3762,7 @@ let AV_ENT_TOTAL=null;
 async function avApercuEnt(page){
  const box=document.getElementById('av-apercu');
  const P=AV_PAG.ent;
- const reset=(page===undefined);
+ const reset=(page===undefined||page===false);
  if(!AV_ENT_SIRENS.length){box.style.display='none';return;}
  if(reset){P.pages=[];P.cur=0;P.suite=null;AV_ENT_LEADS=new Map();AV_ENT_TOTAL=null;box.innerHTML='<div style="padding:12px 16px;font-size:13px;color:var(--ink-soft)">⏳ Recherche des décideurs des entreprises trouvées…</div>';box.style.display='block';}
  else if(page<0)return;

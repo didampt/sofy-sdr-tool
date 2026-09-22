@@ -116,6 +116,25 @@ filtres manuels façon Sales Navigator, mixe Pappers × Basile × IA.
   (b) comptage 14 148 (tout registre) mais GÉNÉRATION 0 sur 68.31Z + décideur — divergence
   compter/générer côté serveur à reproduire avec le snippet generer nb:10 (profils_parcourus dira
   si la boucle reçoit des leads).
+- **VERDICT DE LA MATRICE (Didier, 22/09 soir — 68.31Z × Directeur Commercial)** :
+  concept_lki=0/concept_legal=18773 et role_legal=0/role_lki=25048 → `activity` (naf:) est
+  REGISTRE-ONLY et un intitulé précis est LINKEDIN-ONLY (le registre n'a que des mandats) →
+  **secteur NAF × poste précis = 0 PAR CONSTRUCTION en voie directe**. Le test generer nb:10
+  rendait 10 fiches : la génération marchait, c'est l'APERÇU qui se cachait (page LinkedIn vide
+  au 1er appel + bug `avApercuEnt(false)` traité comme non-reset). Correctifs :
+  ① **Voie « entreprises → SIREN → personnes » pour la part LinkedIn** dès qu'un secteur NAF est
+  posé (`lkiParSiren`) : companies/find naf_code (marche sur les ENTREPRISES) → SIREN →
+  people/find par lots de 30 avec `with_linkedin_profile` + roles (les salariés LinkedIn arrivent
+  par SIREN — GBH 757). Aperçu : comptage LinkedIn VRAI mais PARTIEL (90 premières entreprises,
+  `total_lki_partiel` + `nb_entreprises_secteur` affichés) ; pages = lots de 30 entreprises,
+  `apercu_suite {phase:'lki', lot, entToken}`. Génération : boucles de 300 SIREN (≤6, curseur
+  persistant `{entToken}` clé s:lki_siren), puis registre en complément. `activity` ne sert plus
+  qu'au REGISTRE. ② Page LinkedIn vide au 1er appel (mode deux) → page registre servie dans le
+  MÊME appel. ③ Fix front : reset des aperçus accepte `false` (les appels avApercuEnt(false)
+  tombaient dans un trou → « zéro personas » sur l'onglet Entreprises). Banc scénarios 12-14.
+  ⚠️ Volumétrie voie SIREN en génération : 87 000 entreprises → 6×300 SIREN/appel serveur, le
+  front enchaîne 4 appels → jusqu'à ~7 200 entreprises couvertes par génération ; le curseur
+  persistant continue au prochain run. Coût : appels Basile uniquement (gratuits/0,01 €).
 - ⚠️ Affinage restant (constat aperçu Didier) : l'élargissement lki: par libellé NAF long ramène
   du hors-secteur. Piste : élargir CÔTÉ FRONT au clic (chips lki: visibles et retirables) plutôt
   que silencieusement côté serveur. Non fait.

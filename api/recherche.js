@@ -86,6 +86,31 @@ function filtresBasile(f, conceptIds, roles) {
 
 const LOT_SIREN = 30;
 
+// ── Voie « entreprises → SIREN → personnes » pour la part LinkedIn ──────────────────────────
+// MATRICE PROD DU 22/09 (test Didier, 68.31Z × Directeur Commercial) : le filtre `activity`
+// (concepts naf:) est REGISTRE-ONLY (lki=0) et `result_role` avec un intitulé précis est
+// LINKEDIN-ONLY (legal=0, le registre n'a que des mandats) → secteur NAF × poste précis = 0
+// PAR CONSTRUCTION en voie directe. La seule voie qui atteint les salariés LinkedIn d'un
+// secteur NAF : companies/find (naf_code marche sur les ENTREPRISES) → SIREN → people/find
+// par lots de SIREN (qui ramène bien les salariés LinkedIn — validé sur GBH : 757, 100 % LKI).
+function nafDepuisConcepts(ids) {
+  return ids.filter(x => x.startsWith('naf:')).map(x => x.slice(4)).slice(0, 4);
+}
+function sansActivity(o) { const c = { ...o }; delete c.activity; return c; }
+async function sirensParNaf(nafs, key, limit, token) {
+  const body = { limit, filters: { naf_code: { include: nafs }, company_ceased: false } };
+  if (token) body.paginationToken = token;
+  const r = await basile('/companies/find', body, key);
+  const d = r.data || {};
+  const sirens = [];
+  for (const co of (d.companies || d.leads || d.results || [])) {
+    const x = co.data || co || {};
+    const s = String(x.siren || x.siren_number || '').replace(/\D/g, '');
+    if (s.length === 9 && !sirens.includes(s)) sirens.push(s);
+  }
+  return { sirens, next: (d.pagination && d.pagination.nextToken) || null, total: d.total || 0 };
+}
+
 export default async function handler(req, res) {
   const user = verifierToken(req);
   if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
@@ -147,6 +172,17 @@ export default async function handler(req, res) {
       return res.status(400).json({ erreur: 'Ajoute au moins un filtre (secteur, poste, ville ou liste de comptes) — sans quoi la recherche couvrirait toute la France.' });
     }
     const base = filtresBasile(filtres, conceptIds, roles);
+    // Part LinkedIn par la voie « entreprises → SIREN → personnes » dès qu'un secteur NAF est
+    // posé sans SIREN explicites : la voie directe activity×role est structurellement vide
+    // (matrice du 22/09). S'il existe des concepts lki: on tente quand même la voie directe en
+    // PLUS ? Non : la voie SIREN couvre aussi ces cas (les entreprises du NAF portent leurs
+    // salariés) — plus simple et cohérent. Les concepts lki:/gmb: restent utiles au comptage
+    // registre ? Non plus (activity=Legal-only ≠ lki:). On garde activity pour le REGISTRE
+    // (concepts naf:) et la voie SIREN pour LINKEDIN.
+    const nafsConcepts = nafDepuisConcepts(conceptIds);
+    const lkiParSiren = !sirens.length && nafsConcepts.length > 0;
+    // Filtres de la voie SIREN côté personnes : tout SAUF activity (Legal-only, redondant)
+    const baseLkiSiren = sansActivity(avecSource(base, 'lki'));
 
     // Source des contacts : 'lki' (profils LinkedIn seuls), 'legal' (dirigeants du registre),
     // 'deux' (défaut : LinkedIn D'ABORD, registre en complément). Sans ça, « N'importe quel
@@ -193,40 +229,81 @@ export default async function handler(req, res) {
         if (lot0 + 1 < nbLots) prochaineSuite = { phase: 'siren', lot: lot0 + 1 };
       } else {
         const phase0 = suite ? suite.phase : (source === 'legal' ? 'legal' : 'lki');
-        const token0 = suite ? (suite.token || null) : null;
+        let nbEntSecteur = null, lkiPartiel = false;
         if (!suite) {
-          // Comptages par source, une seule fois
-          const rC1 = await basile('/people/find', { limit: 1, filters: avecSource(base, 'lki') }, key);
-          if (rC1.status === 401) return res.status(502).json({ erreur: 'Clé Basile refusée' });
+          // Comptages, une seule fois. Part LinkedIn : voie directe (sans secteur NAF) ou voie
+          // SIREN (comptage sur les 90 premières entreprises du secteur — partiel mais VRAI).
           const rC2 = await basile('/people/find', { limit: 1, filters: avecSource(base, 'legal') }, key);
-          totalLki = (rC1.data && rC1.data.total) || 0;
+          if (rC2.status === 401) return res.status(502).json({ erreur: 'Clé Basile refusée' });
           totalLegal = (rC2.data && rC2.data.total) || 0;
+          if (lkiParSiren) {
+            const ent = await sirensParNaf(nafsConcepts, key, 90, null);
+            nbEntSecteur = ent.total; lkiPartiel = !!ent.next;
+            totalLki = 0;
+            for (let i = 0; i < ent.sirens.length; i += LOT_SIREN) {
+              const rc = await basile('/people/find', { limit: 1, filters: { ...baseLkiSiren, siren: { include: ent.sirens.slice(i, i + LOT_SIREN) } } }, key);
+              if (rc.data && rc.data.success !== false) totalLki += rc.data.total || 0;
+            }
+          } else {
+            const rC1 = await basile('/people/find', { limit: 1, filters: avecSource(base, 'lki') }, key);
+            totalLki = (rC1.data && rC1.data.total) || 0;
+          }
           total = source === 'lki' ? totalLki : source === 'legal' ? totalLegal : totalLki + totalLegal;
-          if (base.company_headcount) {
+          if (base.company_headcount && !lkiParSiren) {
             const sans = avecSource(base, source === 'deux' ? 'lki' : source); delete sans.company_headcount;
             const r2 = await basile('/people/find', { limit: 1, filters: sans }, key);
-            if (r2.data && r2.data.total != null) {
-              totalSansEffectif = r2.data.total;
-              if (source === 'deux') {
-                const sansLeg = avecSource(base, 'legal'); delete sansLeg.company_headcount;
-                const r3 = await basile('/people/find', { limit: 1, filters: sansLeg }, key);
-                if (r3.data && r3.data.total != null) totalSansEffectif += r3.data.total;
-              }
-            }
+            if (r2.data && r2.data.total != null) totalSansEffectif = r2.data.total;
           }
         }
-        // Page de 20 sur la phase courante ; phase lki épuisée → passe au registre (mode 'deux')
-        const body = { limit: 20, filters: avecSource(base, phase0) };
-        if (token0) body.paginationToken = token0;
-        const rP = await basile('/people/find', body, key);
-        if (!rP.data || rP.data.success === false) {
-          if (!suite) return res.status(502).json({ erreur: 'Recherche Basile échouée' });
-        } else {
+        // Page de leads sur la phase courante
+        async function pageLegal(token) {
+          const body = { limit: 20, filters: avecSource(base, 'legal') };
+          if (token) body.paginationToken = token;
+          const rP = await basile('/people/find', body, key);
+          if (!rP.data || rP.data.success === false) return false;
           leadsBruts = rP.data.leads || [];
           const next = (rP.data.pagination && rP.data.pagination.nextToken) || null;
-          if (next) prochaineSuite = { phase: phase0, token: next };
-          else if (phase0 === 'lki' && source === 'deux') prochaineSuite = { phase: 'legal', token: null };
+          prochaineSuite = next ? { phase: 'legal', token: next } : null;
+          return true;
         }
+        if (phase0 === 'legal') {
+          if (!await pageLegal(suite ? suite.token : null) && !suite) return res.status(502).json({ erreur: 'Recherche Basile échouée' });
+        } else if (lkiParSiren) {
+          // Page LinkedIn = un lot de 30 entreprises du secteur (déterministe : même page
+          // companies/find rechargée via entToken, puis lot N)
+          const entToken = suite ? (suite.entToken || null) : null;
+          const lot = suite ? (suite.lot || 0) : 0;
+          const ent = await sirensParNaf(nafsConcepts, key, 90, entToken);
+          const lotSirens = ent.sirens.slice(lot * LOT_SIREN, (lot + 1) * LOT_SIREN);
+          if (lotSirens.length) {
+            const rP = await basile('/people/find', { limit: 100, filters: { ...baseLkiSiren, siren: { include: lotSirens } } }, key);
+            if (rP.data && rP.data.success !== false) leadsBruts = rP.data.leads || [];
+          }
+          const nbLots = Math.ceil(ent.sirens.length / LOT_SIREN);
+          if (lot + 1 < nbLots) prochaineSuite = { phase: 'lki', lot: lot + 1, entToken };
+          else if (ent.next) prochaineSuite = { phase: 'lki', lot: 0, entToken: ent.next };
+          else if (source === 'deux') prochaineSuite = { phase: 'legal', token: null };
+        } else {
+          const body = { limit: 20, filters: avecSource(base, 'lki') };
+          if (suite && suite.token) body.paginationToken = suite.token;
+          const rP = await basile('/people/find', body, key);
+          if (!rP.data || rP.data.success === false) {
+            if (!suite) return res.status(502).json({ erreur: 'Recherche Basile échouée' });
+          } else {
+            leadsBruts = rP.data.leads || [];
+            const next = (rP.data.pagination && rP.data.pagination.nextToken) || null;
+            if (next) prochaineSuite = { phase: 'lki', token: next };
+            else if (source === 'deux') prochaineSuite = { phase: 'legal', token: null };
+          }
+        }
+        // Page LinkedIn VIDE au 1er appel en mode 'deux' → enchaîner tout de suite sur le
+        // registre (avant : l'aperçu se cachait alors que le registre avait des milliers de
+        // personnes — « aucun personas », retour Didier du 22/09 au soir).
+        if (!suite && source === 'deux' && phase0 !== 'legal' && !leadsBruts.length) {
+          await pageLegal(null);
+        }
+        if (nbEntSecteur != null) { /* exposés dans la réponse ci-dessous */ }
+        var _nbEntSecteur = nbEntSecteur, _lkiPartiel = lkiPartiel;
       }
 
       // Total 0 avec des concepts secteur : lequel est « mort » côté PERSONNES ? (constaté en prod
@@ -264,6 +341,8 @@ export default async function handler(req, res) {
         concepts_zero: conceptsZero, // ids sans AUCUNE personne (null si total > 0)
         nb_roles: roles.length,
         nb_sirens: sirens.length || null,
+        nb_entreprises_secteur: (typeof _nbEntSecteur !== 'undefined' && _nbEntSecteur != null) ? _nbEntSecteur : null,
+        total_lki_partiel: (typeof _lkiPartiel !== 'undefined') ? !!_lkiPartiel : false, // LinkedIn compté sur les 90 premières entreprises seulement
         apercu_suite: prochaineSuite, // à repasser tel quel pour la page suivante (null = fin)
         leads
       });
@@ -318,6 +397,37 @@ export default async function handler(req, res) {
       let toutEpuise = true;
       for (const src of sources) {
         if (fiches.length >= cap || !tempsOk()) { toutEpuise = false; break; }
+        // Part LinkedIn d'un secteur NAF : voie entreprises → SIREN → personnes (cf. en-tête).
+        if (src === 'lki' && lkiParSiren) {
+          const cleE = 'av_curseur_' + hashDe({ n: nafsConcepts, r: [...roles].sort(), e: base.company_headcount || null, v: (base.result_city && base.result_city.include) || null, s: 'lki_siren' });
+          let curE = null;
+          if (sql) { try { const r = await sql`SELECT valeur FROM config WHERE cle = ${cleE}`; curE = (r.length && r[0].valeur) || null; } catch (_) {} }
+          if (curE && curE.epuise) curE = null;
+          let entToken = (curE && curE.entToken) || null;
+          let epuiseSrc = false;
+          for (let b = 0; b < 6; b++) {
+            if (!tempsOk() || fiches.length >= cap) break;
+            const ent = await sirensParNaf(nafsConcepts, key, 300, entToken);
+            if (!ent.sirens.length) { epuiseSrc = true; break; }
+            for (let i = 0; i < ent.sirens.length; i += LOT_SIREN) {
+              if (!tempsOk() || fiches.length >= cap) break;
+              const rP = await basile('/people/find', { limit: 100, filters: { ...baseLkiSiren, siren: { include: ent.sirens.slice(i, i + LOT_SIREN) } } }, key);
+              if (!rP.data || rP.data.success === false) continue;
+              pages++;
+              absorber(rP.data.leads || []);
+            }
+            entToken = ent.next;
+            if (!entToken) { epuiseSrc = true; break; }
+          }
+          if (sql) {
+            try {
+              const val = JSON.stringify({ entToken, epuise: epuiseSrc, maj: new Date().toISOString() });
+              await sql`INSERT INTO config (cle, valeur) VALUES (${cleE}, ${val}) ON CONFLICT (cle) DO UPDATE SET valeur = ${val}`;
+            } catch (_) {}
+          }
+          if (!epuiseSrc) toutEpuise = false;
+          continue;
+        }
         const fSrc = avecSource(base, src);
         const cle = 'av_curseur_' + hashDe({ r: [...roles].sort(), a: conceptIds, e: base.company_headcount || null, v: (base.result_city && base.result_city.include) || null, s: src });
         let cur = null;
