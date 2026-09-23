@@ -638,7 +638,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
           <select class="field" id="lemimp-sdr" style="width:160px"></select>
           <button class="btn btn-primary" id="lemimp-btn" onclick="lemImpCreer()">📥 Créer la liste d'appel</button>
         </div>
-        <p class="hint" style="margin-top:8px">Les contacts déjà présents dans une liste SofyScrap sont signalés et écartés · ceux connus de HubSpot sont marqués (pas ré-enrichis). Lance ensuite 🚀 sur la liste : analyse Google, registre (SIREN, tél standard), scoring.</p>
+        <p class="hint" style="margin-top:8px">Filtre automatique : déjà dans une liste SofyScrap ♻️ ou connu de HubSpot 🔶 (par email, téléphone ou LinkedIn) = décoché d'office — recochable si besoin. Lance ensuite 🚀 sur la liste : analyse Google (fiche, note, pire avis), registre (SIREN, tél standard) — pas de scoring IA (le SDR a déjà qualifié dans Lemlist) — puis 📤 pour renvoyer le contexte dans la campagne.</p>
       </div>
       <div id="mode-gmb" style="display:none;max-width:640px">
         <div class="head-row">
@@ -10843,11 +10843,14 @@ async function lemImpCharger(){
    const rd=await api('/api/dedup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contacts})});
    const rez=((await rd.json())||{}).resultats||{};
    for(const f of LEMIMP.fiches)for(const c of f.contacts){
-    const rr=rez[((c.prenom||'')+' '+(c.nom||'')).trim().toLowerCase()];
+    // La clé de /api/dedup est l'email normalisé QUAND il existe, sinon « prénom nom »
+    const rr=rez[String((c.enrich&&c.enrich.email)||'').toLowerCase()]||rez[((c.prenom||'')+' '+(c.nom||'')).trim().toLowerCase()];
     if(rr){if(rr.liste){f.dedup_liste=rr.liste;}if(rr.hubspot){f.dedup_hubspot=rr.hubspot;f.skip_enrich=true;}}
    }
   }catch(_){}
-  for(const f of LEMIMP.fiches)if(f.dedup_liste)LEMIMP.decoches.add(f.nom.toLowerCase());
+  // FILTRE (Didier 23/09) : déjà dans une liste SofyScrap OU connu de HubSpot → décoché
+  // d'office (pas de doublon d'appel, pas de ré-enrichissement) ; le SDR peut recocher.
+  for(const f of LEMIMP.fiches)if(f.dedup_liste||f.dedup_hubspot)LEMIMP.decoches.add(f.nom.toLowerCase());
   lemImpRendu();
  }catch(e){info.innerHTML='⚠️ Erreur réseau : '+e.message;}
 }
@@ -10855,8 +10858,9 @@ function lemImpRendu(){
  const info=document.getElementById('lemimp-info'),box=document.getElementById('lemimp-apercu');
  const esc=s=>String(s||'').replace(/</g,'&lt;');
  const dejaListe=LEMIMP.fiches.filter(f=>f.dedup_liste).length;
+ const dejaHub=LEMIMP.fiches.filter(f=>f.dedup_hubspot&&!f.dedup_liste).length;
  const coches=LEMIMP.fiches.filter(f=>!LEMIMP.decoches.has(f.nom.toLowerCase())).length;
- info.innerHTML=`<b>${LEMIMP.leads.length}</b> lead(s) · <b>${LEMIMP.fiches.length}</b> entreprise(s) — <b>${coches}</b> cochée(s)${dejaListe?` · ♻️ ${dejaListe} déjà dans une liste (décochées)`:''}${LEMIMP.sansEmail?` · ✉️ ${LEMIMP.sansEmail} sans email (pas bloquant : « Trouver l'email » pas encore lancé côté Lemlist)`:''}`;
+ info.innerHTML=`<b>${LEMIMP.leads.length}</b> lead(s) · <b>${LEMIMP.fiches.length}</b> entreprise(s) — <b>${coches}</b> cochée(s)${dejaListe?` · ♻️ ${dejaListe} déjà dans une liste (décochées)`:''}${dejaHub?` · 🔶 ${dejaHub} connue(s) HubSpot (décochées)`:''}${LEMIMP.sansEmail?` · ✉️ ${LEMIMP.sansEmail} sans email (pas bloquant : « Trouver l'email » pas encore lancé côté Lemlist)`:''}`;
  box.innerHTML=LEMIMP.fiches.map(f=>{
   const cle=esc(f.nom.toLowerCase()).replace(/"/g,'&quot;');
   const coche=!LEMIMP.decoches.has(f.nom.toLowerCase());

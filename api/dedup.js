@@ -79,6 +79,30 @@ async function hubspotParTel(tel, token) {
   return null;
 }
 
+// ── Recherche HubSpot par URL LinkedIn (best-effort) — indispensable pour les leads importés
+// de Lemlist (People Database) qui n'ont encore NI email NI téléphone (demande Didier 23/09).
+// On teste les deux propriétés où une URL LinkedIn peut vivre : hs_linkedin_url (récente)
+// et linkedinbio (historique). CONTAINS_TOKEN sur le slug : les tokens du slug
+// (jean-dupont-123 → jean, dupont, 123) doivent tous être dans l'URL stockée.
+async function hubspotParLinkedin(slug, token) {
+  if (!slug) return null;
+  for (const prop of ['hs_linkedin_url', 'linkedinbio']) {
+    try {
+      const r = await fetch('https://api.hubapi.com/crm/v3/objects/contacts/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ filterGroups: [{ filters: [{ propertyName: prop, operator: 'CONTAINS_TOKEN', value: slug }] }], properties: ['lifecyclestage', 'hubspot_owner_id'], limit: 1 })
+      });
+      const data = await r.json().catch(() => ({}));
+      if (r.ok && data.total) {
+        const p = data.results[0].properties || {};
+        return { stage: p.lifecyclestage || 'inconnu', owner: p.hubspot_owner_id || null, via: 'linkedin' };
+      }
+    } catch (_) {}
+  }
+  return null;
+}
+
 export default async function handler(req, res) {
   const user = verifierToken(req);
   if (!user) return res.status(401).json({ erreur: 'Non authentifié' });
@@ -151,6 +175,11 @@ export default async function handler(req, res) {
         // Sinon (ou en complément) le téléphone
         if (it.tel) {
           const h = await hubspotParTel(it.tel.e164, token);
+          if (h) { resultats[it.cle].hubspot = h; return; }
+        }
+        // Dernier recours : l'URL LinkedIn (leads Lemlist People Database sans email ni tel)
+        if (it.linkedin) {
+          const h = await hubspotParLinkedin(it.linkedin, token);
           if (h) resultats[it.cle].hubspot = h;
         }
       }));

@@ -1,5 +1,23 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 23 septembre 2026)
 
+## 🛡️ 23 septembre 2026 — filtre HubSpot/SofyScrap RENFORCÉ à l'import Lemlist (demande Didier)
+
+« Filtrer avec la base HubSpot et SofyScrap pour éviter les doublons et l'enrichissement » :
+- **api/dedup.js** : recherche HubSpot par **URL LinkedIn** (hubspotParLinkedin — propriétés
+  hs_linkedin_url puis linkedinbio, CONTAINS_TOKEN sur le slug) en dernier recours après
+  email et téléphone — indispensable pour les leads People Database SANS email ni tel.
+  Ordre : email → tel → linkedin, on s'arrête au premier match (via: 'linkedin' dans le retour).
+- **Front import** : les connus HubSpot sont maintenant DÉCOCHÉS d'office (comme les doublons
+  de listes), compteur 🔶 dédié ; recochables par le SDR.
+- **BUG corrigé au passage** : la réponse de /api/dedup est indexée par EMAIL quand le lead
+  en a un (cleContact), or lemImpCharger ne cherchait que par « prénom nom » → les doublons
+  AVEC email passaient au travers. Lookup email d'abord, nom ensuite.
+- Bancs : test-dedup-linkedin.mjs (match linkedinbio, non-match, email prioritaire sans appel
+  linkedin) ; smoke navigateur (HubSpot par email décoché + skip_enrich, 3 compteurs).
+PIÈGE : le match LinkedIn suppose que le HubSpot stocke l'URL dans hs_linkedin_url ou
+linkedinbio — à vérifier sur le vrai portail (si aucune fiche n'a ces propriétés, le filtre
+LinkedIn ne matchera jamais, silencieusement).
+
 ## 🎯 23 septembre 2026 — push RETOUR vers Lemlist + scoring coupé sur les imports (GO Didier)
 
 Vision actée avec Didier : le SDR source dans Lemlist et Y APPELLE ; SofyScrap fournit le
