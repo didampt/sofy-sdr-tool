@@ -735,8 +735,9 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
                   <input class="field" id="av-poste-libre" placeholder="Intitulé de poste… (suggestions Basile)" style="width:100%" autocomplete="off" oninput="avPosteSuggest(this.value)" onkeydown="if(event.key==='Enter'){avAjouterPoste(this.value,'inclure');this.value='';document.getElementById('av-poste-results').style.display='none';}">
                   <div id="av-poste-results" style="display:none;position:absolute;left:0;right:0;top:44px;background:#fff;border:1px solid var(--line);border-radius:10px;z-index:12;overflow-y:auto;max-height:340px;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div>
                 </div>
+                <div id="av-fonctions-chips" class="chips" style="margin-top:8px"></div>
                 <div id="av-postes-chips" style="margin-top:8px;display:flex;flex-direction:column;gap:5px"></div>
-                <p class="hint" style="margin-top:6px">Intitulés proposés par Basile (ceux qui existent vraiment). Inclure = OU · Exclure = écarté.</p>
+                <p class="hint" style="margin-top:6px">🎯 Une <b>Fonction</b> = un pack de mots-clés façon Sales Nav (ajoutés en chips, retirables). Inclure = OU · Exclure = écarté.</p>
               </div>
               <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
                 <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">2 · Secteur / activité <span style="font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:99px;background:#d1fae5;color:#0f766e">NAF PAPPERS</span></div>
@@ -3662,6 +3663,10 @@ function avRendreChips(){
  AV.lieux=AV.lieux||[];
  document.getElementById('av-lieux-chips').innerHTML=AV.lieux.map((l,k)=>
   `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;font-size:12.5px;background:${l.mode==='exclure'?'#fef2f2':'#f0fdf4'}"><b style="flex-grow:1">${esc(l.valeur)}</b><span style="font-size:11px;font-weight:800;color:${l.mode==='exclure'?'#b91c1c':'#15803d'}">${l.mode==='exclure'?'✕ EXCLU':'✓ INCLUS'}</span><a style="font-size:11px;cursor:pointer" onclick="AV.lieux.splice(${k},1);avRendreChips();avMaj()">retirer</a></div>`).join('');
+ // Fonctions façon Sales Nav (packs) — mini-chips 🎯 (rendues une fois)
+ const bf=document.getElementById('av-fonctions-chips');
+ if(bf&&!bf.childElementCount)bf.innerHTML=FONCTIONS_SN.map(f=>
+  `<button class="chip" style="font-size:12px" data-f="${esc(f[0])}" onclick="avAjouterFonction(this.dataset.f)" title="${esc(f[1].join(', '))}">🎯 ${esc(f[0])}</button>`).join('');
  // Postes : chip décideur (exclusif des intitulés inclus) + lignes inclure/exclure façon lieux
  AV.postesEx=AV.postesEx||[];
  document.getElementById('av-postes-chips').innerHTML=
@@ -3699,6 +3704,36 @@ function avRendreChips(){
  document.getElementById('av-ent-zones-chips').innerHTML=['France métropolitaine','Guadeloupe','Martinique','Guyane française','Réunion','Mayotte'].map(z=>
   `<button class="chip${AV.ent.zones.includes(z)?' sel':''}" onclick="avToggleZone('${z}')">${z}</button>`).join('');
 }
+// 🎯 FONCTIONS façon Sales Nav (demande Didier 23/09 : « il faut que SofyScrap remplace ça » —
+// Étienne cherche par FONCTION, une taxonomie qui regroupe des dizaines d'intitulés). Un pack =
+// des mots-clés « ~ contient » (mesuré : 1 token = contains chez Basile) + des intitulés exacts.
+// Le clic AJOUTE les chips une à une : tout reste visible et retirable, pas de boîte noire.
+const FONCTIONS_SN=[
+ ['Développement commercial',['~commercial','~vente','~sales','Business Developer','Business Development Manager','Account Manager','Account Executive','Responsable du développement','Chargé de développement']],
+ ['Achats',['~achat','~acheteur','~sourcing','~procurement','Supply Chain Manager','Responsable approvisionnement']],
+ ['Marketing / Communication',['~marketing','~communication','~growth','~brand','Chef de produit']],
+ ['Direction générale',['~fondateur','~fondatrice','~dirigeant','~gérant','~gérante','~président','~présidente','~pdg','~ceo','Directeur Général','Directrice Générale','Directeur Général Délégué']],
+ ['Ressources humaines',['~recrutement','~talent','~drh','Responsable RH','Ressources Humaines','Chargé de recrutement','People Manager']],
+ ['Finance / Compta',['~finance','~financier','~financière','~comptable','~comptabilité','~daf','~cfo','~trésorerie','Contrôleur de gestion']],
+ ['Informatique / IT',['~informatique','~dsi','~cto','~data','~développeur','~sysadmin','Responsable IT',"Directeur des Systèmes d'Information"]],
+ ['Opérations / Logistique',['~logistique','~exploitation','~production','~opérations','~coo','Supply Chain Manager']],
+ ['Service / Relation client',['~customer','~sav','Service Client','Relation Client','Expérience Client','Responsable support']],
+ ['Juridique',['~juridique','~juriste','~avocat','~legal','~compliance']]
+];
+function avAjouterFonction(nom){
+ const pack=(FONCTIONS_SN.find(f=>f[0]===nom)||[])[1]||[];
+ if(!pack.length)return;
+ AV.decideur=false;
+ let ajoutes=0;
+ for(const p of pack){
+  if(AV.postes.some(x=>x.toLowerCase()===p.toLowerCase()))continue;
+  AV.postesEx=(AV.postesEx||[]).filter(x=>x.toLowerCase()!==p.toLowerCase());
+  if(AV.postes.length>=40)break;
+  AV.postes.push(p);ajoutes++;
+ }
+ avRendreChips();avMaj();
+ toast('🎯 Fonction « '+nom+' » : '+ajoutes+' mot(s)-clé(s) et intitulé(s) ajoutés — retire ce qui ne colle pas');
+}
 function avToggleDecideur(){AV.decideur=!AV.decideur;if(AV.decideur)AV.postes=[];avRendreChips();avMaj();}
 function avAjouterPoste(v,mode){
  const p=String(v||'').trim();if(!p)return;
@@ -3708,7 +3743,7 @@ function avAjouterPoste(v,mode){
  AV.postesEx=(AV.postesEx||[]).filter(x=>x.toLowerCase()!==p.toLowerCase());
  // Recliquer le même bouton = retirer (toggle) ; cliquer l'autre = basculer
  if(mode==='exclure'&&!etaitExc){AV.postesEx.push(p);}
- else if(mode!=='exclure'&&!etaitInc){AV.decideur=false;if(AV.postes.length>=20){toast('20 intitulés max');return;}AV.postes.push(p);}
+ else if(mode!=='exclure'&&!etaitInc){AV.decideur=false;if(AV.postes.length>=40){toast('40 intitulés max');return;}AV.postes.push(p);}
  avRendreChips();avMaj();
 }
 // Autocomplete des intitulés RÉELS Basile (/people/roles/suggest) — chaque ligne : Inclure / Exclure

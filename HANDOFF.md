@@ -1,5 +1,19 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 23 septembre 2026)
 
+## 🎯 23 septembre 2026 — FONCTIONS façon Sales Nav (packs de mots-clés) — réponse au « Étienne préfère Sales Nav »
+
+Didier : « il faut absolument que SofyScrap remplace ça » (l'exemple = la recherche Sales Nav
+par FONCTION « Développement commercial » × zone, une taxonomie qui regroupe des dizaines
+d'intitulés). Réponse produit : `FONCTIONS_SN` (10 packs : Développement commercial, Achats,
+Marketing/Com, Direction générale, RH, Finance, IT, Opérations/Logistique, Service client,
+Juridique) — chaque pack = mots-clés « ~ contient » + intitulés exacts, le clic sur la
+mini-chip 🎯 (rangée sous le champ Postes du mode avancé) AJOUTE les chips une à une :
+transparent et retirable, pas de boîte noire (avAjouterFonction, cap postes 20→40, serveur
+inchangé — les ~ sont déjà strippés). Toast récapitulatif.
+⚠️ Les packs sont des heuristiques v1 : à AFFINER avec les recherches réelles d'Étienne
+(message de Didier coupé : « Étienne recherche des… » — relancer pour la fin de la phrase et
+le bench contradictoire 3 recherches Sales Nav → recouvrement mesuré).
+
 ## 🎯 23 septembre 2026 — VALIDÉ EN PROD : 74 + Vincent · le mode « ~ contient » généralisé partout
 
 Didier confirme : « ~acha × 🌴 Guadeloupe » = 74 LinkedIn, Vincent Boulogne dans l'aperçu —
