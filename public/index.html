@@ -597,7 +597,13 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
           <div style="font-size:12px;color:#7a5510;background:#fff7e6;border:1px solid #f0d089;border-radius:8px;padding:8px 12px">🧭 Les cartes « Liste depuis Pappers » et « Liste Google Maps » ont déménagé ICI (onglets Entreprises et Google) — mêmes moteurs, mêmes listes, plus de filtres.</div>
         </div>
 
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div onclick="choisirMode('lemlist')" style="cursor:pointer;border:1px solid var(--line);border-radius:14px;padding:20px;transition:.15s;background:var(--card);position:relative" onmouseover="this.style.borderColor='#185FA5'" onmouseout="this.style.borderColor='var(--line)'">
+            <div style="position:absolute;top:12px;right:12px;font-size:10px;font-weight:700;color:#fff;background:#316BFF;padding:2px 8px;border-radius:20px">NOUVEAU</div>
+            <div style="font-size:28px;margin-bottom:8px">📥</div>
+            <div style="font-size:15.5px;font-weight:700;margin-bottom:5px">Importer depuis Lemlist</div>
+            <div style="font-size:12.5px;color:var(--ink-soft);line-height:1.5">Une campagne Lemlist (sourcée dans leur People Database) devient une liste d'appel : dédup, puis enrichissement Google + registre via 🚀.</div>
+          </div>
           <div onclick="choisirMode('ia')" style="cursor:pointer;border:1px solid var(--line);border-radius:14px;padding:20px;transition:.15s;background:var(--card)" onmouseover="this.style.borderColor='#185FA5'" onmouseout="this.style.borderColor='var(--line)'">
             <div style="font-size:28px;margin-bottom:8px">✨</div>
             <div style="font-size:15.5px;font-weight:700;margin-bottom:5px">Liste intelligente (IA)</div>
@@ -615,6 +621,24 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
           </div>
         </div>
         <p class="hint" style="margin-top:14px">Les listes, recherches enregistrées et lookalikes créés avec les anciennes cartes continuent de fonctionner — seuls les points d'entrée ont fusionné.</p>
+      </div>
+      <div id="mode-lemlist" style="display:none;max-width:760px">
+        <div class="head-row">
+          <div><h1>📥 Importer depuis Lemlist</h1><p class="sub">Choisis une campagne — ses leads deviennent une liste d'appel SofyScrap (dédupliquée, enrichissable 🚀 Google + registre).</p></div>
+          <button class="btn-reset" onclick="retourChoixMode()">↺ Retour</button>
+        </div>
+        <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <select class="field" id="lemimp-campagne" style="flex-grow:1;min-width:260px"><option value="">⏳ Chargement des campagnes…</option></select>
+          <button class="btn btn-primary" onclick="lemImpCharger()">Charger les leads</button>
+        </div>
+        <div id="lemimp-info" style="margin-top:12px;font-size:13px;color:var(--ink-soft)"></div>
+        <div id="lemimp-apercu" style="display:none;margin-top:10px;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;max-height:420px;overflow-y:auto"></div>
+        <div style="margin-top:14px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <input class="field" id="lemimp-nom" placeholder="📝 Nom de la liste *" style="flex-grow:1;min-width:220px">
+          <select class="field" id="lemimp-sdr" style="width:160px"></select>
+          <button class="btn btn-primary" id="lemimp-btn" onclick="lemImpCreer()">📥 Créer la liste d'appel</button>
+        </div>
+        <p class="hint" style="margin-top:8px">Les contacts déjà présents dans une liste SofyScrap sont signalés et écartés · ceux connus de HubSpot sont marqués (pas ré-enrichis). Lance ensuite 🚀 sur la liste : analyse Google, registre (SIREN, tél standard), scoring.</p>
       </div>
       <div id="mode-gmb" style="display:none;max-width:640px">
         <div class="head-row">
@@ -3163,7 +3187,11 @@ function choisirMode(mode){
  document.getElementById('mode-gmb').style.display='none';
  document.getElementById('mode-verticale').style.display='none';
  document.getElementById('mode-avance').style.display='none';
- if(mode==='pappers'){
+ document.getElementById('mode-lemlist').style.display='none';
+ if(mode==='lemlist'){
+  document.getElementById('mode-lemlist').style.display='block';
+  lemImpInit();
+ }else if(mode==='pappers'){
   document.getElementById('wizard-pappers').style.display='block';
  }else if(mode==='avance'){
   document.getElementById('mode-avance').style.display='block';
@@ -10758,6 +10786,94 @@ function produitDominant(e){
  const max=Math.max(s.soview||0,s.soconnect||0,s.soreach||0);
  if(max<=0)return null;
  return max===(s.soview||0)?'soview':max===(s.soconnect||0)?'soconnect':'soreach';
+}
+// ── 📥 Import Lemlist → liste d'appel (pont ENTRANT — chantier Étienne, GO 23/09) ──
+let LEMIMP={leads:[],fiches:[],decoches:new Set(),chargee:null};
+async function lemImpInit(){
+ const sel=document.getElementById('lemimp-campagne');
+ try{
+  const r=await api('/api/lemlist-import?action=campagnes');const d=await r.json();
+  if(d.erreur){sel.innerHTML='<option value="">⚠️ '+String(d.erreur).replace(/</g,'&lt;')+'</option>';return;}
+  sel.innerHTML='<option value="">Choisir une campagne…</option>'+(d.campagnes||[]).map(c=>
+   `<option value="${String(c.id).replace(/"/g,'')}">${String(c.nom).replace(/</g,'&lt;')}${c.statut?' ('+c.statut+')':''}</option>`).join('');
+ }catch(e){sel.innerHTML='<option value="">⚠️ Erreur réseau</option>';}
+ try{
+  const r=await api('/api/sdrs');const d=await r.json();
+  const s=document.getElementById('lemimp-sdr');
+  s.innerHTML=(d.sdrs||[]).filter(x=>x.actif).map(x=>`<option${state.user&&x.nom===state.user.nom?' selected':''}>${String(x.nom).replace(/</g,'&lt;')}</option>`).join('');
+ }catch(_){}
+}
+async function lemImpCharger(){
+ const camp=document.getElementById('lemimp-campagne').value;
+ const info=document.getElementById('lemimp-info'),box=document.getElementById('lemimp-apercu');
+ if(!camp){toast('Choisis une campagne');return;}
+ info.textContent='⏳ Export des leads de la campagne…';box.style.display='none';
+ try{
+  const r=await api('/api/lemlist-import?action=leads&campagne='+encodeURIComponent(camp));
+  const d=await r.json();
+  if(d.erreur){info.innerHTML='⚠️ '+String(d.erreur).replace(/</g,'&lt;');return;}
+  LEMIMP={leads:d.leads||[],fiches:[],decoches:new Set(),chargee:camp};
+  // Regroupe par entreprise (une fiche par compte, ses contacts dedans)
+  const parEnt=new Map();
+  for(const l of LEMIMP.leads){
+   const cle=(l.entreprise||((l.prenom+' '+l.nom).trim())||l.email).toLowerCase();
+   if(!parEnt.has(cle))parEnt.set(cle,{nom:l.entreprise||((l.prenom+' '+l.nom).trim()),ville:l.ville||'',source:'lemlist_import',contacts:[]});
+   parEnt.get(cle).contacts.push({prenom:l.prenom,nom:l.nom,fonction:l.fonction||'',source:'lemlist',
+    enrich:{email:l.email,telephone:l.telephone||null,linkedin:l.linkedin||null}});
+  }
+  LEMIMP.fiches=[...parEnt.values()];
+  // Dédup non bloquante : signale l'existant (listes) et le connu (HubSpot)
+  try{
+   const contacts=LEMIMP.leads.map(l=>({email:l.email,telephone:l.telephone||null,linkedin:l.linkedin||null,nom:l.nom,prenom:l.prenom,siren:''}));
+   const rd=await api('/api/dedup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contacts})});
+   const rez=((await rd.json())||{}).resultats||{};
+   for(const f of LEMIMP.fiches)for(const c of f.contacts){
+    const rr=rez[((c.prenom||'')+' '+(c.nom||'')).trim().toLowerCase()];
+    if(rr){if(rr.liste){f.dedup_liste=rr.liste;}if(rr.hubspot){f.dedup_hubspot=rr.hubspot;f.skip_enrich=true;}}
+   }
+  }catch(_){}
+  for(const f of LEMIMP.fiches)if(f.dedup_liste)LEMIMP.decoches.add(f.nom.toLowerCase());
+  lemImpRendu();
+ }catch(e){info.innerHTML='⚠️ Erreur réseau : '+e.message;}
+}
+function lemImpRendu(){
+ const info=document.getElementById('lemimp-info'),box=document.getElementById('lemimp-apercu');
+ const esc=s=>String(s||'').replace(/</g,'&lt;');
+ const dejaListe=LEMIMP.fiches.filter(f=>f.dedup_liste).length;
+ const coches=LEMIMP.fiches.filter(f=>!LEMIMP.decoches.has(f.nom.toLowerCase())).length;
+ info.innerHTML=`<b>${LEMIMP.leads.length}</b> lead(s) · <b>${LEMIMP.fiches.length}</b> entreprise(s) — <b>${coches}</b> cochée(s)${dejaListe?` · ♻️ ${dejaListe} déjà dans une liste (décochées)`:''}`;
+ box.innerHTML=LEMIMP.fiches.map(f=>{
+  const cle=esc(f.nom.toLowerCase()).replace(/"/g,'&quot;');
+  const coche=!LEMIMP.decoches.has(f.nom.toLowerCase());
+  return `<div style="display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid #f1f2f8;font-size:13px;${f.dedup_liste?'opacity:.5':''}">
+   <input type="checkbox" data-cle="${cle}" ${coche?'checked':''} onchange="if(this.checked)LEMIMP.decoches.delete(this.dataset.cle);else LEMIMP.decoches.add(this.dataset.cle);lemImpRendu()">
+   <div style="min-width:0;flex-grow:1"><b>${esc(f.nom)}</b> <span style="color:var(--ink-soft)">· ${f.contacts.length} contact(s) : ${esc(f.contacts.map(c=>((c.prenom+' '+c.nom).trim())||c.enrich.email).slice(0,3).join(', '))}${f.contacts.length>3?'…':''}</span></div>
+   ${f.dedup_liste?`<span class="badge" style="background:#fee2e2;color:#b91c1c">déjà : ${esc(String(f.dedup_liste).slice(0,28))}</span>`:''}
+   ${f.dedup_hubspot?'<span class="badge b-gmb">HubSpot ✓</span>':''}
+  </div>`;
+ }).join('')||'<div style="padding:12px 16px;font-size:13px;color:var(--ink-soft)">Aucun lead exploitable dans cette campagne.</div>';
+ box.style.display='block';
+}
+let LEMIMP_EN_COURS=false;
+async function lemImpCreer(){
+ if(LEMIMP_EN_COURS)return;
+ const nom=document.getElementById('lemimp-nom').value.trim();
+ if(!nom){toast('⚠️ Donne un nom à ta liste');document.getElementById('lemimp-nom').focus();return;}
+ const fiches=LEMIMP.fiches.filter(f=>!LEMIMP.decoches.has(f.nom.toLowerCase()));
+ if(!fiches.length){toast('Charge une campagne et coche au moins une entreprise');return;}
+ const sdr=document.getElementById('lemimp-sdr').value||(state.user?state.user.nom:'');
+ const campSel=document.getElementById('lemimp-campagne');
+ LEMIMP_EN_COURS=true;
+ const btn=document.getElementById('lemimp-btn');btn.disabled=true;btn.textContent='⏳ Création…';
+ try{
+  const r=await api('/api/listes',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({nom:'📥 '+nom,sdr,criteres:{lemlist_import:true,campagne:LEMIMP.chargee,nom_campagne:(campSel.selectedOptions[0]||{}).textContent||'',naf:[],pays:[]},entreprises:fiches,credits_estimes:0})});
+  const d=await r.json();
+  if(d.erreur){toast('Erreur création : '+d.erreur);return;}
+  toast('📥 Liste créée : '+fiches.length+' entreprise(s) — lance 🚀 pour l\'analyse Google + registre');
+  setTimeout(()=>ouvrirListe(d.id),300);
+ }catch(e){toast('Erreur réseau : '+e.message);}
+ finally{LEMIMP_EN_COURS=false;btn.disabled=false;btn.textContent='📥 Créer la liste d\'appel';}
 }
 function varsLemlist(e,c){
  const g=e.gmb||{},sc=e.score||{},prod=produitDominant(e);

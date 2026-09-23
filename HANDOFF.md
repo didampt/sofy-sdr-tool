@@ -1,5 +1,23 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 23 septembre 2026)
 
+## 🎯 23 septembre 2026 — pont ENTRANT « 📥 Importer depuis Lemlist » (GO Didier)
+
+Contexte : l'équipe d'Étienne source dans la People Database LEMLIST (base mondiale intégrée +
+lemAgent, captures Didier) — inutile de se battre sur ce sourcing. Le système se boucle :
+Lemlist source et envoie, SofyScrap dédoublonne/analyse (Google + registre)/fait appeler.
+- **api/lemlist-import.js** (GET, lecture seule) : ?action=campagnes (liste v2, défensif) ;
+  ?action=leads&campagne=cam_x → export CSV Lemlist parsé (parseur maison : quotes, virgules,
+  "" échappés) → leads normalisés {email, prenom, nom, entreprise, telephone, linkedin, ville,
+  fonction, etat}, cap 1 000. Banc test-lemlist-import.mjs (CSV pièges ✓).
+- **Front** : carte « 📥 Importer depuis Lemlist » (rangée secondaire du choix, passée en 2×2) ;
+  écran #mode-lemlist : select campagnes → leads groupés PAR ENTREPRISE (contacts multiples
+  rassemblés) → aperçu cochable avec dédup /api/dedup (déjà dans une liste = badge + décoché ;
+  HubSpot = badge + skip_enrich) → POST /api/listes {criteres:{lemlist_import, campagne,
+  nom_campagne}} → ouvrirListe + rappel « lance 🚀 » (l'enrichissement Google/registre/scoring
+  passe par le pipeline existant, rien de dupliqué).
+- Smoke complet (2 entreprises depuis 3 leads, doublon décoché, criteres corrects).
+Boucle avec le pont SORTANT (variables {{gmb_*}} dans les séquences, doc dans ⚙️ Envois).
+
 ## 🎯 23 septembre 2026 — pivot Lemlist (retour Étienne) + régions canoniques (matrice Réunion)
 
 RETOUR STRATÉGIQUE D'ÉTIENNE (via Didier) : leur stack Sales Nav + Lemlist marche ; ce qu'il
