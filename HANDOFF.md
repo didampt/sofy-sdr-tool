@@ -1,5 +1,30 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 23 septembre 2026)
 
+## 🎯 23 septembre 2026 — push RETOUR vers Lemlist + scoring coupé sur les imports (GO Didier)
+
+Vision actée avec Didier : le SDR source dans Lemlist et Y APPELLE ; SofyScrap fournit le
+CONTEXTE d'appel (fiche GMB, note, pire avis, registre) et le renvoie dans la campagne.
+(Liste d'appel côté SofyScrap ou Lemlist : à trancher avec Romain.)
+- **api/lemlist-retour.js** (NOUVEAU, POST) : {campagne, leads:[{lemlist_id,email,variables}]}
+  → PATCH des leads EXISTANTS de la campagne (jamais de création, aucune séquence déclenchée).
+  Adressage par **_id Lemlist d'abord** (les leads People Database n'ont souvent PAS d'email),
+  sinon par email. 5 PATCH de front, cap 300/appel, variables nettoyées comme /api/lemlist.
+- **api/lemlist-import.js** : capture la colonne `_id` du CSV → lead.lemlist_id, transporté
+  jusque dans les contacts de la fiche (c.lemlist_id) à la création de liste.
+- **Front** : bouton « 📤 Renvoyer l'analyse vers Lemlist » (visible si criteres.lemlist_import),
+  lemRetourAnalyse() = fiches analysées (gmb|ia|siren) × contacts avec clé → lots de 250.
+- **Scoring SoView/SoConnect/SoReach COUPÉ sur les listes lemlist_import** (le SDR a déjà
+  qualifié) : pipelineFiche saute l'étape 7 et pose e.enrichi_le ; helpers listeLemlistImport()
+  + ficheEnrichie(e) remplacent « e.score » comme marqueur d'enrichissement (btn Nouvelles
+  fiches, aTraiter). Pré-audit et 🎯 manuel inchangés. Confirm du 🚀 le dit explicitement.
+- Étiquettes : carte de liste « Import Lemlist · nom campagne » (au lieu de « Pappers »),
+  sous-titre 📥 dans la vue liste.
+- Bancs : test-lemlist-retour.mjs (PATCH id/email, nettoyage, échec 404 compté, sans_cle) et
+  test-lemlist-import étendu (_id) ; smoke navigateur (retour envoyé lea_9 + email, fiche non
+  analysée écartée, scoring coupé).
+À VALIDER EN PROD : la 1re vraie campagne dira si l'export CSV Lemlist contient bien `_id`
+(sinon le push ne touchera que les leads AVEC email — le compteur « sans identifiant » le dira).
+
 ## 🐛 23 septembre 2026 — fix import Lemlist : l'email est OPTIONNEL (campagne Anaëlle, 167 leads → 0)
 
 Bug prod immédiat après le pont entrant : la campagne « Anaëlle - 2026Q3-France-Brico.Jard »

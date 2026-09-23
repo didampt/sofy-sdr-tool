@@ -72,6 +72,9 @@ export default async function handler(req, res) {
       if (lignes.length < 2) return res.status(200).json({ leads: [], nb: 0, colonnes: lignes[0] || [] });
       const entetes = lignes[0].map(h => String(h || '').trim().toLowerCase());
       const idx = (noms) => { for (const n of noms) { const i = entetes.indexOf(n); if (i >= 0) return i; } return -1; };
+      // _id du lead Lemlist : la SEULE adresse fiable pour le push retour (beaucoup de leads
+      // People Database n'ont pas encore d'email — cas Anaëlle).
+      const iId = idx(['_id', 'id', 'leadid', 'lead id', 'lead_id']);
       const iEmail = idx(['email']), iPrenom = idx(['firstname', 'first name', 'prenom', 'prénom']),
         iNom = idx(['lastname', 'last name', 'nom']), iEnt = idx(['companyname', 'company name', 'company', 'entreprise']),
         iTel = idx(['phone', 'telephone', 'téléphone']), iLk = idx(['linkedinurl', 'linkedin url', 'linkedin']),
@@ -86,6 +89,7 @@ export default async function handler(req, res) {
         const brutEmail = (iEmail >= 0 ? l[iEmail] : '').trim().toLowerCase();
         const email = brutEmail.includes('@') ? brutEmail : '';
         const lead = {
+          lemlist_id: iId >= 0 ? (l[iId] || '').trim() : '',
           email,
           prenom: iPrenom >= 0 ? (l[iPrenom] || '').trim() : '',
           nom: iNom >= 0 ? (l[iNom] || '').trim() : '',
