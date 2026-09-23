@@ -78,10 +78,14 @@ export default async function handler(req, res) {
         iVille = idx(['ville', 'city']), iFonction = idx(['jobtitle', 'job title', 'fonction', 'position', 'title']),
         iEtat = idx(['state', 'status']);
       const leads = [];
+      let sansEmail = 0;
       for (const l of lignes.slice(1)) {
-        const email = (iEmail >= 0 ? l[iEmail] : '').trim().toLowerCase();
-        if (!email || !email.includes('@')) continue;
-        leads.push({
+        // L'email est OPTIONNEL : dans la People Database Lemlist, « Trouver l'email » n'a
+        // souvent pas encore tourné (cas campagne Anaëlle 23/09 : 167 leads, 0 email).
+        // Un lead vaut par son identité — nom, LinkedIn ou entreprise suffisent.
+        const brutEmail = (iEmail >= 0 ? l[iEmail] : '').trim().toLowerCase();
+        const email = brutEmail.includes('@') ? brutEmail : '';
+        const lead = {
           email,
           prenom: iPrenom >= 0 ? (l[iPrenom] || '').trim() : '',
           nom: iNom >= 0 ? (l[iNom] || '').trim() : '',
@@ -91,9 +95,12 @@ export default async function handler(req, res) {
           ville: iVille >= 0 ? (l[iVille] || '').trim() : '',
           fonction: iFonction >= 0 ? (l[iFonction] || '').trim() : '',
           etat: iEtat >= 0 ? (l[iEtat] || '').trim() : ''
-        });
+        };
+        if (!lead.email && !lead.linkedin && !(lead.prenom + lead.nom).trim() && !lead.entreprise) continue;
+        if (!lead.email) sansEmail++;
+        leads.push(lead);
       }
-      return res.status(200).json({ leads: leads.slice(0, 1000), nb: leads.length, colonnes: entetes });
+      return res.status(200).json({ leads: leads.slice(0, 1000), nb: leads.length, sans_email: sansEmail, colonnes: entetes });
     }
 
     return res.status(400).json({ erreur: 'action inconnue (campagnes|leads)' });

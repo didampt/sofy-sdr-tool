@@ -10812,12 +10812,12 @@ async function lemImpCharger(){
   const r=await api('/api/lemlist-import?action=leads&campagne='+encodeURIComponent(camp));
   const d=await r.json();
   if(d.erreur){info.innerHTML='⚠️ '+String(d.erreur).replace(/</g,'&lt;');return;}
-  LEMIMP={leads:d.leads||[],fiches:[],decoches:new Set(),chargee:camp};
+  LEMIMP={leads:d.leads||[],fiches:[],decoches:new Set(),chargee:camp,sansEmail:d.sans_email||0,colonnes:d.colonnes||[]};
   // Regroupe par entreprise (une fiche par compte, ses contacts dedans)
   const parEnt=new Map();
   for(const l of LEMIMP.leads){
-   const cle=(l.entreprise||((l.prenom+' '+l.nom).trim())||l.email).toLowerCase();
-   if(!parEnt.has(cle))parEnt.set(cle,{nom:l.entreprise||((l.prenom+' '+l.nom).trim()),ville:l.ville||'',source:'lemlist_import',contacts:[]});
+   const cle=(l.entreprise||((l.prenom+' '+l.nom).trim())||l.email||l.linkedin||'?').toLowerCase();
+   if(!parEnt.has(cle))parEnt.set(cle,{nom:l.entreprise||((l.prenom+' '+l.nom).trim())||l.email||'Contact Lemlist',ville:l.ville||'',source:'lemlist_import',contacts:[]});
    parEnt.get(cle).contacts.push({prenom:l.prenom,nom:l.nom,fonction:l.fonction||'',source:'lemlist',
     enrich:{email:l.email,telephone:l.telephone||null,linkedin:l.linkedin||null}});
   }
@@ -10841,7 +10841,7 @@ function lemImpRendu(){
  const esc=s=>String(s||'').replace(/</g,'&lt;');
  const dejaListe=LEMIMP.fiches.filter(f=>f.dedup_liste).length;
  const coches=LEMIMP.fiches.filter(f=>!LEMIMP.decoches.has(f.nom.toLowerCase())).length;
- info.innerHTML=`<b>${LEMIMP.leads.length}</b> lead(s) · <b>${LEMIMP.fiches.length}</b> entreprise(s) — <b>${coches}</b> cochée(s)${dejaListe?` · ♻️ ${dejaListe} déjà dans une liste (décochées)`:''}`;
+ info.innerHTML=`<b>${LEMIMP.leads.length}</b> lead(s) · <b>${LEMIMP.fiches.length}</b> entreprise(s) — <b>${coches}</b> cochée(s)${dejaListe?` · ♻️ ${dejaListe} déjà dans une liste (décochées)`:''}${LEMIMP.sansEmail?` · ✉️ ${LEMIMP.sansEmail} sans email (pas bloquant : « Trouver l'email » pas encore lancé côté Lemlist)`:''}`;
  box.innerHTML=LEMIMP.fiches.map(f=>{
   const cle=esc(f.nom.toLowerCase()).replace(/"/g,'&quot;');
   const coche=!LEMIMP.decoches.has(f.nom.toLowerCase());
@@ -10851,7 +10851,7 @@ function lemImpRendu(){
    ${f.dedup_liste?`<span class="badge" style="background:#fee2e2;color:#b91c1c">déjà : ${esc(String(f.dedup_liste).slice(0,28))}</span>`:''}
    ${f.dedup_hubspot?'<span class="badge b-gmb">HubSpot ✓</span>':''}
   </div>`;
- }).join('')||'<div style="padding:12px 16px;font-size:13px;color:var(--ink-soft)">Aucun lead exploitable dans cette campagne.</div>';
+ }).join('')||`<div style="padding:12px 16px;font-size:13px;color:var(--ink-soft)">Aucun lead exploitable dans cette campagne.${(LEMIMP.colonnes||[]).length?`<br><span style="font-size:11px">Colonnes reçues de Lemlist : ${esc(LEMIMP.colonnes.join(', ')).slice(0,300)} — envoie cette capture à Didier/Claude pour ajuster le mapping.</span>`:''}</div>`;
  box.style.display='block';
 }
 let LEMIMP_EN_COURS=false;

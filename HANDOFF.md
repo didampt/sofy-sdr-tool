@@ -1,5 +1,20 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 23 septembre 2026)
 
+## 🐛 23 septembre 2026 — fix import Lemlist : l'email est OPTIONNEL (campagne Anaëlle, 167 leads → 0)
+
+Bug prod immédiat après le pont entrant : la campagne « Anaëlle - 2026Q3-France-Brico.Jard »
+(167 prospects sourcés People Database, « Trouver l'email » PAS encore lancé côté Lemlist)
+donnait « Aucun lead exploitable » — le parseur jetait toute ligne sans email.
+- **api/lemlist-import.js** : un lead vaut par son IDENTITÉ (email OU linkedin OU prénom+nom OU
+  entreprise) ; seules les lignes sans aucune identité sont jetées. Renvoie `sans_email` (compteur).
+- **Front** : ligne info « ✉️ N sans email (pas bloquant) » ; si 0 lead exploitable, l'aperçu
+  affiche les COLONNES reçues de Lemlist (diagnostic mapping sans redéployer) ; clé de
+  regroupement robuste aux leads linkedin-seul (fallback « Contact Lemlist »).
+- Banc étendu (6 leads dont 3 sans email, identité vide jetée ✓) + smoke navigateur
+  (Auriane Bihler 0 email visible, compteur affiché, dédup intacte).
+PIÈGE à retenir : la People Database Lemlist livre d'abord nom+entreprise+linkedin, l'email
+arrive APRÈS enrichissement — ne jamais conditionner un import Lemlist à l'email.
+
 ## 🎯 23 septembre 2026 — pont ENTRANT « 📥 Importer depuis Lemlist » (GO Didier)
 
 Contexte : l'équipe d'Étienne source dans la People Database LEMLIST (base mondiale intégrée +
