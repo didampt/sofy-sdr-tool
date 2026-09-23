@@ -1186,6 +1186,24 @@ Spot-Hit</textarea>
       <div class="map-card">
         <h2>✈️ Lemlist — envoi en séquence</h2>
         <div class="role">Déclenché quand le SDR ne joint pas le contact. Le lead part dans la campagne choisie avec toutes ses variables de personnalisation.</div>
+        <div class="map-sub">Variables disponibles dans les templates Lemlist (analyse Google incluse — copie le {{nom}} tel quel)</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:6px 18px;font-size:12.5px;line-height:1.6;margin-bottom:12px">
+          <div><code>{{gmb_note}}</code> — note Google (ex : 3,8)</div>
+          <div><code>{{gmb_nb_avis}}</code> — nombre d'avis Google</div>
+          <div><code>{{avis_negatif}}</code> — texte du pire avis (180 car.)</div>
+          <div><code>{{avis_negatif_note}}</code> — sa note (ex : 1★)</div>
+          <div><code>{{avis_negatif_date}}</code> — son ancienneté (« il y a 2 mois »)</div>
+          <div><code>{{gmb_avis_lien}}</code> — lien direct vers les avis</div>
+          <div><code>{{gmb_maps_url}}</code> — lien de la fiche Google Maps</div>
+          <div><code>{{gmb_pire_fiche}}</code> — pire établissement (multi-sites)</div>
+          <div><code>{{gmb_concurrents}}</code> — note moyenne des concurrents</div>
+          <div><code>{{ville}}</code> · <code>{{activite}}</code> · <code>{{site_web}}</code></div>
+          <div><code>{{accroche}}</code> — accroche IA du scoring</div>
+          <div><code>{{objet_perso}}</code> / <code>{{email_perso}}</code> — email IA complet</div>
+          <div><code>{{produit_score}}</code> — produit dominant + score</div>
+          <div><code>{{signal}}</code> — dernier signal (visite site, LinkedIn…)</div>
+          <div><code>{{snEid}}</code> — id Snitcher (liens sofy.fr ?sn_eid=…)</div>
+        </div>
 
         <div class="row3">
           <div><span class="lbl">Campagne par défaut</span>
@@ -10748,9 +10766,17 @@ function varsLemlist(e,c){
   phone:(c.enrich&&c.enrich.telephone)||g.telephone||'',
   linkedinUrl:(c.enrich&&c.enrich.linkedin)||'',
   gmb_note:g.trouve?String(g.note_moyenne):'',
+  gmb_nb_avis:g.trouve?String(g.total_avis||0):'',
   gmb_pire_fiche:g.trouve&&g.pire_fiche?`${g.pire_fiche.nom} (${g.pire_fiche.note}★)`:'',
+  gmb_avis_lien:(g.pire_fiche&&g.pire_fiche.lien)||(g.avis_negatif&&g.avis_negatif.lien)||'',
+  gmb_maps_url:e.maps_url||(g.place_id?'https://www.google.com/maps/place/?q=place_id:'+g.place_id:''),
   avis_negatif:g.avis_negatif?g.avis_negatif.texte.slice(0,180):'',
+  avis_negatif_note:g.avis_negatif?String(g.avis_negatif.note)+'★':'',
+  avis_negatif_date:(g.avis_negatif&&g.avis_negatif.date)||'',
   gmb_concurrents:g.concurrents?String(g.concurrents.note_moyenne):'',
+  ville:e.ville||'',
+  activite:e.activite||e.secteur||'',
+  site_web:e.site_web||(g.site_web||''),
   signal:(c.signal&&c.signal.detail)||(e.signal&&e.signal.detail)||'',
   produit_score:prod?`${prod} ${sc.scores[prod]}`:'',
   accroche:sc.accroche||'',

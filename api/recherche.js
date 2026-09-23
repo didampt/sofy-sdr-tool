@@ -70,12 +70,17 @@ async function sirensDesListes(ids) {
 // 41 245 (les villes n'attrapaient que 16 : les profils « région seule », dont Vincent Boulogne,
 // échappaient au filtre ville). Côté LinkedIn : location_region ; côté REGISTRE : codes postaux
 // (result_postal_code, Legal-only) — appliqués PAR SOURCE dans avecSource().
+// MESURÉ 23/09 (matrice Réunion) : le matching région est EXACT sur le libellé canonique,
+// insensible à la casse et aux accents (« La Réunion » = « LA REUNION » = 1 145 ; « Réunion »
+// seule = INCONNUE) ; une valeur inconnue dans une liste mixte est ignorée sans élargir, mais un
+// filtre composé UNIQUEMENT d'inconnues est IGNORÉ EN ENTIER (→ comptage France entière) : ne
+// garder que des canoniques plausibles.
 const DOM_REGIONS = {
-  GP: ['Guadeloupe', 'GUADELOUPE'],
-  MQ: ['Martinique', 'MARTINIQUE'],
-  GF: ['Guyane', 'GUYANE', 'Guyane française'],
-  RE: ['La Réunion', 'Réunion', 'LA REUNION', 'REUNION'],
-  YT: ['Mayotte', 'MAYOTTE']
+  GP: ['Guadeloupe'],
+  MQ: ['Martinique'],
+  GF: ['Guyane', 'Guyane française'],
+  RE: ['La Réunion'],
+  YT: ['Mayotte']
 };
 const DOM_ISO_CP = { GP: '971', MQ: '972', GF: '973', RE: '974', YT: '976' };
 function filtresBasile(f, conceptIds, roles) {

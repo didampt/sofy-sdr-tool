@@ -1,5 +1,26 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 23 septembre 2026)
 
+## 🎯 23 septembre 2026 — pivot Lemlist (retour Étienne) + régions canoniques (matrice Réunion)
+
+RETOUR STRATÉGIQUE D'ÉTIENNE (via Didier) : leur stack Sales Nav + Lemlist marche ; ce qu'il
+veut garder de SofyScrap = l'ANALYSE des fiches Google, poussée dans les séquences Lemlist
+(« Sarah adore l'analyse détaillée des établissements »). GO Didier sur ce chantier.
+- DÉCOUVERTE : le pont existait déjà (api/lemlist.js + varsLemlist, flux « pas de décroché ») —
+  il était incomplet et INVISIBLE pour l'équipe. Fait : ① varsLemlist enrichi (gmb_nb_avis,
+  gmb_avis_lien, gmb_maps_url, avis_negatif_note, avis_negatif_date, ville, activite, site_web
+  — en plus de gmb_note/gmb_pire_fiche/avis_negatif/accroche/objet_perso/email_perso/snEid) ;
+  ② la carte « ✈️ Lemlist » de ⚙️ Envois documente TOUTES les {{variables}} copiables dans les
+  templates. Prochain pas possible : montrer ça à Étienne (fil Slack) + séquence type SoView.
+- MATRICE RÉUNION (Didier) : le matching location_region est EXACT sur le libellé canonique,
+  insensible casse/accents (« La Réunion »=1 145 ; « Réunion » seule=INCONNUE) ; ⚠️ un filtre
+  région fait UNIQUEMENT d'inconnues est IGNORÉ EN ENTIER (→ 100 000 France entière, silencieux).
+  DOM_REGIONS nettoyé aux canoniques (GP Guadeloupe ✓74, RE La Réunion ✓1 145, MQ/GF/YT
+  plausibles à confirmer au comptage). Le « 8 marketing tous ZEOP » de la capture = l'ancienne
+  version VILLES, plus d'actualité.
+POSITION PRODUIT actée : ① SofyScrap = analyse Google + qualification → Lemlist (consensus
+Étienne/Sarah) ; ② la Recherche avancée garde sa valeur propre (registre SIREN, DOM validés,
+Google, dédup HubSpot) sans prétendre battre Sales Nav sur la couverture LinkedIn pure.
+
 ## 🎯 23 septembre 2026 — FONCTIONS façon Sales Nav (packs de mots-clés) — réponse au « Étienne préfère Sales Nav »
 
 Didier : « il faut absolument que SofyScrap remplace ça » (l'exemple = la recherche Sales Nav
