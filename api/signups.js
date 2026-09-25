@@ -67,6 +67,30 @@ async function getHotLeadList() {
   return rows[0] || null;
 }
 
+function backendError(data, rawBody, status) {
+  const message = [data?.error, data?.erreur, data?.detail, data?.message]
+    .find(value => typeof value === 'string' && value.trim());
+  return String(message || rawBody || `HTTP ${status}`).trim().slice(0, 500);
+}
+
+async function readBackendResponse(response) {
+  const rawBody = await response.text();
+  let data = {};
+  try {
+    data = rawBody ? JSON.parse(rawBody) : {};
+  } catch (_) {}
+  return { data, rawBody };
+}
+
+function safeBackendError(message) {
+  return String(message || '')
+    .replace(/(["']?(?:password|token|secret|authorization)["']?\s*:\s*)(["'][^"']*["']|[^,}\s]+)/gi, '$1"[redacted]"')
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[email]')
+    .replace(/\b(?:\+?\d[\d .()-]{7,}\d)\b/g, '[phone]')
+    .replace(/auth0\|[A-Za-z0-9|_-]+/gi, '[user_id]')
+    .slice(0, 300);
+}
+
 async function callBackendEnable({ userId, email }) {
   const backendBase = String(process.env.BACKEND_API_URL || '').replace(/\/$/, '');
   const url = process.env.BACKEND_SIGNUP_ENABLE_URL || (backendBase ? `${backendBase}/auth/internal/signups/enable` : '');
@@ -82,9 +106,11 @@ async function callBackendEnable({ userId, email }) {
     },
     body: JSON.stringify({ user_id: userId || undefined, email: email || undefined })
   });
-  const data = await response.json().catch(() => ({}));
+  const { data, rawBody } = await readBackendResponse(response);
   if (!response.ok) {
-    throw new Error(data.error || data.erreur || data.detail || `HTTP ${response.status}`);
+    const error = new Error(backendError(data, rawBody, response.status));
+    error.backendStatus = response.status;
+    throw error;
   }
   return data;
 }
@@ -104,10 +130,12 @@ async function callBackendCreate(payload) {
     },
     body: JSON.stringify(payload)
   });
-  const data = await response.json().catch(() => ({}));
+  const { data, rawBody } = await readBackendResponse(response);
   if (response.status === 409) return { already_exists: true };
   if (!response.ok) {
-    throw new Error(data.error || data.erreur || data.detail || `HTTP ${response.status}`);
+    const error = new Error(backendError(data, rawBody, response.status));
+    error.backendStatus = response.status;
+    throw error;
   }
   return data;
 }
@@ -118,6 +146,7 @@ export default async function handler(req, res) {
   const user = verifierToken(req);
   if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
 
+  let operation = 'charger_signup';
   try {
     const list = await getHotLeadList();
     const entreprises = (list && Array.isArray(list.entreprises)) ? list.entreprises : [];
@@ -199,17 +228,20 @@ export default async function handler(req, res) {
       const currentInfo = signupInfo(current) || {};
       let createdAccount = null;
       if (currentInfo.account_created === false) {
+        operation = 'creer_compte_backend';
         const provisioning = decryptSignupProvisioning(currentInfo.provisioning_payload);
         if (!provisioning || !provisioning.password) {
           return res.status(400).json({ erreur: 'Données de création du compte indisponibles' });
         }
         createdAccount = await callBackendCreate(provisioning);
       }
+      operation = 'activer_compte_backend';
       const backend = await callBackendEnable({
         userId: (createdAccount && createdAccount.user_id) || normalized.user_id,
         email: normalized.contact.email
       });
       const enabledAt = new Date().toISOString();
+      operation = 'enregistrer_activation';
       const latestList = await getHotLeadList();
       const latestEntreprises = (latestList && Array.isArray(latestList.entreprises)) ? latestList.entreprises : [];
       const latestIdx = latestEntreprises.findIndex(e => signupKey(e) === key);
@@ -242,6 +274,11 @@ export default async function handler(req, res) {
 
     return res.status(405).json({ erreur: 'Méthode non autorisée' });
   } catch (err) {
+    console.error('[signups request failed]', JSON.stringify({
+      operation,
+      backend_status: err.backendStatus || null,
+      error: safeBackendError(err.message)
+    }));
     return res.status(500).json({ erreur: 'Erreur signups', detail: err.message });
   }
 }
