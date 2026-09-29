@@ -9,6 +9,10 @@ ces fiches n'y seraient jamais entrées, et sans bannière (pct_complete = 100 %
 numéros importés). Fix : `e.source === 'lemlist_import'` suffit (avec un numéro, sans statut) ;
 score de tri 50 à défaut de score IA, pour ne pas tomber sous le top 25.
 Banc scratchpad banc-cockpit (import présent à 50, Pappers non enrichi exclu, traité exclu).
+- Suite (même jour, Didier) : une fiche importée entre MÊME SANS numéro ni email (score de tri
+  30, derrière les appelables à 50). Sa ligne affiche « 📵 à enrichir » + un bouton qui déplie
+  la fiche et lance ↻ Compléter (Lemlist) sur le 1er contact sans téléphone, ou 👥 Personas
+  si la fiche n'a aucun contact nominatif (ckEnrichirLigne). Banc + smoke OK.
 
 ## 🔵 29 septembre 2026 — 🚀 automatique = LEMLIST SEUL ; Dropcontact / FullEnrich / Kaspr en manuel
 

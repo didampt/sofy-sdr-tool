@@ -12339,6 +12339,21 @@ function ckToggle(rid){
  if(!pnl.innerHTML){pnl.innerHTML=ckDetailHtml(CK_ITEMS[rid]||{},rid);ckChargerHisto(rid);ckRadar(rid);}
  pnl.style.display='block';if(b)b.innerHTML='Replier \u25b4';
 }
+// Bouton de ligne d'une fiche SANS numéro (imports Lemlist) : déplie la fiche puis lance
+// ↻ Compléter sur le 1er contact sans téléphone, ou 👥 Personas s'il n'y a aucun contact.
+function ckEnrichirLigne(btn){
+ let n=btn;
+ while(n&&!(n.querySelector&&n.querySelector(':scope > div[id$="-d"]')))n=n.parentElement;
+ if(!n)return;
+ const rid=n.querySelector(':scope > div[id$="-d"]').id.slice(0,-2);
+ const it=CK_ITEMS[rid];if(!it)return;
+ const pnl=document.getElementById(rid+'-d');
+ if(pnl&&pnl.style.display==='none')ckToggle(rid);
+ const cs=it.contacts_detail||[];
+ const ci=cs.findIndex(c=>c&&!c.tel);
+ if(cs.length)ckCompleter(rid,ci>=0?ci:0);
+ else ckPersonas(rid);
+}
 function ckContactLigne(c,it,rid,ci){
  const acts=[];
  // Contact incomplet : ↻ Compléter = Lemlist (≈0,20 $) sans quitter le cockpit (arbitrage Didier
@@ -12936,8 +12951,8 @@ function rendreCockpit(sdrAffiche){
    <div style="font-size:14px;font-weight:700">${htmlSafe(p.nom)}${p.ville?` <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">\u00b7 ${htmlSafe(p.ville)}</span>`:''} <span style="font-weight:400;font-size:12px;color:var(--ink-soft)">\u00b7 ${htmlSafe(p.liste_nom||'')}</span></div>
    <div style="font-size:12px;color:var(--ink-soft);margin-top:2px">${htmlSafe(p.angle||'')}${p.contacts?` \u00b7 ${p.contacts} contact${p.contacts>1?'s':''}`:''}</div>
    ${p.signal_lk&&p.signal_lk.accroche?`<div style="font-size:12px;color:#1D4ED8;margin-top:2px">\ud83d\udde3 ${htmlSafe(p.signal_lk.accroche)}</div>`:''}
-  </div>${p.tel?`<span style="font-size:13px;font-weight:700;white-space:nowrap">${htmlSafe(p.tel)}</span>`:''}`,
-  '',true,false);
+  </div>${p.tel?`<span style="font-size:13px;font-weight:700;white-space:nowrap">${htmlSafe(p.tel)}</span>`:(p.tel_standard?'':`<span style="font-size:11.5px;font-weight:700;color:#B45309;background:#FFFBEB;border:1px solid #FCD34D;border-radius:6px;padding:2px 8px;white-space:nowrap" title="Aucun numéro sur cette fiche — enrichis-la sans quitter Ma journée">📵 à enrichir</span>`)}`,
+  '',true,false,(p.tel||p.tel_standard)?'':`<button class="act act-call" onclick="ckEnrichirLigne(this)" title="${p.contacts?'Lemlist cherche le mobile et l’email du contact (facturé seulement si trouvé)':'Aucun contact nominatif : cherche les décideurs LinkedIn de l’entreprise'}">${p.contacts?'🔵 Trouver le mobile':'👥 Trouver les décideurs'}</button>`);
  }
  if(d.prospecter.length>20)h+=`<div style="font-size:12px;color:var(--ink-soft);padding:4px 2px">\u2026 ${d.prospecter.length-20} fiche(s) suivante(s) apr\u00e8s celles-ci (tri par score).</div>`;
  }

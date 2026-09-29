@@ -280,11 +280,14 @@ export default async function handler(req, res) {
         // Fiche importée de Lemlist : le SDR l'a déjà qualifiée en la mettant dans sa campagne,
         // et le scoring IA est coupé sur ces listes (29/09) — elle n'aurait donc JAMAIS eu de
         // score et restait hors de la file (cas Didier, liste Franck déménageurs, 29/09).
-        // Sans score, elle se range au milieu (50) pour ne pas tomber sous le top 25.
+        // Elle entre MÊME SANS numéro ni email (Didier, 29/09) : l'enrichissement se lance depuis
+        // Ma journée (↻ Compléter / 👥 Personas). Sans score IA : 50 si appelable, 30 sinon —
+        // les fiches qu'on peut appeler tout de suite passent devant celles à enrichir.
         const importLemlist = e.source === 'lemlist_import';
-        if (!statut && (e.score || (e.gmb && e.gmb.trouve) || sigRecent || importLemlist) && (info.tel || info.tel_standard)) {
+        const appelable = !!(info.tel || info.tel_standard);
+        if (!statut && (e.score || (e.gmb && e.gmb.trouve) || sigRecent || importLemlist) && (appelable || importLemlist)) {
           restantesL++;
-          const scoreBase = (e.score && e.score.scores && e.score.scores.global) || (importLemlist ? 50 : 0);
+          const scoreBase = (e.score && e.score.scores && e.score.scores.global) || (importLemlist ? (appelable ? 50 : 30) : 0);
           if (!listeChoisie || l.id === listeChoisie) prospecter.push({
             ...info,
             score: scoreBase + (sigRecent ? 1000 : 0),
