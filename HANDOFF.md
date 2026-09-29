@@ -1,5 +1,15 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 29 septembre 2026)
 
+## ☀️ 29 septembre 2026 — les listes importées de Lemlist entrent enfin dans « Ma journée »
+
+Bug Didier : liste « Franck - Déménagement-Marketing 2 » importée à son nom, absente de Ma
+journée. api/cockpit.js n'admettait dans la file que les fiches SCORÉES, ou avec fiche Google
+trouvée, ou avec signal LinkedIn récent — or le scoring est coupé sur les imports (même jour) :
+ces fiches n'y seraient jamais entrées, et sans bannière (pct_complete = 100 % grâce aux
+numéros importés). Fix : `e.source === 'lemlist_import'` suffit (avec un numéro, sans statut) ;
+score de tri 50 à défaut de score IA, pour ne pas tomber sous le top 25.
+Banc scratchpad banc-cockpit (import présent à 50, Pappers non enrichi exclu, traité exclu).
+
 ## 🔵 29 septembre 2026 — 🚀 automatique = LEMLIST SEUL ; Dropcontact / FullEnrich / Kaspr en manuel
 
 Décision Didier : « l'enrichissement des listes automatique par Lemlist en premier pour toutes

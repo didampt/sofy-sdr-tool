@@ -277,11 +277,17 @@ export default async function handler(req, res) {
         const sigE = (e.signal && (e.signal.type === 'linkedin' || e.signal.post)) ? e.signal
           : (((e.contacts || []).map(c => c && c.signal).find(s => s && (s.type === 'linkedin' || s.post))) || null);
         const sigRecent = !!(sigE && sigE.date && (Date.now() - new Date(sigE.date).getTime()) < 7 * 24 * 3600 * 1000);
-        if (!statut && (e.score || (e.gmb && e.gmb.trouve) || sigRecent) && (info.tel || info.tel_standard)) {
+        // Fiche importée de Lemlist : le SDR l'a déjà qualifiée en la mettant dans sa campagne,
+        // et le scoring IA est coupé sur ces listes (29/09) — elle n'aurait donc JAMAIS eu de
+        // score et restait hors de la file (cas Didier, liste Franck déménageurs, 29/09).
+        // Sans score, elle se range au milieu (50) pour ne pas tomber sous le top 25.
+        const importLemlist = e.source === 'lemlist_import';
+        if (!statut && (e.score || (e.gmb && e.gmb.trouve) || sigRecent || importLemlist) && (info.tel || info.tel_standard)) {
           restantesL++;
+          const scoreBase = (e.score && e.score.scores && e.score.scores.global) || (importLemlist ? 50 : 0);
           if (!listeChoisie || l.id === listeChoisie) prospecter.push({
             ...info,
-            score: ((e.score && e.score.scores && e.score.scores.global) || 0) + (sigRecent ? 1000 : 0),
+            score: scoreBase + (sigRecent ? 1000 : 0),
             signal_lk: sigRecent ? { date: sigE.date, interaction: sigE.interaction || 'a réagi', accroche: sigE.accroche || null } : null,
             angle: angleDe(e), contacts: info.contacts_detail.length
           });
