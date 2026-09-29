@@ -2672,23 +2672,19 @@ async function validerAjoutContact(){
  toast('👤 Contact ajouté à la fiche');
  if((document.getElementById('ct-enrichir')||{}).checked)enrichirContactSolo(i,j);
 }
-// Waterfall sur UN contact (mêmes étages et mêmes garde-fous que le pipeline global,
-// y compris « cascade épuisée » version prudente — jamais de re-paiement).
+// Enrichissement d'UN contact ajouté à la main : même règle que le 🚀 depuis le 29/09 —
+// Lemlist seul en automatique, les autres étages restent des boutons sur le contact.
 async function enrichirContactSolo(i,j){
  const e=REAL[i];const c0=contactsDe(e)[j];if(!c0||!c0.nom&&!c0.prenom)return;
  if(e._busy){toast('Analyse déjà en cours sur cette fiche — relance 🚀 sur le contact ensuite ⏳');return;}
  e._busy=true;rerender(i);
  try{
-  if(contactAFaire(e,c0))await enrichir(i,j);
   const c=contactsDe(e)[j];if(!c)return;
-  if(!c.enrich)c.enrich={};
-  if(!c.enrich.lemlist_fait&&(!c.enrich.email||manqueMobile(c.enrich)))await enrichirLemlist(i,j,{silencieux:true});
-  const fantome=!c.enrich.email&&!c.enrich.telephone&&c.enrich.lemlist_fait&&!(c.linkedin||c.enrich.linkedin);
-  if(!c.enrich.fe_fait&&(!c.enrich.email||!c.enrich.telephone)&&!fantome)await enrichirFE(i,j);
+  if(!(c.enrich&&c.enrich.lemlist_fait)&&(!(c.enrich&&c.enrich.email)||manqueMobile(c.enrich||{})))await enrichirLemlist(i,j,{silencieux:true});
   const en=(contactsDe(e)[j]||{}).enrich||{};
   toast(en.email||en.telephone
    ?('✅ '+[(en.email?'✉️ '+en.email:null),(en.telephone?'📱 '+en.telephone:null)].filter(Boolean).join(' · '))
-   :'Rien trouvé sur ce contact — 📱 Kaspr (bouton fiche) si le lead compte');
+   :'Lemlist n\'a rien trouvé — boutons Dropcontact / FullEnrich / Kaspr sur le contact si le lead compte');
  }catch(err){toast('Enrichissement du contact : '+err.message);}
  finally{e._busy=false;rerender(i);persister();majCoutListe();}
 }
@@ -7548,13 +7544,14 @@ function contactHtml(c,i,j){
   ${(function(){var ent=(typeof REAL!=='undefined'&&REAL[i])||{};var a=c.signal?accrocheSig(c.signal):(ent.signal?accrocheSig(ent.signal):'');return a?`<div class="contact-line" style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:8px 10px;margin:6px 0;font-size:13px;line-height:1.45">🗣 <b>Accroche d'appel (tirée du post)&nbsp;:</b> ${escapeHtml(a)}</div>`:'';})()}
   <div class="contact-line" style="display:flex;align-items:center;gap:8px">${photo}<span><b>${(c.prenom+' '+c.nom).trim()}</b> — ${fonctionAff} <span class="badge b-gmb">${c.source}</span>${(prof&&prof.company_size)?` <span class="badge b-gmb" title="Taille d'entreprise (LinkedIn)">${prof.company_size}</span>`:''}${porteeBadge(REAL[i],c)}</span></div>
   ${en?`
-   ${en.email?`<div class="contact-line">✉️ <b>${en.email}</b> <a class="act act-call" style="padding:4px 10px;font-size:12px" href="mailto:${en.email}" title="Écrire un email">📧</a> <button class="act act-copy" style="padding:4px 10px;font-size:12px" onclick="navigator.clipboard.writeText('${en.email}');toast('Email copié ✓')" title="Copier l'adresse">📋</button>${en.email_qualification?` <span class="badge b-new">${en.email_qualification}</span>`:''}</div>`:'<div class="contact-line" style="color:var(--ink-soft)">✉️ Email non trouvé (Dropcontact) — repli FullEnrich à venir</div>'}
+   ${en.email?`<div class="contact-line">✉️ <b>${en.email}</b> <a class="act act-call" style="padding:4px 10px;font-size:12px" href="mailto:${en.email}" title="Écrire un email">📧</a> <button class="act act-copy" style="padding:4px 10px;font-size:12px" onclick="navigator.clipboard.writeText('${en.email}');toast('Email copié ✓')" title="Copier l'adresse">📋</button>${en.email_qualification?` <span class="badge b-new">${en.email_qualification}</span>`:''}</div>`:'<div class="contact-line" style="color:var(--ink-soft)">✉️ Email non trouvé'+(en.lemlist_fait?' par Lemlist — essaie les boutons Dropcontact / FullEnrich ci-dessous':'')+'</div>'}
    ${en.telephone?`<div class="contact-line">${estMobile(en.telephone)?'📱':'☎️'} <b>${en.telephone}</b>${telBtns(en.telephone,i,(c.prenom+' '+c.nom).trim())}${(function(){var so=en.tel_source||en.telephone_source;return so?' <span class="badge b-gmb">'+(({fullenrich:'FullEnrich',kaspr:'Kaspr',lemlist:'Lemlist'})[so]||so)+'</span>':'';})()}</div>`:''}${(en.telephone_fixe&&en.telephone_fixe!==en.telephone)?`<div class="contact-line">☎️ <b>${en.telephone_fixe}</b> <span class="badge b-gmb">fixe</span>${telBtns(en.telephone_fixe,i,(c.prenom+' '+c.nom).trim())}</div>`:''}
    ${en.linkedin?`<div class="contact-line">💼 <a href="${en.linkedin.startsWith('http')?en.linkedin:'https://'+en.linkedin}" target="_blank">Profil LinkedIn ✓</a></div>`:(prof&&prof.linkedin_url?`<div class="contact-line">💼 <a href="${prof.linkedin_url.startsWith('http')?prof.linkedin_url:'https://'+prof.linkedin_url}" target="_blank">Profil LinkedIn ✓</a> <span class="badge b-gmb">Lemlist</span></div>`:'')}`
-  :`<button class="act act-lemlist" id="enrbtn${i}_${j}" onclick="enrichir(${i},${j})" style="margin-top:4px">✉️ Enrichir ce contact</button>`}
-  ${en&&(!en.email||!en.telephone)?`<button class="act act-copy" style="margin-top:4px" id="febtn${i}_${j}" onclick="lancerFE(${i},${j})" title="Cascade 15+ sources : email de repli + mobile">${en.fe_fait?'↻ FullEnrich (re-tenter)':'🔁 FullEnrich'}</button>`:''}
-  ${en&&manqueMobile(en)?`<button class="act act-copy" style="margin-top:4px" onclick="lancerKaspr(${i},${j})" title="Mobile FR via le profil LinkedIn. ⚠️ Hors pipeline automatique depuis le 17/08 : c'est l'étage le plus cher (0,82 € par donnée obtenue, contre 0,16 € pour Lemlist et 0,26 € pour Dropcontact). À utiliser quand un mobile manque sur un lead qui compte.">${en.kaspr_fait?'↻ Kaspr (re-tenter)':'📱 Kaspr'}</button>`:''}
-  ${en&&(!en.email||manqueMobile(en))?`<button class="act act-copy" style="margin-top:4px" onclick="lancerLemlist(${i},${j})" title="Waterfall niveau 2 (depuis le 17/08) — Lemlist (Prospeo, RocketReach, Cognism…). Facturé uniquement si trouvé : 5 crédits/email (≈0,05 $) + 20 crédits/mobile (≈0,20 $) → l'étage le moins cher, 0,16 € par donnée. Déjà tenté automatiquement par 🚀 : ce bouton sert à re-tenter.">${en.lemlist_fait?'↻ Lemlist (re-tenter)':'🔵 Lemlist (≈'+(((!en.email?5:0)+(manqueMobile(en)?20:0))/100).toFixed(2)+' $)'}</button>`:''}
+  :`<button class="act act-lemlist" style="margin-top:4px" onclick="lancerLemlist(${i},${j})" title="1er étage : facturé seulement si trouvé (≈0,05 $ l'email, ≈0,20 $ le mobile)">🔵 Enrichir (Lemlist)</button> <button class="act act-copy" id="enrbtn${i}_${j}" onclick="enrichir(${i},${j})" style="margin-top:4px" title="Manuel : 0,10 € par tentative, payé même sans résultat">✉️ Dropcontact</button>`}
+  ${en&&!en.email&&!en.dropcontact_fait&&en.source!=='dropcontact'&&c.nom?`<button class="act act-copy" style="margin-top:4px" id="enrbtn${i}_${j}" onclick="enrichir(${i},${j})" title="Manuel depuis le 29/09 : 0,10 € par tentative, payé même sans résultat — utile quand Lemlist n'a pas trouvé l'email">✉️ Dropcontact</button>`:''}
+  ${en&&(!en.email||!en.telephone)?`<button class="act act-copy" style="margin-top:4px" id="febtn${i}_${j}" onclick="lancerFE(${i},${j})" title="Manuel depuis le 29/09 — cascade 15+ sources : email de repli + mobile. 0,25 € par tentative, payé même sans résultat.">${en.fe_fait?'↻ FullEnrich (re-tenter)':'🔁 FullEnrich'}</button>`:''}
+  ${en&&manqueMobile(en)?`<button class="act act-copy" style="margin-top:4px" onclick="lancerKaspr(${i},${j})" title="Manuel — mobile FR via le profil LinkedIn. C'est l'étage le plus cher (0,82 € par donnée obtenue, contre 0,16 € pour Lemlist). À utiliser quand un mobile manque sur un lead qui compte.">${en.kaspr_fait?'↻ Kaspr (re-tenter)':'📱 Kaspr'}</button>`:''}
+  ${en&&(!en.email||manqueMobile(en))?`<button class="act act-copy" style="margin-top:4px" onclick="lancerLemlist(${i},${j})" title="Seul étage automatique du 🚀 depuis le 29/09 — Lemlist (Prospeo, RocketReach, Cognism…). Facturé uniquement si trouvé : 5 crédits/email (≈0,05 $) + 20 crédits/mobile (≈0,20 $) → l'étage le moins cher, 0,16 € par donnée. Ce bouton sert à lancer ou re-tenter.">${en.lemlist_fait?'↻ Lemlist (re-tenter)':'🔵 Lemlist (≈'+(((!en.email?5:0)+(manqueMobile(en)?20:0))/100).toFixed(2)+' $)'}</button>`:''}
  </div>`;
 }
 
@@ -9840,11 +9837,17 @@ async function enrichir(i,j){
   }
   if(d.erreur){toast('Erreur : '+d.erreur);if(btn){btn.disabled=false;btn.textContent='✉️ Enrichir ce contact';}return false;}
   if(d.pending){toast('Dropcontact met du temps — réessaie dans une minute');if(btn){btn.disabled=false;btn.textContent='✉️ Réessayer';}return false;}
-  c.enrich=d.resultat||{};
+  // Fusion, pas remplacement : Dropcontact passe désormais APRÈS Lemlist (bouton manuel) et ne
+  // doit pas effacer l'email, le mobile ni les marqueurs (lemlist_fait, fe_fait…) déjà posés.
+  const avant=c.enrich||{},res=d.resultat||{};
+  c.enrich={...avant};
+  for(const [k,v] of Object.entries(res)){if(v!=null&&v!==''&&!avant[k])c.enrich[k]=v;}
   c.enrich.avec_domaine=!!domaineDe(e);
+  c.enrich.dropcontact_fait=true;
   if(j===0||j===undefined)e.enrich=c.enrich; // compat anciennes listes
   rerender(i);persister();
-  return !!(c.enrich&&c.enrich.email);
+  if(btn&&!c.enrich.email)toast('Dropcontact : pas d\'email trouvé pour ce contact');
+  return !!(c.enrich&&c.enrich.email)&&!avant.email;
  }catch(err){
   toast('Erreur réseau : '+err.message);
   if(btn){btn.disabled=false;btn.textContent='✉️ Enrichir ce contact';}
@@ -9910,7 +9913,9 @@ async function enrichirLemlist(i,j,opts){
  const O=opts||{};const MAX=(O.max==null?7:O.max);const mute=!!O.silencieux;
  const e=REAL[i];
  const c=contactsDe(e)[j||0];
- if(!c||!c.enrich)return false;
+ if(!c)return false;
+ // Lemlist est désormais le 1er étage : un contact jamais enrichi n'a pas encore d'objet enrich
+ if(!c.enrich){c.enrich={linkedin:c.linkedin||null};if(j===0||j===undefined)e.enrich=c.enrich;}
  try{
   let d;
   if(c.enrich.lemlist_id){
@@ -10551,10 +10556,10 @@ async function pipelineFiche(i){
    return {tentes:0,ok:0,skip:true};
   }
   // ── 1. GMB ──
-  prog(i,5,'Étape 1/7 · ⭐ Analyse Google Business (note, avis, concurrents)…');
+  prog(i,5,'Étape 1/5 · ⭐ Analyse Google Business (note, avis, concurrents)…');
   if(gmbAFaire(e)){wfSet(i,'gmb','run');await analyserGmb(i);}
   wfSet(i,'gmb',e.gmb&&e.gmb.trouve?'ok':'ko');
-  prog(i,20,'Étape 2/7 · 🤖 Recherche IA (site web, enseigne)…');
+  prog(i,20,'Étape 2/5 · 🤖 Recherche IA (site web, enseigne)…');
   // ── 2. IA si GMB raté ou pas de domaine ──
   if(!e.ia&&(!(e.gmb&&e.gmb.trouve)||!domaineDe(e))){
    wfSet(i,'ia','run');
@@ -10573,7 +10578,7 @@ async function pipelineFiche(i){
    prog(i,30,'Étape 2 bis · 🔎 Technologies du site (outils d’avis, chat)…');
    await detecterTechnos(i);
   }
-  prog(i,35,'Étape 3/7 · 👥 Recherche des personas LinkedIn…');
+  prog(i,35,'Étape 3/5 · 👥 Recherche des personas LinkedIn…');
   // ── 2.5 Personas (si la liste en cible OU Hot Lead, et que la fiche a un domaine/enseigne/LinkedIn) ──
   const estHotLead=estVisiteSite(e);
   // e.siren suffit désormais : la voie SIREN de /api/personas trouve les salariés sans domaine ni GMB
@@ -10585,52 +10590,28 @@ async function pipelineFiche(i){
   }else{
    wfSet(i,'pers',contactsDe(e).some(c=>c.source==='linkedin')?'ok':'—');
   }
-  prog(i,50,'Étape 4/7 · ✉️ Recherche des emails (Dropcontact — 1 à 2 min, patience)…');
-  // ── 3. Emails Dropcontact ──
+  // ── 3. Contacts : LEMLIST SEUL en automatique (décision Didier 29/09) ──
+  // Facturé À LA RÉUSSITE (≈0,05 $/email, ≈0,20 $/mobile), un échec ne coûte rien ; mesuré sur
+  // 2 mois (/api/diag-enrich) : 0,16 €/donnée contre Dropcontact 0,26 €, FullEnrich 0,61 €,
+  // Kaspr 0,82 €. Dropcontact, FullEnrich et Kaspr restent des BOUTONS sur chaque contact
+  // (contactHtml), à utiliser quand Lemlist n'a pas trouvé sur un lead qui compte.
+  prog(i,55,'Étape 4/5 · 🔵 Lemlist (email + mobile — facturé seulement si trouvé)…');
   const cs=contactsDe(e);
-  let dejaEmail=cs.some(c=>c.enrich&&c.enrich.email),tente=false,trouve=dejaEmail;
-  for(let j=0;j<cs.length;j++){
-   if(contactAFaire(e,cs[j])){
-    tente=true;tentes++;
-    wfSet(i,'mail','run');
-    if(await enrichir(i,j)){trouve=true;ok++;}
-   }
-  }
-  wfSet(i,'mail',trouve?'ok':(tente?'ko':(cs.some(c=>c.nom)?'ko':'—')));
-  // ── 4. Lemlist (niveau 2 depuis le 17/08) : facturé À LA RÉUSSITE (~0,05 $/email +
-  // 0,20 $/mobile) → 0,16 € par donnée obtenue, le moins cher du waterfall, et un échec
-  // ne coûte RIEN. Mesuré sur 2 mois (/api/diag-enrich) : Dropcontact 0,26 € · FullEnrich
-  // 0,61 € · Kaspr 0,82 €. Il passe donc AVANT les étages facturés à la tentative.
-  prog(i,66,'Étape 5/7 · 🔵 Lemlist (email + mobile — facturé seulement si trouvé)…');
   let lemGain=false,lemTente=false;
   for(let j=0;j<cs.length;j++){
    const c=cs[j];
-   if(c.nom&&c.enrich&&!c.enrich.lemlist_fait&&(!c.enrich.email||manqueMobile(c.enrich))){
+   const en=c.enrich||{};
+   const identifiable=!!(c.nom||c.linkedin||en.linkedin||en.email);
+   if(identifiable&&!en.lemlist_fait&&(!en.email||manqueMobile(en))){
+    const sansEmail=!en.email;
     lemTente=true;wfSet(i,'lem','run');
+    if(sansEmail)tentes++;
     if(await enrichirLemlist(i,j,{max:2,silencieux:true}))lemGain=true;
+    if(sansEmail&&c.enrich&&c.enrich.email)ok++;
    }
   }
   wfSet(i,'lem',lemGain?'ok':(lemTente?'ko':'—'));
-  prog(i,80,'Étape 6/7 · 📱 FullEnrich (ce qui manque encore)…');
-  // ── 5. FullEnrich : email manquant OU mobile manquant (jamais re-payé : fe_fait) ──
-  let feGain=false,feTente=false;
-  for(let j=0;j<cs.length;j++){
-   const c=cs[j];
-   if(c.nom&&c.enrich&&!c.enrich.fe_fait&&(!c.enrich.email||!c.enrich.telephone)){
-    // Garde-fou « cascade épuisée », version prudente (GO Didier 17/09, diag-enrich : 515
-    // contacts facturés à plusieurs étages sans rien rendre). Contact SANS LinkedIn, toujours
-    // ni email ni téléphone après Dropcontact et Lemlist → FullEnrich (0,25 € payé même en
-    // échec) n'a plus rien pour travailler : on ne paie pas. Un contact qui a DÉJÀ une donnée
-    // n'est jamais bloqué (FE complète l'autre), et le bouton manuel de la fiche reste libre.
-    if(!c.enrich.email&&!c.enrich.telephone&&c.enrich.lemlist_fait&&!(c.linkedin||c.enrich.linkedin)){
-     c.enrich.fe_skip='cascade_epuisee_sans_linkedin';
-     continue;
-    }
-    feTente=true;wfSet(i,'fe','run');
-    if(await enrichirFE(i,j))feGain=true;
-   }
-  }
-  wfSet(i,'fe',feGain?'ok':(feTente?'ko':(cs.some(c=>c.enrich&&c.enrich.email&&c.enrich.telephone)?'ok':'—')));
+  wfSet(i,'mail','—');wfSet(i,'fe','—'); // étages manuels désormais
   // ⚠️ Kaspr n'est PLUS dans le pipeline automatique (décision 17/08) : 283 € pour 278 mobiles
   // sur 2 mois = 0,82 €/donnée, le plus cher, et il passait APRÈS FullEnrich qui en trouvait
   // déjà 463. Il reste disponible à la main sur la fiche (bouton 📱 Kaspr) quand un mobile
@@ -10669,7 +10650,6 @@ async function lancerFiche(i){
 }
 
 function gmbAFaire(e){return !e.gmb||(e.gmb.trouve&&e.gmb.telephone===undefined)||(!e.gmb.trouve&&sigDe(e)!=='|'&&(e.gmb._sig||'')!==sigDe(e));}
-function contactAFaire(e,c){return !!(c.nom&&(!c.enrich||(!c.enrich.email&&!c.enrich.avec_domaine&&!!domaineDe(e))));}
 
 function listeLemlistImport(){return !!(state.criteres&&state.criteres.lemlist_import);}
 // « Enrichie » = scorée, SAUF sur les listes importées de Lemlist (scoring coupé) où le
@@ -10695,8 +10675,8 @@ async function lancerWaterfall(nouvellesSeulement){
  if(nouvellesSeulement&&!aTraiter.length){toast('✅ Toutes les fiches sont déjà enrichies');return;}
  const nbGmb=REAL.filter(gmbAFaire).length;
  const nbIa=REAL.filter(e=>!e.ia&&!domaineDe(e)).length;
- const nbContacts=REAL.reduce((s,e)=>s+contactsDe(e).filter(c=>c.nom&&!c.enrich).length,0);
- if(!confirm(`🚀 Lancer l'enrichissement sur ${aTraiter.length} fiche${aTraiter.length>1?'s':''}${nouvellesSeulement?' (nouvelles uniquement)':''} ?\n\n1. GMB + domaine + ☎️ standard : ~${nbGmb} fiches\n2. IA site web/nom commercial (si GMB échoue) : jusqu'à ${nbIa} appels (~0,02 €)\n3. Personas (${jobsCibles().length?jobsCibles().join(', '):'aucun sélectionné'}) : IA LinkedIn (~0,05-0,15 €/fiche)\n4. Emails Dropcontact : ~${nbContacts} crédits (0,10 €/tentative — 0,26 € par donnée obtenue)\n5. 🔵 Lemlist (email + mobile) : facturé SEULEMENT si trouvé (~0,05 $/email, 0,20 $/mobile) = l'étage le moins cher\n6. FullEnrich (ce qui manque encore) : 0,25 €/tentative, payé même en cas d'échec\n${listeLemlistImport()?'7. Scoring : COUPÉ sur les listes importées de Lemlist (le SDR a déjà qualifié) — pré-audit et 🎯 manuel toujours dispo':'7. Scoring + synthèse d\'appel + email perso (IA, ~0,03 €/fiche)'}\n\n📱 Kaspr n'est plus automatique (0,82 € par donnée) : bouton sur la fiche quand un mobile manque vraiment.\n💡 Exclus d'abord les fiches inutiles (🗑).`))return;
+ const nbContacts=REAL.reduce((s,e)=>s+contactsDe(e).filter(c=>{const en=c.enrich||{};return (c.nom||c.linkedin||en.linkedin||en.email)&&!en.lemlist_fait&&(!en.email||manqueMobile(en));}).length,0);
+ if(!confirm(`🚀 Lancer l'enrichissement sur ${aTraiter.length} fiche${aTraiter.length>1?'s':''}${nouvellesSeulement?' (nouvelles uniquement)':''} ?\n\n1. GMB + domaine + ☎️ standard : ~${nbGmb} fiches\n2. IA site web/nom commercial (si GMB échoue) : jusqu'à ${nbIa} appels (~0,02 €)\n3. Personas (${jobsCibles().length?jobsCibles().join(', '):'aucun sélectionné'}) : IA LinkedIn (~0,05-0,15 €/fiche)\n4. 🔵 Lemlist (email + mobile) sur ~${nbContacts} contact(s) : facturé SEULEMENT si trouvé (~0,05 $/email, 0,20 $/mobile) — le seul étage automatique\n${listeLemlistImport()?'5. Scoring : COUPÉ sur les listes importées de Lemlist (le SDR a déjà qualifié) — pré-audit et 🎯 manuel toujours dispo':'5. Scoring + synthèse d\'appel + email perso (IA, ~0,03 €/fiche)'}\n\n✋ Dropcontact, FullEnrich et Kaspr sont MANUELS : boutons sur chaque contact quand Lemlist n'a pas trouvé un lead qui compte.\n💡 Exclus d'abord les fiches inutiles (🗑).`))return;
  // Verrou global : empêche de lancer 2 enrichissements sur LA MÊME liste (même onglet ou autre)
  if(state.savedId){
   try{

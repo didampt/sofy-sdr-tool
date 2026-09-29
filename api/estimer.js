@@ -18,21 +18,19 @@
 
 import { verifierToken, sql } from './db.js';
 
-// Coût d'enrichissement par fiche (fourchette réaliste), basé sur la table tarifs.
-// Min = fiche "facile" (GMB + scoring suffisent). Max = waterfall complet (Dropcontact + FullEnrich + Kaspr).
+// Coût d'enrichissement AUTOMATIQUE par fiche (fourchette réaliste), basé sur la table tarifs.
+// Depuis le 29/09 le 🚀 n'appelle plus que Lemlist (facturé à la réussite : ≈0,05 $ l'email +
+// ≈0,20 $ le mobile) ; Dropcontact, FullEnrich et Kaspr sont des boutons manuels, hors estimation.
+// Min = fiche "facile" (GMB + scoring). Max = + email et mobile trouvés par Lemlist.
 function fourchetteParFiche(tarifs) {
   const t = {};
   for (const r of tarifs) t[r.api] = Number(r.prix) || 0;
   const gmb = t.google_places || 0.02;
   const ia = t.ia_claude || 0.02;
-  const drop = t.dropcontact || 0.10;
-  const fe = t.fullenrich || 0.25;
-  const kaspr = t.kaspr || 0.20;
+  const lemlist = t.lemlist || 0.23;
   const pappers = t.pappers || 0.05;
-  // Min : Pappers détail + GMB + scoring IA (email/tel trouvés via GMB)
   const min = pappers + gmb + ia;
-  // Max : Pappers détail + GMB + IA + Dropcontact + FullEnrich + Kaspr + scoring
-  const max = pappers + gmb + ia + drop + fe + kaspr + ia;
+  const max = pappers + gmb + ia + lemlist + ia;
   return { min, max };
 }
 

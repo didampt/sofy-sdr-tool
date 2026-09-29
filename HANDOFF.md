@@ -1,5 +1,29 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 29 septembre 2026)
 
+## 🔵 29 septembre 2026 — 🚀 automatique = LEMLIST SEUL ; Dropcontact / FullEnrich / Kaspr en manuel
+
+Décision Didier : « l'enrichissement des listes automatique par Lemlist en premier pour toutes
+les listes, suivi des autres en manuel ». Raison : Lemlist est facturé à la réussite et c'est
+l'étage le moins cher mesuré (0,16 €/donnée contre Dropcontact 0,26 €, FullEnrich 0,61 €,
+Kaspr 0,82 €). Rappel [[mobiles-pas-standards]] : c'est le MOBILE qui compte.
+- **pipelineFiche** (sert aussi aux Hot Leads) : étapes 4-6 remplacées par un seul étage
+  Lemlist pour tout contact identifiable (nom OU LinkedIn OU email) sans email ou sans mobile ;
+  étapes renumérotées /5. wfSet 'mail' et 'fe' passent à « — ».
+- **enrichirLemlist** accepte un contact sans objet enrich (dirigeants Pappers, personas
+  frais) — avant, il sortait immédiatement.
+- **enrichir (Dropcontact)** FUSIONNE au lieu de remplacer c.enrich (il écrasait le mobile et
+  lemlist_fait quand on le lançait après Lemlist) ; pose dropcontact_fait.
+- **Boutons contact** : contact vierge = « 🔵 Enrichir (Lemlist) » + « ✉️ Dropcontact » ; après
+  Lemlist sans email = Dropcontact + FullEnrich + Kaspr + Lemlist re-tenter.
+- **enrichirContactSolo** (ajout manuel avec case cochée) : Lemlist seul aussi.
+- Confirm du 🚀 réécrit, compteur de contacts aligné sur la condition Lemlist (il affichait
+  0 pour les listes importées). api/estimer.js : fourchette max = Lemlist (plus Dropcontact +
+  FullEnrich + Kaspr). Helper mort contactAFaire retiré.
+- Smoke : 🚀 sur une fiche → seul /api/lemlist-enrich appelé ; Dropcontact manuel ensuite →
+  email ajouté, mobile Lemlist et lemlist_fait conservés ; boutons corrects.
+À SURVEILLER : taux d'emails trouvés par liste (Dropcontact rattrapait des emails que Lemlist
+rate) — /api/diag-enrich dans 2-3 semaines pour mesurer.
+
 ## 🚦 29 septembre 2026 — plafond Lemlist 75 → 150 nouveaux leads / SDR / 24 h (SDR bloqués)
 
 Capture Alicia : « soreach : 0 envoyé, 0 mis à jour, 5 échecs (Plafond atteint 75/75) ».
