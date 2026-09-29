@@ -80,6 +80,15 @@ export default async function handler(req, res) {
         iTel = idx(['phone', 'telephone', 'téléphone']), iLk = idx(['linkedinurl', 'linkedin url', 'linkedin']),
         iVille = idx(['ville', 'city']), iFonction = idx(['jobtitle', 'job title', 'fonction', 'position', 'title']),
         iEtat = idx(['state', 'status']);
+      // 2e FORMAT d'export (découvert 29/09, campagne Franck déménageurs) : un SCAN GOOGLE MAPS
+      // fait dans Lemlist = des ENTREPRISES, pas des personnes. Colonnes standard vides, données
+      // dans des colonnes personnalisées : Nom (nom de l'entreprise), Note (note Google),
+      // companySiteWeb, Adresse, phone (préfixé d'une apostrophe anti-formule Excel).
+      const iNomCustom = entetes.indexOf('nom'), iSite = idx(['companysiteweb', 'companywebsite', 'website', 'site web', 'site']),
+        iAdresse = idx(['adresse', 'address']),
+        // « note » (custom du scan, remplie) ET « notegoogle » (colonne d'équipe, souvent vide)
+        // coexistent : on lira les deux et gardera la non-vide.
+        iNoteC = entetes.indexOf('note'), iNoteG = entetes.indexOf('notegoogle');
       const leads = [];
       let sansEmail = 0;
       for (const l of lignes.slice(1)) {
@@ -94,13 +103,28 @@ export default async function handler(req, res) {
           prenom: iPrenom >= 0 ? (l[iPrenom] || '').trim() : '',
           nom: iNom >= 0 ? (l[iNom] || '').trim() : '',
           entreprise: iEnt >= 0 ? (l[iEnt] || '').trim() : '',
-          telephone: iTel >= 0 ? (l[iTel] || '').trim() : '',
+          // Apostrophe de tête = garde anti-formule des exports ('+3347…) : on la retire
+          telephone: (iTel >= 0 ? (l[iTel] || '').trim() : '').replace(/^'+/, ''),
           linkedin: iLk >= 0 ? (l[iLk] || '').trim() : '',
           ville: iVille >= 0 ? (l[iVille] || '').trim() : '',
           fonction: iFonction >= 0 ? (l[iFonction] || '').trim() : '',
-          etat: iEtat >= 0 ? (l[iEtat] || '').trim() : ''
+          etat: iEtat >= 0 ? (l[iEtat] || '').trim() : '',
+          site: iSite >= 0 ? (l[iSite] || '').trim() : '',
+          adresse: iAdresse >= 0 ? (l[iAdresse] || '').trim() : '',
+          note_google: (iNoteC >= 0 ? (l[iNoteC] || '').trim() : '') || (iNoteG >= 0 ? (l[iNoteG] || '').trim() : '')
         };
-        if (!lead.email && !lead.linkedin && !(lead.prenom + lead.nom).trim() && !lead.entreprise) continue;
+        // Scan Google Maps : le nom de l'entreprise est dans la colonne personnalisée « Nom »
+        // (on ne l'utilise que si les champs personne sont vides — sur un export de personnes,
+        // « nom » pourrait être un nom de famille).
+        if (!lead.entreprise && !(lead.prenom + lead.nom).trim() && iNomCustom >= 0) {
+          lead.entreprise = (l[iNomCustom] || '').trim();
+        }
+        // Ville extraite de l'adresse Google (« 92 Cr Lafayette, 69003 Lyon, France »)
+        if (!lead.ville && lead.adresse) {
+          const mv = lead.adresse.match(/\d{4,5}\s+([^,]+),/);
+          if (mv) lead.ville = mv[1].trim();
+        }
+        if (!lead.email && !lead.linkedin && !(lead.prenom + lead.nom).trim() && !lead.entreprise && !lead.telephone) continue;
         if (!lead.email) sansEmail++;
         leads.push(lead);
       }

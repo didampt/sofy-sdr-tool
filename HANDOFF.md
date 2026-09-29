@@ -1,4 +1,24 @@
-# HANDOFF — Reprise du travail (dernière mise à jour : 23 septembre 2026)
+# HANDOFF — Reprise du travail (dernière mise à jour : 29 septembre 2026)
+
+## 🐛 29 septembre 2026 — import Lemlist : 2e FORMAT d'export découvert (scan Google Maps)
+
+Bug Didier : campagne « Franck - 2026Q3-Déménagement-Marketing 2 », 60 contacts dans Lemlist,
+0/26 à l'import. Diagnostic par sondes prod (action=brut) :
+1. DEUX campagnes HOMONYMES existaient (une à 26 = version antérieure, une à 60) → le menu
+   suffixe l'id court en cas de doublon de nom.
+2. Les 60 leads sont un **SCAN GOOGLE MAPS fait dans Lemlist** : des ENTREPRISES, pas des
+   personnes. Colonnes standard (email/firstName/companyName/linkedinUrl) VIDES ; données dans
+   des colonnes personnalisées : `Nom` (nom d'entreprise), `Note` (note Google, ≠ `noteGoogle`
+   d'équipe souvent vide), `companySiteWeb`, `Adresse`, `phone` préfixé d'une APOSTROPHE
+   anti-formule Excel ('+33…). → tout était jeté par le filtre d'identité.
+Correctifs api/lemlist-import.js : entreprise ← colonne `Nom` (seulement si prénom+nom vides),
+apostrophe de tête retirée du téléphone, ville extraite de l'adresse (regex CP), site/adresse/
+note_google remontés, un téléphone seul suffit comme identité. Front : fiche.site_web/adresse/
+note_import remplis à l'import (badge ★ dans l'aperçu, contact affiché « 📞 tel » si sans nom).
+Sondes diagnostic conservées : ?action=brut (superadmin, GET Lemlist whitelist) + nb_lignes/
+taille_csv dans la réponse leads. Banc : 2 formats testés (personnes + scan).
+PIÈGE : les exports Lemlist mélangent colonnes d'équipe (souvent vides) et colonnes custom du
+scan — toujours vérifier avec action=brut avant de toucher au mapping.
 
 ## 🛡️ 23 septembre 2026 — filtre HubSpot/SofyScrap RENFORCÉ à l'import Lemlist (demande Didier)
 

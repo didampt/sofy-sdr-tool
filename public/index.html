@@ -10835,7 +10835,12 @@ async function lemImpCharger(){
   for(const l of LEMIMP.leads){
    const cle=(l.entreprise||((l.prenom+' '+l.nom).trim())||l.email||l.linkedin||'?').toLowerCase();
    if(!parEnt.has(cle))parEnt.set(cle,{nom:l.entreprise||((l.prenom+' '+l.nom).trim())||l.email||'Contact Lemlist',ville:l.ville||'',source:'lemlist_import',contacts:[]});
-   parEnt.get(cle).contacts.push({prenom:l.prenom,nom:l.nom,fonction:l.fonction||'',source:'lemlist',
+   const fi=parEnt.get(cle);
+   // Scan Google Maps Lemlist (campagnes « entreprises ») : site, adresse, note déjà connus
+   if(l.site&&!fi.site_web)fi.site_web=l.site;
+   if(l.adresse&&!fi.adresse)fi.adresse=l.adresse;
+   if(l.note_google&&!fi.note_import)fi.note_import=l.note_google;
+   fi.contacts.push({prenom:l.prenom,nom:l.nom,fonction:l.fonction||'',source:'lemlist',
     lemlist_id:l.lemlist_id||null, // adresse du lead dans la campagne — indispensable au push retour (leads sans email)
     enrich:{email:l.email,telephone:l.telephone||null,linkedin:l.linkedin||null}});
   }
@@ -10869,7 +10874,7 @@ function lemImpRendu(){
   const coche=!LEMIMP.decoches.has(f.nom.toLowerCase());
   return `<div style="display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid #f1f2f8;font-size:13px;${f.dedup_liste?'opacity:.5':''}">
    <input type="checkbox" data-cle="${cle}" ${coche?'checked':''} onchange="if(this.checked)LEMIMP.decoches.delete(this.dataset.cle);else LEMIMP.decoches.add(this.dataset.cle);lemImpRendu()">
-   <div style="min-width:0;flex-grow:1"><b>${esc(f.nom)}</b> <span style="color:var(--ink-soft)">· ${f.contacts.length} contact(s) : ${esc(f.contacts.map(c=>((c.prenom+' '+c.nom).trim())||c.enrich.email).slice(0,3).join(', '))}${f.contacts.length>3?'…':''}</span></div>
+   <div style="min-width:0;flex-grow:1"><b>${esc(f.nom)}</b>${f.note_import?` <span class="badge b-gmb">★ ${esc(f.note_import)}</span>`:''} <span style="color:var(--ink-soft)">${f.ville?'· '+esc(f.ville)+' ':''}· ${f.contacts.length} contact(s) : ${esc(f.contacts.map(c=>((c.prenom+' '+c.nom).trim())||c.enrich.email||(c.enrich.telephone?'📞 '+c.enrich.telephone:'—')).slice(0,3).join(', '))}${f.contacts.length>3?'…':''}</span></div>
    ${f.dedup_liste?`<span class="badge" style="background:#fee2e2;color:#b91c1c">déjà : ${esc(String(f.dedup_liste).slice(0,28))}</span>`:''}
    ${f.dedup_hubspot?'<span class="badge b-gmb">HubSpot ✓</span>':''}
   </div>`;
