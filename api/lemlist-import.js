@@ -104,10 +104,27 @@ export default async function handler(req, res) {
         if (!lead.email) sansEmail++;
         leads.push(lead);
       }
-      return res.status(200).json({ leads: leads.slice(0, 1000), nb: leads.length, sans_email: sansEmail, colonnes: entetes });
+      // nb_lignes = lignes de données du CSV AVANT normalisation : si nb_lignes > nb, des lignes
+      // sont jetées (identité vide) ; si nb_lignes < ce que montre Lemlist, le manque est côté
+      // export Lemlist ou parseur (guillemet non échappé qui avale des lignes) — diag 29/09.
+      return res.status(200).json({ leads: leads.slice(0, 1000), nb: leads.length, sans_email: sansEmail,
+        colonnes: entetes, nb_lignes: lignes.length - 1, taille_csv: texte.length });
     }
 
-    return res.status(400).json({ erreur: 'action inconnue (campagnes|leads)' });
+    // ── Sonde superadmin : GET brut vers l'API Lemlist (diagnostic uniquement, lecture seule) ──
+    if (action === 'brut') {
+      if (user.role !== 'superadmin') return res.status(403).json({ erreur: 'Réservé superadmin' });
+      const chemin = String(req.query.chemin || '');
+      if (!/^[a-zA-Z0-9/_?=&.%-]+$/.test(chemin) || !/^(campaigns|leads|database|lists|schedules|team)\b/.test(chemin)) {
+        return res.status(400).json({ erreur: 'chemin invalide (campaigns|leads|database|lists|schedules|team…)' });
+      }
+      const r = await fetch('https://api.lemlist.com/api/' + chemin, { headers });
+      const texte = await r.text();
+      return res.status(200).json({ status: r.status, type: r.headers.get('content-type') || '',
+        longueur: texte.length, corps: texte.slice(0, 4000) });
+    }
+
+    return res.status(400).json({ erreur: 'action inconnue (campagnes|leads|brut)' });
   } catch (e) {
     return res.status(500).json({ erreur: 'Import Lemlist', detail: String(e.message || e).slice(0, 200) });
   }

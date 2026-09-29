@@ -10808,8 +10808,11 @@ async function lemImpInit(){
  try{
   const r=await api('/api/lemlist-import?action=campagnes');const d=await r.json();
   if(d.erreur){sel.innerHTML='<option value="">⚠️ '+String(d.erreur).replace(/</g,'&lt;')+'</option>';return;}
+  // Des campagnes peuvent porter EXACTEMENT le même nom (vu le 29/09 : deux « Déménagement-
+  // Marketing 2 », une vide, une pleine) → on suffixe l'id court quand le nom est dupliqué.
+  const nbNoms={};for(const c of (d.campagnes||[]))nbNoms[c.nom]=(nbNoms[c.nom]||0)+1;
   sel.innerHTML='<option value="">Choisir une campagne…</option>'+(d.campagnes||[]).map(c=>
-   `<option value="${String(c.id).replace(/"/g,'')}">${String(c.nom).replace(/</g,'&lt;')}${c.statut?' ('+c.statut+')':''}</option>`).join('');
+   `<option value="${String(c.id).replace(/"/g,'')}">${String(c.nom).replace(/</g,'&lt;')}${c.statut?' ('+c.statut+')':''}${nbNoms[c.nom]>1?' · '+String(c.id).slice(-5):''}</option>`).join('');
  }catch(e){sel.innerHTML='<option value="">⚠️ Erreur réseau</option>';}
  try{
   const r=await api('/api/sdrs');const d=await r.json();
