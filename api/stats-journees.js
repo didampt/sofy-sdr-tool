@@ -5,7 +5,7 @@
 // Sources : journees_sdr (journal automatique du soir), listes.entreprises (tags_sdr/traite_le,
 // concurrent_perdu) — aucun appel externe, aucune écriture.
 
-import { verifierToken, sql, ensureSchema } from './db.js';
+import { verifierToken, sql, ensureSchema, plafondLemlistJour } from './db.js';
 
 export const config = { maxDuration: 30 };
 
@@ -109,7 +109,7 @@ export default async function handler(req, res) {
 
     // ── Quota Lemlist LIVE (24 h glissantes — colonne opérationnelle du tableau équipe) ──
     const quota = {};
-    const PLAF = parseInt(process.env.LEMLIST_PLAFOND_JOUR || '75', 10);
+    const PLAF = plafondLemlistJour();
     try {
       const q = await sql`SELECT auteur, COUNT(*)::int n FROM activites WHERE type = 'sequenceAdded' AND ts > NOW() - INTERVAL '24 hours' GROUP BY auteur`;
       for (const r of q) if (r.auteur) quota[r.auteur] = { utilise: r.n, plafond: PLAF };

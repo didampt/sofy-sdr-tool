@@ -1,5 +1,20 @@
 # HANDOFF — Reprise du travail (dernière mise à jour : 29 septembre 2026)
 
+## 🚦 29 septembre 2026 — plafond Lemlist 75 → 150 nouveaux leads / SDR / 24 h (SDR bloqués)
+
+Capture Alicia : « soreach : 0 envoyé, 0 mis à jour, 5 échecs (Plafond atteint 75/75) ».
+- **Source unique** `plafondLemlistJour()` dans api/db.js (défaut 150, la variable Vercel
+  `LEMLIST_PLAFOND_JOUR` l'emporte si elle existe — ⚠️ si elle vaut 75 dans Vercel, c'est elle
+  qui gagne : la retirer ou la passer à 150). Utilisée par api/lemlist.js, api/sequences-cron.js
+  et api/stats-journees.js (avant : trois `|| '75'` recopiés).
+- **Bug corrigé** : le contrôle était fait AVANT toute tentative, il bloquait donc aussi les
+  mises à jour de leads déjà en séquence (le « 0 mis à jour »). Il ne bloque plus que le POST
+  d'ajout ; le filet « PATCH par id » reste tenté ; 429 seulement si rien n'a pu être fait.
+- Le vrai garde-fou délivrabilité reste la limite quotidienne de chaque boîte dans Lemlist :
+  un lead ajouté est mis en file, pas envoyé immédiatement.
+- Banc (scratchpad banc-plafond) : ajout sous plafond, MAJ au plafond, filet id au plafond,
+  429 sans POST pour un vrai nouveau lead.
+
 ## 🐛 29 septembre 2026 — import Lemlist : 2e FORMAT d'export découvert (scan Google Maps)
 
 Bug Didier : campagne « Franck - 2026Q3-Déménagement-Marketing 2 », 60 contacts dans Lemlist,

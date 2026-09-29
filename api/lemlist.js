@@ -2,7 +2,7 @@
 // 1) upsert du CONTACT (champs unifiés : nom, société, téléphone, LinkedIn) 2) ajout/MAJ du LEAD dans la campagne
 // POST {liste_id, produit, proprietaire, contact:{email,prenom,nom}, variables:{…}, sms}
 
-import { sql, ensureSchema, verifierToken } from './db.js';
+import { sql, ensureSchema, verifierToken, plafondLemlistJour } from './db.js';
 
 export default async function handler(req, res) {
   const user = verifierToken(req);
@@ -27,20 +27,17 @@ export default async function handler(req, res) {
       return res.status(400).json({ erreur: "Aucune campagne configurée — renseigne les IDs de campagnes Lemlist dans ⚙️ Envois (carte Connexion réelle)" });
     }
 
-    // Plafond quotidien (délivrabilité) : max N NOUVEAUX leads Lemlist par SDR par 24 h glissantes.
-    // Seuls les ajouts comptent (sequenceAdded) — les mises à jour d'un lead déjà en séquence passent.
-    const PLAFOND_JOUR = parseInt(process.env.LEMLIST_PLAFOND_JOUR || '75', 10); // 50 → 75 le 24/07 (Alicia bloquée ; boîtes sous lemwarm)
+    // Plafond quotidien : max N NOUVEAUX leads Lemlist par SDR sur 24 h glissantes. Seuls les
+    // AJOUTS comptent (sequenceAdded) : le contrôle est fait juste avant le POST, plus bas —
+    // avant le 29/09 il était ici et bloquait aussi les mises à jour de leads déjà en séquence.
+    const PLAFOND_JOUR = plafondLemlistJour();
     const sdrEnvoi = proprietaire || user.nom;
-    if (sql && sdrEnvoi) {
+    const plafondAtteint = async () => {
+      if (!sql || !sdrEnvoi) return null;
       const cnt = await sql`SELECT COUNT(*)::int AS n FROM activites
         WHERE type = 'sequenceAdded' AND auteur = ${sdrEnvoi} AND ts > NOW() - INTERVAL '24 hours'`;
-      if (cnt.length && cnt[0].n >= PLAFOND_JOUR) {
-        return res.status(429).json({
-          erreur: `Plafond Lemlist atteint : ${cnt[0].n}/${PLAFOND_JOUR} envois sur 24 h (protection délivrabilité). Réessaie demain.`,
-          plafond: PLAFOND_JOUR, envoyes_24h: cnt[0].n
-        });
-      }
-    }
+      return (cnt.length && cnt[0].n >= PLAFOND_JOUR) ? cnt[0].n : null;
+    };
 
     let ownerEmail = null;
     if (sql && proprietaire) {
@@ -86,7 +83,10 @@ export default async function handler(req, res) {
     diag.patchEmail = { status: rep.status, body: (txt || '').slice(0, 200) };
     if (rep.ok) { maj = true; try { data = JSON.parse(txt); } catch (_) {} }
 
-    if (!maj) {
+    // Plafond atteint : on n'AJOUTE pas, mais le filet « PATCH par id » plus bas reste tenté —
+    // un lead déjà en séquence doit toujours pouvoir être mis à jour.
+    const n24 = maj ? null : await plafondAtteint();
+    if (!maj && n24 === null) {
       rep = await fetch(urlEmail, { method: 'POST', headers, body: JSON.stringify(corps) });
       txt = await rep.text();
       diag.postEmail = { status: rep.status, body: (txt || '').slice(0, 200) };
@@ -111,6 +111,13 @@ export default async function handler(req, res) {
           if (u.ok) { maj = true; }
         }
       } catch (e) { diag.lookupErr = e.message; }
+    }
+
+    if (!maj && !ajoute && n24 !== null) {
+      return res.status(429).json({
+        erreur: `Plafond Lemlist atteint : ${n24}/${PLAFOND_JOUR} nouveaux leads sur 24 h (protection délivrabilité). Réessaie demain.`,
+        plafond: PLAFOND_JOUR, envoyes_24h: n24
+      });
     }
 
     if (!maj && !ajoute) {

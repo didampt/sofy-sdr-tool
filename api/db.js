@@ -231,6 +231,14 @@ export function signerToken(user) {
   const sig = createHmac('sha256', secret()).update(payload).digest('base64url');
   return payload + '.' + sig;
 }
+// Plafond de NOUVEAUX leads Lemlist par SDR sur 24 h glissantes — source unique pour l'envoi
+// manuel (/api/lemlist), le cron des séquences et le tableau équipe (/api/stats-journees).
+// Historique : 50 → 75 (24/07, Alicia bloquée) → 150 (29/09, SDR bloqués). Le rythme d'envoi
+// réel reste borné par la limite quotidienne de chaque boîte dans Lemlist : ajouter un lead
+// le met en file, ça n'envoie pas tout le jour même. La variable Vercel LEMLIST_PLAFOND_JOUR
+// l'emporte si elle existe.
+export const plafondLemlistJour = () => parseInt(process.env.LEMLIST_PLAFOND_JOUR || '150', 10);
+
 export function verifierToken(req) {
   const h = req.headers.authorization || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
