@@ -21,7 +21,7 @@ import crypto from 'crypto';
 
 export const config = { maxDuration: 300 };
 
-const MODELE = () => process.env.MODELE_PREZ || 'claude-opus-5';
+const MODELE = () => process.env.MODELE_PREZ || 'claude-opus-5-5'; // Opus 5.5 depuis le 01/10 : 20 % moins cher qu'Opus 5
 const BASE_PUB = () => process.env.SOFY_BASE_PUBLIQUE || 'https://www.sofyscrap.com';
 
 let prezPrete = false;

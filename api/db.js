@@ -6,6 +6,63 @@ import { createHmac, createHash } from 'crypto';
 const url = process.env.DATABASE_URL || process.env.POSTGRES_URL;
 export const sql = url ? neon(url) : null;
 
+// ── 💸 Compteur des appels Claude (Didier 01/10 : factures API ≈ 30 €/jour, origine inconnue) ──
+// Chaque fonction appelle api.anthropic.com avec son propre fetch, et le journal `consommations`
+// ne voyait qu'une partie de ces appels, au forfait de 0,02 € quel que soit le modèle. On
+// intercepte donc fetch UNE fois ici (db.js est importé par toutes les fonctions) : modèle,
+// tokens, recherches web et coût réel de chaque appel vont dans ia_usage, et la source est lue
+// dans la pile d'appel (/api/radar.js → « radar »). Lecture : GET /api/diag-ia (superadmin).
+// Le relevé est attendu avant de rendre la réponse (quelques ms sur un appel de plusieurs
+// secondes) : une promesse laissée en suspens serait perdue au gel de la fonction Vercel.
+const PRIX_IA = [ // $ par million de tokens : entrée, sortie, lecture de cache
+  [/fable|mythos/, 10, 50, 1.0], [/opus-5-5/, 4, 20, 0.2], [/opus/, 5, 25, 0.5],
+  [/sonnet-5/, 2, 10, 0.2], [/sonnet/, 3, 15, 0.3], [/haiku/, 1, 5, 0.1]
+];
+export function coutIA(modele, u) {
+  const p = PRIX_IA.find(([re]) => re.test(String(modele || ''))) || [null, 5, 25, 0.5];
+  const st = (u && u.server_tool_use) || {};
+  return ((u.input_tokens || 0) * p[1] + (u.cache_creation_input_tokens || 0) * p[1] * 1.25
+    + (u.cache_read_input_tokens || 0) * p[3] + (u.output_tokens || 0) * p[2]) / 1e6
+    + (st.web_search_requests || 0) * 0.01;
+}
+let iaUsagePret = false;
+async function journaliserIA(source, modele, u) {
+  if (!sql || !u) return;
+  try {
+    if (!iaUsagePret) { // table PARESSEUSE : jamais de bump SCHEMA_VERSION (incident du 03/08)
+      await sql`CREATE TABLE IF NOT EXISTS ia_usage (
+        id SERIAL PRIMARY KEY, ts TIMESTAMPTZ DEFAULT NOW(), source TEXT, modele TEXT,
+        input INTEGER, output INTEGER, cache_lu INTEGER, cache_ecrit INTEGER,
+        recherches INTEGER, cout_usd NUMERIC(10,5))`;
+      iaUsagePret = true;
+    }
+    const st = u.server_tool_use || {};
+    await sql`INSERT INTO ia_usage (source, modele, input, output, cache_lu, cache_ecrit, recherches, cout_usd)
+      VALUES (${source}, ${modele || '?'}, ${u.input_tokens || 0}, ${u.output_tokens || 0},
+        ${u.cache_read_input_tokens || 0}, ${u.cache_creation_input_tokens || 0},
+        ${st.web_search_requests || 0}, ${coutIA(modele, u)})`;
+  } catch (e) { console.error('[ia_usage non journalisé]', source, String((e && e.message) || e).slice(0, 150)); }
+}
+if (!globalThis.__compteurIA && typeof globalThis.fetch === 'function') {
+  globalThis.__compteurIA = true;
+  const fetchOrigine = globalThis.fetch;
+  globalThis.fetch = async function (entree, init) {
+    const cible = String((entree && entree.url) || entree || '');
+    if (!cible.includes('api.anthropic.com/v1/messages')) return fetchOrigine(entree, init);
+    const pile = new Error().stack || '';
+    const res = await fetchOrigine(entree, init);
+    try {
+      const m = pile.match(/\/api\/(?!db\.js)([a-z0-9-]+)\.js/i);
+      const source = m ? m[1] : 'inconnu';
+      if (!/event-stream/.test(res.headers.get('content-type') || '')) {
+        const d = await res.clone().json().catch(() => null);
+        if (d && d.usage) await journaliserIA(source, d.model || '?', d.usage);
+      }
+    } catch (_) {}
+    return res;
+  };
+}
+
 let ready = false;
 // ⚡ Garde de version : les ~50 requêtes de migration ne tournent que si le schéma a changé.
 // À INCRÉMENTER à chaque ajout de table/colonne dans ensureSchema — sinon la migration ne

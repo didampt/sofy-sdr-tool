@@ -17,7 +17,7 @@ import { TYPES_KB, MODULES_KB, ensureKbPublique } from './kb-sales.js';
 
 export const config = { maxDuration: 300 };
 
-const MODELE = () => process.env.MODELE_KB || 'claude-opus-5';
+const MODELE = () => process.env.MODELE_KB || 'claude-opus-5-5'; // Opus 5.5 depuis le 01/10 : 20 % moins cher qu'Opus 5
 // 4,5 Mo est la limite du corps de requête Vercel ; le base64 pèse ~1,37× le fichier.
 const MAX_B64 = 3_000_000;
 // Réseaux sociaux : l'outil web_fetch reçoit un « url_not_allowed » et l'appel coûte quand même.

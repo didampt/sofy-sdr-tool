@@ -1,4 +1,28 @@
-# HANDOFF — Reprise du travail (dernière mise à jour : 29 septembre 2026)
+# HANDOFF — Reprise du travail (dernière mise à jour : 1er octobre 2026)
+
+## 💸 1er octobre 2026 — compteur des crédits Claude + Opus 5 → Opus 5.5 (factures ≈ 30 €/jour)
+
+Didier reçoit ≈ 1 facture API de ~30 €/jour. Vérifié : ce n'est PAS Claude Code (plan Team,
+dépassement payant 0,00 €) → c'est la clé ANTHROPIC_API_KEY de l'appli.
+- Constat : le journal `consommations` est aveugle — la majorité des appels Claude n'y écrivent
+  rien (score, email-angle, email-web, synthese, linkedin, ia-liste, ia-liste-creer, veille,
+  kb-ingest) et ceux qui y écrivent sont comptés 0,02 € forfaitaires quel que soit le modèle.
+- **Compteur** dans api/db.js : fetch intercepté une seule fois (db.js est importé partout) ;
+  chaque appel à api.anthropic.com/v1/messages → table PARESSEUSE ia_usage (source lue dans la
+  pile : /api/radar.js → « radar », modèle, tokens, cache, recherches web, coût réel $ via
+  coutIA). Attendu avant de rendre la réponse (une promesse en suspens serait perdue au gel).
+  Les appels non-Claude passent sans détour. ⚠️ Toute nouvelle grille tarifaire → PRIX_IA.
+- **/api/diag-ia?jours=7** (superadmin) : coût par source × modèle, par jour, + historique 30 j
+  de l'ancien journal par appelant (le cron du radar y signe « radar (cron) »).
+- **Opus 5 → Opus 5.5** par défaut pour radar, prez, kb-ingest (−20 % par token ; aucun de ces
+  appels n'envoie thinking ni tool_choice forcé, effort déjà explicite). Variables Vercel
+  MODELE_RADAR / MODELE_PREZ / MODELE_KB pour revenir sans redéployer.
+- PAS fait volontairement : Sonnet 4.6 → Sonnet 5.5 (−33 %) — sur les modèles 5.x la réflexion
+  est comptée dans max_tokens (piège du filtre likers du 21/08) : score (1800), personas (1500),
+  ia (1500)… risqueraient des JSON tronqués. À faire appel par appel, compteur en main.
+- Suspect n°1 à confirmer avec le compteur : radar-cron (toutes les 10 min, 7-19 h) radarise
+  automatiquement CHAQUE entreprise qui visite sofy.fr (≈0,32 $ l'une), même celles qu'aucun SDR
+  n'appellera. Banc scratchpad banc-ia (corps intact, source, coût exact, non-Claude ignoré).
 
 ## ☀️ 29 septembre 2026 — les listes importées de Lemlist entrent enfin dans « Ma journée »
 

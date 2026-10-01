@@ -25,9 +25,10 @@ const VERROU_MIN = 2;        // une seule recherche simultanée par entreprise. 
 // court : une fonction tuée par un timeout Vercel n'exécute pas son code de nettoyage et laisse
 // le verrou posé — il doit donc expirer de lui-même vite (constat Didier 17/08).
 
-// Qualité de l'accroche = cœur de la valeur → Opus par défaut. Bascule sans redéploiement :
-// MODELE_RADAR=claude-sonnet-5 dans Vercel divise le coût par ~2,5.
-const MODELE = () => process.env.MODELE_RADAR || 'claude-opus-5';
+// Qualité de l'accroche = cœur de la valeur → Opus par défaut. Opus 5.5 depuis le 01/10 (20 %
+// moins cher qu'Opus 5 par token, même API). Bascule sans redéploiement : MODELE_RADAR dans Vercel
+// (claude-sonnet-5-5 divise encore le coût par 2).
+const MODELE = () => process.env.MODELE_RADAR || 'claude-opus-5-5';
 
 // Annuaires et fermes de contenu : ils monopolisent la première page sur un nom de société et
 // ne portent aucun signal business. On les écarte plutôt que de restreindre à une liste blanche
