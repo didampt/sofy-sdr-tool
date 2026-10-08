@@ -116,6 +116,9 @@ async function callBackendEnable({ userId, email }) {
 }
 
 async function callBackendCreate(payload) {
+  // Raw Pappers notices are unused by auth and can trigger WAF false positives.
+  const accountPayload = { ...payload, company: { ...payload.company } };
+  delete accountPayload.company.pappers_raw;
   const backendBase = String(process.env.BACKEND_API_URL || '').replace(/\/$/, '');
   const url = process.env.BACKEND_SIGNUP_URL || (backendBase ? `${backendBase}/auth/internal/signups` : '');
   const token = String(process.env.SOFY_SIGNUP_TOKEN || '').trim();
@@ -128,7 +131,7 @@ async function callBackendCreate(payload) {
       'Content-Type': 'application/json',
       'X-Sofy-Signup-Token': token
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(accountPayload)
   });
   const { data, rawBody } = await readBackendResponse(response);
   if (response.status === 409) return { already_exists: true };

@@ -86,7 +86,9 @@ export default async function handler(req, res) {
     const hotleadUrl = requireEnv('SOFY_SCRAP_HOTLEAD_URL');
     const hotleadToken = requireEnv('SIGNUP_HOTLEAD_TOKEN');
 
-    const accountPayload = { ...normalized };
+    // Keep raw Pappers data for CRM/SDR sync, away from the auth gateway.
+    const accountPayload = { ...normalized, company: { ...normalized.company } };
+    delete accountPayload.company.pappers_raw;
     delete accountPayload.sms_verification_status;
     delete accountPayload.sms_verification_reported_at;
     delete accountPayload.sms_verification_code;
