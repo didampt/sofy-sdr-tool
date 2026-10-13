@@ -17,18 +17,17 @@ function smsRecipient(phone) {
 }
 
 async function sendOtpSms({ to, code }) {
-  const apiBase = String(process.env.SOFY_SMS_API_URL || 'https://api.sofy.fr/v1').replace(/\/$/, '');
-  const response = await fetch(`${apiBase}/sms`, {
+  const response = await fetch('https://api.sofy.fr/v2/sms', {
     method: 'POST',
+    signal: AbortSignal.timeout(10_000),
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/json',
-      'X-API-KEY-ID': requireEnv('SOFY_API_KEY_ID'),
-      'X-API-KEY-SECRET': requireEnv('SOFY_API_KEY_SECRET')
+      Authorization: `Bearer ${requireEnv('SOFY_V2_API_KEY')}`
     },
     body: JSON.stringify({
       from: process.env.SIGNUP_OTP_SMS_FROM || 'SOFY',
-      to,
+      to: `+${to}`,
       body: `Votre code de validation Sofy est ${code}. Il expire dans 10 minutes.`,
       shortenUrls: false,
       isTransactional: true
