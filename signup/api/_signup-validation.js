@@ -2,7 +2,7 @@ import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import { isFrenchCountry, normalizeEmail } from './_lib.js';
 
 export function validatePassword(password) {
-  const value = String(password || '');
+  const value = String(password || '').trim();
   if (value.length < 12) return 'Le mot de passe doit contenir au moins 12 caractères.';
   if (!/[a-z]/.test(value)) return 'Le mot de passe doit contenir une minuscule.';
   if (!/[A-Z]/.test(value)) return 'Le mot de passe doit contenir une majuscule.';
@@ -83,7 +83,7 @@ export function validateSignupPayload(body) {
       country: String(body.country || '').trim(),
       country_code: countryCode,
       timezone,
-      password: String(body.password || ''),
+      password: String(body.password || '').trim(),
       cgv_accepted: Boolean(body.cgv_accepted),
       source: 'signup.sofy.fr',
       company: {

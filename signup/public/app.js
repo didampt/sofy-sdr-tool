@@ -268,6 +268,7 @@ function updateCompanyVisibility() {
 }
 
 function passwordIssue(value) {
+  value = value.trim();
   if (value.length < 12) return '12 caractères minimum.';
   if (!/[a-z]/.test(value)) return 'Ajoutez une minuscule.';
   if (!/[A-Z]/.test(value)) return 'Ajoutez une majuscule.';
@@ -428,7 +429,7 @@ function formPayload() {
     country: country ? country.name : '',
     country_code: country ? country.code : '',
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
-    password: password.value,
+    password: password.value.trim(),
     cgv_accepted: document.querySelector('#cgv').checked,
     company: {
       name: companyName.value.trim(),
