@@ -324,6 +324,7 @@ function setCompanyLoading(loading) {
 }
 
 async function selectCompany(company) {
+  if (abortSearch) abortSearch.abort();
   companyName.value = company.name || '';
   companyResults.hidden = true;
   companyResults.innerHTML = '';
@@ -349,7 +350,7 @@ async function selectCompany(company) {
   }
 }
 
-function renderCompanies(companies) {
+function renderCompanies(companies, nextCursor = null, q = companyName.value.trim()) {
   if (!companies.length) {
     companyResults.innerHTML = '<div class="suggestions-empty">Aucune entreprise trouvée. Vous pouvez saisir les informations manuellement.</div>';
     companyResults.hidden = false;
@@ -367,6 +368,37 @@ function renderCompanies(companies) {
   companyResults.querySelectorAll('button').forEach(button => {
     button.addEventListener('click', () => selectCompany(companies[Number(button.dataset.index)]));
   });
+  if (nextCursor) {
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.textContent = 'Afficher plus de résultats';
+    more.addEventListener('click', async () => {
+      more.disabled = true;
+      more.textContent = 'Chargement…';
+      if (abortSearch) abortSearch.abort();
+      const controller = new AbortController();
+      abortSearch = controller;
+      try {
+        const params = new URLSearchParams({ q, cursor: nextCursor });
+        const response = await fetch(`/api/pappers-search?${params}`, { signal: controller.signal });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Erreur Pappers');
+        if (controller.signal.aborted || companyName.value.trim() !== q || !isFrenchCompanyCountry()) return;
+        const combined = companies.concat(data.companies || []);
+        const cached = { companies: combined, next_cursor: data.next_cursor };
+        searchCache.set(q.toLowerCase(), cached);
+        const scrollTop = companyResults.scrollTop;
+        renderCompanies(combined, data.next_cursor, q);
+        companyResults.scrollTop = scrollTop;
+        companyResults.querySelectorAll('[data-index]')[companies.length]?.focus({ preventScroll: true });
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        more.disabled = false;
+        more.textContent = 'Réessayer de charger les résultats';
+      }
+    });
+    companyResults.appendChild(more);
+  }
 }
 
 function renderCompanyLoading() {
@@ -392,22 +424,26 @@ const searchCompany = debounce(async () => {
     return;
   }
 
+  if (abortSearch) abortSearch.abort();
+
   if (searchCache.has(q.toLowerCase())) {
-    renderCompanies(searchCache.get(q.toLowerCase()));
+    const cached = searchCache.get(q.toLowerCase());
+    renderCompanies(cached.companies, cached.next_cursor, q);
     return;
   }
 
-  if (abortSearch) abortSearch.abort();
-  abortSearch = new AbortController();
+  const controller = new AbortController();
+  abortSearch = controller;
   renderCompanyLoading();
 
   try {
-    const response = await fetch(`/api/pappers-search?q=${encodeURIComponent(q)}`, { signal: abortSearch.signal });
+    const response = await fetch(`/api/pappers-search?q=${encodeURIComponent(q)}`, { signal: controller.signal });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Erreur Pappers');
+    if (controller.signal.aborted || companyName.value.trim() !== q || !isFrenchCompanyCountry()) return;
     const companies = data.companies || [];
-    searchCache.set(q.toLowerCase(), companies);
-    renderCompanies(companies);
+    searchCache.set(q.toLowerCase(), { companies, next_cursor: data.next_cursor });
+    renderCompanies(companies, data.next_cursor, q);
   } catch (err) {
     if (err.name === 'AbortError') return;
     companyResults.innerHTML = `<div class="suggestions-empty">${err.message}</div>`;
@@ -828,7 +864,12 @@ document.addEventListener('click', event => {
   if (!event.target.closest('.combo')) closeAllCombos();
 });
 
-companyName.addEventListener('input', searchCompany);
+companyName.addEventListener('input', () => {
+  if (abortSearch) abortSearch.abort();
+  companyResults.hidden = true;
+  companyName.setAttribute('aria-expanded', 'false');
+  searchCompany();
+});
 password.addEventListener('input', updatePasswordHelp);
 form.addEventListener('input', event => {
   if (previewMode) return;

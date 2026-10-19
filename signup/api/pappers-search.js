@@ -29,7 +29,8 @@ export default async function handler(req, res) {
   const limited = await rateLimit(`pappers:${clientIp(req)}`, 80, 60);
   if (!limited.ok) return json(res, 429, { error: 'Too many requests', retry_after: limited.retryAfter });
 
-  const key = q.toLowerCase();
+  const cursor = String(req.query.cursor || '*');
+  const key = JSON.stringify([q.toLowerCase(), cursor]);
   const hit = cache.get(key);
   if (hit && hit.expiresAt > Date.now()) return json(res, 200, hit.payload);
 
@@ -38,14 +39,19 @@ export default async function handler(req, res) {
     const url = new URL('https://api.pappers.fr/v2/recherche');
     url.searchParams.set('api_token', token);
     url.searchParams.set('q', q);
-    url.searchParams.set('par_page', '8');
+    url.searchParams.set('curseur', cursor);
+    url.searchParams.set('par_curseur', '50');
     url.searchParams.set('entreprise_cessee', 'false');
 
     const upstream = await fetch(url, { headers: { Accept: 'application/json' } });
     const data = await upstream.json().catch(() => ({}));
     if (!upstream.ok) return json(res, upstream.status, { error: 'Pappers error', detail: data });
 
-    const payload = { companies: (data.resultats || []).map(mapCompany).filter(c => c.name || c.siret) };
+    const results = data.resultats || [];
+    const payload = {
+      companies: results.map(mapCompany).filter(c => c.name || c.siret),
+      next_cursor: results.length > 0 && data.curseurSuivant !== cursor ? (data.curseurSuivant || null) : null
+    };
     cache.set(key, { expiresAt: Date.now() + 5 * 60 * 1000, payload });
     return json(res, 200, payload);
   } catch (err) {
