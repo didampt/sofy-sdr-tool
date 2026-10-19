@@ -333,7 +333,7 @@ async function selectCompany(company) {
   setCompanyLoading(true);
 
   const siret = String(company.siret || '').replace(/\D/g, '');
-  if (siret.length !== 14) {
+  if (company.details_loaded || siret.length !== 14) {
     fillCompany(company);
     setCompanyLoading(false);
     return;
@@ -418,7 +418,9 @@ const searchCompany = debounce(async () => {
   selectedCompanyLegalForm = '';
   selectedCompanyActivity = '';
   document.querySelector('#tvaId').value = '';
-  if (q.length < 3 || !isFrenchCompanyCountry()) {
+  const digits = q.replace(/\s/g, '');
+  const incompleteIdentifier = /^[\d\s]+$/.test(q) && digits.length !== 9 && digits.length !== 14;
+  if (q.length < 3 || incompleteIdentifier || !isFrenchCompanyCountry()) {
     companyResults.hidden = true;
     companyName.setAttribute('aria-expanded', 'false');
     return;

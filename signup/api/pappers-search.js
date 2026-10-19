@@ -23,7 +23,11 @@ function mapCompany(item) {
 export default async function handler(req, res) {
   if (req.method !== 'GET') return json(res, 405, { error: 'GET only' });
 
-  const q = String(req.query.q || '').trim();
+  const input = String(req.query.q || '').trim();
+  const numeric = /^[\d\s]+$/.test(input);
+  const q = numeric ? input.replace(/\s/g, '') : input;
+  const identifier = numeric && (q.length === 9 || q.length === 14);
+  if (numeric && !identifier) return json(res, 200, { companies: [], next_cursor: null });
   if (q.length < 3) return json(res, 200, { companies: [] });
 
   const limited = await rateLimit(`pappers:${clientIp(req)}`, 80, 60);
@@ -36,16 +40,37 @@ export default async function handler(req, res) {
 
   try {
     const token = requireEnv('PAPPERS_API_TOKEN');
-    const url = new URL('https://api.pappers.fr/v2/recherche');
+    const url = new URL(`https://api.pappers.fr/v2/${identifier ? 'entreprise' : 'recherche'}`);
     url.searchParams.set('api_token', token);
-    url.searchParams.set('q', q);
-    url.searchParams.set('curseur', cursor);
-    url.searchParams.set('par_curseur', '50');
-    url.searchParams.set('entreprise_cessee', 'false');
+    if (identifier) {
+      url.searchParams.set(q.length === 9 ? 'siren' : 'siret', q);
+    } else {
+      url.searchParams.set('q', q);
+      url.searchParams.set('curseur', cursor);
+      url.searchParams.set('par_curseur', '50');
+      url.searchParams.set('entreprise_cessee', 'false');
+    }
 
     const upstream = await fetch(url, { headers: { Accept: 'application/json' } });
     const data = await upstream.json().catch(() => ({}));
-    if (!upstream.ok) return json(res, upstream.status, { error: 'Pappers error', detail: data });
+    if (!upstream.ok && !(identifier && upstream.status === 404)) {
+      return json(res, upstream.status, { error: 'Pappers error', detail: data });
+    }
+
+    if (identifier) {
+      const establishment = q.length === 14
+        ? [data.siege, ...(data.etablissements || [])].find(item => item?.siret === q)
+        : null;
+      const company = mapCompany(establishment ? { ...data, siege: establishment } : data);
+      const payload = {
+        companies: upstream.ok && !data.entreprise_cessee && (company.name || company.siret)
+          ? [{ ...company, details_loaded: true }]
+          : [],
+        next_cursor: null
+      };
+      cache.set(key, { expiresAt: Date.now() + 5 * 60 * 1000, payload });
+      return json(res, 200, payload);
+    }
 
     const results = data.resultats || [];
     const payload = {
