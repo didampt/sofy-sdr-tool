@@ -209,6 +209,11 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
 @keyframes shine{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
 .fiche-busy .act,.fiche-busy .btn-cta{pointer-events:none;opacity:.45}
 .fiche-head{display:flex;gap:18px;align-items:flex-start;cursor:pointer}
+.signup-card .fiche-head{flex-wrap:wrap}
+.signup-details{flex:1 1 260px;min-width:0;overflow-wrap:anywhere}
+.signup-actions{flex:0 1 auto;max-width:100%;min-width:0}
+.signup-actions .act{max-width:100%;min-width:0;justify-content:center;overflow-wrap:anywhere}
+@media(max-width:700px){.signup-details,.signup-actions{flex-basis:100%}.signup-actions .act{flex:1 1 auto}}
 .pscores{min-width:225px;display:flex;flex-direction:column;gap:7px;padding-top:4px;flex-shrink:0}
 .pscore{display:grid;grid-template-columns:80px 1fr 30px;align-items:center;gap:10px;font-size:12.5px;font-weight:700}
 .pscore-bar{height:8px;background:var(--line);border-radius:99px;overflow:hidden;display:block}
@@ -13334,14 +13339,14 @@ function rendreSignup(s){
  const ban=s.pending
   ?`<button class="act act-del" onclick="event.stopPropagation();bannirSignup('${jsArg(s.key)}')">Bannir</button>`
   :'';
- return `<div class="fiche" style="cursor:pointer" onclick="ouvrirSignupFiche(${Number(s.list_id)||0},'${ficheKey}')">
+ return `<div class="fiche signup-card" style="cursor:pointer" onclick="ouvrirSignupFiche(${Number(s.list_id)||0},'${ficheKey}')">
   <div class="fiche-head">
-   <div style="flex:1;min-width:0">
+   <div class="signup-details">
     <div class="lead-name">🆕 ${t}</div>
     <div class="lead-meta">${sub||'Contact non renseigné'} · ${date}</div>
     <div class="badges">${signupStatut(s)}${signupSmsInfo(s)}${siret}${vat}${s.organization_id?`<span class="badge b-new">Org ${htmlSafe(s.organization_id)}</span>`:''}</div>
    </div>
-   <div class="act-row" style="border:0;padding:0;margin:0">${enable}${ban}<button class="act act-copy" onclick="event.stopPropagation();ouvrirSignupFiche(${Number(s.list_id)||0},'${ficheKey}')">Ouvrir la fiche →</button></div>
+   <div class="act-row signup-actions" style="border:0;padding:0;margin:0">${enable}${ban}<button class="act act-copy" onclick="event.stopPropagation();ouvrirSignupFiche(${Number(s.list_id)||0},'${ficheKey}')">Ouvrir la fiche →</button></div>
   </div>
  </div>`;
 }
