@@ -341,13 +341,18 @@ async function selectCompany(company) {
   try {
     const response = await fetch(`/api/pappers-company?siret=${encodeURIComponent(siret)}`);
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Erreur Pappers');
+    if (!response.ok) throw new Error(data.error || "Erreur de recherche d'entreprise");
     fillCompany(data.company ? { ...company, ...data.company } : company);
   } catch (_) {
     fillCompany(company);
   } finally {
     setCompanyLoading(false);
   }
+}
+
+function escapeCompanyText(value) {
+  const entities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  return String(value).replace(/[&<>"']/g, character => entities[character]);
 }
 
 function renderCompanies(companies, nextCursor = null, q = companyName.value.trim()) {
@@ -359,8 +364,8 @@ function renderCompanies(companies, nextCursor = null, q = companyName.value.tri
   }
   companyResults.innerHTML = companies.map((company, index) => `
     <button type="button" role="option" data-index="${index}">
-      <span>${company.name || 'Entreprise sans nom'}</span>
-      <small>${company.siret || 'SIRET indisponible'}${company.city ? ` · ${company.city}` : ''}</small>
+      <span>${escapeCompanyText(company.name || 'Entreprise sans nom')}</span>
+      <small>${escapeCompanyText(company.siret || 'SIRET indisponible')}${company.city ? ` · ${escapeCompanyText(company.city)}` : ''}</small>
     </button>
   `).join('');
   companyResults.hidden = false;
@@ -380,17 +385,24 @@ function renderCompanies(companies, nextCursor = null, q = companyName.value.tri
       abortSearch = controller;
       try {
         const params = new URLSearchParams({ q, cursor: nextCursor });
-        const response = await fetch(`/api/pappers-search?${params}`, { signal: controller.signal });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Erreur Pappers');
+        let response = await fetch(`/api/pappers-search?${params}`, { signal: controller.signal });
+        let data = await response.json();
+        const reset = response.status === 409;
+        if (reset) {
+          searchCache.delete(q.toLowerCase());
+          const freshParams = new URLSearchParams({ q, refresh: '1' });
+          response = await fetch(`/api/pappers-search?${freshParams}`, { signal: controller.signal });
+          data = await response.json();
+        }
+        if (!response.ok) throw new Error(data.error || "Erreur de recherche d'entreprise");
         if (controller.signal.aborted || companyName.value.trim() !== q || !isFrenchCompanyCountry()) return;
-        const combined = companies.concat(data.companies || []);
+        const combined = reset ? (data.companies || []) : companies.concat(data.companies || []);
         const cached = { companies: combined, next_cursor: data.next_cursor };
         searchCache.set(q.toLowerCase(), cached);
-        const scrollTop = companyResults.scrollTop;
+        const scrollTop = reset ? 0 : companyResults.scrollTop;
         renderCompanies(combined, data.next_cursor, q);
         companyResults.scrollTop = scrollTop;
-        companyResults.querySelectorAll('[data-index]')[companies.length]?.focus({ preventScroll: true });
+        companyResults.querySelectorAll('[data-index]')[reset ? 0 : companies.length]?.focus({ preventScroll: true });
       } catch (err) {
         if (err.name === 'AbortError') return;
         more.disabled = false;
@@ -441,14 +453,14 @@ const searchCompany = debounce(async () => {
   try {
     const response = await fetch(`/api/pappers-search?q=${encodeURIComponent(q)}`, { signal: controller.signal });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Erreur Pappers');
+    if (!response.ok) throw new Error(data.error || "Erreur de recherche d'entreprise");
     if (controller.signal.aborted || companyName.value.trim() !== q || !isFrenchCompanyCountry()) return;
     const companies = data.companies || [];
     searchCache.set(q.toLowerCase(), { companies, next_cursor: data.next_cursor });
     renderCompanies(companies, data.next_cursor, q);
   } catch (err) {
     if (err.name === 'AbortError') return;
-    companyResults.innerHTML = `<div class="suggestions-empty">${err.message}</div>`;
+    companyResults.innerHTML = `<div class="suggestions-empty">${escapeCompanyText(err.message)}</div>`;
     companyResults.hidden = false;
     companyName.setAttribute('aria-expanded', 'true');
   }
