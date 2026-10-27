@@ -445,6 +445,7 @@ export async function ajouterHotLead(profil, cfg) {
     return {
       ajoute: false,
       updated: true,
+      previous_sms_verification_status: existing.signup && existing.signup.sms_verification_status,
       liste_id: hl.id,
       cle_fiche: ((existing.signal && existing.signal.date) || '') + (existing.nom || '')
     };

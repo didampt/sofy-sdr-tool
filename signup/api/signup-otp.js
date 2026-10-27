@@ -102,16 +102,14 @@ export default async function handler(req, res) {
 
   try {
     await storeOtp({ token, code, email: normalized.email, phone: normalized.phone, ttlSeconds: 10 * 60 });
-    const [smsResult, hotleadResult] = await Promise.all([
-      capture('SMS', sendOtpSms({ to, code })),
-      capture('Sofy Scrap', pushPendingSignup({
-        ...normalized,
-        otp_token: signupReference,
-        sms_verification_status: 'not_received',
-        sms_verification_reported_at: new Date().toISOString(),
-        sms_verification_code: code
-      }))
-    ]);
+    const smsResult = await capture('SMS', sendOtpSms({ to, code }));
+    const hotleadResult = await capture('Sofy Scrap', pushPendingSignup({
+      ...normalized,
+      otp_token: signupReference,
+      sms_verification_status: smsResult.ok ? 'pending' : 'not_received',
+      sms_verification_reported_at: smsResult.ok ? null : new Date().toISOString(),
+      sms_verification_code: smsResult.ok ? null : code
+    }));
     if (!hotleadResult.ok) {
       return json(res, 502, {
         error: 'Impossible d’enregistrer la demande.',

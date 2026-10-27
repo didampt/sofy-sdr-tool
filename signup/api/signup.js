@@ -70,7 +70,15 @@ export default async function handler(req, res) {
     normalized.sms_verification_status = 'not_received';
     normalized.sms_verification_reported_at = new Date().toISOString();
     normalized.sms_verification_code = otp.code || null;
-    return json(res, 202, { ok: true, manual_review: true });
+    try {
+      await postJson(requireEnv('SOFY_SCRAP_HOTLEAD_URL'), requireEnv('SIGNUP_HOTLEAD_TOKEN'), {
+        ...normalized,
+        otp_token: body.signup_reference || body.otp_token
+      });
+      return json(res, 202, { ok: true, manual_review: true });
+    } catch (err) {
+      return json(res, 502, { error: 'Impossible d’enregistrer la demande de validation manuelle.', detail: err.message });
+    }
   } else {
     normalized.sms_verification_status = 'verified';
     normalized.sms_verification_reported_at = null;

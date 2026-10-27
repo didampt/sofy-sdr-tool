@@ -83,7 +83,9 @@ export default async function handler(req, res) {
   const phone = phoneDigits(body.phone);
   const signupAccount = body.signup_account && typeof body.signup_account === 'object' ? body.signup_account : {};
   const accountCreated = Boolean(signupAccount.user_id || signupAccount.organization_id);
-  const smsVerificationStatus = body.sms_verification_status === 'not_received' ? 'not_received' : 'verified';
+  const smsVerificationStatus = ['pending', 'not_received', 'verified'].includes(body.sms_verification_status)
+    ? body.sms_verification_status
+    : 'verified';
   const smsVerificationCode = smsVerificationStatus === 'not_received' && /^\d{6}$/.test(String(body.sms_verification_code || ''))
     ? String(body.sms_verification_code)
     : null;
@@ -133,10 +135,11 @@ export default async function handler(req, res) {
       exclure_hubspot: false
     });
 
-    if (result.ajoute) {
+    if (result.ajoute || (result.updated && smsVerificationStatus === 'not_received'
+      && result.previous_sms_verification_status !== 'not_received')) {
       const app = (process.env.APP_URL || 'https://sofy-sdr-tool.vercel.app').replace(/\/$/, '');
       const link = `${app}/?liste=${result.liste_id}&fiche=${encodeURIComponent(result.cle_fiche || '')}`;
-      await envoyerSlack(`🔥 *Nouvelle inscription Sofy* — ${companyName || email}\n👤 ${firstName} ${lastName} · ${email}${phone ? ` · ${phone}` : ''}\n📍 ${country || 'Pays non renseigné'}${company.siret ? ` · SIRET ${company.siret}` : ''}${company.tva_id ? ` · TVA ${company.tva_id}` : ''}${smsVerificationStatus === 'not_received' ? `\n⚠️ Code SMS non reçu — validation manuelle requise${smsVerificationCode ? ` · Code : ${smsVerificationCode}` : ''}` : ''}\n📂 <${link}|Ouvrir dans Sofy Scrap>`);
+      await envoyerSlack(`🔥 *Nouvelle inscription Sofy* — ${companyName || email}\n👤 ${firstName} ${lastName} · ${email}${phone ? ` · ${phone}` : ''}\n📍 ${country || 'Pays non renseigné'}${company.siret ? ` · SIRET ${company.siret}` : ''}${company.tva_id ? ` · TVA ${company.tva_id}` : ''}${smsVerificationStatus === 'pending' ? '\n⏳ Code SMS en attente de validation' : ''}${smsVerificationStatus === 'not_received' ? `\n⚠️ Code SMS non reçu — validation manuelle requise${smsVerificationCode ? ` · Code : ${smsVerificationCode}` : ''}` : ''}\n📂 <${link}|Ouvrir dans Sofy Scrap>`);
     }
 
     return res.status(200).json({ ok: true, ...result });
