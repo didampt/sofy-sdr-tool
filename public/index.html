@@ -2907,7 +2907,7 @@ async function lancerEnvoiPrez(){
       if(dd.dom&&/sms/i.test(dd.canal||''))alertes.push('numéro d\'outre-mer : le SMS part avec l\'expéditeur 36789 et arrive avec quelques minutes de retard, le temps que l\'opérateur renonce au RCS. Comportement normal (vérifié le 21/08).');
       const hh=parseInt(String(dd.heure_paris||'').slice(0,2),10);
       if(/sms/i.test(dd.canal||'')&&(hh<8||hh>=20))alertes.push('envoi à '+dd.heure_paris+' (Paris) : hors fenêtre horaire du SMS marketing, l\'opérateur peut le retenir.');
-      lignes.push(`<div style="font-size:12.5px;color:#0F7B4F">✅ ${htmlSafe(c.nom)} — envoyé par <b>${htmlSafe(dd.canal||'')}</b>
+      lignes.push(`<div style="font-size:12.5px;color:#B45309">⏳ ${htmlSafe(c.nom)} — demande transmise par <b>${htmlSafe(dd.canal||'')}</b> · remise à vérifier
        ${alertes.map(a=>`<div style="font-size:11.5px;color:#B45309;font-weight:400">⚠️ ${htmlSafe(a)}</div>`).join('')}
        ${dd.id?`<button class="act act-copy" style="padding:2px 8px;font-size:11px;margin-top:5px;font-weight:400" onclick="verifierAcheminement('${jsArg(dd.id)}',this)">🔎 Vérifier l'acheminement</button>`:''}
       </div>`);
@@ -2967,11 +2967,12 @@ async function verifierAcheminement(id,btn){
   const d=await r.json();
   const txt=d.erreur?('❔ '+d.erreur)
    :(d.remis?('✅ remis — statut « '+(d.statut||'?')+' »')
-    :(d.rejete?('❌ rejeté par l\'opérateur — statut « '+(d.statut||'?')+' »')
+    :(d.rejete?('❌ échec d\'acheminement — statut « '+(d.statut||'?')+' »'+(d.detail?' — '+d.detail:''))
      :('⏳ en cours — statut « '+(d.statut||'?')+' »')));
   if(btn){btn.disabled=false;btn.textContent='🔎 Revérifier';
-   const l=document.createElement('div');l.style.cssText='font-size:11.5px;font-weight:700;margin-top:4px';
-   l.textContent=txt;btn.parentNode.appendChild(l);}
+   const l=btn._suiviAcheminement||document.createElement('div');l.style.cssText='font-size:11.5px;font-weight:700;margin-top:4px';
+   btn.parentNode.style.color=d.remis?'#0F7B4F':(d.rejete?'#B91C1C':'#B45309');
+   l.textContent=txt;btn.parentNode.appendChild(l);btn._suiviAcheminement=l;}
   else toast(txt);
  }catch(e){if(btn){btn.disabled=false;btn.textContent='🔎 Vérifier l\'acheminement';}toast('Suivi : '+e.message);}
 }

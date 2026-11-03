@@ -2,6 +2,7 @@
 // La variable DATABASE_URL est créée automatiquement par Vercel lors de la création de la base.
 import { neon } from '@neondatabase/serverless';
 import { createHmac, createHash } from 'crypto';
+import { analyserStatutMessage } from './message-status.js';
 
 const url = process.env.DATABASE_URL || process.env.POSTGRES_URL;
 export const sql = url ? neon(url) : null;
@@ -629,7 +630,7 @@ export async function envoyerSmsSofy({ to, message, user, liste_id, transactionn
         body: JSON.stringify({ to: '+' + dest, body: corps, from: SMS_EXPEDITEUR(), isTransactional: !!transactionnel })
       });
       const d2 = await r2.json().catch(() => ({}));
-      if (r2.ok && d2.id) {
+      if (r2.ok && d2.id && !analyserStatutMessage(d2).rejete) {
         await loggerConso(user, 'soreach', nbSms, liste_id);
         return { ok: true, via: 'v2', id: d2.id, statut: d2.status || 'pending', destinataire: dest, credits: nbSms, caracteres: lg };
       }
@@ -649,7 +650,7 @@ export async function envoyerSmsSofy({ to, message, user, liste_id, transactionn
       body: JSON.stringify({ from: 'Sofy', to: dest, body: corps, shortenUrls: true, isTransactional: !!transactionnel })
     });
     const data = await r.json().catch(() => ({}));
-    if (!r.ok) return { ok: false, status: r.status, detail: JSON.stringify(data).slice(0, 300), v2_echec: echecV2 };
+    if (!r.ok || analyserStatutMessage(data).rejete) return { ok: false, status: r.status, detail: JSON.stringify(data).slice(0, 300), v2_echec: echecV2 };
     await loggerConso(user, 'soreach', nbSms, liste_id);
     return { ok: true, via: 'v1', id: data.id || null, statut: data.status || 'pending', destinataire: dest, credits: nbSms, caracteres: lg, v2_echec: echecV2 };
   } catch (err) {

@@ -8,6 +8,7 @@
 
 import { verifierToken, sql, ensureSchema, envoyerSmsSofy, loggerConso } from './db.js';
 import { gsmifier, analyserSms } from './sms-gsm.js';
+import { analyserStatutMessage } from './message-status.js';
 
 // ⚠️ L'API v2 (RCS) attend un jeton Bearer sofy_live_…. rcs-rdv-cron.js accepte les DEUX noms de
 // variable depuis le 06/08 ; ici il n'y avait que SOFY_API_KEY_V2 — si Vercel ne porte que
@@ -48,6 +49,29 @@ const REPLI_AVEC_LIEN = String(process.env.SOFY_RCS_FALLBACK_AVEC_LIEN || '') ==
 const MENTION_STOP = false;
 const VISUEL_PREZ = process.env.SOFY_RCS_IMAGE_PREZ
   || (process.env.SOFY_BASE_PUBLIQUE || 'https://www.sofyscrap.com') + '/rcs-prez.jpg';
+
+function textesSmsPrez(url) {
+  const queue = MENTION_STOP ? ' STOP pour ne plus etre contacte.' : '';
+  const repli = gsmifier(REPLI_AVEC_LIEN
+    ? `Sofy : votre analyse de visibilite locale est prete. ${url}${queue}`
+    : `Sofy : votre analyse de visibilite locale est prete, ouvrez le lien ci-dessous.${queue}`).slice(0, MAX_FALLBACK);
+  const smsDirect = gsmifier(`Sofy : votre analyse de visibilite locale est prete. ${url}${queue}`);
+  const diag = analyserSms(repli);
+  return { repli, smsDirect, diag, apercu: {
+    repli_sms: repli, repli_longueur: repli.length, repli_max: MAX_FALLBACK,
+    segments_sms: diag.segments, alphabet: diag.alphabet,
+    sms_direct: smsDirect, sms_direct_longueur: smsDirect.length,
+    repli_note: REPLI_AVEC_LIEN ? null
+      : 'La plateforme Sofy ajoute son propre lien court vers la page qui porte le visuel RCS, plus la mention STOP. Notre URL n\'est donc pas répétée ici : elle serait tronquée.',
+    rcs_configure: !!(cleV2() && process.env.SOFY_RCS_SENDER_ID)
+  } };
+}
+
+function echecRcs(reponse, http) {
+  const suivi = analyserStatutMessage(reponse);
+  if (suivi.rejete) return `RCS ${suivi.statut}${suivi.detail ? ' : ' + suivi.detail : ''}`;
+  return 'RCS ' + http + ': ' + JSON.stringify(reponse).slice(0, 200);
+}
 
 // ── Mode « analyse » : le lien de la présentation, envoyé par RCS, replié en SMS ────────────────
 // Pourquoi ici et pas dans un fichier neuf : l'envoi RCS, le repli SMS, la mise en E.164, la
@@ -111,8 +135,7 @@ export default async function handler(req, res) {
         const d = await r.json().catch(() => ({}));
         if (r.ok && (d.id || d.status)) {
           return res.status(200).json({ ok: true, via: chemin.replace(/\//g, ''), message: d,
-            statut: d.status || null, remis: /deliver/i.test(String(d.status || '')),
-            rejete: /reject|fail|undeliver/i.test(String(d.status || '')) });
+            ...analyserStatutMessage(d) });
         }
       } catch (_) { }
     }
@@ -124,11 +147,9 @@ export default async function handler(req, res) {
     if (String(b.mode || '') === 'prez') {
       const jt = String(b.jeton || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
       const u = BASE_PUB() + '/p/' + jt;
-      const rp = gsmifier(`Sofy : votre analyse de visibilite locale est prete. ${u} Repondez STOP pour ne plus etre contacte.`).slice(0, 160);
-      const dg = analyserSms(rp);
       return res.status(200).json({ ok: true, mode: 'prez',
         texte: textePrez({ prenom, entreprise, sdr: user.nom }), lien: u, visuel: VISUEL_PREZ,
-        bouton: '📊 Voir mon analyse', repli_sms: rp, segments_sms: dg.segments, alphabet: dg.alphabet });
+        bouton: '📊 Voir mon analyse', ...textesSmsPrez(u).apercu });
     }
     return res.status(200).json({ ok: true, texte: texteProspect({ prenom, entreprise, accroche, sdr: user.nom }), lien: LIEN_DEMO, visuel: VISUEL });
   }
@@ -189,31 +210,18 @@ export default async function handler(req, res) {
     //  · 129 CARACTÈRES MAXIMUM — au-delà, l'API v2 refuse la rich-card avec un 400 (limite
     //    documentée dans rcs-rdv-cron.js depuis le test du 06/08). Mon repli faisait 135
     //    caractères : le RCS était donc rejeté à chaque envoi, et le SMS v1 prenait le relais.
-    const queue = MENTION_STOP ? ' STOP pour ne plus etre contacte.' : '';
     // Court exprès : la plateforme ajoute son lien court et sa mention STOP, et tronque au besoin.
     // Moins nous écrivons, moins il y a de matière à couper — et rien d'essentiel n'est perdu.
-    let repli = gsmifier(REPLI_AVEC_LIEN
-      ? `Sofy : votre analyse de visibilite locale est prete. ${url}${queue}`
-      : `Sofy : votre analyse de visibilite locale est prete, ouvrez le lien ci-dessous.${queue}`);
-    if (repli.length > MAX_FALLBACK) repli = repli.slice(0, MAX_FALLBACK);
     // ⚠️ DEUX textes, à ne pas confondre :
     //  · `repli` part dans fallback.text — la plateforme y ajoutera SON lien court ;
     //  · `smsDirect` sert quand NOUS envoyons le SMS nous-mêmes (rich-card refusée) : là, aucune
     //    page n'est hébergée, donc notre URL est indispensable. L'oublier enverrait un SMS qui
     //    annonce une analyse sans donner le moyen de l'ouvrir.
-    const smsDirect = gsmifier(`Sofy : votre analyse de visibilite locale est prete. ${url}${queue}`);
-    const diag = analyserSms(repli);
+    const { repli, smsDirect, diag, apercu } = textesSmsPrez(url);
 
     if (b.apercu) {
       return res.status(200).json({ ok: true, apercu: true, texte: txt, url, visuel: VISUEL_PREZ,
-        bouton: '📊 Voir mon analyse', repli_sms: repli, segments_sms: diag.segments, alphabet: diag.alphabet,
-        sms_direct: smsDirect, sms_direct_longueur: smsDirect.length,
-        repli_note: REPLI_AVEC_LIEN ? null
-          : 'La plateforme Sofy ajoute son propre lien court vers la page qui porte le visuel RCS, plus la mention STOP. Notre URL n\'est donc pas répétée ici : elle serait tronquée.',
-        // La longueur est affichée à l'écran : au-delà de 129, l'API v2 refuse la rich-card et
-        // tout partirait en SMS. Le bug du 20/08 aurait été visible avant l'envoi.
-        repli_longueur: repli.length, repli_max: MAX_FALLBACK,
-        rcs_configure: !!(cleV2() && process.env.SOFY_RCS_SENDER_ID) });
+        bouton: '📊 Voir mon analyse', ...apercu });
     }
 
     let envoi = null;
@@ -232,9 +240,9 @@ export default async function handler(req, res) {
           })
         });
         const d = await r.json().catch(() => ({}));
-        if (r.ok && d.id) envoi = { canal: d.isSmsFallback ? 'sms (repli Sofy)' : 'rcs', id: d.id,
+        if (r.ok && d.id && !analyserStatutMessage(d).rejete) envoi = { canal: d.isSmsFallback ? 'sms (repli Sofy)' : 'rcs', id: d.id,
           repli_operateur: !!d.isSmsFallback, statut_api: d.status || null };
-        else envoi = { erreur: 'RCS ' + r.status + ': ' + JSON.stringify(d).slice(0, 200) };
+        else envoi = { erreur: echecRcs(d, r.status) };
       } catch (e) { envoi = { erreur: 'RCS injoignable : ' + String((e && e.message) || e).slice(0, 120) }; }
     }
     // Quand la rich-card passe, c'est l'API v2 qui gère elle-même la bascule SMS : on n'a rien à
@@ -245,8 +253,8 @@ export default async function handler(req, res) {
     // l'application, donc un seul endroit à corriger le jour où une route change.
     if (!envoi || envoi.erreur) {
       const sms = await envoyerSmsSofy({ to: tel, message: smsDirect, user: user.nom, liste_id: b.liste_id || null, transactionnel: false });
-      if (sms.ok) envoi = { canal: 'sms (' + (sms.via || '?') + ')', id: sms.id || null, rcs_echec: envoi && envoi.erreur };
-      else return res.status(502).json({ erreur: 'Envoi refusé', detail: (envoi && envoi.erreur) || sms.detail });
+      if (sms.ok) envoi = { canal: 'sms (' + (sms.via || '?') + ')', id: sms.id || null, statut_api: sms.statut || null, rcs_echec: envoi && envoi.erreur };
+      else return res.status(502).json({ erreur: 'Envoi refusé', detail: [envoi && envoi.erreur, sms.detail].filter(Boolean).join(' · ') });
     }
 
     try { await loggerConso(user.nom, 'soreach', 1, b.liste_id || null); } catch (_) {}
@@ -320,8 +328,8 @@ export default async function handler(req, res) {
         })
       });
       const d = await r.json().catch(() => ({}));
-      if (r.ok && d.id) envoi = { canal: d.isSmsFallback ? 'sms (repli Sofy)' : 'rcs', id: d.id };
-      else envoi = { erreur: 'RCS ' + r.status + ': ' + JSON.stringify(d).slice(0, 200) };
+      if (r.ok && d.id && !analyserStatutMessage(d).rejete) envoi = { canal: d.isSmsFallback ? 'sms (repli Sofy)' : 'rcs', id: d.id };
+      else envoi = { erreur: echecRcs(d, r.status) };
     }
     // Repli : SMS v1 route alerte (la route SMS v2 est rejetée par le provider, cf. 07/08)
     if (!envoi || envoi.erreur) {
