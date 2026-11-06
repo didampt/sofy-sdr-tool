@@ -2,6 +2,7 @@ import {
   clientIp,
   claimOtpForManualReview,
   consumeOtp,
+  hashKey,
   json,
   rateLimit,
   readBody,
@@ -66,6 +67,8 @@ export default async function handler(req, res) {
     : await consumeOtp({ token: body.otp_token, code: body.otp_code, email: normalized.email, phone: normalized.phone });
   if (!otp.ok) return json(res, 401, { error: otp.error || 'Code de validation invalide.' });
 
+  const conversion = { id: hashKey(`signup:${body.signup_reference || body.otp_token}`) };
+
   if (manualSmsReview) {
     normalized.sms_verification_status = 'not_received';
     normalized.sms_verification_reported_at = new Date().toISOString();
@@ -75,7 +78,12 @@ export default async function handler(req, res) {
         ...normalized,
         otp_token: body.signup_reference || body.otp_token
       });
-      return json(res, 202, { ok: true, manual_review: true });
+      // A saved manual-review request is a signup lead even before account creation.
+      const hubspotResult = await capture('HubSpot', syncSignupToHubSpot(normalized));
+      const hubspot = hubspotResult.ok
+        ? hubspotResult.value
+        : { ok: false, error: 'HubSpot sync failed', detail: hubspotResult.error.message };
+      return json(res, 202, { ok: true, manual_review: true, conversion, hubspot });
     } catch (err) {
       return json(res, 502, { error: 'Impossible d’enregistrer la demande de validation manuelle.', detail: err.message });
     }
@@ -125,7 +133,9 @@ export default async function handler(req, res) {
       ? hubspotResult.value
       : { ok: false, error: 'HubSpot sync failed', detail: hubspotResult.error.message };
 
-    return json(res, 201, { ok: true, account, hubspot, hotlead });
+    return json(res, 201, { ok: true, account, hubspot, hotlead,
+      conversion
+    });
   } catch (err) {
     return json(res, 502, { error: 'Signup submission failed', detail: err.message });
   }

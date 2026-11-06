@@ -1,3 +1,5 @@
+import { initHubSpotAttribution } from './hubspot.js';
+import { initAttribution, trackConfirmedSignup } from './tracking.js';
 import { getCountryCallingCode, parsePhoneNumberFromString } from 'https://cdn.jsdelivr.net/npm/libphonenumber-js@1.11.20/+esm';
 
 const ISO_COUNTRIES = [
@@ -154,7 +156,10 @@ let missingOtpTimer = null;
 let previewMode = '';
 let pendingSignupPayload = null;
 const searchCache = new Map();
-const attribution = initAttribution();
+const attribution = initAttribution(window, document);
+const trackHubSpotSignup = initHubSpotAttribution(window, document, {
+  preview: Boolean(requestedPreviewState() || isReceivedViewRequested())
+});
 
 const countryCombo = createCombo({
   root: document.querySelector('#countryCombo'),
@@ -498,44 +503,6 @@ function formPayload() {
   };
 }
 
-function initAttribution() {
-  const storageKey = 'sofy_signup_attribution_v1';
-  const current = trafficSnapshot();
-  let original = null;
-
-  try {
-    original = JSON.parse(window.localStorage.getItem(storageKey) || 'null');
-  } catch (_) {}
-
-  if (!original || typeof original !== 'object' || !original.first_seen_at) {
-    original = { ...current, first_seen_at: new Date().toISOString() };
-    try {
-      window.localStorage.setItem(storageKey, JSON.stringify(original));
-    } catch (_) {}
-  }
-
-  return { original, current: { ...current, seen_at: new Date().toISOString() } };
-}
-
-function trafficSnapshot() {
-  const params = new URLSearchParams(window.location.search);
-  const pick = name => String(params.get(name) || '').trim();
-  return {
-    landing_page: window.location.href,
-    referrer: document.referrer || '',
-    utm_source: pick('utm_source'),
-    utm_medium: pick('utm_medium'),
-    utm_campaign: pick('utm_campaign'),
-    utm_term: pick('utm_term'),
-    utm_content: pick('utm_content'),
-    gclid: pick('gclid'),
-    fbclid: pick('fbclid'),
-    msclkid: pick('msclkid'),
-    ttclid: pick('ttclid'),
-    li_fat_id: pick('li_fat_id')
-  };
-}
-
 function validateClient(payload) {
   const errors = [];
   if (!payload.first_name) errors.push('Le prénom est requis.');
@@ -696,6 +663,14 @@ async function submitSignup(payload, manualSmsReview = false) {
       setError('Une erreur est survenue, veuillez réessayer en vérifiant vos informations.');
       return;
     }
+    trackConfirmedSignup(window, {
+      status: response.status, data, preview: previewMode,
+      reference: data.conversion?.id
+    });
+    trackHubSpotSignup({
+      status: response.status, data, preview: previewMode,
+      reference: data.conversion?.id, email: finalPayload.email
+    });
     signupCompleted = true;
     renderReceivedView();
   } catch (err) {

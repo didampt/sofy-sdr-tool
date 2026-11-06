@@ -187,7 +187,7 @@ function trafficLabel(tracking) {
     try { return new URL(referrer).hostname.replace(/^www\./, ''); } catch (_) { return referrer.slice(0, 120); }
   }
 
-  return 'signup.sofy.fr';
+  return 'Direct / inconnu';
 }
 
 function trafficDetails(tracking) {
@@ -203,6 +203,8 @@ function trafficDetails(tracking) {
     ['UTM term', original.utm_term],
     ['UTM content', original.utm_content],
     ['GCLID', original.gclid],
+    ['GBRAID', original.gbraid],
+    ['WBRAID', original.wbraid],
     ['FBCLID', original.fbclid],
     ['MSCLKID', original.msclkid],
     ['Dernière page', current.landing_page]
@@ -228,7 +230,8 @@ async function searchOne(objectType, token, filters, properties = []) {
     properties,
     limit: 1
   });
-  if (!response.ok || !response.data.total) return null;
+  if (!response.ok) throw new Error(response.data.message || `HubSpot ${objectType} search HTTP ${response.status}`);
+  if (!response.data.total) return null;
   return response.data.results[0];
 }
 
@@ -311,25 +314,6 @@ async function createSignupNote({ body, contactId, companyId, token }) {
   });
 }
 
-function addConfiguredTrackingProperties(props, meta, prefix, tracking) {
-  const source = trafficLabel(tracking);
-  const details = trafficDetails(tracking);
-  setProperty(props, findProperty(meta, [
-    process.env[`${prefix}_TRAFFIC_SOURCE_PROPERTY`],
-    'source_trafic_origine',
-    'origine_trafic',
-    'traffic_source_origin',
-    'original_traffic_source',
-    'utm_source'
-  ]), [source]);
-  setProperty(props, findProperty(meta, [
-    process.env[`${prefix}_TRAFFIC_DETAIL_PROPERTY`],
-    'detail_source_trafic',
-    'traffic_source_detail',
-    'original_traffic_detail'
-  ]), [details]);
-}
-
 export async function syncSignupToHubSpot(body) {
   const token = clean(process.env.HUBSPOT_API_KEY, 2000);
   if (!token) return { ok: false, skipped: true, raison: 'HUBSPOT_API_KEY non configurée' };
@@ -393,7 +377,6 @@ export async function syncSignupToHubSpot(body) {
     process.env.HUBSPOT_SIGNUP_COMPANY_TVA_PROPERTY,
     'numero_de_tva'
   ]), [company.tva_id]);
-  addConfiguredTrackingProperties(companyProps, companyMeta, 'HUBSPOT_SIGNUP_COMPANY', body.tracking);
 
   const companyResult = await upsertCompany({ body, companyProps, companyMeta, token });
 
@@ -424,7 +407,6 @@ export async function syncSignupToHubSpot(body) {
     process.env.HUBSPOT_SIGNUP_CONTACT_COUNTRY_CODE_PROPERTY,
     'hs_country_region_code'
   ]), [body.country_code]);
-  addConfiguredTrackingProperties(contactProps, contactMeta, 'HUBSPOT_SIGNUP_CONTACT', body.tracking);
 
   const contact = await upsertContact({ body, contactProps, token });
 

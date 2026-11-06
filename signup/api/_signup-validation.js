@@ -26,6 +26,8 @@ function sanitizeTrackingSnapshot(value) {
     utm_term: cleanText(input.utm_term, 200),
     utm_content: cleanText(input.utm_content, 200),
     gclid: cleanText(input.gclid, 300),
+    gbraid: cleanText(input.gbraid, 300),
+    wbraid: cleanText(input.wbraid, 300),
     fbclid: cleanText(input.fbclid, 300),
     msclkid: cleanText(input.msclkid, 300),
     ttclid: cleanText(input.ttclid, 300),
