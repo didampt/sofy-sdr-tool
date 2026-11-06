@@ -76,11 +76,11 @@ A page view cannot recover a marketing visit that was never tracked or whose coo
 
 References: [HubSpot visitor identification](https://developers.hubspot.com/docs/api-reference/latest/account/settings/tracking-code/identify), [tracking-code overview](https://developers.hubspot.com/docs/api-reference/latest/account/settings/tracking-code/overview), [source updates](https://knowledge.hubspot.com/records/update-and-filter-contacts-using-traffic-source-properties), and [domain/cookie configuration](https://knowledge.hubspot.com/reports/set-up-sources-tracking).
 
-### First purchase: separate payment-backend implementation
+### First purchase
 
-This repository does not handle `app.sofy.fr/billing/payments` or payment confirmations. The payment backend must atomically record the **first successful paid SMS/RCS self-service transaction per company**, keyed by the billing company ID, and enqueue CRM/Ads delivery with retry and idempotency. Checkout creation or a browser success redirect is insufficient proof of payment.
+The Payments backend now has a minimal notification (using Stripe webhook retries) after a confirmed self-service card payment. The SDR receiver (`api/purchase-c8d6614869335b19882d8f877d35657b.js`) records the earliest purchase on the existing HubSpot company in `sofy_first_self_service_purchase_at`, leaving native attribution unchanged. Duplicate notifications are accepted; later purchases preserve the earlier date.
 
-Recommended company properties are `sofy_first_self_service_purchase_at` (`datetime`), plus optional amount, currency and payment ID. Never overwrite them on repeat payments. Maintain the billing-company ↔ HubSpot-company relationship and retain signup click identifiers/consent so an Ads conversion can be uploaded even weeks later, subject to the action's attribution window. Do not rely on browser local storage surviving until purchase or deduplicate by contact/email. The first purchase must be joined to native acquisition data and the signup activity; exclude existing customers using lifecycle history at signup. This part remains to be implemented in the payment backend.
+See [payment tracking](../docs/payment-tracking.md) for the HubSpot company property, fixed receiver URL, delivery limits and Google Ads work still required. No payment-backend storage, migration, queue or worker is added.
 
 ### Local checks
 
