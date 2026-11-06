@@ -30,7 +30,12 @@ function fixture({ existingDate = '', siret = '12345678901234', associated = [{ 
       if (!data.has(key) || new Date(data.get(key).paid_at) > new Date(incoming.paid_at)) data.set(key, incoming);
       return [];
     }
-    if (query.includes('SELECT valeur')) return [{ valeur: data.get(values[0]) }];
+    if (query.includes('SELECT valeur')) return data.has(values[0]) ? [{ valeur: data.get(values[0]) }] : [];
+    if (query.includes('UPDATE config')) {
+      const [eligible, key, paymentId] = values;
+      if (data.get(key)?.payment_id === paymentId) data.get(key).is_first_purchase = JSON.parse(eligible);
+      return [];
+    }
     if (query.includes('DELETE FROM config')) {
       if (data.get(values[0])?.owner === values[1]) data.delete(values[0]);
       return [];
@@ -130,4 +135,26 @@ test('another active company sync cannot be overwritten or have its lease releas
   assert.equal((await f.call()).statusCode, 409);
   assert.equal(f.patches().length, 0);
   assert.equal(f.data.get('self_service_purchase_lock:42').owner, 'other-owner');
+});
+
+
+test('lookup waits for fulfillment and reports only the company first payment', async () => {
+  const f = fixture();
+  const lookup = { operation: 'lookup', organization_id: purchase.organization_id, payment_id: purchase.payment_id };
+  assert.equal((await f.call(lookup)).statusCode, 202);
+  await f.call();
+  const res = await f.call(lookup);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.is_first_purchase, true);
+  assert.equal(res.body.transaction_id, 'pi_first');
+  assert.equal(res.body.value, 24);
+  assert.equal(res.body.currency, 'EUR');
+  assert.equal((await f.call({ ...lookup, payment_id: 'pi_later' })).body.is_first_purchase, false);
+  const existing = fixture({ existingDate: '2025-12-01T00:00:00Z' });
+  await existing.call();
+  await existing.call();
+  assert.equal((await existing.call(lookup)).body.is_first_purchase, false);
+  const failed = fixture({ patchFails: true });
+  await failed.call();
+  assert.equal((await failed.call(lookup)).statusCode, 202);
 });

@@ -56,14 +56,15 @@ export default async function handler(req, res) {
   if (!sql || !process.env.HUBSPOT_API_KEY) return res.status(503).json({ erreur: 'Tracking achats non configuré' });
   let purchase;
   try { purchase = typeof req.body === 'string' ? JSON.parse(req.body) : req.body; } catch {}
+  const lookup = purchase?.operation === 'lookup';
   const paidAt = new Date(purchase?.paid_at);
   if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(String(purchase?.organization_id || ''))
     || !/^pi_[A-Za-z0-9]+$/.test(String(purchase?.payment_id || ''))
-    || !String(purchase?.invoice_id || '').trim()
+    || (!lookup && (!String(purchase?.invoice_id || '').trim()
     || !Number.isFinite(paidAt.getTime()) || paidAt.getUTCFullYear() < 2020
     || paidAt.getTime() > Date.now() + 5 * 60 * 1000
     || !Number.isSafeInteger(purchase?.amount_cents) || purchase.amount_cents <= 0
-    || !/^[A-Za-z]{3}$/.test(String(purchase?.currency || ''))) {
+    || !/^[A-Za-z]{3}$/.test(String(purchase?.currency || ''))))) {
     return res.status(400).json({ erreur: 'Notification achat invalide' });
   }
 
@@ -83,6 +84,18 @@ export default async function handler(req, res) {
     const companyId = String(await findCompany([...contexts.values()][0]));
     if (!/^\d+$/.test(companyId)) throw new Error('Identifiant entreprise HubSpot invalide');
     const key = `self_service_purchase:${companyId}`;
+    if (lookup) {
+      const rows = await sql`SELECT valeur FROM config WHERE cle = ${key}`;
+      const first = rows[0]?.valeur;
+      if (!first || typeof first.is_first_purchase !== 'boolean') {
+        return res.status(202).json({ status: 'pending' });
+      }
+      const eligible = first.is_first_purchase && first.payment_id === purchase.payment_id;
+      return res.status(200).json({ status: 'confirmed', is_first_purchase: eligible,
+        ...(eligible ? { transaction_id: first.payment_id, value: first.amount_cents / 100,
+          currency: first.currency.toUpperCase() } : {}) });
+    }
+
     const fact = { organization_id: purchase.organization_id, payment_id: purchase.payment_id,
       invoice_id: purchase.invoice_id, paid_at: paidAt.toISOString(),
       amount_cents: purchase.amount_cents, currency: purchase.currency.toLowerCase() };
@@ -114,6 +127,13 @@ export default async function handler(req, res) {
       });
       updated = true;
     }
+    // Persist eligibility only after CRM synchronization succeeds. Keep a prior
+    // rejection across retries even if the CRM date is subsequently changed.
+    const eligible = first.is_first_purchase !== false && (!existing || candidate <= existing);
+    await sql`
+      UPDATE config SET valeur = jsonb_set(valeur, '{is_first_purchase}', ${JSON.stringify(eligible)}::jsonb)
+      WHERE cle = ${key} AND valeur->>'payment_id' = ${first.payment_id}
+    `;
     return res.status(200).json({ ok: true, updated, company_id: companyId,
       first_purchase_at: (existing && existing <= candidate ? existing : candidate).toISOString() });
   } catch (err) {

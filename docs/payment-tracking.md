@@ -52,12 +52,48 @@ The existing `config` JSON store holds `self_service_purchase:<HubSpot company I
 
 HubSpot native traffic-source fields and lifecycle stages are unchanged. Report companies with a first-purchase date against native acquisition sources from their associated contacts. This date is not a HubSpot closed-won deal, so it does not by itself add revenue to native deal-revenue attribution reports. Exclude existing customers using lifecycle history relative to signup.
 
-## Google Ads boundary
+## Verified browser conversion / Google Ads
 
-This implementation supplies the confirmed payment and first-purchase date to SDR/HubSpot. It does **not** upload a Google Ads purchase conversion, and it does not fire a browser purchase event. AdPremier must configure a delivery path and the conversion action; a company custom date is not automatically a Google Ads conversion. Native HubSpot attribution and Google Ads conversion delivery are separate concerns. Sending an event only from `payment_success=true` would miss payments whose browser never returns and would not prove payment.
+The app uses the Stripe-added `session_id` on the checkout success URL to request:
+
+```http
+GET /orgs/{orgID}/payments/checkout-conversion?session_id=cs_live_...
+Authorization: Bearer <existing app token>
+```
+
+Payments retrieves the session from Stripe, checks that its organization matches the authenticated route, that it is paid and marked self-service, then asks the opaque receiver for the company first-purchase receipt (`operation: "lookup"`, organization ID and PaymentIntent ID). The opaque URL is never sent to the browser. No new backend table, migration, worker or environment variable is required.
+
+The receiver returns 202 pending until a successful CRM sync has recorded eligibility. It returns confirmed/ineligible for subsequent payments and for companies with an earlier recorded CRM purchase date. Eligibility is stored on the existing company purchase fact and survives notification retries. Missing historical purchases are not backfilled; the CRM property has date precision, so existing same-day purchases cannot be distinguished without historical payment facts.
+
+The webapp polls at most 15 times with two seconds between requests. This continues independently of the existing two-second payment loader and URL cleanup. Only a verified first purchase emits this payload on `app.sofy.fr`:
+
+```js
+window.dataLayer.push({
+  event: 'purchase',
+  transaction_id: 'pi_example',
+  value: 24,
+  currency: 'EUR'
+});
+```
+
+The value is the confirmed amount paid (including any tax), in major currency units. No email, company name or other personal fields are included. PaymentIntent ID is stable across replays; the webapp also deduplicates in memory and session storage when available. Non-production backends return ineligible receipts.
+
+AdPremier still needs to configure and publish the existing web GTM container:
+
+1. Create a Custom Event trigger named `purchase`.
+2. Create Data Layer Variables `transaction_id`, `value` and `currency`.
+3. Attach a native Google Ads conversion tracking tag using the purchase conversion action's ID and label, mapping transaction ID, conversion value and currency to those variables. Configure the existing conversion linker and consent settings for the signup/app journey.
+4. Validate in Tag Assistant and Google Ads with a real first self-service purchase. Avoid importing an additional GA4 conversion for the same purchase action, which would create a second measurement path.
+
+This code makes an event available to GTM; it does not configure a Google Ads account or directly upload conversions. See [Google's data layer documentation](https://developers.google.com/tag-platform/tag-manager/datalayer).
+
+Browser delivery requires the customer to return from Checkout and the tags to run. Closing the browser, blockers, consent restrictions or fulfillment taking longer than the bounded checks can prevent the Ads event. The server-side HubSpot date does not depend on browser return. There is no offline Ads import in this implementation.
+
+Deploy the updated SDR receiver first, then Payments, then the webapp. Create the HubSpot company property before testing. No production rollout has been performed as part of local validation.
 
 ## Validation
 
 - Backend: payment/transaction tests cover the verified timestamp/currency, public checkout marker, duplicate notifications, redirects, production-only delivery and notification errors occurring only after wallet crediting.
+- Webapp: callback, bounded polling, first-purchase event, deduplication and production-host tests; TypeScript validation.
 - SDR: `node --test tests/first-purchase.test.js` covers payload validation, company resolution, duplicate/later/older payments, failed CRM sync recovery and per-company lease isolation.
 - Provider calls are mocked in these tests. Deployment, property creation and a consented signup-to-first-purchase end-to-end check remain to be performed.
