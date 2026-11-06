@@ -6,7 +6,7 @@ The Payments backend marks checkouts created through the public `BuyPack` servic
 
 After its existing signed `payment_intent.succeeded` processing has verified the amount, recorded payment with Zoho and successfully applied the wallet credits, Payments posts a purchase notification. Replayed successful events may post it again. The notification uses Stripe's original event time and PaymentIntent ID, not a browser redirect or the time of a retry.
 
-The backend intentionally adds no storage, schema migration, queue, worker or deduplication. The POST has a five-second timeout and refuses redirects. Delivery failures return HTTP 503 so Stripe retries using its existing redelivery policy; the already applied wallet credits remain protected by their existing idempotency. There is no new backend retry worker or historical backfill. An outage beyond Stripe's retry period still requires event replay.
+The backend intentionally adds no storage, schema migration, queue, worker or deduplication. The POST has a five-second timeout and refuses redirects. Tracking delivery is best effort: receiver errors, timeouts and network failures are silently ignored after fulfillment. The payment webhook succeeds, so tracking failures do not trigger Stripe retries or repeat invoice emails. Already applied wallet credits retain their existing idempotency. There is no automatic retry or historical backfill for failed tracking; a manual event replay or later notification is needed to repair missing CRM synchronization.
 
 ## Configuration
 
@@ -48,7 +48,7 @@ Content-Type: application/json
 
 The receiver derives company identity from the stored signup record for that organization. It first uses the signup contact's native association when exactly one company is linked. Otherwise it falls back to an exact SIRET match when available. The portal's existing SIRET field is numeric and may be empty because signup does not write identifiers into numeric properties; native contact/company association does not depend on it. It does not create CRM records or guess from a company name or email domain. Missing/ambiguous links return an error rather than updating the wrong company. If SIRET has a non-default internal property name, configure `HUBSPOT_SIGNUP_COMPANY_SIRET_PROPERTY` on SDR as well.
 
-The existing `config` JSON store holds `self_service_purchase:<HubSpot company ID>`, updated atomically only for an earlier payment. A short per-company lease serializes CRM writes. Duplicate/later purchases do not overwrite an earlier CRM date. If an older payment arrives late, it can correct a later date. A failed CRM update keeps the purchase fact; a later notification can repair the CRM date. A busy lease returns 409 so the originating Stripe webhook can be retried; there is no autonomous receiver retry job.
+The existing `config` JSON store holds `self_service_purchase:<HubSpot company ID>`, updated atomically only for an earlier payment. A short per-company lease serializes CRM writes. Duplicate/later purchases do not overwrite an earlier CRM date. If an older payment arrives late, it can correct a later date. A failed CRM update keeps the purchase fact; a later notification can repair the CRM date. A busy lease returns 409. Payments silently ignores that tracking failure; there is no automatic tracking retry. A later notification or manual event replay can repair synchronization.
 
 HubSpot native traffic-source fields and lifecycle stages are unchanged. Report companies with a first-purchase date against native acquisition sources from their associated contacts. This date is not a HubSpot closed-won deal, so it does not by itself add revenue to native deal-revenue attribution reports. Exclude existing customers using lifecycle history relative to signup.
 
@@ -65,7 +65,7 @@ Payments retrieves the session from Stripe, checks that its organization matches
 
 The receiver returns 202 pending until a successful CRM sync has recorded eligibility. It returns confirmed/ineligible for subsequent payments and for companies with an earlier recorded CRM purchase date. Eligibility is stored on the existing company purchase fact and survives notification retries. Missing historical purchases are not backfilled; the CRM property has date precision, so existing same-day purchases cannot be distinguished without historical payment facts.
 
-The webapp polls at most 15 times with two seconds between requests. This continues independently of the existing two-second payment loader and URL cleanup. Only a verified first purchase emits this payload on `app.sofy.fr`:
+The webapp polls at most 15 times with two seconds between requests. The checkout session is captured immediately, even if the organization is still loading, so checks can start after URL cleanup. Polling continues independently of the existing two-second payment loader. Only a verified first purchase emits this payload on `app.sofy.fr`:
 
 ```js
 window.dataLayer.push({
@@ -93,7 +93,7 @@ Deploy the updated SDR receiver first, then Payments, then the webapp. Create th
 
 ## Validation
 
-- Backend: payment/transaction tests cover the verified timestamp/currency, public checkout marker, duplicate notifications, redirects, production-only delivery and notification errors occurring only after wallet crediting.
+- Backend: payment/transaction tests cover the verified timestamp/currency, public checkout marker, duplicate notifications, redirects, production-only delivery and silently ignored notification errors after wallet crediting.
 - Webapp: callback, bounded polling, first-purchase event, deduplication and production-host tests; TypeScript validation.
 - SDR: `node --test tests/first-purchase.test.js` covers payload validation, company resolution, duplicate/later/older payments, failed CRM sync recovery and per-company lease isolation.
 - Provider calls are mocked in these tests. Deployment, property creation and a consented signup-to-first-purchase end-to-end check remain to be performed.
