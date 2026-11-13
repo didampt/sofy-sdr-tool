@@ -107,6 +107,9 @@ Budy Auto et exporte le gabarit commun (gabarit, pageSynthese, pagePreuve, blocF
   pièces 45 appels et 30 messages/jour, 12 % de conversion, 750 devis, 2 % de ventes additionnelles.
   Sur la marge, ces mêmes défauts donnent ≈ ×13 et ≈ ×11.
 - Soview / SoReach / SoConnect affichent ≈ ×5, ×6 et ×4 sur le CA (aucun multiple visé).
+- v405 : « 💼 Valoriser le temps rendu à ses équipes » est une OPTION cochable (config.off.cout_temps).
+  Décochée, le coût horaire vaut 0 dans les quatre moteurs : les heures restent affichées, mais ne
+  comptent plus dans le gain (Budy concession ×30 → ×28, pièces ×25 → ×21).
 
 Bancs (scratchpad banc-roi) : serveur.mjs (app + CSP de prod + API simulées), calc.mjs (profils,
 autonomie du moteur, somme des leviers = gain), pdf.sh (PDF + planches PNG).

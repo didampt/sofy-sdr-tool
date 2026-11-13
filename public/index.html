@@ -1547,7 +1547,8 @@ Spot-Hit</textarea>
           </div>
           <div id="roi-cartes"></div>
           <div id="roi-scen"></div>
-          <div class="roi-c"><h3>💼 Coût du temps de ses équipes</h3><div class="roi-x">Sert à valoriser les heures rendues par Budy (demandes traitées seul, réponses aux avis, recherche de références). À demander au client ; 30 à 35 € chargés est un repère courant.</div><div class="roi-2" id="roi-s-temps"></div></div>
+          <div class="roi-c" id="roi-c-cout_temps"><h3><input type="checkbox" id="roi-cb-cout_temps" checked onchange="roiOff('cout_temps',!this.checked)" title="Compter le temps rendu dans le gain">💼 Valoriser le temps rendu à ses équipes<span class="roi-gn" id="roi-g-cout_temps"></span></h3>
+            <div class="roi-b"><div class="roi-x">Option : coche pour compter en euros les heures rendues par Budy (demandes traitées seul, réponses aux avis, recherche de références). Décochée, les heures restent affichées mais ne gonflent pas le gain. Le coût horaire est à demander au client ; 30 à 35 € chargés est un repère courant.</div><div class="roi-2" id="roi-s-temps"></div></div></div>
           <div class="roi-c"><h3>💶 Tarif</h3><div class="roi-x" id="roi-tarif-x"></div><div class="roi-2" id="roi-s-cout"></div>
             <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-top:4px">Gain et seuil (« rentabilisé avec N <span id="roi-seuil-u">ventes</span> ») calculés sur
               <select class="field" id="roi-seuil-base" style="padding:4px 8px;font-size:13px;width:auto" onchange="ROI.cfg.seuil_base=this.value;roiDessiner()"><option value="ca">le chiffre d'affaires</option><option value="marge">la marge</option></select></label></div>
@@ -2658,7 +2659,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v404';
+const VERSION='v405';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -8357,6 +8358,8 @@ function roiDessiner(){
     prod==='budy'?'Un seul montant pour tout : appels et messages repris, devis relancés, rendez-vous atelier, révisions, ventes additionnelles.':'Demande-le au client, avec sa fourchette basse et haute.']);
  document.getElementById('roi-s-perimetre').innerHTML=D.perimetre.map(roiCurseur).join('');
  document.getElementById('roi-s-temps').innerHTML=roiCurseur(ROI_CH);
+ document.getElementById('roi-cb-cout_temps').checked=!c.off.cout_temps;
+ document.getElementById('roi-c-cout_temps').classList.toggle('off',!!c.off.cout_temps);
  document.getElementById('roi-tarif-x').innerHTML=D.tarif;
  document.getElementById('roi-s-cout').innerHTML=D.cout.map(roiCurseur).join('');
  document.getElementById('roi-seuil-base').value=(c.seuil_base==='marge'?'marge':'ca');
@@ -8457,6 +8460,8 @@ function roiCalc(){
    if(ss)ss.textContent=sc.seuil===0?'rentable dans les trois cas':(sc.seuil!=null?'rentable dès '+pcs(sc.seuil):'jamais rentable sur cette plage');
   }
  }
+ const gt=document.getElementById('roi-g-cout_temps');
+ if(gt)gt.textContent=(ROI.cfg.off&&ROI.cfg.off.cout_temps)?'non compté':'+ '+roiEur((r.valeur_temps_mois||0)*12)+' / an';
  r.leviers.forEach(function(l){const e=document.getElementById('roi-g-'+l.id);if(e)e.textContent=l.actif?'+ '+roiEur(l.gain_an)+' / an':'non inclus';});
  const act=r.leviers.filter(l=>l.actif&&l.gain_an>0);
  document.getElementById('roi-pile').innerHTML=act.map(l=>`<i style="flex:${Math.max(1,Math.round(l.gain_an))};background:${coul[l.id]||'#999'}" title="${htmlSafe(l.label)}"></i>`).join('');

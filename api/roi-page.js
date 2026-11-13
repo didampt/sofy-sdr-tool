@@ -34,7 +34,9 @@ export function calculerRoi(c) {
   const on = k => !off[k];
   const sites = borne(Math.round(n(c.sites, 1)), 1, 500);
   const jours = borne(n(c.jours_mois, 22), 1, 31);
-  const coutH = pos(c.cout_horaire, 32, 500);
+  // Valoriser le temps rendu est une OPTION (demande Didier 13/11/2026) : décochée, les heures
+  // restent affichées mais ne comptent plus dans le gain.
+  const coutH = off.cout_temps ? 0 : pos(c.cout_horaire, 32, 500);
   const tBudy = pct(c.taux_budy, 90);
   const tAuto = pct(c.automatisation, 30);
 
@@ -230,6 +232,7 @@ export function calculerRoi(c) {
     seuil_pct_demandes: (seuilVentes != null && demandesMois > 0) ? seuilVentes / demandesMois * 100 : null,
     ventes_mois: ventesMois, multiple_seuil: (seuilVentes && ventesMois > 0) ? ventesMois / seuilVentes : null,
     valeur_temps_mois: heuresMois * coutH,
+    temps_valorise: !off.cout_temps,
     jour_rentable: (gainJourOuvre > 0 && coutMois > 0) ? Math.min(jours, Math.max(1, Math.ceil(coutMois / gainJourOuvre))) : null,
     gain_net_mois: gainMois - coutMois
   };
@@ -462,7 +465,7 @@ export function pageSynthese(r, o) {
   <div class="ch-a">→</div>
   <div class="ch-c ch-n"><small>Pour être rentable</small><b>${ent(sv)}</b><span>${sv > 1 ? U[1] : U[0]} en plus par mois suffi${sv > 1 ? 'sent' : 't'}, soit ${fmtPct(pctDem)} des ${esc(o.demandesCourt || 'demandes')}</span></div>
  </div>
- ${r.heures_mois >= 1 ? `<div class="enplus"><b>En plus :</b> <em>${ent(r.heures_mois)} h par mois</em> rendues à vos équipes${o.temps ? ` (${esc(o.temps)})` : ''}, soit ${eur(r.valeur_temps_mois)} de temps — ${tempsVsAbo}.</div>` : ''}
+ ${r.heures_mois >= 1 ? `<div class="enplus"><b>En plus :</b> <em>${ent(r.heures_mois)} h par mois</em> rendues à vos équipes${o.temps ? ` (${esc(o.temps)})` : ''}${r.valeur_temps_mois > 0 ? `, soit ${eur(r.valeur_temps_mois)} de temps — ${tempsVsAbo}` : ''}.</div>` : ''}
  <div class="h3" style="margin-top:30px">Le vrai gain : bien au-delà du seuil</div>
  <div class="vg">
   <div class="vg-b">
@@ -1004,7 +1007,7 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
  <p class="tx" style="max-width:none;margin-bottom:0">Chaque montant de cette étude découle des valeurs ci-dessous. Changez-en une, tout se recalcule : votre interlocuteur Sofy met l'étude à jour sur le même lien.</p>
  <div class="cols">
   <div>
-   ${bloc('', 'Périmètre', [h('Sites équipés', r.sites), h('Jours d\'ouverture par mois', r.jours), ...(simple ? [h('Panier moyen, pour toutes les ventes', eur(c.panier_moyen || 0))] : []), h('Gain calculé sur', surCa ? "le chiffre d'affaires" : 'la marge'), h('Coût horaire chargé d\'un conseiller', eur(c.cout_horaire || 0))])}
+   ${bloc('', 'Périmètre', [h('Sites équipés', r.sites), h('Jours d\'ouverture par mois', r.jours), ...(simple ? [h('Panier moyen, pour toutes les ventes', eur(c.panier_moyen || 0))] : []), h('Gain calculé sur', surCa ? "le chiffre d'affaires" : 'la marge'), h('Coût horaire chargé d\'un conseiller', r.temps_valorise ? eur(c.cout_horaire || 0) : 'temps rendu non valorisé')])}
    ${bloc('', 'Tarif retenu', [h('SoConnect Basic, par site et par mois', eur(c.abonnement || 0)), h('Module Budy Auto ' + (pieces ? 'Pièces' : 'Concession'), '+ ' + eur(c.module || 0)), ...(c.messages_inclus ? [h('Messages WhatsApp / RCS inclus par mois', ent(c.messages_inclus))] : []), ...(c.plaques_incluses ? [h('Interrogations de plaque incluses par mois', ent(c.plaques_incluses))] : []), ...(r.cout_messages_mois ? [h('Message au-delà du forfait', eur2(c.cout_message || 0))] : [])])}
    ${bloc('appels', 'Appels', [h('Appels entrants par jour et par site', ent(c.appels_jour || 0)), h('Manqués pendant les horaires', p0(c.taux_manques)), h('Reçus hors horaires', p0(c.hors_horaires)), h('Appelants sans réponse qui ne rappellent pas', p0(c.taux_perdus)), h('Demandes sans réponse reprises par Budy', p0(c.taux_budy))])}
    ${bloc('messages', 'Messages écrits', [h('Messages reçus par jour et par site', ent(c.messages_jour || 0)), h('Sans réponse rapide (client perdu)', p0(c.taux_msg_perdus))])}

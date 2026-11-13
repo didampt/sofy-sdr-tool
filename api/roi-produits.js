@@ -32,7 +32,7 @@ export function calculerSoview(c) {
   const on = k => !off[k];
   const sites = borne(Math.round(n(c.sites, 1)), 1, 2000);
   const jours = borne(n(c.jours_mois, 26), 1, 31);
-  const coutH = pos(c.cout_horaire, 30, 500);
+  const coutH = off.cout_temps ? 0 : pos(c.cout_horaire, 30, 500);   // valorisation du temps : option
   const panier = pos(c.panier, 0, 1000000), marge = pct(c.marge, 0);
 
   // Ce que la fiche Google rapporte déjà : vues → actions (appel, itinéraire, site) → clients.
@@ -97,7 +97,7 @@ export function calculerSoreach(c) {
   const on = k => !off[k];
   const sites = borne(Math.round(n(c.sites, 1)), 1, 2000);
   const jours = borne(n(c.jours_mois, 26), 1, 31);
-  const coutH = pos(c.cout_horaire, 30, 500);
+  const coutH = off.cout_temps ? 0 : pos(c.cout_horaire, 30, 500);   // valorisation du temps : option
   const panier = pos(c.panier, 0, 1000000), marge = pct(c.marge, 0);
 
   const contacts = sites * pos(c.contacts, 0, 10000000);
@@ -159,7 +159,7 @@ export function calculerSoconnect(c) {
   const on = k => !off[k];
   const sites = borne(Math.round(n(c.sites, 1)), 1, 2000);
   const jours = borne(n(c.jours_mois, 26), 1, 31);
-  const coutH = pos(c.cout_horaire, 20, 500);
+  const coutH = off.cout_temps ? 0 : pos(c.cout_horaire, 20, 500);   // valorisation du temps : option
   const panier = pos(c.panier, 0, 1000000), marge = pct(c.marge, 0);
   const surMarge = c.seuil_base === 'marge';
 
@@ -300,6 +300,7 @@ export function nettoyerConfig(c) {
   if (produit === 'budy') out.panier_mode = c.panier_mode === 'detail' ? 'detail' : (c.panier_mode === 'simple' || !Array.isArray(c.motifs) ? 'simple' : 'detail');
   out.off = {};
   for (const k of P.leviers) if (c.off && c.off[k]) out.off[k] = true;
+  if (c.off && c.off.cout_temps) out.off.cout_temps = true;   // temps rendu non valorisé
   if (base.motifs) out.motifs = (Array.isArray(c.motifs) ? c.motifs : base.motifs).slice(0, 8).map((m, i) => ({
     id: txt((m && m.id) || 'm' + i, 30), label: txt((m && m.label) || 'Motif ' + (i + 1), 80), unite: txt((m && m.unite) || 'ventes', 20),
     part: num(m && m.part, 0), conv: num(m && m.conv, 0), panier: num(m && m.panier, 0), marge: num(m && m.marge, 0)
@@ -518,7 +519,7 @@ function pageSoview(doc, meta, sdr, apercu, lienDemo, preuves) {
     lignesCout: [[`Abonnement Soview (${eur(c.abonnement || 0)}/mois${r.sites > 1 ? ` × ${r.sites} établissements` : ''} × 12)`, r.abonnement_mois * 12]].concat(r.frais ? [['Mise en place', r.frais]] : []),
     hypotheses: [
       [['Votre fiche Google aujourd\'hui', [['Établissements', r.sites], ['Vues de la fiche par mois et par établissement', ent(c.vues_mois || 0)], ['Vues suivies d\'une action (appel, itinéraire, site)', p0(c.taux_action)], ['Actions qui deviennent un client', p0(c.taux_transfo)], ['Panier moyen', eur(c.panier || 0)]].concat(r.sur_marge ? [['Marge', p0(c.marge)]] : [])]],
-      [['Avec Soview', [['Hausse des contacts venus de Google', '+ ' + p0(c.gain_visibilite)], ['Avis reçus par mois et par établissement', ent(c.avis_mois || 0)], ['Temps pour répondre à un avis aujourd\'hui', fmt(c.min_reponse || 0, 0) + ' min'], ['Gestion des fiches économisée par établissement', fmt(c.heures_gestion || 0, 1) + ' h / mois'], ['Coût horaire chargé', eur(c.cout_horaire || 0)]]]]
+      [['Avec Soview', [['Hausse des contacts venus de Google', '+ ' + p0(c.gain_visibilite)], ['Avis reçus par mois et par établissement', ent(c.avis_mois || 0)], ['Temps pour répondre à un avis aujourd\'hui', fmt(c.min_reponse || 0, 0) + ' min'], ['Gestion des fiches économisée par établissement', fmt(c.heures_gestion || 0, 1) + ' h / mois'], ['Coût horaire chargé', (c.off && c.off.cout_temps) ? 'temps rendu non valorisé' : eur(c.cout_horaire || 0)]]]]
     ] }));
   const pp = pagePreuve(preuves.cas, preuves.logos);
   if (pp) P.push(pp);
@@ -599,7 +600,7 @@ function pageSoreach(doc, meta, sdr, apercu, lienDemo, preuves) {
       .concat(r.frais ? [['Mise en place', r.frais]] : []),
     hypotheses: [
       [['Votre base', [['Établissements', r.sites], ['Contacts joignables par établissement', ent(c.contacts || 0)], ['Campagnes par mois', fmt(c.campagnes_mois || 0, 1)], ['Coût d\'un message', eur2(c.cout_message || 0)]]]],
-      [['Ce que les campagnes déclenchent', [['Messages suivis d\'un clic', p0(c.taux_clic)], ['Clics suivis d\'un achat', p0(c.taux_conv)], ['Panier moyen', eur(c.panier || 0)]].concat(r.sur_marge ? [['Marge', p0(c.marge)]] : []).concat([['Temps gagné par campagne', fmt(c.heures_campagne || 0, 1) + ' h'], ['Coût horaire chargé', eur(c.cout_horaire || 0)]])]]
+      [['Ce que les campagnes déclenchent', [['Messages suivis d\'un clic', p0(c.taux_clic)], ['Clics suivis d\'un achat', p0(c.taux_conv)], ['Panier moyen', eur(c.panier || 0)]].concat(r.sur_marge ? [['Marge', p0(c.marge)]] : []).concat([['Temps gagné par campagne', fmt(c.heures_campagne || 0, 1) + ' h'], ['Coût horaire chargé', (c.off && c.off.cout_temps) ? 'temps rendu non valorisé' : eur(c.cout_horaire || 0)]])]]
     ] }));
   const pp = pagePreuve(preuves.cas, preuves.logos);
   if (pp) P.push(pp);
@@ -661,7 +662,7 @@ function pageSoconnect(doc, meta, sdr, apercu, lienDemo, preuves) {
     lignesCout: [[`Abonnement SoConnect (${eur(c.abonnement || 0)}/mois${r.sites > 1 ? ` × ${r.sites} établissements` : ''} × 12)`, r.abonnement_mois * 12]].concat(r.frais ? [['Mise en place', r.frais]] : []),
     hypotheses: [
       [['Vos demandes', [['Établissements', r.sites], ['Demandes par mois et par établissement', ent(c.demandes_mois || 0)], ['Demandes non traitées aujourd\'hui', p0(c.taux_non_traitees)], ['Taux de conversion (scénario moyen)', p0(c.taux_conversion)]]]],
-      [['Ce que vaut une vente', [['Panier moyen', eur(c.panier || 0)]].concat(surCa ? [] : [['Marge', p0(c.marge)]]).concat([['Temps gagné par demande traitée', fmt(c.min_gagnees || 0, 1) + ' min'], ['Coût horaire chargé d\'un vendeur', eur(c.cout_horaire || 0)]])]]
+      [['Ce que vaut une vente', [['Panier moyen', eur(c.panier || 0)]].concat(surCa ? [] : [['Marge', p0(c.marge)]]).concat([['Temps gagné par demande traitée', fmt(c.min_gagnees || 0, 1) + ' min'], ['Coût horaire chargé d\'un vendeur', (c.off && c.off.cout_temps) ? 'temps rendu non valorisé' : eur(c.cout_horaire || 0)]])]]
     ] }));
   const pp = pagePreuve(preuves.cas, preuves.logos);
   if (pp) P.push(pp);
