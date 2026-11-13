@@ -25,7 +25,7 @@ const MODELE = () => process.env.MODELE_PREZ || 'claude-opus-5-5'; // Opus 5.5 d
 const BASE_PUB = () => process.env.SOFY_BASE_PUBLIQUE || 'https://www.sofyscrap.com';
 
 let prezPrete = false;
-async function ensurePrez() {
+export async function ensurePrez() {
   if (prezPrete || !sql) return;
   // Table PARESSEUSE (pas de bump SCHEMA_VERSION — cf. incident « analyse » du 03/08)
   await sql`CREATE TABLE IF NOT EXISTS prez (
@@ -1602,6 +1602,7 @@ export default async function handler(req, res) {
       // L'historique porte le signal : « ouverte 3 fois » vaut mieux qu'un email ouvert
       const rows = await sql`SELECT jeton, client, module, sdr, ouvertures, profondeur, destinataire,
           destinataires, liste_id, cle_fiche, premiere_ouverture, derniere_ouverture, created_at, expire_le,
+          contenu->>'produit' AS produit,
           jsonb_array_length(COALESCE(lecteurs,'[]'::jsonb)) AS lecteurs_distincts FROM prez
         WHERE (${['admin', 'superadmin'].includes(user.role)} OR sdr = ${user.nom})
         ORDER BY created_at DESC LIMIT 50`;
@@ -1619,6 +1620,7 @@ export default async function handler(req, res) {
     if (q.liste_id) {
       const rows = await sql`SELECT jeton, cle_fiche, module, sdr, ouvertures, destinataire,
           destinataires, premiere_ouverture, derniere_ouverture, created_at, expire_le,
+          contenu->>'produit' AS produit,
           jsonb_array_length(COALESCE(lecteurs,'[]'::jsonb)) AS lecteurs_distincts
         FROM prez WHERE liste_id = ${parseInt(q.liste_id, 10) || 0} AND cle_fiche IS NOT NULL
         ORDER BY created_at DESC`;

@@ -105,6 +105,31 @@ export async function visuelsInstit() {
   return { equipe: (eq && eq.image) || null, clients, apps, symbole: (symbole && symbole.image) || null };
 }
 
+// Preuve sociale d'un document SECTORIEL (étude ROI Budy Auto) : les logos clients, ceux du
+// secteur d'abord, et une photo d'ambiance du métier. Deux temps exprès — on choisit sur les
+// descriptions, puis on ne charge QUE les images retenues : une image pèse jusqu'à 900 Ko, les
+// lire toutes pour en garder douze coûterait des dizaines de Mo à chaque ouverture.
+// `mots` = ce qui rapproche du secteur (sans accents) ; `motsPhoto` = ce qu'on veut voir en photo.
+export async function preuvesVisuels({ mots = [], motsPhoto = [], maxLogos = 12 } = {}) {
+  await ensureVisuels();
+  const plat = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const score = (r, liste) => { const t = plat(r.description + ' ' + (r.secteur || '')); return liste.filter(m => t.includes(m)).length; };
+  const rows = await sql`SELECT id, type, description, secteur FROM kb_visuels
+    WHERE actif AND statut = 'valide' AND type IN ('client', 'ambiance') ORDER BY id`;
+  const logos = rows.filter(r => r.type === 'client')
+    .map((r, i) => ({ ...r, s: score(r, mots), i })).sort((a, b) => (b.s - a.s) || (a.i - b.i)).slice(0, maxLogos);
+  const photo = rows.filter(r => r.type === 'ambiance').map(r => ({ ...r, s: score(r, motsPhoto) }))
+    .filter(r => r.s > 0).sort((a, b) => (b.s - a.s) || (b.id - a.id))[0] || null;
+  const ids = logos.map(l => l.id).concat(photo ? [photo.id] : []);
+  if (!ids.length) return { logos: [], illustration: null };
+  const imgs = await sql`SELECT id, image FROM kb_visuels WHERE id = ANY(${ids})`;
+  const par = {}; for (const r of imgs) par[r.id] = r.image;
+  return {
+    logos: logos.filter(l => par[l.id]).map(l => ({ image: par[l.id], description: l.description })),
+    illustration: (photo && par[photo.id]) ? { image: par[photo.id], description: photo.description } : null
+  };
+}
+
 // Les images pleines des visuels réellement posés dans un document.
 export async function imagesDe(ids) {
   await ensureVisuels();

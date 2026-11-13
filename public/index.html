@@ -542,17 +542,28 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
   <aside class="side">
     <div class="logo" style="display:flex;align-items:center;gap:9px"><img src="/logo-icon.png" alt="" style="width:28px;height:28px" onerror="this.style.display='none'">Sofy <span>Scrap</span></div>
     <div class="tagline">Listes d'appel SDR<span id="bonjour-sdr" style="display:block;margin-top:6px;color:#E8EAF5;font-size:13px;font-weight:600"></span></div>
+    <div class="nav-t">Lead</div>
+    <button class="nav-btn" data-view="lead" onclick="nav('lead',this);ouvrirLead()">➕ Nouveau lead</button>
+    <button class="nav-btn active" data-view="leads" onclick="nav('leads',this);ouvrirLeads()">🎯 Mes leads</button>
+    <button class="nav-btn" data-view="docs" onclick="nav('docs',this);ouvrirDocs()">📄 Documents</button>
+    <button class="nav-btn" data-view="roi" onclick="nav('roi',this);ouvrirRoi()">💶 Simulateur ROI</button>
+    <div class="nav-t">Inscriptions</div>
+    <button class="nav-btn" data-view="signups" onclick="nav('signups',this);chargerSignups()">🆕 Signups <span id="signups-badge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:2px"></span></button>
+    <div class="nav-t">Prospection</div>
+    <button class="nav-btn" id="nav-prosp-b" onclick="basculerProspection()" title="Listes d'appel, signaux et suivi des appels">🧭 Prospection <span id="nav-prosp-f" style="margin-left:auto">▸</span></button>
+    <div class="nav-sub" id="nav-prosp">
     <button class="nav-btn" data-view="cockpit" onclick="nav('cockpit',this);chargerCockpit()">☀️ Ma journée <span id="taches-badge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:2px"></span></button>
     <button class="nav-btn" data-view="signaux" onclick="ouvrirSignaux(this)">🔥 Signaux</button>
-    <button class="nav-btn" data-view="signups" onclick="nav('signups',this);chargerSignups()">🆕 Signups <span id="signups-badge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:2px"></span></button>
-    <button class="nav-btn active" data-view="wizard" onclick="nav('wizard',this)">🎯 Nouvelle liste</button>
+    <button class="nav-btn" data-view="wizard" onclick="nav('wizard',this)">🎯 Nouvelle liste</button>
     <button class="nav-btn" data-view="results" onclick="nav('results',this)">📞 Résultats</button>
     <button class="nav-btn" data-view="history" onclick="nav('history',this);chargerHistorique()">🗂 Historique</button>
     <button class="nav-btn" id="nav-archives" data-view="archives" onclick="nav('archives',this);chargerArchives()">🗄️ Archives</button>
-    <button class="nav-btn" data-view="prez" onclick="nav('prez',this);ouvrirPrez()">🎨 Prez sales <span id="kb-badge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:2px" title="Blocs en attente de validation"></span></button>
-    <button class="nav-btn" data-view="mapping" onclick="nav('mapping',this);chargerEnvois();chargerConcurrents()">⚙️ Envois & mapping</button>
-    <button class="nav-btn" data-view="stats" onclick="nav('stats',this);chargerStats()">📊 Statistiques</button>
     <button class="nav-btn" data-view="appels" onclick="nav('appels',this);chargerAppels()">🎧 Appels</button>
+    <button class="nav-btn" data-view="stats" onclick="nav('stats',this);chargerStats()">📊 Statistiques</button>
+    </div>
+    <div class="nav-t">Réglages</div>
+    <button class="nav-btn" data-view="prez" onclick="nav('prez',this);ouvrirPrez()">📚 Base de connaissance <span id="kb-badge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:2px" title="Blocs en attente de validation"></span></button>
+    <button class="nav-btn" data-view="mapping" onclick="nav('mapping',this);chargerEnvois();chargerConcurrents()">⚙️ Envois & mapping</button>
     <button class="nav-btn" data-view="params" onclick="nav('params',this);chargerSdrs();chargerTarifs()">⚙️ Paramètres</button>
     <button class="nav-btn" data-view="settings" onclick="nav('settings',this);chargerHotleads()">🔌 Connexions</button>
     <div class="user-badge" id="user-badge" style="display:none"><span id="user-nom"></span><button onclick="deconnexion(true)">Déconnexion</button></div>
@@ -562,7 +573,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
   <main class="main">
 
     <!-- ════ VUE 1 : WIZARD ════ -->
-    <section class="view on" id="view-wizard">
+    <section class="view" id="view-wizard">
       <div class="eyebrow">Nouvelle liste d'appel</div>
       <div id="mode-choix" style="max-width:920px">
         <h1 style="margin-bottom:6px">Comment veux-tu créer ta liste ?</h1>
@@ -1316,26 +1327,22 @@ Spot-Hit</textarea>
 
     <!-- ════ VUE : 🎨 PREZ SALES ════ -->
     <section class="view" id="view-prez">
-      <div class="eyebrow">Documents client</div>
-      <h1 style="margin-bottom:4px">Prez sales</h1>
-      <p style="color:var(--ink-soft);max-width:74ch;margin:0 0 16px;line-height:1.55">Une analyse personnalisée par prospect, construite sur ce que Sofy Scrap a déjà mesuré chez lui. La base de connaissance est ce qui autorise l'IA à citer un chiffre : sans bloc source, elle n'écrit rien.</p>
+      <div class="eyebrow" id="pz-ey">Réglages</div>
+      <h1 style="margin-bottom:4px" id="pz-h1">Base de connaissance</h1>
+      <p id="pz-intro" style="color:var(--ink-soft);max-width:78ch;margin:0 0 16px;line-height:1.55"></p>
 
       <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:16px">
-        <button class="btn btn-primary" id="pz-t-gen" onclick="sousOngletPrez('gen')">Générateur</button>
-        <button class="btn" id="pz-t-kb" style="background:var(--paper)" onclick="sousOngletPrez('kb')">Base de connaissance</button>
-        <button class="btn" id="pz-t-vis" style="background:var(--paper)" onclick="sousOngletPrez('vis')">🖼 Visuels</button>
-        <button class="btn" id="pz-t-mes" style="background:var(--paper)" onclick="sousOngletPrez('mes')">Mes présentations</button>
+        <button class="btn" id="pz-t-kb" style="background:var(--paper)" onclick="sousOngletPrez('kb')">📚 Contenus et cas clients</button>
+        <button class="btn" id="pz-t-vis" style="background:var(--paper)" onclick="sousOngletPrez('vis')">🖼 Logos et visuels</button>
+        <button class="btn" id="pz-t-gen" style="background:var(--paper)" onclick="sousOngletPrez('gen')">👤 Mon profil</button>
+        <button class="btn" id="pz-t-mes" style="background:var(--paper)" onclick="sousOngletPrez('mes')">📄 Mes documents</button>
         <button class="btn" id="pz-t-edit" style="background:var(--paper);display:none" onclick="sousOngletPrez('edit')">✏️ Éditeur</button>
       </div>
 
       <!-- ── Générateur ── -->
       <div id="pz-gen">
         <div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;max-width:820px">
-          <p style="margin:0 0 12px;font-size:14.5px;line-height:1.6">L'analyse se lance depuis la fiche du prospect : c'est là que se trouvent les mesures qu'elle utilise (note Google, pire point de vente, avis réel, concurrents, technos). Ouvre une liste, déplie la fiche, puis <strong>🎨 Audit client</strong>.</p>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-primary" onclick="nav('history',null);chargerHistorique()">🗂 Ouvrir une liste</button>
-            <button class="btn" style="background:var(--paper)" onclick="nav('cockpit',null);chargerCockpit()">☀️ Voir mes hot leads</button>
-          </div>
+          <p style="margin:0;font-size:14px;line-height:1.6;color:var(--ink-soft)">Ce qui te représente sur les documents : ta photo, ton poste et ta présentation apparaissent sur la couverture des prez et dans la carte « Votre conseiller Sofy » à la fin des études ROI.</p>
           <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)">
             <div style="font-size:13px;font-weight:700;margin-bottom:4px">👤 Ta photo sur les analyses</div>
             <div style="font-size:12.5px;color:var(--ink-soft);line-height:1.55;margin-bottom:9px">Elle apparaît sur la couverture, à côté de ton nom et de tes coordonnées. Un document signé par une personne obtient plus de réponses qu'un document anonyme.</div>
@@ -1390,6 +1397,192 @@ Spot-Hit</textarea>
       <!-- ── Mes présentations ── -->
       <div id="pz-mes" style="display:none">
         <div id="mes-prez"><p style="color:var(--ink-soft)">Chargement…</p></div>
+      </div>
+    </section>
+
+    <!-- ── 🎯 LEAD : le point de départ des documents client (prez, étude ROI) ──
+         Un lead = une fiche de la liste personnelle « Mes leads » (/api/leads). L'analyse, la prez
+         et le suivi réutilisent les fonctions de la fiche : rien n'est dupliqué. -->
+    <style>
+    .ld-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;align-items:start}
+    .ld-c{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+    .ld-c h3{font-size:15px;margin:0 0 4px}
+    .ld-x{font-size:12.5px;color:var(--ink-soft);line-height:1.5;margin:0 0 10px}
+    .ld-n{display:inline-flex;width:22px;height:22px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:700;align-items:center;justify-content:center;margin-right:8px}
+    .ld-t{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15.5px;margin:22px 0 10px;display:flex;align-items:center}
+    .ld-f{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .ld-f .field{font-size:13.5px;padding:8px 10px}
+    .ld-r{display:flex;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line);font-size:13px}
+    .ld-r .qui{flex:1;min-width:0;line-height:1.4}
+    .ld-r .qui small{display:block;color:var(--ink-soft);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ld-lead{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px 18px;margin-bottom:12px}
+    .ld-lead.chaud{border-left:3px solid var(--danger)}
+    .ld-h{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+    .ld-h strong{font-size:16px}
+    .ld-chips{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+    .ld-chip{font-size:11.5px;padding:3px 9px;border-radius:20px;background:var(--paper);border:1px solid var(--line);color:var(--ink-soft);white-space:nowrap}
+    .ld-chip.ok{background:#EEFAF5;border-color:#BFE9D7;color:#0B6B4B}
+    .ld-chip.ko{background:#FFF7E0;border-color:#F3D27A;color:#7A5A00}
+    .ld-a{display:flex;gap:7px;flex-wrap:wrap}
+    .ld-d{margin-top:11px;padding-top:9px;border-top:1px dashed var(--line)}
+    .ld-doc{display:flex;gap:7px;align-items:center;flex-wrap:wrap;font-size:12.5px;padding:4px 0}
+    .nav-t{font-size:10.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#6B7390;margin:14px 12px 2px}
+    .nav-sub{display:none;flex-direction:column;gap:2px}
+    .nav-sub.on{display:flex}
+    .nav-sub .nav-btn{padding:8px 12px 8px 26px;font-size:13.5px}
+    .side{overflow-y:auto}
+    @media(max-width:880px){.nav-t,.nav-sub{width:100%}.nav-t{margin-top:8px}.side{overflow-y:visible}}
+    .side .nav-btn{padding-top:9px;padding-bottom:9px}
+    </style>
+    <section class="view" id="view-lead">
+      <div class="eyebrow">Lead</div>
+      <h1 style="margin-bottom:4px">Nouveau lead</h1>
+      <p style="color:var(--ink-soft);max-width:78ch;margin:0 0 6px;line-height:1.55;font-size:14px">Un lead, une analyse, puis une prez ou une étude ROI. Importe-le depuis Lemlist ou crée-le à la main : pas besoin de liste d'appel.</p>
+
+      <div class="ld-t"><span class="ld-n">1</span>D'où vient le lead</div>
+      <div class="ld-2">
+        <div class="ld-c">
+          <h3>🔎 Importer depuis Lemlist</h3>
+          <p class="ld-x">Cherche par nom, entreprise, email ou téléphone parmi les leads de toutes les campagnes.</p>
+          <input class="field" id="ld-q" placeholder="Nom, entreprise, email ou téléphone" autocomplete="off" style="width:100%" oninput="leadRecherche(this.value)">
+          <div id="ld-res" style="margin-top:8px"></div>
+          <div id="ld-index" style="font-size:11.5px;color:var(--ink-soft);margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"></div>
+        </div>
+        <div class="ld-c">
+          <h3>✍️ Créer à la main</h3>
+          <p class="ld-x">L'analyse porte sur l'entreprise : son nom ou son site web suffit. Le contact sert à l'envoi du document.</p>
+          <div class="ld-f">
+            <input class="field" id="ld-ent" placeholder="Entreprise *">
+            <input class="field" id="ld-site" placeholder="Site web">
+            <input class="field" id="ld-nom" placeholder="Prénom Nom du contact">
+            <input class="field" id="ld-fct" placeholder="Fonction">
+            <input class="field" id="ld-mail" placeholder="Email" type="email">
+            <input class="field" id="ld-tel" placeholder="Téléphone">
+            <input class="field" id="ld-lk" placeholder="Lien LinkedIn" style="grid-column:1/-1">
+            <input class="field" id="ld-ville" placeholder="Ville (aide à trouver la bonne fiche Google)" style="grid-column:1/-1">
+          </div>
+          <button class="btn btn-primary" id="ld-creer" style="margin-top:10px" onclick="leadCreerManuel()">Créer le lead</button>
+        </div>
+      </div>
+
+      <div id="ld-courant-bloc" style="display:none">
+        <div class="ld-t"><span class="ld-n">2</span>Analyse, puis documents</div>
+        <div id="ld-courant"></div>
+      </div>
+    </section>
+
+    <section class="view on" id="view-leads">
+      <div class="eyebrow">Lead</div>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
+        <h1 style="margin:0">Mes leads</h1>
+        <button class="btn btn-primary" onclick="nav('lead',null);ouvrirLead()">➕ Nouveau lead</button>
+      </div>
+      <p style="color:var(--ink-soft);max-width:78ch;margin:0 0 16px;line-height:1.55;font-size:14px">Tes leads, leurs documents et qui les a ouverts. Un document ouvert, c'est le moment de rappeler.</p>
+      <div id="ld-liste"><p style="color:var(--ink-soft)">Chargement…</p></div>
+    </section>
+
+    <!-- ── 💶 ROI Budy Auto : simulateur de rentabilité (calcul servi par /api/roi?script=1) ── -->
+    <section class="view" id="view-roi">
+      <style>
+      .roi-g{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:18px;align-items:start}
+      @media(max-width:1000px){.roi-g{grid-template-columns:1fr}}
+      .roi-c{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+      .roi-c h3{font-size:14.5px;margin:0 0 10px;display:flex;gap:9px;align-items:center}
+      .roi-c h3 .roi-gn{margin-left:auto;font-family:Inter,sans-serif;font-size:12.5px;font-weight:700;white-space:nowrap;padding:2px 9px;border-radius:20px;background:#EEFAF5;color:#0B6B4B}
+      .roi-c h3 input{width:16px;height:16px;accent-color:var(--soconnect);flex:none}
+      .roi-c.off .roi-b{opacity:.38;pointer-events:none}
+      .roi-c.off h3 .roi-gn{background:var(--paper);color:var(--ink-soft)}
+      .roi-pt{width:10px;height:10px;border-radius:3px;flex:none}
+      .roi-x{font-size:11.5px;color:var(--ink-soft);line-height:1.45;margin:-4px 0 10px}
+      .roi-s{margin-bottom:10px}
+      .roi-s-h{display:flex;justify-content:space-between;gap:10px;font-size:13px;align-items:center}
+      .roi-s-h span.u{font-size:12px;color:var(--ink-soft);white-space:nowrap}
+      .roi-s-h input{width:78px;padding:3px 6px;border:1px solid var(--line);border-radius:7px;font-size:13px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums;background:#fff}
+      .roi-s input[type=range]{width:100%;accent-color:var(--soconnect);margin:3px 0 0}
+      .roi-s-x{font-size:11px;color:var(--ink-soft);line-height:1.4}
+      .roi-2{display:grid;grid-template-columns:1fr 1fr;gap:0 18px}
+      @media(max-width:700px){.roi-2{grid-template-columns:1fr}}
+      .roi-pf{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+      .roi-pf button{padding:7px 12px;border-radius:9px;background:var(--paper);border:1px solid var(--line);font-size:13px;font-weight:600}
+      .roi-pf button.on{background:var(--soconnect);border-color:var(--soconnect);color:#fff}
+      .roi-t{width:100%;border-collapse:collapse;font-size:12.5px}
+      .roi-t th{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);text-align:right;font-weight:700;padding:0 4px 5px}
+      .roi-t th:first-child{text-align:left}
+      .roi-t td{padding:3px 4px}
+      .roi-t input{width:100%;padding:5px 6px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;text-align:right;background:#fff}
+      .roi-t td:first-child input{text-align:left}
+      .roi-r{position:sticky;top:16px;background:linear-gradient(160deg,#1A1040,#0F0B29);color:#F2F0FF;border-radius:14px;padding:18px 18px 16px;max-height:calc(100vh - 32px);overflow:auto}
+      .roi-r .big{font-family:'Space Grotesk',sans-serif;font-size:38px;font-weight:700;letter-spacing:-.03em;line-height:1.05;background:linear-gradient(90deg,#8F86FF,#F0428A);-webkit-background-clip:text;background-clip:text;color:transparent}
+      .roi-r .lab{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#B9B2E0;font-weight:700}
+      .roi-pile{display:flex;gap:2px;height:10px;border-radius:6px;overflow:hidden;margin:10px 0 8px}
+      .roi-pile i{display:block;min-width:3px}
+      .roi-lv{display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:2px 0;color:#D9D4F5}
+      .roi-lv i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px}
+      .roi-lv b{white-space:nowrap;color:#fff;font-variant-numeric:tabular-nums}
+      .roi-l{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid rgba(255,255,255,.1);font-size:12.5px}
+      .roi-l span{color:#B9B2E0}.roi-l b{white-space:nowrap;font-variant-numeric:tabular-nums}
+      .roi-r .roi-btn{width:100%;margin-top:12px;padding:11px;border-radius:10px;background:linear-gradient(90deg,#5B4FE9,#F0428A);color:#fff;font-weight:700;font-size:14px}
+      .roi-r .roi-ok{margin-top:10px;padding:10px;border-radius:10px;background:rgba(255,255,255,.07);font-size:12px;line-height:1.5}
+      .roi-r .roi-ok a,.roi-r .roi-ok button{font-size:12px}
+      .roi-bc{font-size:12.5px;line-height:1.55}
+      .roi-bc li{margin:0 0 7px 16px}
+      .roi-bc i{color:var(--ink-soft);font-style:normal;font-size:11px}
+      </style>
+      <div class="eyebrow">Lead</div>
+      <h1 style="margin-bottom:8px">Simulateur ROI</h1>
+      <div class="roi-pf" id="roi-prod" style="margin-bottom:10px"></div>
+      <p id="roi-intro" style="color:var(--ink-soft);max-width:80ch;margin:0 0 16px;line-height:1.55;font-size:14px"></p>
+      <div class="roi-g">
+        <div>
+          <div class="roi-c">
+            <h3>🏢 Le client</h3>
+            <div class="roi-pf" id="roi-pf"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+              <input class="field" id="roi-client" placeholder="Nom du client (couverture)" oninput="ROI.client=this.value">
+              <input class="field" id="roi-dest" placeholder="Destinataire (optionnel)" oninput="ROI.destinataire=this.value">
+            </div>
+            <div id="roi-lead" class="roi-x" style="margin:0 0 10px"></div>
+            <div id="roi-s-panier"></div>
+            <div class="roi-2" id="roi-s-perimetre"></div>
+          </div>
+          <div id="roi-cartes"></div>
+          <div id="roi-scen"></div>
+          <div class="roi-c"><h3>💼 Coût du temps de ses équipes</h3><div class="roi-x">Sert à valoriser les heures rendues par Budy (demandes traitées seul, réponses aux avis, recherche de références). À demander au client ; 30 à 35 € chargés est un repère courant.</div><div class="roi-2" id="roi-s-temps"></div></div>
+          <div class="roi-c"><h3>💶 Tarif</h3><div class="roi-x" id="roi-tarif-x"></div><div class="roi-2" id="roi-s-cout"></div>
+            <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-top:4px">Gain et seuil (« rentabilisé avec N <span id="roi-seuil-u">ventes</span> ») calculés sur
+              <select class="field" id="roi-seuil-base" style="padding:4px 8px;font-size:13px;width:auto" onchange="ROI.cfg.seuil_base=this.value;roiDessiner()"><option value="ca">le chiffre d'affaires</option><option value="marge">la marge</option></select></label></div>
+        </div>
+        <div>
+          <div class="roi-r">
+            <div class="lab">Gain total potentiel · an 1</div>
+            <div class="big" id="roi-gain">—</div>
+            <div style="font-size:12px;color:#B9B2E0;margin:4px 0 0" id="roi-base-x">chiffre d'affaires + temps et coûts évités</div>
+            <div id="roi-synth" style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.08);font-size:12.5px;line-height:1.5"></div>
+            <div class="roi-pile" id="roi-pile"></div>
+            <div id="roi-leviers" style="margin-bottom:8px"></div>
+            <div id="roi-lignes"></div>
+            <button type="button" class="roi-btn" id="roi-go" onclick="roiGenerer()">📄 Générer l'étude client</button>
+            <div id="roi-res"></div>
+            <div style="display:flex;gap:6px;margin-top:9px">
+              <button type="button" class="btn" style="flex:1;background:rgba(255,255,255,.1);color:#fff;font-size:12px;padding:7px" onclick="roiApercu()">👁 Voir le document</button>
+              <button type="button" class="btn" style="flex:1;background:rgba(255,255,255,.1);color:#fff;font-size:12px;padding:7px" onclick="roiNouveau()">↺ Nouvelle étude</button>
+            </div>
+          </div>
+          <details class="roi-c" style="margin-top:12px">
+            <summary style="cursor:pointer;font-weight:700;font-size:13.5px">🎙 Questions pour caler les curseurs</summary>
+            <ul class="roi-bc" id="roi-questions" style="margin-top:8px"></ul>
+          </details>
+          <details class="roi-c" id="roi-battle">
+            <summary style="cursor:pointer;font-weight:700;font-size:13.5px">🥊 Face à Sandra AI, Diago, Alhena <span style="font-weight:400;font-size:11px;color:var(--ink-soft)">· interne, absent du PDF</span></summary>
+            <ul class="roi-bc" style="margin-top:8px">
+              <li><b>Sandra AI arrête l'Europe.</b> Ses clients ne seront plus servis au-delà de <b>février 2027</b>. <i>Journal de l'Automobile, 04/11/2026</i><br>Clients cités : Autosphere (250 sites prévus), Jean Rouyer Automobiles, groupe Bernard Hayot. <i>L'Argus, 22/09/2026</i><br>👉 À appeler <b>maintenant</b> : ils doivent remplacer leur agent vocal en 3 mois.</li>
+              <li><b>Diago</b> : start-up (1 M€ levé en 2025 auprès du groupement Peugeot), voix seule. Réf. Car Avenue : ~45 000 appels en 6 mois, 1 000+ RDV atelier. <i>Presse auto 2026</i><br>👉 Budy fait la voix <b>et</b> l'écrit (WhatsApp, Messenger, webchat, RCS), les relances, TecDoc / TecRMI, les avis Google — dans un seul outil.</li>
+              <li><b>Alhena</b> : 270 €/mois/site (débordement), 500 € (intermédiaire), 1 290 € (externalisation). <i>Journal de l'Automobile, 19/02/2026</i> — ton ancre de prix.</li>
+              <li><b>Argument pérennité</b> : un agent vocal, c'est le standard du client. S'il s'arrête, ses clients tombent dans le vide (cf. Sandra). Sofy = Optima Group, 14 ans, coach dédiée.</li>
+              <li><b>Leur preuve, notre preuve</b> : sur 117 concessions, un agent IA a automatisé 60 % des RDV après-vente et réduit de 30 % les appels à traiter (<i>L'Argus, 22/09/2026</i>). Marimax (pièces auto, client Sofy) : temps de réponse ÷2, CA par commercial ×2.</li>
+            </ul>
+          </details>
+        </div>
       </div>
     </section>
 
@@ -2465,7 +2658,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v403';
+const VERSION='v404';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -2550,7 +2743,9 @@ function demarrerApp(u){
  chargerSignupBadge();
  // Vue par défaut : Ma journée (la file du SDR) + état du menu mémorisé
  try{if(localStorage.getItem('sb_min')==='1')document.querySelector('.app').classList.add('sb-min');}catch(_){}
- nav('cockpit');chargerCockpit();
+ try{if(localStorage.getItem('nav_prosp')==='1')basculerProspection(true);}catch(_){}
+ // Accueil = Mes leads (13/11/2026) : les sales viennent d'abord pour leurs documents client.
+ nav('leads');ouvrirLeads();
  // Lien direct vers une liste (ex : depuis Slack → ?liste=ID)
  const params=new URLSearchParams(location.search);
  const lid=params.get('liste');
@@ -3170,10 +3365,12 @@ let CK_TIMER=null;
 function nav(v,btn){
  if(v!=='cockpit'&&CK_TIMER){clearInterval(CK_TIMER);CK_TIMER=null;}
  document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
- document.getElementById('view-'+v).classList.add('on');
+ document.getElementById('view-'+(v==='docs'?'prez':v)).classList.add('on');
  document.querySelectorAll('.nav-btn').forEach(x=>x.classList.remove('active'));
  if(btn)btn.classList.add('active');
  else document.querySelector(`[data-view="${v}"]`).classList.add('active');
+ const actif=document.querySelector('.nav-btn.active');
+ if(actif&&actif.closest('#nav-prosp'))basculerProspection(true);
  // À l'ouverture de "Nouvelle liste", on repart de l'écran de choix Pappers/Manuelle
  if(v==='wizard')retourChoixMode();
 }
@@ -7639,20 +7836,691 @@ let KB=[],KB_INFO={};
 
 function estAdmin(){return !!(state.user&&['admin','superadmin'].includes(state.user.role));}
 
-function ouvrirPrez(){sousOngletPrez(window._pzOnglet||'gen');}
+// La vue « prez » sert deux entrées de menu : 📄 Documents (mes documents, éditeur) sous Lead, et
+// 📚 Base de connaissance (contenus, logos, profil) dans Réglages. Le sous-onglet décide du mode.
+const PZ_DOCS=['mes','edit'],PZ_KB=['kb','vis','gen'];
+function ouvrirPrez(){sousOngletPrez(PZ_KB.includes(window._pzKb)?window._pzKb:'kb');}
+function ouvrirDocs(){sousOngletPrez('mes');}
 function sousOngletPrez(o){
  window._pzOnglet=o;
+ const docs=PZ_DOCS.includes(o);
+ if(!docs)window._pzKb=o;
  ['gen','kb','vis','mes','edit'].forEach(function(x){
   const p=document.getElementById('pz-'+x),b=document.getElementById('pz-t-'+x);
   if(p)p.style.display=(x===o?'':'none');
-  if(b){b.className='btn'+(x===o?' btn-primary':'');b.style.background=(x===o?'':'var(--paper)');}
+  if(b){b.className='btn'+(x===o?' btn-primary':'');b.style.background=(x===o?'':'var(--paper)');
+   b.style.display=(PZ_DOCS.includes(x)===docs&&(x!=='edit'||o==='edit'))?'':'none';}
  });
- const be=document.getElementById('pz-t-edit');
- if(be)be.style.display=(o==='edit'?'':'none');
+ document.getElementById('pz-ey').textContent=docs?'Lead':'Réglages';
+ document.getElementById('pz-h1').textContent=docs?'Documents':'Base de connaissance';
+ document.getElementById('pz-intro').innerHTML=docs
+  ?'Toutes tes prez et études ROI, avec leurs ouvertures. Pour en créer une, pars d\'un lead : <a href="#" onclick="nav(\'leads\',null);ouvrirLeads();return false">🎯 Mes leads</a>.'
+  :'La matière commune à toutes les prez et à toutes les études ROI : chiffres sourcés, cas clients, tarifs, logos et photos. Corrige un cas ou change un logo ici, et tous les documents suivent.';
+ // Le menu suit le mode, y compris quand on arrive par un bouton « Modifier » d'un autre écran.
+ const vue=document.getElementById('view-prez');
+ if(vue&&vue.classList.contains('on')){
+  document.querySelectorAll('.nav-btn').forEach(x=>x.classList.remove('active'));
+  const nb=document.querySelector('[data-view="'+(docs?'docs':'prez')+'"]');if(nb)nb.classList.add('active');
+ }
  if(o==='gen')chargerMaPhoto();
  if(o==='vis')chargerVisuels();
  if(o==='kb')chargerKb();
  if(o==='mes')chargerMesPrez();
+}
+
+// ── 🎯 LEAD : Nouveau lead / Mes leads ────────────────────────────────────────
+// Un lead est une fiche de la liste personnelle « Mes leads » (/api/leads). On charge cette liste
+// en silence (comme « Ma journée ») et on appelle les fonctions de la fiche — completerFiche,
+// completerMesures, genererPrez — telles quelles : un seul chemin d'analyse dans toute l'app.
+let LEADS={liste_id:null,docs:{},courant:null,occupe:{},timer:null,indexEnCours:false};
+
+// Menu : le groupe Prospection se replie ; il s'ouvre seul quand on navigue dedans.
+function basculerProspection(force){
+ const z=document.getElementById('nav-prosp'),f=document.getElementById('nav-prosp-f');
+ if(!z)return;
+ const on=(force==null)?!z.classList.contains('on'):!!force;
+ z.classList.toggle('on',on);
+ if(f)f.textContent=on?'▾':'▸';
+ try{localStorage.setItem('nav_prosp',on?'1':'0');}catch(_){}
+}
+
+async function leadsCharger(){
+ const r=await api('/api/leads');const d=await r.json();
+ if(!r.ok||d.erreur)throw new Error(d.erreur||('HTTP '+r.status));
+ LEADS.liste_id=d.liste_id;
+ await chargerListeEnSilence(d.liste_id);
+ await leadsDocs();
+}
+async function leadsDocs(){
+ try{const r=await api('/api/prez?liste_id='+LEADS.liste_id);const p=await r.json();LEADS.docs=(p&&p.toutes_par_fiche)||{};}
+ catch(_){LEADS.docs={};}
+}
+function leadIndex(id){return REAL.findIndex(e=>e&&e.lead_id===id);}
+// La liste chargée en mémoire est partagée avec les autres écrans : avant toute action sur un
+// lead, on s'assure que c'est bien « Mes leads » qui est chargée.
+async function leadPret(id){
+ if(state.savedId!==LEADS.liste_id||leadIndex(id)<0)await leadsCharger();
+ const i=leadIndex(id);
+ if(i<0)toast('Lead introuvable — recharge la page');
+ return i;
+}
+
+async function ouvrirLead(){
+ leadIndexEtat(true);
+ if(LEADS.courant){try{await leadsCharger();}catch(_){ }leadCourantRendre();}
+}
+async function ouvrirLeads(){
+ const z=document.getElementById('ld-liste');
+ try{await leadsCharger();}
+ catch(e){z.innerHTML='<p style="color:var(--danger)">Leads illisibles : '+htmlSafe(e.message)+'</p>';return;}
+ leadsRendre();
+}
+function leadsRendre(){
+ const z=document.getElementById('ld-liste');if(!z)return;
+ const L=REAL.filter(e=>e&&e.lead_id);
+ z.innerHTML=L.length?L.map(leadCarte).join('')
+  :`<div class="ld-c" style="max-width:640px"><h3>Aucun lead pour l'instant</h3><p class="ld-x">Importe un contact depuis Lemlist ou crée-le à la main : l'analyse de son entreprise prend environ une minute, puis tu génères sa prez ou son étude ROI.</p><button class="btn btn-primary" onclick="nav('lead',null);ouvrirLead()">➕ Nouveau lead</button></div>`;
+}
+function leadCourantRendre(){
+ const b=document.getElementById('ld-courant-bloc'),z=document.getElementById('ld-courant');
+ const e=REAL[leadIndex(LEADS.courant)];
+ if(!e){b.style.display='none';return;}
+ b.style.display='';z.innerHTML=leadCarte(e);
+}
+function leadRafraichir(){leadCourantRendre();leadsRendre();}
+
+function leadCarte(e){
+ const id=e.lead_id,g=e.gmb||{},au=g.audit||{},occ=LEADS.occupe[id];
+ const c=(e.contacts||[])[0],ce=(c&&c.enrich)||{};
+ const docs=LEADS.docs[e.nom]||[];
+ const ouv=docs.reduce((s,p)=>s+(p.ouvertures||0),0);
+ const analyse=!!(g.trouve&&e.score&&e.score.scores);
+ const chip=(ok,txt)=>`<span class="ld-chip${ok===true?' ok':ok===false?' ko':''}">${txt}</span>`;
+ const chips=[
+  g.trouve?chip(true,'⭐ '+(g.note_moyenne!=null?String(g.note_moyenne).replace('.',',')+'★ · ':'')+(g.total_avis||0)+' avis'+(g.nb_fiches>1?' · '+g.nb_fiches+' fiches':''))
+   :(e.gmb?chip(false,'Fiche Google introuvable'):chip(null,'Fiche Google : à analyser')),
+  (g.concurrents&&g.concurrents.note_moyenne!=null)?chip(true,'Concurrents '+String(g.concurrents.note_moyenne).replace('.',',')+'★'):'',
+  (au.position_locale!=null)?chip(true,'📍 '+au.position_locale+(au.position_locale===1?'er':'ᵉ')+' en local'):'',
+  g.ia_visibilite?chip(true,'🤖 Aperçu IA relevé'):'',
+  e.technos_fait?chip(true,'🔎 Outils du site'):'',
+  (e.score&&e.score.scores)?chip(true,'🎯 Scoring'):'',
+  e.nb_etablissements?chip(null,e.nb_etablissements+' établissement'+(e.nb_etablissements>1?'s':'')):''
+ ].filter(Boolean).join('');
+ const contact=c?[htmlSafe(((c.prenom||'')+' '+(c.nom||'')).trim()),c.fonction?htmlSafe(c.fonction):'',
+   ce.email?'✉️ '+htmlSafe(ce.email):'',ce.telephone?'📱 '+htmlSafe(ce.telephone):'',
+   ce.linkedin?`<a href="${htmlSafe(ce.linkedin)}" target="_blank" rel="noopener">LinkedIn</a>`:''].filter(Boolean).join(' · '):'';
+ const A=(txt,fn,style,titre)=>`<button class="act" ${occ?'disabled':''} style="${style||''}" title="${htmlSafe(titre||'')}" onclick="${fn}('${id}')">${txt}</button>`;
+ return `<div class="ld-lead${ouv?' chaud':''}" id="ld-${id}">
+  <div class="ld-h">
+   <strong>${htmlSafe(e.enseigne||e.nom)}</strong>
+   ${e.ville?`<span style="font-size:12.5px;color:var(--ink-soft)">${htmlSafe(e.ville)}</span>`:''}
+   <span class="badge">${e.lead_origine==='lemlist'?'Lemlist'+(e.lead_campagne?' · '+htmlSafe(e.lead_campagne):''):'Saisi à la main'}</span>
+   ${ouv?`<span class="badge b-signal">👀 ${ouv} ouverture${ouv>1?'s':''}</span>`:''}
+   <span style="margin-left:auto;font-size:11.5px;color:var(--ink-soft)">${htmlSafe(String(e.date_lead||'').slice(0,10))}</span>
+  </div>
+  ${contact?`<div style="font-size:12.5px;color:var(--ink-soft);margin-top:4px">${contact}</div>`:''}
+  <div class="ld-chips">${chips}</div>
+  ${occ?`<div style="font-size:12.5px;color:var(--accent);margin-bottom:8px">⏳ ${htmlSafe(occ)}</div>`:''}
+  <div class="ld-a">
+   ${A(analyse?'↻ Compléter l\'analyse':'🔍 Lancer l\'analyse IA','leadAnalyser',analyse?'':'background:var(--accent);border-color:var(--accent);color:#fff','Fiche Google, avis, concurrents, outils du site, scoring, puis position locale et aperçu IA — environ une minute')}
+   ${A('🎨 Générer la prez','leadPrez','background:#5B4FE9;border-color:#5B4FE9;color:#fff','Analyse personnalisée Soview, SoConnect, SoReach ou générique — complète d\'abord ce qui manque')}
+   ${A('📂 Fiche complète','leadFiche','','Bloc-notes, contacts, enrichissement, SMS, séquences')}
+   ${A('🗑','leadSupprimer','','Retirer ce lead — ses documents restent dans Prez sales')}
+  </div>
+  <div class="ld-a" style="margin-top:8px;align-items:center"><span style="font-size:12px;color:var(--ink-soft)">Étude ROI :</span>
+   <button class="act" ${occ?'disabled':''} onclick="leadRoi('${id}','budy')" title="Le sales remplit avec le client : appels, messages, devis, atelier, pièces">🚗 Budy Auto</button>
+   <button class="act" ${occ?'disabled':''} onclick="leadRoi('${id}','soconnect')" title="Demandes non traitées reprises, trois scénarios de conversion (tableau de Romain)">💬 SoConnect</button>
+   <button class="act" ${occ?'disabled':''} onclick="leadRoi('${id}','soview')" title="Pré-remplie par les mesures de l'analyse : note, avis, position locale, réponses aux avis, aperçu IA">⭐ Soview</button>
+   <button class="act" ${occ?'disabled':''} onclick="leadRoi('${id}','soreach')" title="Campagnes SMS et RCS sur sa base de contacts">📱 SMS / RCS</button>
+  </div>
+  ${docs.length?`<div class="ld-d">${docs.map(function(p){const o=p.ouvertures||0;
+   return `<div class="ld-doc"><span class="badge">${htmlSafe(nomDoc(p))}</span>
+    ${o?`<span class="badge b-signal">👀 ouverte ${o}×${p.derniere_ouverture?' · '+htmlSafe(tempsRelEngag(p.derniere_ouverture)):''}</span>`:'<span style="color:var(--ink-soft)">jamais ouverte</span>'}
+    ${p.lecteurs_distincts>1?`<span class="badge b-signal">🔥 ${p.lecteurs_distincts} lecteurs</span>`:''}
+    ${p.expiree?'<span style="color:var(--ink-soft)">lien expiré</span>':`<a class="act act-call" style="padding:2px 9px;font-size:11.5px;text-decoration:none" href="${htmlSafe(p.url)}?apercu=1" target="_blank">👁 Voir</a>
+    <button class="act act-copy" style="padding:2px 9px;font-size:11.5px" onclick="navigator.clipboard.writeText(decodeURIComponent('${jsArg(p.url)}'));toast('Lien copié ✓')">📋 Lien</button>
+    <button class="act act-call" style="padding:2px 9px;font-size:11.5px" onclick="leadEnvoyer('${id}','${jsArg(p.jeton)}')">📤 Envoyer</button>`}
+    <button class="act act-copy" style="padding:2px 9px;font-size:11.5px" onclick="${p.module==='roi'?'ouvrirRoiEdition':'ouvrirEditeur'}('${jsArg(p.jeton)}')">✏️ Modifier</button>
+    <span style="font-size:11.5px;color:var(--ink-soft)">${htmlSafe(String(p.created_at||'').slice(0,10))}</span></div>`;}).join('')}</div>`:''}
+ </div>`;
+}
+
+async function leadAction(id,libelle,fn){
+ if(LEADS.occupe[id])return;
+ LEADS.occupe[id]=libelle;leadRafraichir();
+ try{const i=await leadPret(id);if(i>=0)await fn(i,REAL[i]);}
+ catch(e){toast(libelle+' : '+e.message);}
+ finally{delete LEADS.occupe[id];leadRafraichir();}
+}
+function leadAnalyser(id){
+ return leadAction(id,'Analyse en cours…',async function(i,e){
+  const faits=await completerFiche(i);
+  if(e.gmb&&e.gmb.trouve){
+   const v=voileTravail('🔍 Relevés complémentaires','Réponses aux avis, photos, position dans les résultats locaux et citation par l\'IA de Google.');
+   try{const rel=await completerMesures(i);
+    (rel.faits||[]).forEach(x=>faits.push(x));
+    if(rel.plafondAtteint)toast('🎚️ '+rel.plafondAtteint);
+    else if((rel.erreurs||[]).length)toast('⚠️ Relevé incomplet : '+rel.erreurs.map(x=>String(x).split(' : ')[0]).join(', '));
+   }finally{v.fermer();}
+  }
+  persister();
+  toast(faits.length?'✅ Analysé : '+faits.join(', '):((e.gmb&&e.gmb.trouve)?'Analyse déjà complète':'Aucune fiche Google trouvée — précise la ville ou le site, ou rattache la fiche depuis « Fiche complète »'));
+ });
+}
+function leadPrez(id){
+ return leadAction(id,'Préparation de la prez…',async function(i){
+  await genererPrez(i);
+  await leadsDocs();
+ });
+}
+// Étude ROI depuis un lead. Budy Auto : le commercial remplira avec le client. Soview : les
+// mesures de l'analyse (note, avis, position, réponses, aperçu IA) sont recopiées dans l'étude.
+// SoReach : rien de mesurable côté Google, seuls le nom et le nombre de sites sont repris.
+async function leadRoi(id,produit){
+ const i=await leadPret(id);if(i<0)return;
+ const e=REAL[i],g=e.gmb||{},c=(e.contacts||[])[0];
+ try{await roiCharger();}catch(err){toast('Simulateur : '+err.message);return;}
+ produit=ROI_DEF[produit]?produit:'budy';
+ const pieces=/pi[eè]ce|accessoire|distribut|grossiste/i.test([e.nom,e.enseigne,e.activite,e.secteur_rb2b].filter(Boolean).join(' '));
+ const cfg=roiDefaut(produit,produit==='budy'?(pieces?'pieces':'concession'):'defaut');
+ const sites=parseInt(e.nb_etablissements,10)||parseInt(g.nb_fiches,10)||0;
+ if(sites>0)cfg.sites=Math.min(200,sites);
+ if(e.activite||e.secteur_rb2b)cfg.secteur=String(e.activite||e.secteur_rb2b).slice(0,80);
+ let note='';
+ if(produit==='soview'){
+  const au=g.audit||{},iv=g.ia_visibilite||null,rp=g.reponses||null;
+  const num=v=>(typeof v==='number'&&isFinite(v))?v:null;
+  cfg.mesures={note:num(g.note_moyenne),avis:num(g.total_avis),fiches:num(g.nb_fiches),
+   note_concurrents:g.concurrents?num(g.concurrents.note_moyenne):null,
+   position:num(au.position_locale),requete:au.requete||null,
+   premiers:(au.concurrents||[]).filter(x=>x&&x.nom&&(x.position||0)!==au.position_locale).slice(0,3).map(x=>({nom:x.nom,note:num(x.note),avis:num(x.avis)})),
+   taux_reponse:rp?num(rp.taux):null,ia_present:iv?!!iv.apercu_present:null,ia_cite:iv?!!iv.cite:null};
+  // Le rythme d'avis mesuré vaut mieux que l'hypothèse par défaut.
+  if(rp&&num(rp.rythme_par_mois)!=null)cfg.avis_mois=Math.max(1,Math.round(rp.rythme_par_mois/Math.max(1,cfg.sites)));
+  if(!g.trouve)note=' — lance d\'abord l\'analyse du lead pour pré-remplir les mesures Google';
+ }
+ ROI={cfg:cfg,client:e.enseigne||e.nom,destinataire:c?((c.prenom||'')+' '+(c.nom||'')).trim():'',jeton:null,url:null,liste_id:LEADS.liste_id,cle_fiche:e.nom};
+ nav('roi',null);
+ document.getElementById('roi-res').innerHTML='';
+ roiDessiner();
+ toast('Étude '+ROI_DEF[produit].nom+' pré-remplie pour '+(e.enseigne||e.nom)+note);
+}
+async function leadFiche(id){
+ const i=await leadPret(id);if(i<0)return;
+ ouvrirListe(LEADS.liste_id,cleSignal(REAL[i]));
+}
+async function leadEnvoyer(id,jeton){
+ const i=await leadPret(id);if(i<0)return;
+ const e=REAL[i];
+ const p=(LEADS.docs[e.nom]||[]).find(x=>x.jeton===decodeURIComponent(jeton))||{};
+ ouvrirEnvoiPrez({i:i,jeton:decodeURIComponent(jeton),client:e.enseigne||e.nom,destinataires:p.destinataires||[]});
+}
+async function leadSupprimer(id){
+ const e=REAL[leadIndex(id)];
+ if(!await confirmSofy('Retirer '+((e&&(e.enseigne||e.nom))||'ce lead')+' de tes leads ?',
+  'Le lead disparaît de cette liste. Ses documents déjà générés restent accessibles dans Prez sales, et leurs liens continuent de fonctionner.','Retirer'))return;
+ try{
+  const r=await api('/api/leads?lead_id='+encodeURIComponent(id),{method:'DELETE'});const d=await r.json();
+  if(!r.ok||d.erreur)throw new Error(d.erreur||('HTTP '+r.status));
+  if(LEADS.courant===id)LEADS.courant=null;
+  await leadsCharger();leadRafraichir();toast('Lead retiré');
+ }catch(err){toast('Suppression : '+err.message);}
+}
+
+// ── Création ──
+async function leadCreer(corps,bouton){
+ const lbl=bouton?bouton.textContent:'';
+ if(bouton){bouton.disabled=true;bouton.textContent='⏳…';}
+ try{
+  const r=await api('/api/leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(corps)});
+  const d=await r.json();
+  if(!r.ok||d.erreur)throw new Error(d.erreur||('HTTP '+r.status));
+  LEADS.courant=d.lead_id;
+  await leadsCharger();
+  leadCourantRendre();
+  toast(d.cree?'Lead créé : '+d.nom+' — lance l\'analyse':(d.info||'Lead déjà présent'));
+  const b=document.getElementById('ld-courant-bloc');if(b&&b.scrollIntoView)b.scrollIntoView({behavior:'smooth',block:'start'});
+  return d;
+ }catch(e){toast('Lead non créé : '+e.message);return null;}
+ finally{if(bouton){bouton.disabled=false;bouton.textContent=lbl;}}
+}
+async function leadCreerManuel(){
+ const v=id=>document.getElementById(id).value.trim();
+ if(!v('ld-ent')&&!v('ld-site')){toast('Indique l\'entreprise ou son site web : c\'est elle que l\'analyse mesure');document.getElementById('ld-ent').focus();return;}
+ const d=await leadCreer({origine:'manuel',entreprise:v('ld-ent'),site_web:v('ld-site'),nom_complet:v('ld-nom'),fonction:v('ld-fct'),
+  email:v('ld-mail'),telephone:v('ld-tel'),linkedin:v('ld-lk'),ville:v('ld-ville')},document.getElementById('ld-creer'));
+ if(d)['ld-ent','ld-site','ld-nom','ld-fct','ld-mail','ld-tel','ld-lk','ld-ville'].forEach(id=>{document.getElementById(id).value='';});
+}
+
+// ── Recherche Lemlist (index côté serveur) ──
+let LEAD_RES=[];
+function leadRecherche(q){
+ clearTimeout(LEADS.timer);
+ const z=document.getElementById('ld-res');
+ if(String(q).trim().length<2){z.innerHTML='';return;}
+ LEADS.timer=setTimeout(async function(){
+  try{
+   const r=await api('/api/leads?q='+encodeURIComponent(q.trim()));const d=await r.json();
+   if(document.getElementById('ld-q').value.trim()!==q.trim())return;   // une frappe plus récente est partie
+   if(!r.ok||d.erreur)throw new Error(d.erreur||('HTTP '+r.status));
+   LEAD_RES=d.resultats||[];
+   leadIndexAfficher(d.index);
+   z.innerHTML=LEAD_RES.length?LEAD_RES.map(function(l,k){
+    const qui=((l.prenom||'')+' '+(l.nom||'')).trim();
+    return `<div class="ld-r"><div class="qui"><b>${htmlSafe(qui||l.entreprise||l.email||l.telephone||'—')}</b>${qui&&l.entreprise?' · '+htmlSafe(l.entreprise):''}
+      <small>${[l.fonction,l.email,l.telephone,l.campagne_nom].filter(Boolean).map(htmlSafe).join(' · ')}</small></div>
+     <button class="act act-call" ${l.entreprise||l.site||l.email?'':'disabled title="Sans entreprise ni site : crée-le à la main"'} onclick="leadImporter(${k},this)">Importer</button></div>`;
+   }).join(''):'<div class="ld-x" style="margin:8px 0 0">Aucun lead Lemlist ne correspond. Vérifie l\'orthographe, actualise l\'index, ou crée le lead à la main.</div>';
+  }catch(e){z.innerHTML='<div class="ld-x" style="color:var(--danger);margin:8px 0 0">Recherche : '+htmlSafe(e.message)+'</div>';}
+ },280);
+}
+function leadImporter(k,b){
+ const l=LEAD_RES[k];if(!l)return;
+ leadCreer({origine:'lemlist',entreprise:l.entreprise||'',site_web:l.site||'',nom_complet:((l.prenom||'')+' '+(l.nom||'')).trim(),
+  fonction:l.fonction||'',email:l.email||'',telephone:l.telephone||'',linkedin:l.linkedin||'',ville:l.ville||'',
+  lemlist_id:l.lemlist_id||'',campagne:l.campagne_nom||''},b);
+}
+function leadIndexAfficher(ix,msg){
+ const z=document.getElementById('ld-index');if(!z)return;
+ const quand=ix&&ix.plus_recente?tempsRelEngag(ix.plus_recente):null;
+ z.innerHTML=`<span>${msg?htmlSafe(msg):(ix&&ix.campagnes?`Index : ${Number(ix.leads||0).toLocaleString('fr-FR')} leads de ${ix.campagnes} campagnes${quand?' · mis à jour '+htmlSafe(quand):''}`:'Index Lemlist vide')}</span>
+  <button class="act act-copy" style="padding:2px 9px;font-size:11.5px" ${LEADS.indexEnCours?'disabled':''} onclick="leadIndexer(true)">↻ Actualiser</button>`;
+}
+// À l'ouverture : on lit l'état de l'index et on le rafraîchit seul s'il est vide ou vieux de plus
+// de 6 h (le serveur ne relit que les campagnes périmées).
+async function leadIndexEtat(auto){
+ try{
+  const r=await api('/api/leads?index=1');const d=await r.json();
+  if(d.erreur)throw new Error(d.erreur);
+  leadIndexAfficher(d.index);
+  const vieux=!d.index||!d.index.campagnes||!d.index.plus_ancienne||(Date.now()-new Date(d.index.plus_ancienne).getTime())>6*3600000;
+  if(auto&&vieux)leadIndexer(false);
+ }catch(e){leadIndexAfficher(null,'Index Lemlist : '+e.message);}
+}
+async function leadIndexer(force){
+ if(LEADS.indexEnCours)return;
+ LEADS.indexEnCours=true;
+ let total=0,faites=0;
+ try{
+  for(let tour=0;tour<40;tour++){
+   leadIndexAfficher(null,'Mise à jour de l\'index Lemlist…'+(total?' '+faites+' / '+total+' campagnes':''));
+   const r=await api('/api/leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'indexer',force:!!force&&tour===0})});
+   const d=await r.json();
+   if(!r.ok||d.erreur)throw new Error(d.erreur||('HTTP '+r.status));
+   faites+=d.indexees||0;total=Math.max(total,faites+(d.restantes||0));
+   if(!d.restantes||!d.indexees){LEADS.indexEnCours=false;leadIndexAfficher(d.index);break;}
+  }
+ }catch(e){LEADS.indexEnCours=false;leadIndexAfficher(null,'Index Lemlist : '+e.message);}
+ finally{LEADS.indexEnCours=false;}
+ const q=document.getElementById('ld-q');if(q&&q.value.trim().length>=2)leadRecherche(q.value);
+}
+
+// ── 💶 Simulateur ROI (Budy Auto, Soview, SoReach SMS / RCS) ──────────────────
+// Les calculs viennent du serveur (/api/roi?script=1 sert les moteurs tels quels) : l'écran du
+// commercial et le document envoyé au client ne peuvent pas diverger.
+// Un curseur = [clé, libellé, min, max, pas, unité, aide?]. Une carte de levier porte une case à
+// cocher (config.off[id]) et affiche son gain annuel en direct.
+let ROI={cfg:null,client:'',destinataire:'',jeton:null,url:null};
+const ROI_CH=['cout_horaire','Coût horaire chargé d\'un conseiller',15,70,1,' €'];
+const ROI_DEF={
+ budy:{nom:'Budy Auto',bouton:'🚗 Budy Auto',unite:['vente','ventes'],demandes:'demandes',panier:'panier_moyen',
+  intro:'Chiffre en direct, avec le client, ce que <b>Budy</b> lui rapporte : appels et messages repris, devis et révisions relancés, bonne pièce du premier coup, ventes additionnelles. C\'est toi qui remplis, avec lui.',
+  profils:[['concession','🚗 Concession / garage'],['pieces','🔩 Distributeur de pièces']],
+  perimetre:[['sites','Sites équipés',1,50,1,''],['jours_mois','Jours d\'ouverture par mois',18,30,1,' j']],
+  tarif:'SoConnect Basic 389 € + module Budy Auto : <b>Concession + 249 €</b> (TecDoc, TecRMI, Mecaplanning) ou <b>Pièces + 199 €</b> (TecDoc, TecRMI, 500 interrogations de plaque, 1 000 messages RCS / WhatsApp). Au-delà du forfait, les messages sont au prix Sofy — business model en cours : vérifie avant envoi.',
+  cout:[['abonnement','SoConnect Basic, par site',0,2000,1,' €/mois'],['module','Module Budy Auto, par site',0,1000,1,' €/mois'],
+   ['messages_inclus','Messages WhatsApp / RCS inclus par site',0,5000,100,' /mois'],['cout_message','Message au-delà du forfait (prix Sofy)',0,0.5,0.01,' €'],
+   ['plaques_incluses','Interrogations de plaque incluses par site',0,5000,100,' /mois'],['cout_plaque','Interrogation au-delà du forfait',0,0.5,0.01,' €'],
+   ['frais_installation','Mise en place (une fois)',0,20000,100,' €']],
+  cartes:[
+   {id:'appels',t:'📞 Appels manqués repris par Budy',x:'Marché : 28 % des sollicitations sans réponse, 72 % de décroché (Journal de l\'Automobile, 02/2026) ; 30-40 % d\'appels manqués (L\'Argus, 09/2026).',s:[
+    ['appels_jour','Appels entrants par jour et par site',10,500,5,''],
+    ['taux_manques','Manqués pendant les horaires',0,60,1,' %'],
+    ['hors_horaires','Reçus hors horaires (soir, samedi, midi)',0,40,1,' %'],
+    ['taux_perdus','Sans réponse qui ne rappellent pas',0,80,1,' %'],
+    ['taux_budy','Demandes sans réponse reprises par Budy',50,100,1,' %']]},
+   {id:'messages',t:'💬 Messages WhatsApp / RCS / webchat',x:'Un client qui écrit attend une réponse dans les minutes. Budy répond tout de suite, qualifie (véhicule, plaque, besoin) et passe la main.',s:[
+    ['messages_jour','Messages écrits reçus par jour et par site',0,300,1,''],
+    ['taux_msg_perdus','Sans réponse rapide (client perdu)',0,60,1,' %']]},
+   {id:'motifs'},
+   {id:'devis',t:'📄 Relance des devis sans suite',x:'Relance automatique WhatsApp / RCS de chaque devis resté sans réponse, avec bouton « Réserver » ou « Être rappelé ».',s:[
+    ['devis_mois','Devis émis par mois et par site',0,3000,10,''],
+    ['taux_devis_sans_suite','Devis restant sans suite',0,90,1,' %'],
+    ['taux_devis_conv','Conclus grâce à la relance',0,40,1,' %'],
+    ['panier_devis','Montant moyen d\'un devis',0,3000,10,' €'],
+    ['marge_devis','Marge',0,70,1,' %']]},
+   {id:'atelier',t:'🔧 Rappels de rendez-vous atelier',x:'Deux rappels WhatsApp / RCS (avant-veille et veille) avec « Je confirme / Je décale », reliés au planning Mecaplanning : moins de ponts vides.',s:[
+    ['rdv_mois','Rendez-vous atelier par mois et par site',0,2000,10,''],
+    ['taux_noshow','Rendez-vous non honorés',0,30,1,' %'],
+    ['reduction_noshow','Évités grâce aux rappels',0,80,1,' %'],
+    ['panier_rdv','Facture atelier moyenne',0,1500,10,' €'],
+    ['marge_rdv','Marge atelier (sert aussi aux révisions)',0,70,1,' %']]},
+   {id:'revisions',t:'🗓 Relance des révisions — TecRMI',x:'Budy croise la base clients avec le plan d\'entretien constructeur (TecRMI, TecAlliance) et relance chaque véhicule à la bonne échéance.',s:[
+    ['revisions_mois','Relances de révision par mois et par site',0,3000,10,''],
+    ['taux_revision_conv','Relances suivies d\'un rendez-vous',0,40,1,' %'],
+    ['panier_revision','Facture moyenne d\'une révision',0,1500,10,' €']]},
+   {id:'upsell',t:'➕ Vente additionnelle par préconisation',x:'Le client demande des plaquettes ; avec le kilométrage et la préconisation constructeur, Budy propose aussi les disques.',s:[
+    ['upsell_demandes_mois','Demandes pièces / entretien par mois et par site',0,5000,10,''],
+    ['taux_upsell','Demandes avec vente additionnelle',0,30,1,' %'],
+    ['panier_upsell','Panier additionnel moyen',0,500,5,' €'],
+    ['marge_upsell','Marge',0,70,1,' %']]},
+   {id:'identif',t:'🔎 Bonne pièce par immatriculation — TecDoc + SIV',x:'De la plaque à la référence compatible : moins de recherche manuelle, moins d\'erreurs de référence et de retours.',s:[
+    ['recherches_mois','Recherches de pièces par mois et par site',0,5000,10,''],
+    ['min_recherche','Temps gagné par recherche',0,10,0.5,' min'],
+    ['taux_erreur','Erreurs de référence aujourd\'hui',0,20,1,' %'],
+    ['reduction_erreur','Erreurs évitées',0,90,1,' %'],
+    ['cout_erreur','Coût d\'une erreur (retour, temps, remise)',0,150,5,' €']]},
+   {id:'temps',t:'⏱ Appels et messages traités seul par Budy',x:'Horaires, suivi de dossier, disponibilité, rendez-vous simple. Marché : 60 % des RDV après-vente automatisés sur 117 concessions (L\'Argus, 09/2026).',s:[
+    ['automatisation','Demandes traitées sans conseiller',0,70,1,' %'],
+    ['duree_appel','Durée moyenne d\'un appel',1,15,0.5,' min'],
+    ['duree_message','Durée de traitement d\'un message',0.5,10,0.5,' min']]}],
+  lignes:r=>[['Taux de réponse aux appels',roiFmt(r.taux_reponse_actuel)+' % → '+roiFmt(r.taux_reponse_budy)+' %'],
+   ['Coût de l\'inaction',roiEur(r.cout_inaction_jour)+' de CA / jour ouvré'],
+   r.interactions_mois?['Coût par contact traité',roiFmt(r.cout_mois/r.interactions_mois,2)+' € ('+roiFmt(r.interactions_mois)+' / mois)']:null],
+  questions:['Combien d\'appels recevez-vous par jour, par site ? Quel taux de décroché ?','Que se passe-t-il le soir, le samedi, entre 12 h et 14 h ?',
+   'Combien de messages WhatsApp, Messenger ou formulaires par jour ? Qui y répond, en combien de temps ?','Combien de devis par mois ? Quelle part reste sans réponse ? Qui les relance ?',
+   'Combien de rendez-vous atelier par mois ? Combien de clients ne viennent pas ?','Relancez-vous vos clients quand leur révision arrive à échéance ? Comment ?',
+   'Combien de temps pour trouver la bonne référence ? Combien de pièces reviennent pour erreur ?','Vos vendeurs proposent-ils systématiquement les pièces associées (disques avec plaquettes, kit complet…) ?']},
+ soconnect:{nom:'SoConnect',bouton:'💬 SoConnect',unite:['vente','ventes'],demandes:'demandes',panier:'panier',
+  intro:'Le calcul de Romain : les demandes reçues, la part qui reste sans réponse, et <b>trois scénarios</b> de conversion. Quatre chiffres à obtenir du client : ses demandes par mois, celles qu\'il ne traite pas, son panier moyen et ce qu\'il convertit.',
+  profils:[['defaut','']],
+  perimetre:[['sites','Établissements',1,200,1,'']],
+  tarif:'SoConnect Basic <b>389 € par mois</b>. Le tableau de Romain et la fiche Arnoux utilisent 349 € (prix garanti 12 mois) : ajuste selon l\'offre en cours.',
+  cout:[['abonnement','SoConnect, par établissement',0,2000,1,' €/mois'],['frais_installation','Mise en place (une fois)',0,20000,100,' €']],
+  cartes:[
+   {id:'demandes',t:'💬 Demandes non traitées reprises par SoConnect',x:'WhatsApp, Messenger, Instagram, webchat, téléphone. La part non traitée est l\'hypothèse qui porte le résultat : fais-la valider par le client.',s:[
+    ['demandes_mois','Demandes par mois et par établissement',0,5000,10,''],
+    ['taux_non_traitees','Demandes non traitées aujourd\'hui',0,60,1,' %'],
+    ['taux_conversion','Taux de conversion (scénario moyen)',0,60,0.5,' %'],
+    ['marge','Marge',0,90,1,' %']]},
+   {id:'temps',t:'⏱ Préqualification des demandes par Budy',x:'Budy relève le besoin et les coordonnées avant de passer la main. Fiche Arnoux : 18 h par mois pour 540 demandes, soit 2 minutes par demande.',s:[
+    ['min_gagnees','Temps gagné par demande traitée',0,10,0.5,' min']]}],
+  lignes:r=>[['Demandes reçues',roiFmt(r.demandes_total_mois)+' / mois'],['Reprises par SoConnect',roiFmt(r.prises_mois)+' / mois'],['Ventes visées',roiNb(r.ventes_mois)+' / mois']],
+  questions:['Combien de demandes recevez-vous par mois, tous canaux confondus ?','Combien restent sans réponse, ou reçoivent une réponse trop tard ?',
+   'Sur dix demandes traitées, combien deviennent une vente ?','Quel est votre panier moyen ? (fourchette basse et haute)','Combien de temps vos vendeurs passent-ils à qualifier une demande avant de pouvoir répondre ?']},
+ soview:{nom:'Soview',bouton:'⭐ Soview',unite:['client','clients'],demandes:'contacts venus de Google',panier:'panier',
+  intro:'Les <b>mesures</b> (note, avis, position locale, réponses aux avis, aperçu IA) viennent de l\'analyse du lead. Il te reste trois valeurs à demander au client, que Google ne publie pas : les vues de sa fiche, son panier et son taux de transformation.',
+  profils:[['defaut','']],
+  perimetre:[['sites','Établissements',1,200,1,'']],
+  tarif:'Soview à partir de <b>440 € par mois et par établissement</b> (grille de la base de connaissance, marquée « à confirmer »).',
+  cout:[['abonnement','Soview, par établissement',0,2000,5,' €/mois'],['frais_installation','Mise en place (une fois)',0,20000,100,' €']],
+  cartes:[
+   {id:'mesures'},
+   {id:'visibilite',t:'📍 Clients gagnés par la visibilité locale',x:'Les vues de la fiche se lisent dans « Performances » de sa fiche Google : demande-lui une capture. La hausse retenue est une HYPOTHÈSE, pas une mesure — reste prudent.',s:[
+    ['vues_mois','Vues de la fiche par mois et par établissement',0,50000,100,''],
+    ['taux_action','Vues suivies d\'une action (appel, itinéraire, site)',0,30,0.5,' %'],
+    ['taux_transfo','Actions qui deviennent un client',0,80,1,' %'],
+    ['gain_visibilite','Hausse des contacts avec Soview',0,100,1,' %'],
+    ['marge','Marge',0,90,1,' %']]},
+   {id:'avis',t:'⭐ Réponses aux avis rédigées par Budy',x:'Budy lit chaque avis et rédige la réponse dans le ton de l\'enseigne ; le client valide d\'un clic.',s:[
+    ['avis_mois','Avis reçus par mois et par établissement',0,200,1,''],
+    ['min_reponse','Temps pour répondre à un avis aujourd\'hui',0,20,1,' min']]},
+   {id:'gestion',t:'🗂 Fiches gérées d\'une seule saisie',x:'Horaires, photos, publications : une saisie diffusée sur Google, Maps, Apple Plans, Waze, Facebook et Instagram.',s:[
+    ['heures_gestion','Temps de gestion économisé par établissement',0,20,0.5,' h/mois']]}],
+  lignes:r=>[['Contacts venus de Google',roiFmt(r.actions_mois)+' / mois'],['Clients actuels via Google',roiFmt(r.clients_actuels_mois)+' / mois'],['Clients en plus visés',roiNb(r.clients_plus_mois)+' / mois']],
+  questions:['Combien de vues et d\'appels votre fiche Google génère-t-elle par mois ? (onglet Performances)','Que vaut un nouveau client chez vous : premier panier, et sur un an ?',
+   'Qui répond aux avis aujourd\'hui, et en combien de temps ?','Combien de fiches gérez-vous, et qui met à jour les horaires et les photos ?','Demandez-vous systématiquement un avis après une vente ?']},
+ soreach:{nom:'SoReach SMS / RCS',bouton:'📱 SMS / RCS',unite:['vente','ventes'],demandes:'messages envoyés',panier:'panier',
+  intro:'Deux chiffres à obtenir du client : la <b>taille de sa base</b> de contacts joignables et le <b>rythme</b> de ses campagnes. Le reste (clic, conversion) se cale avec lui ; les mesures Google n\'apprennent rien sur sa base.',
+  profils:[['defaut','']],
+  perimetre:[['sites','Établissements',1,200,1,'']],
+  tarif:'SoReach est disponible sans abonnement, avec une tarification au message. <b>Le prix du message n\'est pas connu ici</b> : 0,08 € est une valeur d\'attente à remplacer par le tarif Sofy.',
+  cout:[['cout_message','Coût d\'un message SMS / RCS',0,0.5,0.01,' €'],['abonnement','Abonnement, par établissement',0,2000,5,' €/mois'],['frais_installation','Mise en place (une fois)',0,20000,100,' €']],
+  cartes:[
+   {id:'campagnes',t:'📱 Campagnes SMS / RCS sur sa base',x:'Repère client Sofy : 85,7 % d\'ouverture et 47 % de clic sur les campagnes SMS du Groupe Kiosque (32 points de vente). Le défaut retenu ici est bien plus prudent.',s:[
+    ['contacts','Contacts joignables par établissement',0,100000,100,''],
+    ['campagnes_mois','Campagnes par mois',0,12,0.5,''],
+    ['taux_clic','Messages suivis d\'un clic',0,60,1,' %'],
+    ['taux_conv','Clics suivis d\'un achat',0,30,0.5,' %'],
+    ['marge','Marge',0,90,1,' %']]},
+   {id:'redaction',t:'✍️ Campagnes préparées par Budy',x:'Ciblage, rédaction et personnalisation proposés par Budy : le client valide et envoie.',s:[
+    ['heures_campagne','Temps gagné par campagne',0,10,0.5,' h']]}],
+  lignes:r=>[['Messages envoyés',roiFmt(r.messages_mois)+' / mois'],['Clics',roiFmt(r.clics_mois)+' / mois'],['Ventes visées',roiNb(r.ventes_mois)+' / mois'],
+   ['Coût des envois',roiEur(r.cout_messages_mois)+' / mois']],
+  questions:['Combien de clients avez-vous en base avec un mobile et leur accord ?','Combien de campagnes envoyez-vous par mois aujourd\'hui, et par quel canal ?',
+   'Quel est votre panier moyen, et la marge dessus ?','Qui prépare les campagnes, et combien de temps cela prend-il ?','Savez-vous combien de ventes votre dernière campagne a déclenchées ?']}
+};
+const ROI_MESURES=[['note','Note Google',0,5,0.1],['avis','Nombre d\'avis',0,100000,1],['note_concurrents','Note moyenne des concurrents',0,5,0.1],
+ ['position','Position locale',1,50,1],['taux_reponse','Avis avec réponse (%)',0,100,1]];
+function roiProd(){return (ROI.cfg&&ROI_DEF[ROI.cfg.produit])?ROI.cfg.produit:'budy';}
+function roiFmt(v,d){return (Number(v)||0).toLocaleString('fr-FR',{minimumFractionDigits:d||0,maximumFractionDigits:d||0});}
+function roiEur(v){const a=Math.abs(v);const r=a>=100000?Math.round(v/1000)*1000:a>=10000?Math.round(v/100)*100:a>=1000?Math.round(v/10)*10:Math.round(v);return roiFmt(r)+' €';}
+function roiX(r){return r==null?'—':'×'+(r>=10?roiFmt(Math.round(r)):roiFmt(r,1));}
+function roiNb(v){return (v>=10||v===0)?roiFmt(v):roiFmt(v,1);}
+function roiCharger(){
+ return new Promise(function(ok,ko){
+  if(window.ROI_MOTEURS)return ok();
+  const s=document.createElement('script');s.src='/api/roi?script=1';
+  s.onload=function(){window.ROI_MOTEURS?ok():ko(new Error('moteur absent'));};
+  s.onerror=function(){s.remove();ko(new Error('chargement du moteur impossible'));};
+  document.head.appendChild(s);
+ });
+}
+function roiDefaut(produit,profil){
+ const P=window.ROI_PROFILS[produit];
+ const c=JSON.parse(JSON.stringify(P[profil]||P[Object.keys(P)[0]]));
+ c.produit=produit;c.off=c.off||{};
+ return c;
+}
+async function ouvrirRoi(){
+ try{await roiCharger();}catch(e){document.getElementById('roi-gain').textContent='⚠️ '+e.message;return;}
+ if(!ROI.cfg)ROI.cfg=roiDefaut('budy','concession');
+ roiDessiner();
+}
+// Changer de produit ou de profil repart des valeurs par défaut, mais garde le client et le lead.
+async function roiProduit(p){
+ try{await roiCharger();}catch(e){toast('Simulateur indisponible : '+e.message+' — réessaie');return;}
+ ROI.cfg=roiDefaut(p);ROI.jeton=null;ROI.url=null;
+ document.getElementById('roi-res').innerHTML='';
+ roiDessiner();
+}
+async function roiProfil(p){
+ try{await roiCharger();}catch(e){toast('Simulateur indisponible : '+e.message+' — réessaie');return;}
+ ROI.cfg=roiDefaut(roiProd(),p);
+ roiDessiner();
+}
+function roiNouveau(){ROI={cfg:null,client:'',destinataire:'',jeton:null,url:null};
+ document.getElementById('roi-res').innerHTML='';
+ ouvrirRoi();}
+// Un curseur n'apparaît que s'il sert : pas de marge quand le gain se lit sur le chiffre d'affaires,
+// pas de montant par levier quand un seul panier moyen pilote toutes les ventes (Budy Auto).
+function roiCache(k){
+ const c=ROI.cfg||{};
+ if(c.seuil_base!=='marge'&&/^marge/.test(k))return true;
+ if(roiProd()==='budy'&&c.panier_mode==='simple'&&['panier_devis','panier_rdv','panier_revision','panier_upsell'].includes(k))return true;
+ return false;
+}
+function roiCurseur(s){
+ if(roiCache(s[0]))return '';
+ const c=ROI.cfg,k=s[0],st=s[4],v=(c[k]==null?0:c[k]);
+ return `<div class="roi-s"><div class="roi-s-h"><span>${htmlSafe(s[1])}</span><span class="u"><input type="number" id="roi-i-${k}" min="0" step="${st}" value="${v}" oninput="roiSet('${k}',this.value,'i')">${htmlSafe(s[5])}</span></div>
+  <input type="range" id="roi-r-${k}" min="${s[2]}" max="${Math.max(s[3],v)}" step="${st}" value="${v}" oninput="roiSet('${k}',this.value,'r')">
+  ${s[6]?`<div class="roi-s-x">${htmlSafe(s[6])}</div>`:''}</div>`;
+}
+function roiDessiner(){
+ const c=ROI.cfg;c.off=c.off||{};
+ const prod=roiProd(),D=ROI_DEF[prod],coul=window.ROI_COULEURS||{};
+ document.getElementById('roi-prod').innerHTML=Object.keys(ROI_DEF).map(k=>`<button type="button" class="${k===prod?'on':''}" onclick="roiProduit('${k}')">${ROI_DEF[k].bouton}</button>`).join('');
+ document.getElementById('roi-intro').innerHTML=D.intro+' Cale les curseurs, puis <b>📄 Générer l\'étude</b> : tu obtiens un lien suivi et le PDF à joindre à ton mail.';
+ const pf=document.getElementById('roi-pf');
+ pf.style.display=D.profils.length>1?'':'none';
+ pf.innerHTML=D.profils.map(x=>`<button type="button" class="${x[0]===c.profil?'on':''}" onclick="roiProfil('${x[0]}')">${x[1]}</button>`).join('');
+ document.getElementById('roi-client').value=ROI.client||'';
+ document.getElementById('roi-dest').value=ROI.destinataire||'';
+ document.getElementById('roi-lead').innerHTML=ROI.cle_fiche?'🎯 Étude rattachée au lead <b>'+htmlSafe(ROI.cle_fiche)+'</b> : elle apparaîtra dans Mes leads.':'';
+ // Le panier moyen est LA première question au client : il ouvre la carte, pour tous les produits.
+ // Budy Auto en mode « détail par motif » n'a pas de panier unique : on le dit à la place.
+ const detail=(prod==='budy'&&c.panier_mode!=='simple');
+ document.getElementById('roi-s-panier').innerHTML=detail
+  ?'<div class="roi-s-x" style="margin-bottom:10px">Panier détaillé par motif d\'appel, dans la carte « Ce que vaut un client sauvé ».</div>'
+  :roiCurseur([D.panier,'Panier moyen'+(prod==='budy'?', pour toutes les ventes':''),0,3000,5,' €',
+    prod==='budy'?'Un seul montant pour tout : appels et messages repris, devis relancés, rendez-vous atelier, révisions, ventes additionnelles.':'Demande-le au client, avec sa fourchette basse et haute.']);
+ document.getElementById('roi-s-perimetre').innerHTML=D.perimetre.map(roiCurseur).join('');
+ document.getElementById('roi-s-temps').innerHTML=roiCurseur(ROI_CH);
+ document.getElementById('roi-tarif-x').innerHTML=D.tarif;
+ document.getElementById('roi-s-cout').innerHTML=D.cout.map(roiCurseur).join('');
+ document.getElementById('roi-seuil-base').value=(c.seuil_base==='marge'?'marge':'ca');
+ document.getElementById('roi-seuil-u').textContent=D.unite[1];
+ document.getElementById('roi-questions').innerHTML=D.questions.map(q=>'<li>'+htmlSafe(q)+'</li>').join('');
+ document.getElementById('roi-battle').style.display=prod==='budy'?'':'none';
+ document.getElementById('roi-cartes').innerHTML=D.cartes.map(function(k){
+  if(k.id==='motifs'){
+   const simple=c.panier_mode==='simple';
+   return `<div class="roi-c"><h3>🧾 Ce que vaut un client sauvé <span class="roi-gn" id="roi-somme" style="background:var(--paper);color:var(--ink-soft)"></span></h3>
+    <div class="roi-pf" style="margin-bottom:8px"><button type="button" class="${simple?'on':''}" onclick="roiPanierMode('simple')">Un panier moyen</button><button type="button" class="${simple?'':'on'}" onclick="roiPanierMode('detail')">Détail par motif d'appel</button></div>
+    <div class="roi-x">${simple?'Le <b>panier moyen</b> se règle en haut, dans « Le client », et vaut pour toutes les ventes. Ici : la part des clients repris (appels et messages) qui achètent. Ce sont des hypothèses de départ, pas des chiffres sourcés.':'Sert aux appels et aux messages repris. Conv. = part des clients sauvés qui achètent (RDV honoré, commande, vente). Les autres leviers gardent leur propre montant.'}</div>`
+    +(simple?'<div class="roi-2">'+[['taux_conversion','Clients sauvés qui achètent',0,100,0.5,' %'],['marge_moyenne','Marge',0,90,1,' %']].map(roiCurseur).join('')+'</div>'
+     :`<table class="roi-t"><thead><tr><th>Motif</th><th style="width:62px">Part %</th><th style="width:62px">Conv. %</th><th style="width:84px">Panier €</th><th style="width:62px">Marge %</th></tr></thead><tbody>`
+      +(c.motifs||[]).map(function(m,i){
+       const f=q=>`<td><input type="number" min="0" step="any" value="${m[q]}" oninput="roiMotif(${i},'${q}',this.value)"></td>`;
+       return `<tr><td><input value="${htmlSafe(m.label)}" oninput="roiMotif(${i},'label',this.value)"></td>${f('part')}${f('conv')}${f('panier')}${f('marge')}</tr>`;
+      }).join('')+'</tbody></table>')+'</div>';
+  }
+  if(k.id==='mesures'){
+   const m=c.mesures=c.mesures||{};
+   const prem=(m.premiers||[]).map(x=>htmlSafe(x.nom)+(x.note!=null?' ('+String(x.note).replace('.',',')+'★)':'')).join(' · ');
+   return `<div class="roi-c"><h3>🔬 Mesures relevées sur sa fiche Google</h3>
+    <div class="roi-x">${ROI.cle_fiche?'Pré-remplies depuis l\'analyse du lead':'Lance l\'étude depuis un lead analysé pour les pré-remplir, ou saisis-les'} — elles alimentent la page « Ce que nous avons mesuré » de l'étude. Laisse vide ce que tu ne connais pas.</div>
+    <div class="roi-2">${ROI_MESURES.map(x=>`<div class="roi-s"><div class="roi-s-h"><span>${htmlSafe(x[1])}</span><span class="u"><input type="number" min="${x[2]}" max="${x[3]}" step="${x[4]}" value="${m[x[0]]==null?'':m[x[0]]}" placeholder="—" oninput="roiMesure('${x[0]}',this.value)"></span></div></div>`).join('')}</div>
+    <div class="roi-s-x">${m.requete?'Recherche testée : « '+htmlSafe(m.requete)+' ». ':''}${prem?'Devant lui : '+prem+'. ':''}${m.ia_present===true?('Aperçu IA de Google : '+(m.ia_cite?'il est cité.':'il n\'est pas cité.')):''}</div></div>`;
+  }
+  return `<div class="roi-c${c.off[k.id]?' off':''}" id="roi-c-${k.id}">
+   <h3><input type="checkbox" ${c.off[k.id]?'':'checked'} onchange="roiOff('${k.id}',!this.checked)" title="Inclure ce levier dans l'étude"><i class="roi-pt" style="background:${coul[k.id]||'#999'}"></i>${htmlSafe(k.t)}<span class="roi-gn" id="roi-g-${k.id}"></span></h3>
+   <div class="roi-b"><div class="roi-x">${htmlSafe(k.x)}</div><div class="roi-2">${k.s.map(roiCurseur).join('')}</div></div></div>`;
+ }).join('');
+ document.getElementById('roi-go').textContent=ROI.jeton?'💾 Mettre à jour l\'étude (même lien)':'📄 Générer l\'étude client';
+ // Trois scénarios : une hypothèse varie (bas / moyen / haut), le reste ne bouge pas.
+ const sd=(window.ROI_SCEN_DEF||{})[prod];
+ const scOk=sd&&!(sd.simple&&c.panier_mode!=='simple');
+ document.getElementById('roi-scen').innerHTML=scOk?`<div class="roi-c"><h3>📊 Trois scénarios <span class="roi-gn" id="roi-scen-seuil" style="background:var(--paper);color:var(--ink-soft)"></span></h3>
+  <div class="roi-x">Une seule hypothèse change : <b>${htmlSafe(sd.label.toLowerCase())}</b>. Le scénario moyen reprend la valeur réglée plus haut ; règle ici le bas et le haut. Le tableau part tel quel dans l'étude.</div>
+  <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:13px;margin-bottom:8px">
+   <label>Bas <input type="number" id="roi-i-scen_bas" min="0" step="0.5" value="${c.scen_bas==null?'':c.scen_bas}" oninput="roiSet('scen_bas',this.value,'i')" style="width:70px;padding:3px 6px;border:1px solid var(--line);border-radius:7px;text-align:right;font-weight:700"> %</label>
+   <label>Haut <input type="number" id="roi-i-scen_haut" min="0" step="0.5" value="${c.scen_haut==null?'':c.scen_haut}" oninput="roiSet('scen_haut',this.value,'i')" style="width:70px;padding:3px 6px;border:1px solid var(--line);border-radius:7px;text-align:right;font-weight:700"> %</label>
+  </div>
+  <div id="roi-scen-t"></div></div>`:'';
+ roiCalc();
+}
+function roiSet(k,v,src){
+ const x=parseFloat(String(v).replace(',','.'));
+ ROI.cfg[k]=isFinite(x)?x:0;
+ const autre=document.getElementById((src==='r'?'roi-i-':'roi-r-')+k);
+ if(autre){if(src==='i'&&x>parseFloat(autre.max))autre.max=x;autre.value=ROI.cfg[k];}
+ roiCalc();
+}
+function roiOff(id,coupe){
+ ROI.cfg.off=ROI.cfg.off||{};
+ if(coupe)ROI.cfg.off[id]=true;else delete ROI.cfg.off[id];
+ const e=document.getElementById('roi-c-'+id);if(e)e.classList.toggle('off',!!coupe);
+ roiCalc();
+}
+function roiPanierMode(m){ROI.cfg.panier_mode=(m==='detail'?'detail':'simple');roiDessiner();}
+function roiMotif(i,k,v){ROI.cfg.motifs[i][k]=(k==='label')?v:(parseFloat(String(v).replace(',','.'))||0);roiCalc();}
+function roiMesure(k,v){const x=parseFloat(String(v).replace(',','.'));(ROI.cfg.mesures=ROI.cfg.mesures||{})[k]=isFinite(x)?x:null;}
+function roiCalc(){
+ const prod=roiProd(),D=ROI_DEF[prod],coul=window.ROI_COULEURS||{};
+ const r=window.ROI_MOTEURS[prod](ROI.cfg);
+ const sm=document.getElementById('roi-somme');
+ if(sm){
+  const somme=(ROI.cfg.motifs||[]).reduce((t,m)=>t+(Number(m.part)||0),0);
+  sm.innerHTML=(ROI.cfg.panier_mode==='simple'||Math.round(somme)===100)?roiEur(r.valeur_opp)+' de CA par client sauvé'
+   :'<span style="color:var(--warn)">parts : '+roiFmt(somme)+' % (ramenées à 100 %)</span>';
+ }
+ document.getElementById('roi-gain').textContent=roiEur(r.gain_an);
+ const bx=document.getElementById('roi-base-x');
+ if(bx)bx.textContent=(r.sur_marge?'marge':'chiffre d\'affaires')+' + temps et coûts évités';
+ const U=D.unite,sv=r.seuil_ventes_mois;
+ const sy=document.getElementById('roi-synth');
+ if(sy)sy.innerHTML=sv!=null
+  ?'Rentabilisé avec <b style="font-size:15px;color:#F7A8CB">'+roiFmt(sv)+' '+(sv>1?U[1]:U[0])+' par mois</b>'
+   +(r.seuil_pct_demandes!=null?' — '+(r.seuil_pct_demandes<0.1?'moins de 0,1':roiFmt(r.seuil_pct_demandes,1))+' % des '+roiFmt(r.demandes_mois)+' '+D.demandes:'')
+   +'.<br>'+htmlSafe(D.nom)+' en vise <b>'+roiNb(r.ventes_mois)+'</b>'+(r.multiple_seuil>=2?', soit '+roiFmt(Math.floor(r.multiple_seuil))+' fois le seuil':'')
+   +'. Panier moyen '+roiEur(r.panier_moyen)+', investissement '+roiEur(r.cout_mois)+' HT / mois.'
+  :'Renseigne un tarif et un panier pour calculer le seuil de rentabilité.';
+ const st=document.getElementById('roi-scen-t');
+ if(st&&window.ROI_SCENARIOS){
+  const sc=window.ROI_SCENARIOS(window.ROI_MOTEURS[prod],ROI.cfg,(window.ROI_SCEN_DEF||{})[prod]);
+  if(sc){
+   const C=sc.colonnes,pcs=v=>roiFmt(v,(v<10&&v%1)?1:0)+' %';
+   const ex=v=>roiFmt(Math.round(v))+' €';   // à l'euro près : le tableau se vérifie à la calculette
+   const eu=v=>'<span style="'+(v<0?'color:var(--danger)':'')+'">'+(v<0?'− ':'')+ex(Math.abs(v))+'</span>';
+   const lig=(l,f,gras)=>'<tr'+(gras?' style="font-weight:700"':'')+'><td style="text-align:left;padding:4px 6px 4px 0">'+l+'</td>'+C.map(x=>'<td style="text-align:right;padding:4px 8px;'+(x.id==='moyen'?'background:var(--accent-soft)':'')+'">'+f(x)+'</td>').join('')+'</tr>';
+   st.innerHTML='<table style="width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums"><tr><th></th>'+C.map(x=>'<th style="text-align:right;padding:4px 8px;font-size:11px;'+(x.id==='moyen'?'background:var(--accent-soft);color:var(--accent)':'color:var(--ink-soft)')+'">'+x.label+'</th>').join('')+'</tr>'
+    +lig(htmlSafe(sc.label),x=>pcs(x.valeur))
+    +lig(U[1].charAt(0).toUpperCase()+U[1].slice(1)+' en plus par mois',x=>roiNb(x.ventes_mois))
+    +lig('CA généré par mois',x=>ex(x.ca_mois))
+    +lig('Investissement mensuel',x=>ex(x.cout_mois))
+    +lig('Gain ou perte par mois',x=>eu(x.gain_mois),true)
+    +lig('Gain ou perte par an',x=>eu(x.gain_an),true)+'</table>'
+    +'<div class="roi-s-x" style="margin-top:6px">Gain des ventes seules'+(r.sur_marge?', sur la marge':', sur le chiffre d\'affaires')+' ; le temps rendu s\'ajoute dans tous les scénarios.</div>';
+   const ss=document.getElementById('roi-scen-seuil');
+   if(ss)ss.textContent=sc.seuil===0?'rentable dans les trois cas':(sc.seuil!=null?'rentable dès '+pcs(sc.seuil):'jamais rentable sur cette plage');
+  }
+ }
+ r.leviers.forEach(function(l){const e=document.getElementById('roi-g-'+l.id);if(e)e.textContent=l.actif?'+ '+roiEur(l.gain_an)+' / an':'non inclus';});
+ const act=r.leviers.filter(l=>l.actif&&l.gain_an>0);
+ document.getElementById('roi-pile').innerHTML=act.map(l=>`<i style="flex:${Math.max(1,Math.round(l.gain_an))};background:${coul[l.id]||'#999'}" title="${htmlSafe(l.label)}"></i>`).join('');
+ document.getElementById('roi-leviers').innerHTML=act.map(l=>`<div class="roi-lv"><span><i style="background:${coul[l.id]||'#999'}"></i>${htmlSafe(l.label)}</span><b>${roiEur(l.gain_an)}</b></div>`).join('');
+ const L=(D.lignes(r)||[]).filter(Boolean).concat([
+  ['CA généré',roiEur(r.ca_an)+' / an'],
+  ['Marge',roiEur(r.marge_an)+' / an'],
+  ['Temps libéré',roiFmt(r.heures_an)+' h / an'+(r.etp>=0.1?' · '+roiFmt(r.etp,1)+' ETP':'')],
+  ['Gain net',roiEur(r.gain_net_mois)+' / mois'],
+  ['Coût',roiEur(r.cout_mois)+' / mois · '+roiEur(r.cout_an1)+' an 1'],
+  ['ROI',roiX(r.roi)+((r.payback_jours!=null&&r.roi>=1)?' · rentabilisé en '+roiFmt(r.payback_jours)+' j':'')],
+  ['Même divisé par 2',roiX(r.roi_prudent)],
+  ['Abonnement payé dès le',r.jour_rentable!=null?(r.jour_rentable===1?'1er':roiFmt(r.jour_rentable)+'ᵉ')+' jour du mois':'—'],
+  ['Gain net sur 3 ans',roiEur(r.gain_net_3ans)]
+ ]);
+ if(r.sites>1)L.push(['Gain par site',roiEur(r.gain_par_site_an)+' / an']);
+ document.getElementById('roi-lignes').innerHTML=L.map(x=>`<div class="roi-l"><span>${htmlSafe(x[0])}</span><b>${htmlSafe(x[1])}</b></div>`).join('');
+}
+async function roiGenerer(){
+ const client=(ROI.client||'').trim();
+ if(!client){toast('Renseigne le nom du client : il figure sur la couverture');document.getElementById('roi-client').focus();return;}
+ const b=document.getElementById('roi-go');b.disabled=true;b.textContent='⏳ Génération…';
+ try{
+  const r=await api('/api/roi',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({client:client,destinataire:ROI.destinataire||null,config:ROI.cfg,jeton:ROI.jeton||undefined,
+    liste_id:ROI.liste_id||undefined,cle_fiche:ROI.cle_fiche||undefined})});
+  const d=await r.json();
+  if(!r.ok||d.erreur)throw new Error(d.erreur||('HTTP '+r.status));
+  ROI.jeton=d.jeton;ROI.url=d.url;
+  roiAfficherLien(d.info||'Étude créée — valable '+(d.jours_validite||30)+' jours.');
+ }catch(e){toast('Étude non générée : '+e.message);}
+ finally{b.disabled=false;b.textContent=ROI.jeton?'💾 Mettre à jour l\'étude (même lien)':'📄 Générer l\'étude client';}
+}
+function roiAfficherLien(info){
+ const u=ROI.url;
+ document.getElementById('roi-res').innerHTML=`<div class="roi-ok">✅ ${htmlSafe(info)}
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+   <a class="act act-call" style="text-decoration:none" href="${htmlSafe(u)}?apercu=1&print=1" target="_blank">⬇️ PDF</a>
+   <a class="act act-call" style="text-decoration:none" href="${htmlSafe(u)}?apercu=1" target="_blank">👁 Voir</a>
+   <button class="act act-copy" onclick="navigator.clipboard.writeText(decodeURIComponent('${jsArg(u)}'));toast('Lien copié ✓')">📋 Lien</button>
+   <button class="act act-call" onclick='ouvrirEnvoiPrez(${JSON.stringify({jeton:ROI.jeton,client:ROI.client||''}).replace(/'/g,"&#39;").replace(/</g,"\\u003c")})'>📤 Envoyer</button>
+  </div>
+  <div style="color:#B9B2E0;margin-top:6px">Le lien est suivi : alerte Slack à la 1re ouverture. Le PDF s'ouvre dans la fenêtre d'impression → « Enregistrer au format PDF ».</div></div>`;
+}
+// « Voir le document » enregistre l'étude (création ou mise à jour du même lien) puis l'ouvre en
+// aperçu interne : la page client est rendue côté serveur, il n'y a pas d'aperçu sans lien.
+async function roiApercu(){
+ if(!(ROI.client||'').trim()){toast('Renseigne d\'abord le nom du client');return;}
+ const w=window.open('about:blank','_blank');
+ await roiGenerer();
+ if(ROI.url&&w)w.location=ROI.url+'?apercu=1';else if(w)w.close();
+}
+async function ouvrirRoiEdition(jeton){
+ try{
+  await roiCharger();
+  const r=await api('/api/roi?jeton='+encodeURIComponent(decodeURIComponent(jeton)));const d=await r.json();
+  if(d.erreur)throw new Error(d.erreur);
+  const cfg=d.config||roiDefaut('budy','concession');
+  if(!ROI_DEF[cfg.produit])cfg.produit='budy';
+  ROI={cfg:cfg,client:d.client||'',destinataire:d.destinataire||'',jeton:d.jeton,url:d.url};
+  nav('roi',null);
+  roiDessiner();
+  roiAfficherLien('Étude rouverte — les modifications se publient sur le même lien.');
+ }catch(e){toast('Étude illisible : '+e.message);}
 }
 
 // ── Base de connaissance ──────────────────────────────────────────────────
@@ -8548,7 +9416,7 @@ async function chargerMesPrez(){
    return `<div style="background:var(--card);border:1px solid var(--line);${ouv?'border-left:3px solid var(--danger);':''}border-radius:10px;padding:13px 15px;margin-bottom:9px">
     <div style="display:flex;gap:9px;align-items:baseline;flex-wrap:wrap">
      <strong style="font-size:14.5px;min-width:150px">${htmlSafe(p.client||'—')}</strong>
-     <span class="badge">${htmlSafe(nomModule(p.module))}</span>
+     <span class="badge">${htmlSafe(nomDoc(p))}</span>
      ${ouv?`<span class="badge b-signal">👀 ouverte ${ouv}×${p.derniere_ouverture?' · '+htmlSafe(tempsRelEngag(p.derniere_ouverture)):''}</span>`
           :'<span style="font-size:12px;color:var(--ink-soft)">jamais ouverte</span>'}
      ${p.lecteurs_distincts>1?`<span class="badge b-signal">🔥 ${p.lecteurs_distincts} lecteurs</span>`:''}
@@ -8558,7 +9426,7 @@ async function chargerMesPrez(){
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;align-items:center">
      ${p.expiree?'':`<a class="act act-call" style="padding:2px 9px;font-size:11.5px;text-decoration:none" href="${htmlSafe(p.url)}?apercu=1" target="_blank" title="Aperçu interne — non compté">👁 Voir</a>
      <button class="act act-copy" style="padding:2px 9px;font-size:11.5px" onclick="navigator.clipboard.writeText(decodeURIComponent('${jsArg(p.url)}'));toast('Lien copié ✓')">📋 Copier</button>`}
-     <button class="act act-copy" style="padding:2px 9px;font-size:11.5px" onclick="ouvrirEditeur('${jsArg(p.jeton)}')" title="Corriger les textes et republier sur le même lien">✏️ Modifier</button>
+     <button class="act act-copy" style="padding:2px 9px;font-size:11.5px" onclick="${p.module==='roi'?'ouvrirRoiEdition':'ouvrirEditeur'}('${jsArg(p.jeton)}')" title="${p.module==='roi'?'Rouvrir le simulateur et republier sur le même lien':'Corriger les textes et republier sur le même lien'}">✏️ Modifier</button>
      ${p.expiree?'':`<button class="act act-call" style="padding:2px 9px;font-size:11.5px" onclick='ouvrirEnvoiPrez(${JSON.stringify({jeton:p.jeton,client:p.client||'',destinataires:p.destinataires||[]}).replace(/'/g,"&#39;").replace(/</g,"\\u003c")})' title="RCS avec bascule SMS, ou email — chaque destinataire reçoit son propre lien">📤 Envoyer</button>`}
      ${p.liste_id?`<button class="act" style="padding:2px 9px;font-size:11.5px" onclick="ficheDepuisPrez(${p.liste_id},'${jsArg(p.cle_fiche||'')}')" title="Rouvrir la fiche du prospect dans sa liste">🚀 Fiche client</button>`:''}
      <button class="act" style="padding:2px 9px;font-size:11.5px" onclick="supprimerPrez('${jsArg(p.jeton)}','${jsArg(p.client||'')}')" title="Supprimer l'analyse — le lien cesse immédiatement de fonctionner">🗑</button>
@@ -11482,7 +12350,9 @@ function produitConcurrent(nom){
  if(R.some(function(x){return n.indexOf(x)>=0;}))return 'soreach';
  return null;
 }
-function nomModule(p){return ({soview:'Soview',soconnect:'SoConnect',soreach:'SoReach SMS/RCS',generique:'Générique',tous:'Générique (les 3 volets)'})[p]||p;}
+// Libellé d'un document : une étude ROI précise son produit (Budy Auto, Soview, SMS / RCS).
+function nomDoc(p){return (p&&p.module==='roi')?('💶 ROI '+(({budy:'Budy Auto',soconnect:'SoConnect',soview:'Soview',soreach:'SMS / RCS'})[p.produit]||'Budy Auto')):nomModule(p&&p.module);}
+function nomModule(p){return ({roi:'💶 Étude ROI',soview:'Soview',soconnect:'SoConnect',soreach:'SoReach SMS/RCS',generique:'Générique',tous:'Générique (les 3 volets)'})[p]||p;}
 function tagsAngleHtml(e,i){
  var dom=(function(){var sg=sigLk(e);var c=concSig(sg);var pc=c?produitConcurrent(c):null;return pc||produitDominant(e);})();
  var actif=e.angle||dom;

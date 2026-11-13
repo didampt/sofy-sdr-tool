@@ -10,7 +10,10 @@
 // Publique par jeton non devinable (12 caractères aléatoires), noindex : jamais référencée.
 
 import { sql } from './db.js';
-import { imagesDe, visuelsInstit } from './kb-visuels.js';
+import { imagesDe, visuelsInstit, preuvesVisuels } from './kb-visuels.js';
+import { blocsUtilisables } from './kb-sales.js';
+import { casClient } from './roi-page.js';
+import { pageEtude, produitDe } from './roi-produits.js';
 import crypto from 'crypto';
 
 export const config = { maxDuration: 60 };
@@ -1638,7 +1641,7 @@ export default async function handler(req, res) {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               text: premiere
-                ? `👀 *${row.client || 'Un prospect'}* : ${quiLit ? `*${quiLit}* vient d'ouvrir` : 'quelqu\'un vient d\'ouvrir'} l'analyse Sofy (${row.module || ''}).\n` +
+                ? `👀 *${row.client || 'Un prospect'}* : ${quiLit ? `*${quiLit}* vient d'ouvrir` : 'quelqu\'un vient d\'ouvrir'} ${row.module === 'roi' ? "l'étude de rentabilité" : `l'analyse Sofy (${row.module || ''})`}.\n` +
                   `Préparée par ${row.sdr || '?'}${(!quiLit && row.destinataire) ? ` · envoyée à ${row.destinataire}` : ''} · c'est le moment de rappeler.`
                 : `🔥 *${row.client || 'Un prospect'}* : ${quiLit ? `*${quiLit}* lit l'analyse à son tour` : `une ${connus.length + 1}ᵉ personne lit l'analyse`}${(!quiLit && row.destinataire) ? ` (lien envoyé à ${row.destinataire})` : ''}.\n` +
                   `Le document circule en interne — ${row.sdr || '?'}, appelle maintenant.`,
@@ -1656,6 +1659,39 @@ export default async function handler(req, res) {
               ${'Présentation ' + (row.module || '') + ' — ' + (premiere ? 'première ouverture' : 'nouveau lecteur')}, 'système', NOW())`;
         } catch (_) {}
       }
+    }
+
+    // 💶 Étude de rentabilité Budy (simulateur ROI) : même lien, même suivi, autre rendu.
+    if (doc.type === 'roi') {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+      // Preuve sociale lue dans la base commune aux prez (kb_sales + kb_visuels). Jamais bloquant :
+      // si la base ne répond pas, l'étude sort sans cette page plutôt que de ne pas sortir.
+      const preuves = {};
+      const cfg = doc.config || {};
+      const auto = produitDe(cfg) === 'budy';
+      const plat = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      // Budy Auto parle d'automobile ; Soview et SoReach suivent le secteur du lead s'il est connu.
+      const secteur = auto ? (cfg.profil === 'pieces' ? 'distribution pièces détachées automobiles' : 'automobile concession garage pièces')
+        : String(cfg.secteur || '');
+      const motsSecteur = plat(secteur).split(/[^a-z0-9]+/).filter(m => m.length > 3);
+      try {
+        const blocs = await blocsUtilisables(auto ? 'soconnect' : produitDe(cfg), secteur);
+        const cas = blocs.filter(b => b.type === 'cas_client');
+        const proche = b => { const t = plat(String(b.secteur || '') + ' ' + String(b.titre || '')); return auto ? /auto|garage|concession|piece/.test(t) : motsSecteur.some(m => t.includes(m)); };
+        // Budy Auto : un cas automobile ou rien. Les autres : le cas du secteur, sinon le premier validé.
+        // puis celui rangé sous le même produit (ex. Groupe Kiosque pour Soview), puis le premier.
+        preuves.cas = casClient(cas.find(proche) || (auto ? null : (cas.find(b => b.module === produitDe(cfg)) || cas[0])) || null);
+      } catch (_) {}
+      try {
+        const v = await preuvesVisuels(auto ? {
+          mots: ['auto', 'garage', 'concession', 'piece', 'carrosserie', 'marimax', 'gbh', 'ad distribution', 'peugeot', 'renault', 'toyota', 'citroen', 'stellantis'],
+          motsPhoto: ['garage', 'garagiste', 'concession', 'atelier', 'mecanicien', 'automobile', 'voiture', 'piece']
+        } : { mots: motsSecteur, motsPhoto: motsSecteur });
+        preuves.logos = v.logos; preuves.illustration = v.illustration;
+      } catch (_) {}
+      return res.status(200).send(pageEtude(doc, { jeton, cree_le: row.created_at }, sdr, interne, LIEN_DEMO(), preuves));
     }
 
     // Les images des visuels posés : une seule requête, et seulement celles réellement utilisées.

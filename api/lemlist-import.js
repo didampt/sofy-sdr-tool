@@ -39,37 +39,12 @@ function parseCsv(texte) {
   return lignes;
 }
 
-export default async function handler(req, res) {
-  const user = verifierToken(req);
-  if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
-  if (req.method !== 'GET') return res.status(405).json({ erreur: 'GET uniquement' });
-
-  const apiKey = process.env.LEMLIST_API_KEY;
-  if (!apiKey) return res.status(500).json({ erreur: 'LEMLIST_API_KEY manquante dans Vercel' });
-  const auth = 'Basic ' + Buffer.from(':' + apiKey).toString('base64');
-  const headers = { 'Authorization': auth };
-  const action = String((req.query || {}).action || '');
-
-  try {
-    if (action === 'campagnes') {
-      // v2 renvoie { campaigns:[...] , pagination } ; l'ancienne API un tableau nu — défensif.
-      const r = await fetch('https://api.lemlist.com/api/campaigns?version=v2&limit=100&sortBy=createdAt&sortOrder=desc', { headers });
-      const d = await r.json().catch(() => null);
-      if (!r.ok || !d) return res.status(502).json({ erreur: 'Lemlist campagnes : ' + r.status });
-      const brut = Array.isArray(d) ? d : (d.campaigns || []);
-      const campagnes = brut.map(c => ({ id: c._id || c.id, nom: c.name || c.nom || c._id, statut: c.status || '' }))
-        .filter(c => c.id);
-      return res.status(200).json({ campagnes });
-    }
-
-    if (action === 'leads') {
-      const campagne = String(req.query.campagne || '').trim();
-      if (!campagne) return res.status(400).json({ erreur: 'campagne requise' });
-      const r = await fetch(`https://api.lemlist.com/api/campaigns/${encodeURIComponent(campagne)}/export/leads?state=all`, { headers });
-      const texte = await r.text();
-      if (!r.ok) return res.status(502).json({ erreur: 'Lemlist export : ' + r.status, detail: texte.slice(0, 150) });
-      const lignes = parseCsv(texte);
-      if (lignes.length < 2) return res.status(200).json({ leads: [], nb: 0, colonnes: lignes[0] || [] });
+// Le CSV d'export d'une campagne → des leads normalisés. Extrait du handler (13/11/2026) pour
+// servir aussi à l'index de recherche des leads (/api/leads) : un seul mapping des colonnes
+// Lemlist, y compris le 2e format « scan Google Maps ». Aucune troncature ici.
+export function leadsDuCsv(texte) {
+  const lignes = parseCsv(texte);
+  if (lignes.length < 2) return { leads: [], sansEmail: 0, entetes: lignes[0] || [], nbLignes: Math.max(0, lignes.length - 1) };
       const entetes = lignes[0].map(h => String(h || '').trim().toLowerCase());
       const idx = (noms) => { for (const n of noms) { const i = entetes.indexOf(n); if (i >= 0) return i; } return -1; };
       // _id du lead Lemlist : la SEULE adresse fiable pour le push retour (beaucoup de leads
@@ -131,8 +106,41 @@ export default async function handler(req, res) {
       // nb_lignes = lignes de données du CSV AVANT normalisation : si nb_lignes > nb, des lignes
       // sont jetées (identité vide) ; si nb_lignes < ce que montre Lemlist, le manque est côté
       // export Lemlist ou parseur (guillemet non échappé qui avale des lignes) — diag 29/09.
+  return { leads, sansEmail, entetes, nbLignes: lignes.length - 1 };
+}
+
+export default async function handler(req, res) {
+  const user = verifierToken(req);
+  if (!user) return res.status(401).json({ erreur: 'Connexion requise' });
+  if (req.method !== 'GET') return res.status(405).json({ erreur: 'GET uniquement' });
+
+  const apiKey = process.env.LEMLIST_API_KEY;
+  if (!apiKey) return res.status(500).json({ erreur: 'LEMLIST_API_KEY manquante dans Vercel' });
+  const auth = 'Basic ' + Buffer.from(':' + apiKey).toString('base64');
+  const headers = { 'Authorization': auth };
+  const action = String((req.query || {}).action || '');
+
+  try {
+    if (action === 'campagnes') {
+      // v2 renvoie { campaigns:[...] , pagination } ; l'ancienne API un tableau nu — défensif.
+      const r = await fetch('https://api.lemlist.com/api/campaigns?version=v2&limit=100&sortBy=createdAt&sortOrder=desc', { headers });
+      const d = await r.json().catch(() => null);
+      if (!r.ok || !d) return res.status(502).json({ erreur: 'Lemlist campagnes : ' + r.status });
+      const brut = Array.isArray(d) ? d : (d.campaigns || []);
+      const campagnes = brut.map(c => ({ id: c._id || c.id, nom: c.name || c.nom || c._id, statut: c.status || '' }))
+        .filter(c => c.id);
+      return res.status(200).json({ campagnes });
+    }
+
+    if (action === 'leads') {
+      const campagne = String(req.query.campagne || '').trim();
+      if (!campagne) return res.status(400).json({ erreur: 'campagne requise' });
+      const r = await fetch(`https://api.lemlist.com/api/campaigns/${encodeURIComponent(campagne)}/export/leads?state=all`, { headers });
+      const texte = await r.text();
+      if (!r.ok) return res.status(502).json({ erreur: 'Lemlist export : ' + r.status, detail: texte.slice(0, 150) });
+      const { leads, sansEmail, entetes, nbLignes } = leadsDuCsv(texte);
       return res.status(200).json({ leads: leads.slice(0, 1000), nb: leads.length, sans_email: sansEmail,
-        colonnes: entetes, nb_lignes: lignes.length - 1, taille_csv: texte.length });
+        colonnes: entetes, nb_lignes: nbLignes, taille_csv: texte.length });
     }
 
     // ── Sonde superadmin : GET brut vers l'API Lemlist (diagnostic uniquement, lecture seule) ──

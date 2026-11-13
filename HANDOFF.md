@@ -1,4 +1,117 @@
-# HANDOFF — Reprise du travail (dernière mise à jour : 1er octobre 2026)
+# HANDOFF — Reprise du travail (dernière mise à jour : 13 novembre 2026)
+
+## 🎯 13 novembre 2026 — l'app se réorganise autour du LEAD + simulateur ROI à 4 produits (v404, poussé en prod le 13/11)
+
+Constat Didier : les sales prospectent et appellent dans Lemlist ; ici, ils viennent pour les
+documents client (prez, étude ROI). Trois chantiers, tous testés sur banc local seulement.
+
+**1. Menu** — groupe « Lead » (➕ Nouveau lead, 🎯 Mes leads, 🎨 Prez sales, 💶 ROI Budy Auto),
+🆕 Signups resté visible (validation des inscriptions), « 🧭 Prospection » repliable (Ma journée,
+Signaux, Nouvelle liste, Résultats, Historique, Archives, Appels, Statistiques), puis Réglages.
+Accueil = Mes leads (avant : Ma journée). nav() ouvre le groupe quand on y entre.
+
+**2. Leads** — api/leads.js (NOUVEAU). Un lead = une fiche ordinaire dans une liste personnelle
+« 🎯 Mes leads — <nom> » (criteres.mes_leads, créée au 1er appel). C'est ce qui évite toute
+réécriture : le front charge cette liste en silence (chargerListeEnSilence) et appelle
+completerFiche / completerMesures / genererPrez tels quels. Champs propres au lead : lead_id,
+lead_origine ('lemlist'|'manuel'), lead_campagne, date_lead.
+- Création : saisie manuelle (entreprise OU site obligatoire — c'est l'entreprise qu'on analyse)
+  ou import Lemlist. Même entreprise déjà présente (nom ou domaine) → fiche complétée, pas doublée.
+- Recherche Lemlist : l'API n'a PAS de recherche par nom, seulement un export CSV par campagne.
+  D'où un INDEX : tables PARESSEUSES lemlist_index + lemlist_index_etat, remplies campagne par
+  campagne (POST {action:'indexer'}, 3 de front, budget 40 s, le front relance tant qu'il reste
+  des campagnes ; une campagne indexée depuis < 6 h n'est pas relue). Recherche SQL sur une
+  colonne normalisée sans accents (nom, entreprise, email) ou sur les 9 derniers chiffres du
+  téléphone. leadsDuCsv() extrait de lemlist-import.js (même mapping, 2 formats).
+- ⚠️ JAMAIS TESTÉ CONTRE LE VRAI LEMLIST NI LA VRAIE BASE : seulement la liste des 100 campagnes
+  les plus récentes est lue (pas de pagination) ; vérifier la durée du 1er indexage en prod.
+- Les documents d'un lead = /api/prez?liste_id=… (clé = e.nom). Une étude ROI lancée depuis un
+  lead porte liste_id + cle_fiche et s'y range ; dans la vue liste classique elle apparaîtra donc
+  aussi comme une carte « 🎨 Audit client » (✏️ y ouvrirait l'éditeur de prez : à corriger si gênant).
+
+**3. ROI Budy Auto** — api/roi-page.js (moteur + étude client), api/roi.js, rendu par api/p.js quand
+contenu.type === 'roi' (table prez, module 'roi' : suivi d'ouverture, alerte Slack, 📤 Envoyer
+hérités). UNE SEULE source de calcul : /api/roi?script=1 sert calculerRoi().toString() au front —
+la fonction doit rester AUTONOME (aucune variable extérieure).
+- 8 leviers désactivables (config.off) : appels, messages, devis, atelier, revisions (TecRMI),
+  upsell (préconisation), identif (TecDoc + SIV), temps. Gain calculé sur la MARGE.
+- Tarif (business model en cours, Didier 13/11) : SoConnect Basic 389 € + module Budy Auto
+  Concession 249 € (TecDoc, TecRMI, Mecaplanning) ou Pièces 199 € (TecDoc, TecRMI, 500
+  interrogations de plaque, 1 000 messages RCS/WhatsApp ; au-delà = prix Sofy, 0,10 € par défaut,
+  prix de la plaque hors forfait inconnu → 0).
+- Défauts CALÉS pour afficher ≈ ×30 (concession) et ≈ ×25 (pièces) à ce tarif, à la demande de
+  Didier : toute retouche d'un défaut ou d'un prix déplace ces multiples.
+- Étude de 9 pages ; page 2 = synthèse « rentabilisé avec N ventes par mois » (modèle de la fiche
+  Arnoux : demandes → vente moyenne → investissement → seuil), seuil sur le CA par défaut
+  (config.seuil_base = 'marge' pour le lire sur la marge). Pages des leviers coupés retirées.
+- Chiffres de marché sourcés dans SOURCES_ROI ; Sandra AI / Diago / Alhena = CONCURRENTS (fiche
+  interne dans l'onglet, absente du PDF). Sandra AI arrête l'Europe (contrats finis fév. 2027).
+- PDF = impression navigateur (?print=1), A4 vérifié sous Chrome headless sur les 2 profils.
+
+- Preuve sociale = MÊME BASE que les prez (demande Didier 13/11) : la page « Ils l'ont fait » lit
+  le 1er bloc cas_client automobile de kb_sales (casClient() découpe intro / Avant / Résultats /
+  Verbatim / lien) et les logos type 'client' de kb_visuels, ceux du secteur auto d'abord
+  (preuvesVisuels(), 2 requêtes : descriptions puis seulement les images retenues). Couverture :
+  photo type 'ambiance' dont la description parle de garage/concession, sinon illustration SVG
+  intégrée. Dernière page : signature « Votre conseiller Sofy » (photo ou initiales, poste,
+  email, téléphone). Sans cas ni logo en base, la page saute. Étude = 10 pages.
+  ⚠️ Les logos (AD Distribution, Marimax, GBH, Peugeot, Renault, Toyota…) doivent être déposés
+  et VALIDÉS dans 🖼 Visuels (type client) : rien n'est embarqué dans le code.
+
+**4. Trois produits dans le simulateur (v404, suite du 13/11)** — onglet renommé « 💶 Simulateur ROI »,
+choix du produit en tête : Budy Auto, Soview, SoReach SMS / RCS. api/roi-produits.js (NOUVEAU) porte
+le catalogue PRODUITS (moteur, profils, champs acceptés, leviers), calculerSoview / calculerSoreach
+(AUTONOMES, servis au front par scriptMoteurs()), nettoyerConfig() et pageEtude() ; roi-page.js garde
+Budy Auto et exporte le gabarit commun (gabarit, pageSynthese, pagePreuve, blocFin, casClient).
+- Soview : pré-rempli par les MESURES du lead (leadRoi(id,'soview') recopie note, avis, concurrents,
+  position locale, requête, 3 premiers, taux de réponse, aperçu IA dans config.mesures → page « Ce
+  que nous avons mesuré »). SerpApi ne donne AUCUN volume : restent à saisir vues de la fiche, panier,
+  taux de transformation. La « hausse de visibilité » (+15 % par défaut) est une HYPOTHÈSE.
+- SoReach : base de contacts, campagnes/mois, clic, conversion. Prix du message INCONNU (0,08 € =
+  valeur d'attente à remplacer). Repères cités : Groupe Kiosque 85,7 % d'ouverture, 47 % de clic.
+- Ces deux études affichent ≈ ×2 par défaut (aucun multiple visé) : leur message est le SEUIL
+  (« rentabilisé avec N clients/ventes par mois »), en gros sur la couverture.
+- Coût horaire d'un conseiller : sa propre carte « 💼 Coût du temps de ses équipes » (demande Didier).
+- Menu : « 🎨 Prez sales » devient « 📚 Base de connaissance » (Réglages : contenus et cas clients,
+  logos et visuels, mon profil) ; « 📄 Documents » (sous Lead) = l'ancien « Mes présentations ». C'est
+  la MÊME vue view-prez : nav('docs') l'affiche, sousOngletPrez() choisit le mode et le bouton de menu.
+- /api/prez (listes) renvoie `produit` (contenu->>'produit') : nomDoc() écrit « 💶 ROI Soview ».
+- PAS FAIT : le document unique à chapitres (audit + ROI sur un même lien).
+
+**5. SoConnect + scénarios + panier moyen (v404, fin du 13/11)** — à partir du tableau de Romain.
+- Produit « SoConnect » (hors auto) : calculerSoconnect() reprend ses lignes — demandes, part non
+  traitée, prises en charge, conversion, panier, abonnement. Vérifié à l'euro : 540 / 10 % / 250 € /
+  349 € → −214, +1 001, +3 026 € par mois (1 %, 10 %, 25 %). Gain lu SUR LE CA par défaut, comme
+  son tableau et la fiche Arnoux (seuil_base 'ca' ; 'marge' applique la marge). Tarif par défaut
+  389 € (dit par Didier), alors que Romain et Arnoux utilisent 349 € : à trancher.
+- Scénarios Bas / Moyen / Haut sur TOUS les produits : scenariosEtude(calc, cfg, def) (roi-page.js,
+  AUTONOME, servie au front) fait varier UNE hypothèse (PRODUITS[x].scenario : conversion pour
+  SoConnect et Budy Auto, hausse de visibilité pour Soview, clic→achat pour SoReach), calcule le
+  gain des VENTES SEULES (r.gain_ventes_mois − coût) et le seuil de rentabilité par dichotomie.
+  Champs scen_bas / scen_haut ; le moyen = la valeur courante. Chaque étude a sa page « Trois
+  scénarios » (le tableau débordait de la page « calcul »), montants à l'euro près.
+- Budy Auto : « panier moyen » unique par défaut (panier_mode 'simple' : panier_moyen,
+  taux_conversion, marge_moyenne) ; 'detail' rouvre le tableau par motif d'appel. Défauts simples
+  calés pour retrouver ×30 / ×25. ⚠️ AUCUN panier, taux de conversion ni marge par défaut n'a de
+  source : hypothèses posées par l'assistant, dit à Didier le 13/11.
+
+**6. Décisions Didier du 13/11 au soir (appliquées avant le push)**
+- GAIN SUR LE CHIFFRE D'AFFAIRES pour tous les produits (config.seuil_base 'ca' par défaut ; 'marge'
+  reste disponible par le sélecteur « Gain et seuil calculés sur »). Les curseurs de marge sont
+  masqués tant qu'on calcule sur le CA.
+- Budy Auto : UN SEUL PANIER pilote toutes les ventes en mode simple (appels, messages, devis,
+  atelier, révisions, ventes additionnelles) ; il se règle en tête de la carte « Le client », comme
+  dans les trois autres simulateurs. Les montants par levier ne reviennent qu'en « détail par motif ».
+- Défauts Budy REDESCENDUS pour retrouver ×30 / ×25 sur le CA (ils donnaient ×73 / ×91) :
+  concession 100 appels/jour, 14 % de conversion, 15 messages/jour, 200 relances de révision ;
+  pièces 45 appels et 30 messages/jour, 12 % de conversion, 750 devis, 2 % de ventes additionnelles.
+  Sur la marge, ces mêmes défauts donnent ≈ ×13 et ≈ ×11.
+- Soview / SoReach / SoConnect affichent ≈ ×5, ×6 et ×4 sur le CA (aucun multiple visé).
+
+Bancs (scratchpad banc-roi) : serveur.mjs (app + CSP de prod + API simulées), calc.mjs (profils,
+autonomie du moteur, somme des leviers = gain), pdf.sh (PDF + planches PNG).
+À FAIRE avant d'envoyer une étude à un client : valider les défauts et les prix ; vérifier en prod
+l'indexage Lemlist, la création de lead, l'analyse et la génération de prez depuis un lead.
 
 ## 💸 1er octobre 2026 — compteur des crédits Claude + Opus 5 → Opus 5.5 (factures ≈ 30 €/jour)
 
