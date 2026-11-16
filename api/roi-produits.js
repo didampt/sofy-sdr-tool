@@ -18,7 +18,7 @@
 
 import {
   esc, NBSP, fmt, eur, eur2, ent, nb, roiX, p0, kpi, bulle, pageSynthese, pagePreuve, blocFin, gabarit,
-  PIED_ESTIMATION, PAGES_ETUDE, SOURCES_ROI, iphone, calculerRoi, PRESETS_ROI, COULEURS_ROI, pageRoi, scenariosEtude, tableScenarios, SCENARIO_BUDY
+  PIED_ESTIMATION, PAGES_ETUDE, SOURCES_ROI, iphone, carrouselCanaux, calculerRoi, PRESETS_ROI, COULEURS_ROI, pageRoi, scenariosEtude, tableScenarios, SCENARIO_BUDY
 } from './roi-page.js';
 
 // ── Soview ────────────────────────────────────────────────────────────────────────────────────
@@ -653,7 +653,7 @@ function pageSoconnect(doc, meta, sdr, apercu, lienDemo, preuves) {
    <div><i>3</i><span><b>Ouvert quand vos clients écrivent.</b> Le soir et le week-end, la demande est prise et attend votre équipe à l'ouverture.</span></div>
    <div><i>4</i><span><b>Rien ne se perd.</b> Chaque demande a un responsable, un statut et une relance.</span></div>
   </div>
-  <figure class="phs" style="margin:0;display:block">${iphone({ canal: 'whatsapp', nom: client, echelle: 0.82, fil: [
+  <figure class="phs" style="margin:0;display:block">${carrouselCanaux({ canaux: ['whatsapp', 'instagram', 'rcs'], nom: client, echelle: 0.82, fil: [
     { de: 'client', t: "Bonjour, vous avez ce modèle en stock ? J'en aurais besoin pour samedi.", h: '18:42' },
     { de: 'budy', t: 'Bonjour ! Je regarde ça pour vous. Pour quel usage, et à quel nom dois-je préparer le devis ?', h: '18:42' },
     { de: 'client', t: 'Pour un usage pro. Au nom de Martin SARL.', h: '18:44' },

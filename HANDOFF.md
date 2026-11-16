@@ -2164,3 +2164,12 @@ Trois règles qui en découlent, à ne plus jamais enfreindre :
   situation » (4 points + iPhone réduit, `echelle: .82`) est fusionnée sous « Ce que coûtent les demandes
   restées sans suite » (tableau à une ligne et chiffres de marché retirés). Pages : SoConnect 6 → 4,
   Soview 5 → 4, SoReach 5 → 4 ; Budy concession 8 et pièces 7 inchangés (pages pleines, à arbitrer).
+- v414 (16/11, demande Didier « affichage dynamique sur le lien web ») : carrousels d'iPhone sur le lien /p/<jeton>.
+  `iphone()` gère maintenant 4 canaux (`CANAUX` : whatsapp, instagram, rcs, sms ; classes .ip.ig / .ip.sms),
+  `filPourCanal(fil, canal)` adapte un même échange (carte → message, boutons → « Répondez 1 pour… » en
+  SMS), `carrouselCanaux({canaux, nom, fil, court, echelle…})` produit onglets + piste scroll-snap. Script
+  d'auto-défilement (4,5 s, stoppé au premier geste, seulement si visible, respecte prefers-reduced-motion)
+  dans `gabarit()` ; repli si `scrollTo` smooth est ignoré. Impression / PDF : onglets masqués, seul le
+  PREMIER canal reste (mise en page et nombre de pages inchangés). Usages : SoConnect (WhatsApp / Instagram
+  / RCS), Budy relances devis / atelier / révisions et relance proactive (WhatsApp / RCS / SMS) ; titre
+  « sur WhatsApp, RCS et SMS ». Pas de carrousel sur « Budy en conversation » ni sur la page « vendre juste ».

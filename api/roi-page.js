@@ -357,8 +357,10 @@ export function bulle(canal, emetteur, fil, boutons) {
 // msg : { de: 'client' | 'budy', t, h } (bulle) ou { de: 'budy', carte: { titre, texte, boutons: [] }, h }
 //        et, pour WhatsApp, { de: 'budy', t, h, boutons: [] } (réponses rapides sous la bulle).
 // Côté client = à droite ; côté entreprise = à gauche, comme sur le téléphone du client.
+export const CANAUX = { whatsapp: 'WhatsApp', instagram: 'Instagram', rcs: 'RCS', sms: 'SMS' };
 export function iphone(o) {
-  const wa = o.canal === 'whatsapp';
+  const canal = CANAUX[o.canal] ? o.canal : 'rcs';
+  const wa = canal === 'whatsapp';
   const court = o.court ? Math.round(o.court) : 0;
   const zoom = o.echelle && o.echelle < 1 ? `zoom:${o.echelle};` : '';   // hauteur d'écran en px : on ne montre que le haut du téléphone
   const ini = esc(String(o.nom || '?').trim().charAt(0).toUpperCase());
@@ -368,15 +370,48 @@ export function iphone(o) {
     if (m.carte) return `<div class="ip-c"><i class="ip-ci"></i><b>${esc(m.carte.titre)}</b><p>${esc(m.carte.texte)}</p>${(m.carte.boutons || []).map(x => `<span>${esc(x)}</span>`).join('')}${hh}</div>`;
     return `<div class="ip-m ${out ? 'out' : 'in'}">${esc(m.t)}${hh}</div>${(m.boutons || []).length ? `<div class="ip-r">${m.boutons.map(x => `<span>${esc(x)}</span>`).join('')}</div>` : ''}`;
   };
-  return `<div class="ip ${wa ? 'wa' : 'rcs'}${court ? ' court' : ''}"${(court || zoom) ? ` style="${court ? `--ih:${court}px;` : ''}${zoom}"` : ''} role="img" aria-label="Exemple de conversation ${wa ? 'WhatsApp' : 'RCS'}">
+  const cls = { whatsapp: 'wa', instagram: 'ig', rcs: 'rcs', sms: 'sms' }[canal];
+  const sousDefaut = { whatsapp: 'compte professionnel', instagram: 'compte professionnel', rcs: 'agent vérifié', sms: 'SMS' }[canal];
+  const saisie = { whatsapp: 'Message', instagram: 'Message…', rcs: 'Message RCS', sms: 'SMS' }[canal];
+  return `<div class="ip ${cls}${court ? ' court' : ''}"${(court || zoom) ? ` style="${court ? `--ih:${court}px;` : ''}${zoom}"` : ''} role="img" aria-label="Exemple de conversation ${CANAUX[canal]}">
   <div class="ip-s"><i class="ip-isl"></i>
    <div class="ip-st"><b>9:41</b><span class="ip-ic"><i></i><i></i><i></i><u></u></span></div>
    <div class="ip-hd"><span class="ip-bk">‹</span><span class="ip-av">${ini}</span>
-    <span class="ip-who"><b>${esc(o.nom)}${wa ? '' : ' <u>✓</u>'}</b><small>${esc(o.sous || (wa ? 'compte professionnel' : 'agent vérifié'))}</small></span></div>
+    <span class="ip-who"><b>${esc(o.nom)}${(wa || canal === 'sms') ? '' : ' <u>✓</u>'}</b><small>${esc(o.sous || sousDefaut)}</small></span></div>
    <div class="ip-bd"><div class="ip-day">${esc(o.jour || "Aujourd'hui")}</div>${o.fil.map(bulle1).join('')}</div>
    ${(o.puces || []).length ? `<div class="ip-q">${o.puces.map(x => `<span>${esc(x)}</span>`).join('')}</div>` : ''}
-   ${court ? '' : `<div class="ip-in"><span>${wa ? 'Message' : 'Message RCS'}</span></div>`}
+   ${court ? '' : `<div class="ip-in"><span>${saisie}</span></div>`}
   </div></div>`;
+}
+
+// Adapte un fil de messages à un canal : le même message, dans la forme que ce canal sait afficher.
+// WhatsApp / Instagram : une carte devient un message à boutons. SMS : ni carte ni bouton, les choix
+// deviennent une consigne de réponse. RCS : tel quel.
+export function filPourCanal(fil, canal) {
+  if (canal === 'rcs') return fil;
+  return fil.map(m => {
+    const base = { de: m.de, h: m.h };
+    let t = m.carte ? `${m.carte.titre}. ${m.carte.texte}` : m.t;
+    let boutons = m.carte ? (m.carte.boutons || []) : (m.boutons || []);
+    if (canal === 'sms') {
+      if (boutons.length) t += ` Répondez ${boutons.map((b, i) => `${i + 1} pour « ${b} »`).join(' ou ')}.`;
+      return Object.assign(base, { t });
+    }
+    return Object.assign(base, { t }, boutons.length ? { boutons } : {});
+  });
+}
+
+// Carrousel de téléphones (lien web) : le même échange sur plusieurs canaux. Défile seul (script du
+// gabarit), onglets cliquables, balayage au doigt. Imprimé / PDF : seul le premier téléphone reste.
+// o : { nom, fil, canaux:[...], jour, court, echelle, sous:{canal:texte}, legendes:{canal:texte} }
+export function carrouselCanaux(o) {
+  const canaux = (o.canaux || ['whatsapp', 'rcs']).filter(c => CANAUX[c]);
+  const premier = canaux[0];
+  const phone = c => iphone({ canal: c, nom: o.nom, fil: filPourCanal(o.fil, c), jour: o.jour, court: o.court, echelle: o.echelle, sous: (o.sous || {})[c] });
+  return `<div class="car" data-car>
+  <div class="car-tabs" role="tablist">${canaux.map((c, i) => `<button type="button" role="tab" class="car-t${i ? '' : ' on'}" data-i="${i}">${CANAUX[c]}</button>`).join('')}</div>
+  <div class="car-vp">${canaux.map((c, i) => `<div class="car-s" data-i="${i}">${phone(c)}${(o.legendes || {})[c] ? `<p class="car-l">${esc(o.legendes[c])}</p>` : ''}</div>`).join('')}</div>
+ </div>`;
 }
 
 export function casClient(bloc) {
@@ -874,6 +909,13 @@ h2{font-size:32px;max-width:22ch}
 .ip-r span{text-align:center;font-size:9.5px;font-weight:700;padding:5px 4px;border-radius:7px;background:#fff;color:#0A7CFF;box-shadow:0 .5px 1px rgba(0,0,0,.15)}
 .ip.wa .ip-bd{background:#EFE7DE}
 .ip.wa .ip-m.in{background:#fff}.ip.wa .ip-m.out{background:#D9FDD3}
+.ip.ig .ip-bd,.ip.sms .ip-bd{background:#fff}
+.ip.ig .ip-m{border-radius:15px;padding:6px 10px 5px}.ip.ig .ip-m.in{background:#EFEFEF}.ip.ig .ip-m.out{background:linear-gradient(135deg,#7B5CF0,#C13584);color:#fff}
+.ip.ig .ip-hd{background:#fff}.ip.ig .ip-av{background:linear-gradient(45deg,#F9A03F,#E1306C,#833AB4)}
+.ip.ig .ip-r span{border-radius:14px;color:#833AB4;box-shadow:none;border:.5px solid #D9C5EE}
+.ip.ig .ip-in span{border-radius:16px}
+.ip.sms .ip-hd{background:#F6F6F7;flex-direction:column;gap:1px;padding:4px 9px 6px;text-align:center}.ip.sms .ip-bk,.ip.sms .ip-av{display:none}
+.ip.sms .ip-m{border-radius:15px}.ip.sms .ip-m.in{background:#E9E9EB}.ip.sms .ip-m.out{background:#34C759;color:#fff}
 .ip.rcs .ip-bd{background:#fff}
 .ip.rcs .ip-m.in{background:#F1EFFD}.ip.rcs .ip-m.out{background:#5B4FE9;color:#fff}
 .ip-c{align-self:flex-start;width:90%;border-radius:11px;border:.5px solid #DAD6F2;background:#fff;overflow:hidden;font-size:10px;padding-bottom:5px}
@@ -886,6 +928,14 @@ h2{font-size:32px;max-width:22ch}
 .ip-in{padding:5px 9px 12px;background:#fff;border-top:.5px solid rgba(0,0,0,.1)}
 .ip-in span{display:block;font-size:9.5px;color:#9CA3AF;padding:5px 10px;border-radius:13px;border:.5px solid #D1D5DB}
 /* iPhone « court » : le haut du téléphone, fondu vers le bas de la page */
+.car{width:250px;max-width:100%;margin:0 auto}
+.car-tabs{display:flex;gap:4px;justify-content:center;margin-bottom:6px}
+.car-t{font:700 11px/1 inherit;padding:6px 11px;border-radius:999px;border:1px solid #D6D1F2;background:#fff;color:#5B4FE9;cursor:pointer}
+.car-t.on{background:#5B4FE9;color:#fff;border-color:#5B4FE9}
+.car-vp{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.car-vp::-webkit-scrollbar{display:none}
+.car-s{flex:0 0 100%;scroll-snap-align:center;display:flex;flex-direction:column;align-items:center}
+.car-l{margin:8px 0 0;font-size:11px;color:#6B6790;text-align:center}
 .ip.court{padding-bottom:0;border-radius:38px 38px 0 0;margin:0 auto}
 .ip.court .ip-s{border-radius:30px 30px 0 0}
 .ip.court:after{content:"";position:absolute;left:0;right:0;bottom:0;height:42px;border-radius:0;background:linear-gradient(rgba(250,248,254,0),#FAF8FE 88%)}
@@ -987,6 +1037,7 @@ td:not(:first-child),th:not(:first-child){text-align:right;white-space:nowrap}
  :root{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
  body{background:#fff}
  .tools,.apercu{display:none!important}
+ .car-tabs{display:none!important}.car-vp{overflow:hidden}.car-s:not(:first-child){display:none!important}
  *{box-shadow:none!important}
  .page{width:210mm;height:297mm;min-height:0;margin:0;border-radius:0;padding:12mm 15mm 8mm;break-after:page;page-break-after:always;overflow:hidden}
  .page:last-of-type{break-after:auto;page-break-after:auto}
@@ -1004,6 +1055,18 @@ ${apercu ? `<div class="apercu">👁 Aperçu interne — cette visite n'est pas 
  var b=document.getElementById('pdf');
  if(b)b.addEventListener('click',function(){window.print();});
  if(/[?&]print=1/.test(location.search))setTimeout(function(){window.print();},500);
+ // Carrousels de téléphones : défilement automatique tant que le client ne les touche pas.
+ var reduit=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+ document.querySelectorAll('[data-car]').forEach(function(car){
+  var vp=car.querySelector('.car-vp'),tabs=car.querySelectorAll('.car-t'),n=tabs.length,cur=0,actif=false,vu=true,main=false;
+  function aller(i){cur=(i+n)%n;var x=cur*vp.clientWidth;vp.scrollTo({left:x,behavior:'smooth'});marque();setTimeout(function(){if(Math.abs(vp.scrollLeft-x)>2)vp.scrollTo({left:x,behavior:'auto'});},700);}
+  function marque(){tabs.forEach(function(t,k){t.classList.toggle('on',k===cur);});}
+  tabs.forEach(function(t,k){t.addEventListener('click',function(){main=true;aller(k);});});
+  var tmp;vp.addEventListener('scroll',function(){clearTimeout(tmp);tmp=setTimeout(function(){var k=Math.round(vp.scrollLeft/Math.max(1,vp.clientWidth));if(k!==cur){cur=k;marque();}},60);});
+  ['touchstart','pointerdown','wheel'].forEach(function(e){vp.addEventListener(e,function(){main=true;},{passive:true});});
+  if('IntersectionObserver' in window)new IntersectionObserver(function(es){vu=es[0].isIntersecting;}).observe(car);
+  if(!reduit)setInterval(function(){if(!main&&vu&&!document.hidden)aller(cur+1);},4500);
+ });
 })();
 </script>
 </body></html>`;
@@ -1047,6 +1110,8 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
     act('atelier') && 'rendez-vous non honorés', act('revisions') && 'révisions jamais proposées', act('upsell') && 'ventes jamais suggérées'].filter(Boolean));
   const k = kpi;
   const tel = (canal, fil, h, echelle) => iphone({ canal, nom: client, fil, court: h, echelle });
+  // Même message sur plusieurs canaux (carrousel sur le lien web, premier canal seul dans le PDF).
+  const telCar = (canaux, fil, h, echelle) => carrouselCanaux({ canaux, nom: client, fil, court: h, echelle });
   // Pièces : « option » ; concession : ces fonctions sont INCLUSES dans le pack (retour Didier 17/11).
   const optTag = `<span class="opt-tag">${pieces ? 'Option Budy Auto Pièces' : 'Inclus dans le pack Budy Auto Concession'}</span>`;
   const surCa = !r.sur_marge;                 // gain lu sur le chiffre d'affaires (défaut) ou sur la marge
@@ -1173,11 +1238,11 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
    <p class="tx">${esc(INTRO_VENDEUR)}</p>
    ${etapesHtml}
   </div>
-  ${iphone({ canal: 'rcs', nom: client, fil: vi.mes, jour: pieces ? '12 mois après son devis' : '15 mois après sa vidange', court: nSec <= 2 ? 380 : 330 })}
+  ${carrouselCanaux({ canaux: ['rcs', 'whatsapp', 'sms'], nom: client, fil: vi.mes, jour: pieces ? '12 mois après son devis' : '15 mois après sa vidange', court: nSec <= 2 ? 380 : 330 })}
  </div>`;
   if (act('devis') || act('atelier') || act('revisions')) P.push({ corps: `
  <div class="ey">Avec Budy · relancer</div>
- <h2>Le bon message, <span class="g">au bon moment</span>, sur WhatsApp et RCS</h2>
+ <h2>Le bon message, <span class="g">au bon moment</span>, sur WhatsApp, RCS et SMS</h2>
  <div class="rule"></div>
  ${act('devis') ? `<div class="h3"><i class="pt" style="background:${COULEURS_ROI.devis}"></i>Devis sans suite${pieces ? optTag : ''}</div>
  <div class="rl">
@@ -1189,7 +1254,7 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
     ${k(eur(r.ca_devis_mois), 'de CA récupéré par mois', true)}
    </div>
   </div>
-  ${tel('whatsapp', [{ de: 'budy', t: pieces
+  ${telCar(['whatsapp', 'rcs', 'sms'], [{ de: 'budy', t: pieces
     ? 'Bonjour, votre devis n° 2841 (kit de distribution, 186 €) est toujours valable. Souhaitez-vous que nous vous mettions la pièce de côté ?'
     : 'Bonjour M. Martin, votre devis freinage pour votre 308 (389 €) est valable jusqu\'à vendredi. Je vous réserve un créneau ?',
     h: 'Mer. 9:15', boutons: [pieces ? 'Réserver la pièce' : 'Réserver un créneau', 'Être rappelé'] }], hRel, eRel)}
@@ -1204,7 +1269,7 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
     ${k(eur(r.ca_noshow_mois), 'de CA atelier sécurisé par mois', true)}
    </div>
   </div>
-  ${tel('rcs', [{ de: 'budy', t: 'Rappel : votre Clio est attendue demain à 8 h 30 pour sa révision. Pensez à la carte grise et au carnet d\'entretien. Vous confirmez ?', h: 'Mar. 17:00', boutons: ['Je confirme', 'Je décale'] }], hRel, eRel)}
+  ${telCar(['rcs', 'whatsapp', 'sms'], [{ de: 'budy', t: 'Rappel : votre Clio est attendue demain à 8 h 30 pour sa révision. Pensez à la carte grise et au carnet d\'entretien. Vous confirmez ?', h: 'Mar. 17:00', boutons: ['Je confirme', 'Je décale'] }], hRel, eRel)}
  </div>` : ''}
  ${act('revisions') ? `<div class="h3"><i class="pt" style="background:${COULEURS_ROI.revisions}"></i>Révisions à échéance — plan d'entretien constructeur${optTag}</div>
  <div class="rl">
@@ -1216,7 +1281,7 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
     ${k(eur(r.ca_revisions_mois), 'de CA atelier généré par mois', true)}
    </div>
   </div>
-  ${tel('whatsapp', [{ de: 'budy', t: 'Bonjour Mme Durand, d\'après le plan d\'entretien constructeur de votre 208 (62 000 km), la révision des 60 000 km est à prévoir. Je vous propose un créneau ?', h: 'Lun. 10:05', boutons: ['Choisir un créneau', 'Plus tard'] }], hRel, eRel)}
+  ${telCar(['whatsapp', 'rcs', 'sms'], [{ de: 'budy', t: 'Bonjour Mme Durand, d\'après le plan d\'entretien constructeur de votre 208 (62 000 km), la révision des 60 000 km est à prévoir. Je vous propose un créneau ?', h: 'Lun. 10:05', boutons: ['Choisir un créneau', 'Plus tard'] }], hRel, eRel)}
  </div>` : ''}
  ${vendeurSurRelance ? sectionVendeur : ''}` });
 
@@ -1230,7 +1295,7 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
  ${etapesHtml}
  <div class="phs" style="gap:26px;margin-top:18px">
   <figure>${iphone({ canal: 'whatsapp', nom: client, fil: vi.jan, jour: 'Janvier' })}<figcaption><b>${pieces ? 'Janvier' : 'Janvier'} — la demande</b>Budy enregistre le rendez-vous, retient le véhicule et demande l'accord du client pour la suite.</figcaption></figure>
-  <figure>${iphone({ canal: 'rcs', nom: client, fil: vi.mes, jour: pieces ? '12 mois plus tard' : '15 mois plus tard' })}<figcaption><b>${pieces ? '12' : '15'} mois plus tard — la relance</b>Selon les préconisations constructeur, Budy écrit le premier. Aucune action de votre ${pieces ? 'vendeur' : 'conseiller'}.</figcaption></figure>
+  <figure>${carrouselCanaux({ canaux: ['rcs', 'whatsapp', 'sms'], nom: client, fil: vi.mes, jour: pieces ? '12 mois plus tard' : '15 mois plus tard' })}<figcaption><b>${pieces ? '12' : '15'} mois plus tard — la relance</b>Selon les préconisations constructeur, Budy écrit le premier. Aucune action de votre ${pieces ? 'vendeur' : 'conseiller'}.</figcaption></figure>
  </div>` });
 
   // ── 5. Vendre juste ──
