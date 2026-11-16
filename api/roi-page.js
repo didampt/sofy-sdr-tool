@@ -1008,9 +1008,12 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
   // Marimax est un distributeur de pièces : hors sujet pour une concession (retour Didier 16/11/2026).
   const cas = c0.profil === 'pieces' ? (preuves.cas || null) : null;
   const logos = Array.isArray(preuves.logos) ? preuves.logos.filter(l => l && l.image) : [];
-  const illu = preuves.illustration && preuves.illustration.image ? preuves.illustration : null;
-  // 2e photo de la bibliothèque : page finale d'une concession (à défaut, l'illustration dessinée).
-  const photoFin = (preuves.illustrations || [])[1] || null;
+  // Photos de la bibliothèque, de la mieux classée à la moins bien classée (cf. preuvesVisuels).
+  // Pièces : la meilleure en couverture. Concession : la meilleure (la photo « concession ») va sur
+  // la PAGE FINALE, la suivante (ex. garage) en couverture ; s'il n'y en a qu'une, elle sert aux deux.
+  const photos = (preuves.illustrations && preuves.illustrations.length ? preuves.illustrations : (preuves.illustration ? [preuves.illustration] : [])).filter(x => x && x.image);
+  const illu = (c0.profil === 'pieces' ? photos[0] : (photos[1] || photos[0])) || null;
+  const photoFin = c0.profil === 'pieces' ? null : (photos[0] || null);
   const c = doc.config || {};
   const r = calculerRoi(c);
   const client = doc.client || 'votre entreprise';
@@ -1037,7 +1040,8 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
     act('atelier') && 'rendez-vous non honorés', act('revisions') && 'révisions jamais proposées', act('upsell') && 'ventes jamais suggérées'].filter(Boolean));
   const k = kpi;
   const tel = (canal, fil, h, echelle) => iphone({ canal, nom: client, fil, court: h, echelle });
-  const optTag = `<span class="opt-tag">Option Budy Auto ${pieces ? 'Pièces' : 'Concession'}</span>`;
+  // Pièces : « option » ; concession : ces fonctions sont INCLUSES dans le pack (retour Didier 17/11).
+  const optTag = `<span class="opt-tag">${pieces ? 'Option Budy Auto Pièces' : 'Inclus dans le pack Budy Auto Concession'}</span>`;
   const surCa = !r.sur_marge;                 // gain lu sur le chiffre d'affaires (défaut) ou sur la marge
   const simple = r.panier_mode === 'simple';  // un seul panier moyen pour toutes les ventes
   const P = [];   // pages : { dark, corps, pied }
@@ -1214,6 +1218,7 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
  <div class="ey">Avec Budy · proactif</div>
  <h2>Bien plus qu'un assistant IA : <span class="g">un vendeur IA</span></h2>
  <div class="rule"></div>
+ <p style="margin:-6px 0 12px">${optTag}</p>
  <p class="tx" style="max-width:none">${esc(INTRO_VENDEUR)}</p>
  ${etapesHtml}
  <div class="phs" style="gap:26px;margin-top:18px">

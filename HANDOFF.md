@@ -169,6 +169,16 @@ Budy Auto et exporte le gabarit commun (gabarit, pageSynthese, pagePreuve, blocF
       distributeur/pièces d'abord ; api/p.js) et renvoie 2 photos : couverture, puis page finale d'une
       concession (à défaut le dessin ILLU_CONCESSION). Pour être retrouvée, la description d'une photo
       doit contenir « concession », « garage » ou « distributeur de pièces ».
+  · 17/11 (PAS COMMITÉ) : AAA = Accessoires Autos Arnoux = distributeur de pièces, mais l'étude de
+    Romain avait été créée sur le profil « Concession » (défaut du simulateur). Le changement de profil
+    EFFAÇAIT toutes les valeurs saisies : roiProfil() les conserve maintenant si elles ont été
+    modifiées (activité, tarif de l'option resté au défaut, leviers atelier/révisions seuls changent).
+    Pour corriger AAA en prod : Documents → Modifier → « Distributeur de pièces » → Mettre à jour.
+  · v407 (17/11) : concession — les fonctions proactives/préconisation sont « INCLUSES dans le pack Budy
+    Auto Concession » (étiquette), la page « vendeur IA » le précise ; la PHOTO « concession » (la mieux
+    classée de la bibliothèque) va sur la page finale, la suivante en couverture (une seule photo =
+    utilisée aux deux). ⚠️ Les PDF générés par l'assistant n'ont PAS accès à la base : ils montrent le
+    dessin de repli ; les vraies photos ne s'affichent qu'en production (ou si on fournit le fichier).
   ⚠️ Le banc local (banc-roi/serveur.mjs) met roi-produits.js en cache-bust mais PAS roi-page.js
     (importé sans ?t=) : redémarrer le serveur après toute modification de roi-page.js.
 - v405 : « 💼 Valoriser le temps rendu à ses équipes » est une OPTION cochable (config.off.cout_temps).

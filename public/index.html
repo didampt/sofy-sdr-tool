@@ -2659,7 +2659,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v406';
+const VERSION='v407';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -8318,7 +8318,22 @@ async function roiProduit(p){
 }
 async function roiProfil(p){
  try{await roiCharger();}catch(e){toast('Simulateur indisponible : '+e.message+' — réessaie');return;}
- ROI.cfg=roiDefaut(roiProd(),p);
+ const prod=roiProd(),ancien=ROI.cfg,neuf=roiDefaut(prod,p);
+ // Changer d'ACTIVITÉ (concession ↔ distributeur de pièces) ne doit pas effacer ce que le sales a
+ // saisi (cas d'une étude créée sur le mauvais profil, ex. AAA, 17/11) : si rien n'a été modifié,
+ // on charge les valeurs par défaut du nouveau profil ; sinon on garde tout, et seuls changent
+ // l'activité, le tarif de l'option (s'il était resté au défaut de l'autre profil) et les leviers
+ // propres au métier (rendez-vous atelier et révisions : concession seulement).
+ const modifie=ancien&&ancien.produit===prod&&JSON.stringify(ancien)!==JSON.stringify(roiDefaut(prod,ancien.profil));
+ if(modifie&&ancien.profil!==p){
+  const defAncien=roiDefaut(prod,ancien.profil);
+  const cfg=Object.assign({},ancien,{profil:p});
+  if(ancien.module===defAncien.module)cfg.module=neuf.module;
+  ['messages_inclus','plaques_incluses','cout_plaque'].forEach(k=>{if(ancien[k]===defAncien[k])cfg[k]=neuf[k];});
+  cfg.off=Object.assign({},ancien.off||{});
+  ['atelier','revisions'].forEach(k=>{if(p==='pieces')cfg.off[k]=true;else delete cfg.off[k];});
+  ROI.cfg=cfg;toast('Activité changée : tes valeurs sont conservées');
+ }else ROI.cfg=neuf;
  roiDessiner();
 }
 function roiNouveau(){ROI={cfg:null,client:'',destinataire:'',jeton:null,url:null};
