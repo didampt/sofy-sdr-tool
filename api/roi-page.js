@@ -34,9 +34,9 @@ export function calculerRoi(c) {
   const on = k => !off[k];
   const sites = borne(Math.round(n(c.sites, 1)), 1, 500);
   const jours = borne(n(c.jours_mois, 22), 1, 31);
-  // Le temps rendu n'est PLUS valorisé en euros (décision Didier 16/11/2026) : le gain ne compte que
-  // le CA récupéré et les erreurs évitées. Les heures restent calculées, à titre d'information.
-  const coutH = 0;
+  // Valoriser le temps rendu est une OPTION (demande Didier 13/11/2026) : décochée, les heures
+  // restent affichées mais ne comptent plus dans le gain.
+  const coutH = off.cout_temps ? 0 : Math.max(16, pos(c.cout_horaire, 32, 500));   // plancher : SMIC chargé ≈ 16 €/h
   const tBudy = pct(c.taux_budy, 90);
   const tAuto = pct(c.automatisation, 30);
 
@@ -208,7 +208,8 @@ export function calculerRoi(c) {
       L('atelier', 'Rendez-vous atelier sécurisés', caNoshow, G(caNoshow, gNoshow)),
       L('revisions', 'Révisions relancées', caRev, G(caRev, gRev)),
       L('upsell', 'Ventes additionnelles par préconisation', caUps, G(caUps, gUps)),
-      L('identif', 'Bonne pièce par immatriculation', 0, gIdentif)
+      L('identif', 'Bonne pièce par immatriculation', 0, gIdentif),
+      L('temps', 'Appels et messages traités seul par Budy', 0, gTemps)
     ],
     clients_sauves_mois: oppRecup + msgRecup + devisRecup + noshowEvites + revRdv,
     interactions_mois: reprises + appelsAuto + msgRecup + msgAuto + relancesMois + (on('identif') ? recherches : 0),
@@ -234,7 +235,7 @@ export function calculerRoi(c) {
     seuil_ventes_mois: seuilVentes,
     seuil_pct_demandes: (seuilVentes != null && demandesMois > 0) ? seuilVentes / demandesMois * 100 : null,
     ventes_mois: ventesMois, multiple_seuil: (seuilVentes && ventesMois > 0) ? ventesMois / seuilVentes : null,
-    valeur_temps_mois: heuresMois * coutH,
+    valeur_temps_mois: heuresMois * coutH, cout_h: coutH,
     temps_valorise: !off.cout_temps,
     jour_rentable: (gainJourOuvre > 0 && coutMois > 0) ? Math.min(jours, Math.max(1, Math.ceil(coutMois / gainJourOuvre))) : null,
     gain_net_mois: gainMois - coutMois
@@ -531,7 +532,7 @@ export function pageSynthese(r, o) {
   <div class="ch-a">→</div>
   <div class="ch-c ch-n"><small>Pour être rentable</small><b>${ent(sv)}</b><span>${sv > 1 ? U[1] : U[0]} en plus par mois suffi${sv > 1 ? 'sent' : 't'}, soit ${fmtPct(pctDem)} des ${esc(o.demandesCourt || 'demandes')}</span></div>
  </div>
- ${false ? `<div class="enplus"><b>En plus :</b> <em>${ent(r.heures_mois)} h par mois</em> rendues à vos équipes${o.temps ? ` (${esc(o.temps)})` : ''}${r.valeur_temps_mois > 0 ? `, soit ${eur(r.valeur_temps_mois)} de temps — ${tempsVsAbo}` : ''}.</div>` : ''}
+ ${r.heures_mois >= 1 ? `<div class="enplus"><b>En plus :</b> <em>${ent(r.heures_mois)} h par mois</em> rendues à vos équipes${o.temps ? ` (${esc(o.temps)})` : ''}${r.valeur_temps_mois > 0 ? `, soit ${eur(r.valeur_temps_mois)} de temps, à ${eur(r.cout_h)} l'heure chargée — ${tempsVsAbo}` : ''}.</div>` : ''}
  <div class="h3" style="margin-top:30px">Le vrai gain : bien au-delà du seuil</div>
  <div class="vg">
   <div class="vg-b">
@@ -1062,17 +1063,18 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
   </div>
   <figure class="cv-i">${illu ? `<img src="${esc(illu.image)}" alt="${esc(illu.description || '')}">` : ILLU_AUTO}</figure>
  </div>
- <p class="lead">Ce document chiffre ce que ${esc(client)} récupère quand plus aucun${sujets === 'demande' ? 'e demande' : ' ' + sujets} ne reste sans suite${r.eco_mois > 0 ? " : chiffre d'affaires et coûts évités" : ''}.</p>
+ <p class="lead">Ce document chiffre ce que ${esc(client)} récupère quand plus aucun${sujets === 'demande' ? 'e demande' : ' ' + sujets} ne reste sans suite${r.eco_mois > 0 ? " : chiffre d'affaires et temps rendu à vos équipes" : ''}.</p>
  <p class="cv-for">Préparée pour<b>${esc(client)}${r.sites > 1 ? ` · ${r.sites} sites` : ''}</b></p>
  <div class="hero">
   <div class="hero-l">Gain total potentiel la première année</div>
   <div class="hero-v g">${eur(r.gain_an)}</div>
-  <div class="hero-s">${surCa ? "chiffre d'affaires récupéré" : 'marge récupérée'}${r.eco_mois > 0 ? ' + coûts évités' : ''}, pour ${eur(r.cout_an1)} investis.</div>
+  <div class="hero-s">${surCa ? "chiffre d'affaires récupéré" : 'marge récupérée'}${r.eco_mois > 0 ? ' + temps et coûts évités' : ''}, pour ${eur(r.cout_an1)} investis.</div>
   <div class="pile">${leviersV.map(l => `<i style="flex:${Math.max(1, Math.round(l.gain_an))};background:${COULEURS_ROI[l.id]}"></i>`).join('')}</div>
   <div class="pile-l">${leviersV.map(l => `<span><i style="background:${COULEURS_ROI[l.id]}"></i>${esc(l.label)} · <b>${eur(l.gain_an)}</b></span>`).join('')}</div>
  </div>
  <div class="k3">
   ${k(ent(r.clients_sauves_mois), 'clients sauvés chaque mois' + (sauves ? ' : ' + sauves : ''))}
+  ${r.heures_mois >= 1 ? k(ent(r.heures_an) + NBSP + 'h', `de travail rendues à vos équipes par an${r.valeur_temps_mois > 0 ? `, soit ${eur(r.valeur_temps_mois * 12)}` : ''}`) : ''}
  </div>
  ${contact}` });
 
@@ -1080,7 +1082,7 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
   const canaux = liste([act('appels') && 'appels', act('messages') && 'messages'].filter(Boolean));
   const scen = scenariosEtude(calculerRoi, c, SCENARIO_BUDY);
   const scenariosHtml = scen ? tableScenarios(scen, { unite: ['vente', 'ventes'], marge: !surCa,
-    note: 'Gain calculé sur ' + (surCa ? "le chiffre d'affaires" : 'la marge') + ' des ventes, hors coûts évités' + (r.eco_mois > 0 ? ' (' + eur(r.eco_mois) + ' par mois en plus, quel que soit le scénario)' : '') + '.' }) : '';
+    note: 'Gain calculé sur ' + (surCa ? "le chiffre d'affaires" : 'la marge') + ' des ventes, hors temps rendu et coûts évités' + (r.eco_mois > 0 ? ' (' + eur(r.eco_mois) + ' par mois en plus, quel que soit le scénario)' : '') + '.' }) : '';
   const synth = pageSynthese(r, { scenariosHtml, produit: 'Budy', demandes: (canaux || 'demandes') + ' par mois', demandesCourt: canaux || 'demandes',
     panier: 'Vente moyenne', temps: 'préqualification, recherche de références, questions répétitives' });
   if (synth) P.push(synth);

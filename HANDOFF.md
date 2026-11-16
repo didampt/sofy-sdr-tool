@@ -203,6 +203,16 @@ Budy Auto et exporte le gabarit commun (gabarit, pageSynthese, pagePreuve, blocF
   0 < seuil < moyen ; sinon scen_bas. Le curseur « Bas » du simulateur est remplacé par un affichage.
   (4) Gain net ≤ 0 : bandeau orange dans le simulateur, et dans le PDF la tuile « gain net » est remplacée
   par le CA récupéré par mois / par an.
+- v412 (16/11, demande Didier/Hugo) : la valorisation du temps est RÉTABLIE (revert de v409). Raison (Hugo) :
+  même si le client répond déjà à tous ses messages, Budy lui fait gagner du temps en qualifiant chaque
+  demande en amont et en traitant seul plusieurs messages à la fois : c'est le vrai gain de temps, donc
+  d'argent. Améliorations : plancher du coût horaire = SMIC chargé ≈ 16 €/h (`Math.max(16, …)` dans les
+  4 moteurs ; SMIC 12,02 € brut au 01/01/2026 + charges ; une 2e revalorisation de juin 2026 est
+  évoquée par la presse, non vérifiée), curseur min 16 €, carte renommée « ⏱ Temps gagné par vos
+  conseillers » avec l'explication de Hugo, le coût horaire retenu s'affiche dans les PDF
+  (`cout_h`). Garde-fous de v410/v411 conservés : levier principal non décochable (SoConnect, Soview,
+  SoReach), page « ce que coûtent… », scénario bas = seuil, demandes par jour/mois. Défauts Budy
+  retrouvés : ×29,9 concession, ×25,2 pièces.
 
 Bancs (scratchpad banc-roi) : serveur.mjs (app + CSP de prod + API simulées), calc.mjs (profils,
 autonomie du moteur, somme des leviers = gain), pdf.sh (PDF + planches PNG).

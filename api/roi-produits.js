@@ -32,7 +32,7 @@ export function calculerSoview(c) {
   const on = k => !off[k];
   const sites = borne(Math.round(n(c.sites, 1)), 1, 2000);
   const jours = borne(n(c.jours_mois, 26), 1, 31);
-  const coutH = 0;   // temps non valorisé (décision 16/11/2026)
+  const coutH = off.cout_temps ? 0 : Math.max(16, pos(c.cout_horaire, 30, 500));   // temps valorisé ; plancher : SMIC chargé ≈ 16 €/h
   const panier = pos(c.panier, 0, 1000000), marge = pct(c.marge, 0);
 
   // Ce que la fiche Google rapporte déjà : vues → actions (appel, itinéraire, site) → clients.
@@ -64,11 +64,13 @@ export function calculerSoview(c) {
     vues_mois: vues, actions_mois: actions, clients_actuels_mois: clientsAuj, clients_plus_mois: clientsPlus,
     avis_mois: avisMois, heures_avis_mois: hAvis, heures_gestion_mois: hGestion,
     leviers: [
-      L('visibilite', 'Clients gagnés par une meilleure visibilité locale', caVis, gV)
+      L('visibilite', 'Clients gagnés par une meilleure visibilité locale', caVis, gV),
+      L('avis', 'Réponses aux avis rédigées par Budy', 0, hAvis * coutH),
+      L('gestion', 'Fiches gérées d\'une seule saisie', 0, hGestion * coutH)
     ],
     ca_mois: caVis, ca_an: caVis * 12, marge_mois: gVis, marge_an: gVis * 12,
     gain_ventes_mois: gV, sur_marge: surMarge,
-    heures_mois: heures, heures_an: heures * 12, etp: heures / 151.67, valeur_temps_mois: heures * coutH,
+    heures_mois: heures, heures_an: heures * 12, etp: heures / 151.67, valeur_temps_mois: heures * coutH, cout_h: coutH,
     abonnement_mois: abo, cout_mois: coutMois, cout_an1: coutAn1, frais,
     gain_mois: gainMois, gain_an: gainAn, gain_net_mois: gainMois - coutMois, gain_net_an: gainAn - coutAn1,
     gain_par_site_an: gainAn / sites, gain_net_3ans: gainAn * 3 - (coutMois * 36 + frais),
@@ -95,7 +97,7 @@ export function calculerSoreach(c) {
   const on = k => !off[k];
   const sites = borne(Math.round(n(c.sites, 1)), 1, 2000);
   const jours = borne(n(c.jours_mois, 26), 1, 31);
-  const coutH = 0;   // temps non valorisé (décision 16/11/2026)
+  const coutH = off.cout_temps ? 0 : Math.max(16, pos(c.cout_horaire, 30, 500));   // temps valorisé ; plancher : SMIC chargé ≈ 16 €/h
   const panier = pos(c.panier, 0, 1000000), marge = pct(c.marge, 0);
 
   const contacts = sites * pos(c.contacts, 0, 10000000);
@@ -123,9 +125,10 @@ export function calculerSoreach(c) {
     contacts, campagnes_mois: campagnes, messages_mois: messages, clics_mois: clics,
     leviers: [
       L('campagnes', 'Ventes générées par les campagnes SMS / RCS', ca, gV),
+      L('redaction', 'Campagnes préparées par Budy', 0, heures * coutH)
     ],
     ca_mois: ca, ca_an: ca * 12, marge_mois: g, marge_an: g * 12, gain_ventes_mois: gV, sur_marge: surMarge,
-    heures_mois: heures, heures_an: heures * 12, etp: heures / 151.67, valeur_temps_mois: heures * coutH,
+    heures_mois: heures, heures_an: heures * 12, etp: heures / 151.67, valeur_temps_mois: heures * coutH, cout_h: coutH,
     abonnement_mois: abo, cout_messages_mois: coutMsg, cout_mois: coutMois, cout_an1: coutAn1, frais,
     gain_mois: gainMois, gain_an: gainAn, gain_net_mois: gainMois - coutMois, gain_net_an: gainAn - coutAn1,
     gain_par_site_an: gainAn / sites, gain_net_3ans: gainAn * 3 - (coutMois * 36 + frais),
@@ -156,7 +159,7 @@ export function calculerSoconnect(c) {
   const on = k => !off[k];
   const sites = borne(Math.round(n(c.sites, 1)), 1, 2000);
   const jours = borne(n(c.jours_mois, 26), 1, 31);
-  const coutH = 0;   // temps non valorisé (décision 16/11/2026)
+  const coutH = off.cout_temps ? 0 : Math.max(16, pos(c.cout_horaire, 20, 500));   // temps valorisé ; plancher : SMIC chargé ≈ 16 €/h
   const panier = pos(c.panier, 0, 1000000), marge = pct(c.marge, 0);
   const surMarge = c.seuil_base === 'marge';
 
@@ -189,10 +192,11 @@ export function calculerSoconnect(c) {
     demandes_total_mois: demandes, non_traitees_mois: nonTraitees, prises_mois: prises,
     ventes_perdues_mois: ventesPerdues, perdu_mois: perduMois, perdu_an: perduMois * 12, perdu_jour: perduMois / jours,
     leviers: [
-      L('demandes', 'Ventes sur les demandes aujourd\'hui non traitées', ca, gVentes)
+      L('demandes', 'Ventes sur les demandes aujourd\'hui non traitées', ca, gVentes),
+      L('temps', 'Préqualification des demandes par Budy', 0, heures * coutH)
     ],
     ca_mois: ca, ca_an: ca * 12, marge_mois: m, marge_an: m * 12, gain_ventes_mois: gVentes,
-    heures_mois: heures, heures_an: heures * 12, etp: heures / 151.67, valeur_temps_mois: heures * coutH,
+    heures_mois: heures, heures_an: heures * 12, etp: heures / 151.67, valeur_temps_mois: heures * coutH, cout_h: coutH,
     abonnement_mois: abo, cout_mois: coutMois, cout_an1: coutAn1, frais,
     gain_mois: gainMois, gain_an: gainAn, gain_net_mois: gainMois - coutMois, gain_net_an: gainAn - coutAn1,
     gain_par_site_an: gainAn / sites, gain_net_3ans: gainAn * 3 - (coutMois * 36 + frais),
@@ -225,7 +229,7 @@ export const PRODUITS = {
       'automatisation', 'duree_appel', 'duree_message', 'cout_horaire',
       'taux_conversion', 'panier_moyen', 'marge_moyenne', 'scen_bas', 'scen_haut',
       'abonnement', 'module', 'messages_inclus', 'plaques_incluses', 'cout_message', 'cout_plaque', 'frais_installation'],
-    leviers: ['appels', 'messages', 'devis', 'atelier', 'revisions', 'upsell', 'identif'],
+    leviers: ['appels', 'messages', 'devis', 'atelier', 'revisions', 'upsell', 'identif', 'temps'],
     scenario: SCENARIO_BUDY
   },
   soconnect: {
@@ -239,7 +243,7 @@ export const PRODUITS = {
     } },
     champs: ['sites', 'jours_mois', 'cout_horaire', 'demandes_mois', 'taux_non_traitees', 'taux_conversion', 'scen_bas', 'scen_haut',
       'panier', 'marge', 'min_gagnees', 'abonnement', 'frais_installation'],
-    leviers: ['demandes'],
+    leviers: ['demandes', 'temps'],
     scenario: { cle: 'taux_conversion', label: 'Taux de conversion', max: 100 }
   },
   soview: {
@@ -400,7 +404,7 @@ function pageCalcul(o) {
   <tr><th>Première année</th><th>CA généré</th><th>Gain</th></tr>
   ${leviersV.map(l => `<tr class="lv"><td><i class="pt" style="background:${COULEURS[l.id]}"></i>${esc(l.label)}</td><td>${l.ca_an ? eur(l.ca_an) : '—'}</td><td>${eur(l.gain_an)}</td></tr>
   <tr class="jauge"><td colspan="3"><i style="width:${Math.max(1, Math.round(l.gain_an / maxGain * 100))}%;background:${COULEURS[l.id]}"></i></td></tr>`).join('')}
-  <tr class="st"><td>Gain total (${o.surCa ? 'ventes' : 'marge'})</td><td>${eur(r.ca_an)}</td><td>${eur(r.gain_an)}</td></tr>
+  <tr class="st"><td>Gain total (${o.surCa ? 'ventes' : 'marge'} + temps rendu)</td><td>${eur(r.ca_an)}</td><td>${eur(r.gain_an)}</td></tr>
   ${lignesCout.map(([l, v]) => `<tr><td>${l}</td><td></td><td class="neg">− ${eur(v)}</td></tr>`).join('')}
   <tr class="tot"><td>Gain net la première année</td><td></td><td>${eur(r.gain_net_an)}</td></tr>
  </table>
@@ -477,10 +481,11 @@ function pageSoview(doc, meta, sdr, apercu, lienDemo, preuves) {
     chapo: `Ce document part de ce que nous avons mesuré sur les fiches Google de ${esc(client)}, puis chiffre ce que rapporte une visibilité locale tenue : combien de clients en plus suffisent à payer Soview, et ce qu'il peut rapporter au-delà.`,
     kpis: [
       kpi(ent(r.actions_mois), 'contacts par mois venus de Google : appels, itinéraires, visites du site'),
-      kpi(nb(r.clients_plus_mois), 'clients en plus par mois visés')
+      kpi(nb(r.clients_plus_mois), 'clients en plus par mois visés'),
+      kpi(ent(r.heures_an) + NBSP + 'h', 'de gestion et de réponses aux avis rendues par an')
     ] }));
   const sc0 = scenariosDe(c);
-  const noteSc = 'Gain calculé sur ' + (r.sur_marge ? 'la marge' : "le chiffre d'affaires") + ' des clients gagnés.';
+  const noteSc = 'Gain calculé sur ' + (r.sur_marge ? 'la marge' : "le chiffre d'affaires") + ' des clients gagnés, hors temps rendu' + (r.valeur_temps_mois > 0 ? ' (' + eur(r.valeur_temps_mois) + ' par mois en plus, quel que soit le scénario)' : '') + '.';
   const s = pageSynthese(r, { scenariosHtml: sc0 ? tableScenarios(sc0, { unite, marge: !r.sur_marge, note: noteSc }) : '', produit: 'Soview', unite, enPlus: true, demandes: 'contacts par mois venus de Google', demandesCourt: 'contacts venus de Google',
     panier: 'Panier moyen', temps: 'réponses aux avis, mise à jour des fiches' });
   if (s) P.push(s);
@@ -512,7 +517,7 @@ function pageSoview(doc, meta, sdr, apercu, lienDemo, preuves) {
     lignesCout: [[`Abonnement Soview (${eur(c.abonnement || 0)}/mois${r.sites > 1 ? ` × ${r.sites} établissements` : ''} × 12)`, r.abonnement_mois * 12]].concat(r.frais ? [['Mise en place', r.frais]] : []),
     hypotheses: [
       [['Votre fiche Google aujourd\'hui', [['Établissements', r.sites], ['Vues de la fiche par mois et par établissement', ent(c.vues_mois || 0)], ['Vues suivies d\'une action (appel, itinéraire, site)', p0(c.taux_action)], ['Actions qui deviennent un client', p0(c.taux_transfo)], ['Panier moyen', eur(c.panier || 0)]].concat(r.sur_marge ? [['Marge', p0(c.marge)]] : [])]],
-      [['Avec Soview', [['Hausse des contacts venus de Google', '+ ' + p0(c.gain_visibilite)], ['Avis reçus par mois et par établissement', ent(c.avis_mois || 0)]]]]
+      [['Avec Soview', [['Hausse des contacts venus de Google', '+ ' + p0(c.gain_visibilite)], ['Avis reçus par mois et par établissement', ent(c.avis_mois || 0)], ['Temps pour répondre à un avis aujourd\'hui', fmt(c.min_reponse || 0, 0) + ' min'], ['Gestion des fiches économisée par établissement', fmt(c.heures_gestion || 0, 1) + ' h / mois'], ['Coût horaire chargé', (c.off && c.off.cout_temps) ? 'temps rendu non valorisé' : eur(c.cout_horaire || 0)]]]]
     ] }));
   cloture(P, preuves, { sdr, lienDemo, eyebrow: 'Pourquoi Sofy', titre: 'Une équipe qui connaît votre réseau, <span class="g">et un outil qui tient dans la durée</span>',
     points: [
@@ -585,7 +590,7 @@ function pageSoreach(doc, meta, sdr, apercu, lienDemo, preuves) {
       .concat(r.frais ? [['Mise en place', r.frais]] : []),
     hypotheses: [
       [['Votre base', [['Établissements', r.sites], ['Contacts joignables par établissement', ent(c.contacts || 0)], ['Campagnes par mois', fmt(c.campagnes_mois || 0, 1)], ['Coût d\'un message', eur2(c.cout_message || 0)]]]],
-      [['Ce que les campagnes déclenchent', [['Messages suivis d\'un clic', p0(c.taux_clic)], ['Clics suivis d\'un achat', p0(c.taux_conv)], ['Panier moyen', eur(c.panier || 0)]].concat(r.sur_marge ? [['Marge', p0(c.marge)]] : [])]]
+      [['Ce que les campagnes déclenchent', [['Messages suivis d\'un clic', p0(c.taux_clic)], ['Clics suivis d\'un achat', p0(c.taux_conv)], ['Panier moyen', eur(c.panier || 0)]].concat(r.sur_marge ? [['Marge', p0(c.marge)]] : []).concat([['Temps gagné par campagne', fmt(c.heures_campagne || 0, 1) + ' h'], ['Coût horaire chargé', (c.off && c.off.cout_temps) ? 'temps rendu non valorisé' : eur(c.cout_horaire || 0)]])]]
     ] }));
   cloture(P, preuves, { sdr, lienDemo, eyebrow: 'Pourquoi Sofy', titre: 'Quatorze ans de messagerie d\'entreprise, <span class="g">et le RCS vérifié par Google</span>',
     points: [
@@ -605,7 +610,7 @@ function pageSoconnect(doc, meta, sdr, apercu, lienDemo, preuves) {
   const unite = ['vente', 'ventes'];
   const sc = scenariosDe(c);
   const surCa = !r.sur_marge;
-  const noteTemps = '';
+  const noteTemps = r.heures_mois >= 1 ? `En plus, quel que soit le scénario : ${ent(r.heures_mois)} h par mois de qualification des demandes, soit ${eur(r.valeur_temps_mois)} à ${eur(r.cout_h)} l'heure chargée.` : '';
   const P = [];
   P.push(couverture({ r, client, sdr, illu: preuves.illustration, repli: ILLU_MOBILE, unite,
     eyebrow: 'Étude de rentabilité · SoConnect, toutes vos demandes dans une seule boîte',
@@ -613,7 +618,8 @@ function pageSoconnect(doc, meta, sdr, apercu, lienDemo, preuves) {
     chapo: `Ce document chiffre ce que ${esc(client)} récupère quand plus aucune demande WhatsApp, Messenger, Instagram ou webchat ne reste sans réponse : combien de ventes suffisent à payer SoConnect, et trois scénarios pour la suite.`,
     kpis: [
       kpi(ent(r.demandes_total_mois), 'demandes reçues par mois, tous canaux'),
-      kpi(ent(r.prises_mois), 'demandes aujourd\'hui non traitées, reprises par SoConnect')
+      kpi(ent(r.prises_mois), 'demandes aujourd\'hui non traitées, reprises par SoConnect'),
+      kpi(ent(r.heures_mois) + NBSP + 'h', 'de préqualification rendues à vos vendeurs par mois')
     ] }));
   const noteSo = `Gain calculé sur ${surCa ? "le chiffre d'affaires" : 'la marge'}. ${noteTemps}`;
   const s = pageSynthese(r, { scenariosHtml: sc ? tableScenarios(sc, { unite, marge: !surCa, note: noteSo }) : '', produit: 'SoConnect', unite, enPlus: true, demandes: 'demandes par mois', demandesCourt: 'demandes',
@@ -669,7 +675,7 @@ function pageSoconnect(doc, meta, sdr, apercu, lienDemo, preuves) {
     lignesCout: [[`Abonnement SoConnect (${eur(c.abonnement || 0)}/mois${r.sites > 1 ? ` × ${r.sites} établissements` : ''} × 12)`, r.abonnement_mois * 12]].concat(r.frais ? [['Mise en place', r.frais]] : []),
     hypotheses: [
       [['Vos demandes', [['Établissements', r.sites], ['Demandes par mois et par établissement', ent(r.demandes_total_mois / r.sites)], ['Demandes non traitées aujourd\'hui', p0(c.taux_non_traitees)], ['Taux de conversion (scénario moyen)', p0(c.taux_conversion)]]]],
-      [['Ce que vaut une vente', [['Panier moyen', eur(c.panier || 0)]].concat(surCa ? [] : [['Marge', p0(c.marge)]])]]
+      [['Ce que vaut une vente', [['Panier moyen', eur(c.panier || 0)]].concat(surCa ? [] : [['Marge', p0(c.marge)]]).concat([['Temps gagné par demande traitée', fmt(c.min_gagnees || 0, 1) + ' min'], ['Coût horaire chargé d\'un vendeur', (c.off && c.off.cout_temps) ? 'temps rendu non valorisé' : eur(c.cout_horaire || 0)]])]]
     ] }));
   cloture(P, preuves, { sdr, lienDemo, eyebrow: 'Pourquoi Sofy', titre: 'Une seule interface, <span class="g">et une équipe qui reste</span>',
     points: [

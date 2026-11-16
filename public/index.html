@@ -1547,6 +1547,8 @@ Spot-Hit</textarea>
           </div>
           <div id="roi-cartes"></div>
           <div id="roi-scen"></div>
+          <div class="roi-c" id="roi-c-cout_temps"><h3><input type="checkbox" id="roi-cb-cout_temps" checked onchange="roiOff('cout_temps',!this.checked)" title="Compter le temps gagné dans le gain">⏱ Temps gagné par vos conseillers<span class="roi-gn" id="roi-g-cout_temps"></span></h3>
+            <div class="roi-b"><div class="roi-x">Même si le client répond déjà à tous ses messages, Budy lui fait gagner du temps : il qualifie chaque demande avant de la passer à un conseiller et traite seul les questions répétitives, plusieurs messages à la fois. Chaque heure gagnée est comptée au coût horaire de l'opérateur. Décoche pour ne compter que le chiffre d'affaires récupéré.</div><div class="roi-2" id="roi-s-temps"></div></div></div>
           <div class="roi-c"><h3>💶 Tarif</h3><div class="roi-x" id="roi-tarif-x"></div><div class="roi-2" id="roi-s-cout"></div>
             <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-top:4px">Gain et seuil (« rentabilisé avec N <span id="roi-seuil-u">ventes</span> ») calculés sur
               <select class="field" id="roi-seuil-base" style="padding:4px 8px;font-size:13px;width:auto" onchange="ROI.cfg.seuil_base=this.value;roiDessiner()"><option value="ca">le chiffre d'affaires</option><option value="marge">la marge</option></select></label></div>
@@ -2657,7 +2659,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v411';
+const VERSION='v412';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -8160,6 +8162,7 @@ async function leadIndexer(force){
 // Un curseur = [clé, libellé, min, max, pas, unité, aide?]. Une carte de levier porte une case à
 // cocher (config.off[id]) et affiche son gain annuel en direct.
 let ROI={cfg:null,client:'',destinataire:'',jeton:null,url:null};
+const ROI_CH=['cout_horaire','Coût horaire chargé d\'un conseiller',16,70,1,' €','Plancher : équivalent SMIC chargé, environ 16 € de l\'heure (SMIC 12,02 € brut au 1er janvier 2026 + charges patronales). Pour un conseiller, 25 à 35 € chargés est un repère courant.'];
 const ROI_DEF={
  budy:{nom:'Budy Auto',bouton:'🚗 Budy Auto',unite:['vente','ventes'],demandes:'demandes',panier:'panier_moyen',
   intro:'Chiffre en direct, avec le client, ce que <b>Budy</b> lui rapporte : appels et messages repris, devis et révisions relancés, bonne pièce du premier coup, ventes additionnelles. C\'est toi qui remplis, avec lui.',
@@ -8204,10 +8207,14 @@ const ROI_DEF={
     ['marge_upsell','Marge',0,70,1,' %']]},
    {id:'identif',t:'🔎 Bonne pièce par immatriculation — catalogues électroniques',x:'De la plaque à la référence compatible : moins de recherche manuelle, moins d\'erreurs de référence et de retours.',s:[
     ['recherches_mois','Recherches de pièces par mois et par site',0,5000,10,''],
+    ['min_recherche','Temps gagné par recherche',0,10,0.5,' min'],
     ['taux_erreur','Erreurs de référence aujourd\'hui',0,20,1,' %'],
     ['reduction_erreur','Erreurs évitées',0,90,1,' %'],
-    ['cout_erreur','Coût d\'une erreur (retour, temps, remise)',0,150,5,' €']]}
-],
+    ['cout_erreur','Coût d\'une erreur (retour, temps, remise)',0,150,5,' €']]},
+   {id:'temps',t:'⏱ Appels et messages traités seul par Budy',x:'Horaires, suivi de dossier, disponibilité, rendez-vous simple. Marché : 60 % des RDV après-vente automatisés sur 117 concessions (L\'Argus, 09/2026).',s:[
+    ['automatisation','Demandes traitées sans conseiller',0,70,1,' %'],
+    ['duree_appel','Durée moyenne d\'un appel',1,15,0.5,' min'],
+    ['duree_message','Durée de traitement d\'un message',0.5,10,0.5,' min']]}],
   lignes:r=>[['Taux de réponse aux appels',roiFmt(r.taux_reponse_actuel)+' % → '+roiFmt(r.taux_reponse_budy)+' %'],
    ['Coût de l\'inaction',roiEur(r.cout_inaction_jour)+' de CA / jour ouvré'],
    r.interactions_mois?['Coût par contact traité',roiFmt(r.cout_mois/r.interactions_mois,2)+' € ('+roiFmt(r.interactions_mois)+' / mois)']:null],
@@ -8226,8 +8233,9 @@ const ROI_DEF={
     ['demandes_mois','Demandes par mois et par établissement',0,5000,10,''],
     ['taux_non_traitees','Demandes non traitées aujourd\'hui',0,60,1,' %'],
     ['taux_conversion','Taux de conversion (scénario moyen)',0,60,0.5,' %'],
-    ['marge','Marge',0,90,1,' %']]}
-],
+    ['marge','Marge',0,90,1,' %']]},
+   {id:'temps',t:'⏱ Qualification des demandes par Budy',x:'Même si toutes les demandes reçoivent déjà une réponse, Budy relève le besoin et les coordonnées avant de passer la main : le conseiller reprend un dossier prêt. Fiche Arnoux : 18 h par mois pour 540 demandes, soit 2 minutes par demande.',s:[
+    ['min_gagnees','Temps gagné par demande traitée',0,10,0.5,' min']]}],
   lignes:r=>[['Demandes reçues',roiFmt(r.demandes_total_mois)+' / mois'],['Reprises par SoConnect',roiFmt(r.prises_mois)+' / mois'],['Ventes visées',roiNb(r.ventes_mois)+' / mois']],
   questions:['Combien de demandes recevez-vous par mois, tous canaux confondus ?','Combien restent sans réponse, ou reçoivent une réponse trop tard ?',
    'Sur dix demandes traitées, combien deviennent une vente ?','Quel est votre panier moyen ? (fourchette basse et haute)','Combien de temps vos vendeurs passent-ils à qualifier une demande avant de pouvoir répondre ?']},
@@ -8244,8 +8252,12 @@ const ROI_DEF={
     ['taux_action','Vues suivies d\'une action (appel, itinéraire, site)',0,30,0.5,' %'],
     ['taux_transfo','Actions qui deviennent un client',0,80,1,' %'],
     ['gain_visibilite','Hausse des contacts avec Soview',0,100,1,' %'],
-    ['marge','Marge',0,90,1,' %']]}
-],
+    ['marge','Marge',0,90,1,' %']]},
+   {id:'avis',t:'⭐ Réponses aux avis rédigées par Budy',x:'Budy lit chaque avis et rédige la réponse dans le ton de l\'enseigne ; le client valide d\'un clic.',s:[
+    ['avis_mois','Avis reçus par mois et par établissement',0,200,1,''],
+    ['min_reponse','Temps pour répondre à un avis aujourd\'hui',0,20,1,' min']]},
+   {id:'gestion',t:'🗂 Fiches gérées d\'une seule saisie',x:'Horaires, photos, publications : une saisie diffusée sur Google, Maps, Apple Plans, Waze, Facebook et Instagram.',s:[
+    ['heures_gestion','Temps de gestion économisé par établissement',0,20,0.5,' h/mois']]}],
   lignes:r=>[['Contacts venus de Google',roiFmt(r.actions_mois)+' / mois'],['Clients actuels via Google',roiFmt(r.clients_actuels_mois)+' / mois'],['Clients en plus visés',roiNb(r.clients_plus_mois)+' / mois']],
   questions:['Combien de vues et d\'appels votre fiche Google génère-t-elle par mois ? (onglet Performances)','Que vaut un nouveau client chez vous : premier panier, et sur un an ?',
    'Qui répond aux avis aujourd\'hui, et en combien de temps ?','Combien de fiches gérez-vous, et qui met à jour les horaires et les photos ?','Demandez-vous systématiquement un avis après une vente ?']},
@@ -8261,8 +8273,9 @@ const ROI_DEF={
     ['campagnes_mois','Campagnes par mois',0,12,0.5,''],
     ['taux_clic','Messages suivis d\'un clic',0,60,1,' %'],
     ['taux_conv','Clics suivis d\'un achat',0,30,0.5,' %'],
-    ['marge','Marge',0,90,1,' %']]}
-],
+    ['marge','Marge',0,90,1,' %']]},
+   {id:'redaction',t:'✍️ Campagnes préparées par Budy',x:'Ciblage, rédaction et personnalisation proposés par Budy : le client valide et envoie.',s:[
+    ['heures_campagne','Temps gagné par campagne',0,10,0.5,' h']]}],
   lignes:r=>[['Messages envoyés',roiFmt(r.messages_mois)+' / mois'],['Clics',roiFmt(r.clics_mois)+' / mois'],['Ventes visées',roiNb(r.ventes_mois)+' / mois'],
    ['Coût des envois',roiEur(r.cout_messages_mois)+' / mois']],
   questions:['Combien de clients avez-vous en base avec un mobile et leur accord ?','Combien de campagnes envoyez-vous par mois aujourd\'hui, et par quel canal ?',
@@ -8360,6 +8373,9 @@ function roiDessiner(){
   :roiCurseur([D.panier,'Panier moyen'+(prod==='budy'?', pour toutes les ventes':''),0,3000,5,' €',
     prod==='budy'?'Un seul montant pour tout : appels et messages repris, devis relancés, rendez-vous atelier, révisions, ventes additionnelles.':'Demande-le au client, avec sa fourchette basse et haute.']);
  document.getElementById('roi-s-perimetre').innerHTML=D.perimetre.map(roiCurseur).join('');
+ document.getElementById('roi-s-temps').innerHTML=roiCurseur(ROI_CH);
+ document.getElementById('roi-cb-cout_temps').checked=!c.off.cout_temps;
+ document.getElementById('roi-c-cout_temps').classList.toggle('off',!!c.off.cout_temps);
  document.getElementById('roi-tarif-x').innerHTML=D.tarif;
  document.getElementById('roi-s-cout').innerHTML=D.cout.map(roiCurseur).join('');
  document.getElementById('roi-seuil-base').value=(c.seuil_base==='marge'?'marge':'ca');
@@ -8398,7 +8414,7 @@ function roiDessiner(){
     +['mois','jour'].map(u=>'<button type="button" class="'+((jr?'jour':'mois')===u?'on':'')+'" onclick="roiUnite(\''+u+'\')" style="padding:3px 12px;border-radius:999px;border:1px solid var(--line);background:'+((jr?'jour':'mois')===u?'var(--accent-soft)':'var(--paper)')+';font-weight:700;cursor:pointer">par '+u+'</button>').join('')+'</div>';
   }
   // Levier UNIQUE (SoConnect, Soview, SoReach) : pas de case à cocher, décocher donnerait 0 € de gain.
-  const uni=D.cartes.filter(x=>x.s).length===1;
+  const uni=(prod==='soconnect'&&k.id==='demandes')||(prod==='soview'&&k.id==='visibilite')||(prod==='soreach'&&k.id==='campagnes');
   if(uni)delete c.off[k.id];
   return `<div class="roi-c${c.off[k.id]?' off':''}" id="roi-c-${k.id}">
    <h3>${uni?'':`<input type="checkbox" ${c.off[k.id]?'':'checked'} onchange="roiOff('${k.id}',!this.checked)" title="Inclure ce levier dans l'étude">`}<i class="roi-pt" style="background:${coul[k.id]||'#999'}"></i>${htmlSafe(k.t)}<span class="roi-gn" id="roi-g-${k.id}"></span></h3>
@@ -8485,6 +8501,8 @@ function roiCalc(){
    if(ss)ss.textContent=sc.seuil===0?'rentable dans les trois cas':(sc.seuil!=null?'rentable dès '+pcs(sc.seuil):'jamais rentable sur cette plage');
   }
  }
+ const gt=document.getElementById('roi-g-cout_temps');
+ if(gt)gt.textContent=(ROI.cfg.off&&ROI.cfg.off.cout_temps)?'non compté':'+ '+roiEur((r.valeur_temps_mois||0)*12)+' / an';
  r.leviers.forEach(function(l){const e=document.getElementById('roi-g-'+l.id);if(e)e.textContent=l.actif?'+ '+roiEur(l.gain_an)+' / an':'non inclus';});
  const act=r.leviers.filter(l=>l.actif&&l.gain_an>0);
  document.getElementById('roi-pile').innerHTML=act.map(l=>`<i style="flex:${Math.max(1,Math.round(l.gain_an))};background:${coul[l.id]||'#999'}" title="${htmlSafe(l.label)}"></i>`).join('');
@@ -8492,6 +8510,7 @@ function roiCalc(){
  const L=(D.lignes(r)||[]).filter(Boolean).concat([
   ['CA généré',roiEur(r.ca_an)+' / an'],
   ['Marge',roiEur(r.marge_an)+' / an'],
+  ['Temps libéré',roiFmt(r.heures_an)+' h / an'+(r.etp>=0.1?' · '+roiFmt(r.etp,1)+' ETP':'')],
   ['Gain net',roiEur(r.gain_net_mois)+' / mois'],
   ['Coût',roiEur(r.cout_mois)+' / mois · '+roiEur(r.cout_an1)+' an 1'],
   ['ROI',roiX(r.roi)+((r.payback_jours!=null&&r.roi>=1)?' · rentabilisé en '+roiFmt(r.payback_jours)+' j':'')],
