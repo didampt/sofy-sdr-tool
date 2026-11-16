@@ -184,6 +184,15 @@ Budy Auto et exporte le gabarit commun (gabarit, pageSynthese, pagePreuve, blocF
 - v405 : « 💼 Valoriser le temps rendu à ses équipes » est une OPTION cochable (config.off.cout_temps).
   Décochée, le coût horaire vaut 0 dans les quatre moteurs : les heures restent affichées, mais ne
   comptent plus dans le gain (Budy concession ×30 → ×28, pièces ×25 → ×21).
+- v409 (16/11, demande Didier) : la valorisation du temps est SUPPRIMÉE (brique floue pour le client, et
+  gain à 0 € quand on la décochait). `coutH = 0` en dur dans les 4 moteurs ; plus de carte « Valoriser le
+  temps », plus de leviers « temps » (Budy : appels/messages traités seul ; SoConnect : préqualification ;
+  Soview : avis, gestion ; SoReach : rédaction) ni de curseurs de temps dans le simulateur. Le gain =
+  CA récupéré (ou marge) + erreurs de référence évitées. Plus aucune mention du temps dans les PDF
+  (KPI heures, « En plus : … h », annexes). Les heures sont encore calculées (`heures_an`) mais non
+  affichées. Défauts désormais : concession ×28,0, pièces ×21,2 (cibles ×30 / ×25 non retenues sans le
+  temps : à recaler via le panier si Didier le veut). Les anciennes études stockées gardent `off.cout_temps`
+  sans effet.
 
 Bancs (scratchpad banc-roi) : serveur.mjs (app + CSP de prod + API simulées), calc.mjs (profils,
 autonomie du moteur, somme des leviers = gain), pdf.sh (PDF + planches PNG).
