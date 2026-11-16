@@ -1172,7 +1172,7 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
  <div class="ey">Avec Budy · relancer</div>
  <h2>Le bon message, <span class="g">au bon moment</span>, sur WhatsApp et RCS</h2>
  <div class="rule"></div>
- ${act('devis') ? `<div class="h3"><i class="pt" style="background:${COULEURS_ROI.devis}"></i>Devis sans suite</div>
+ ${act('devis') ? `<div class="h3"><i class="pt" style="background:${COULEURS_ROI.devis}"></i>Devis sans suite${pieces ? optTag : ''}</div>
  <div class="rl">
   <div>
    <p class="tx">Un devis qui n'est pas relancé est un devis signé ailleurs. Budy relance chaque devis resté sans réponse, avec un bouton pour confirmer ou être rappelé.</p>
