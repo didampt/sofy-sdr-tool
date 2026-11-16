@@ -2657,7 +2657,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v410';
+const VERSION='v411';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -8218,7 +8218,7 @@ const ROI_DEF={
  soconnect:{nom:'SoConnect',bouton:'💬 SoConnect',unite:['vente','ventes'],demandes:'demandes',panier:'panier',
   intro:'Le calcul de Romain : les demandes reçues, la part qui reste sans réponse, et <b>trois scénarios</b> de conversion. Quatre chiffres à obtenir du client : ses demandes par mois, celles qu\'il ne traite pas, son panier moyen et ce qu\'il convertit.',
   profils:[['defaut','']],
-  perimetre:[['sites','Établissements',1,200,1,'']],
+  perimetre:[['sites','Établissements',1,200,1,''],['jours_mois','Jours ouvrés par mois',15,31,1,'']],
   tarif:'SoConnect Basic <b>389 € par mois</b>. Le tableau de Romain et la fiche Arnoux utilisent 349 € (prix garanti 12 mois) : ajuste selon l\'offre en cours.',
   cout:[['abonnement','SoConnect, par établissement',0,2000,1,' €/mois'],['frais_installation','Mise en place (une fois)',0,20000,100,' €']],
   cartes:[
@@ -8387,12 +8387,22 @@ function roiDessiner(){
     <div class="roi-2">${ROI_MESURES.map(x=>`<div class="roi-s"><div class="roi-s-h"><span>${htmlSafe(x[1])}</span><span class="u"><input type="number" min="${x[2]}" max="${x[3]}" step="${x[4]}" value="${m[x[0]]==null?'':m[x[0]]}" placeholder="—" oninput="roiMesure('${x[0]}',this.value)"></span></div></div>`).join('')}</div>
     <div class="roi-s-x">${m.requete?'Recherche testée : « '+htmlSafe(m.requete)+' ». ':''}${prem?'Devant lui : '+prem+'. ':''}${m.ia_present===true?('Aperçu IA de Google : '+(m.ia_cite?'il est cité.':'il n\'est pas cité.')):''}</div></div>`;
   }
+  // SoConnect : les demandes se saisissent par mois OU par jour ouvré.
+  let ss=k.s,tog='';
+  if(prod==='soconnect'&&k.id==='demandes'){
+   const jr=c.demandes_unite==='jour';
+   ss=k.s.slice();
+   ss[0]=jr?['demandes_mois','Demandes par jour et par établissement',0,500,1,'','Multipliées par les jours ouvrés du mois (réglés dans Périmètre). Le total mensuel est affiché à droite.']
+    :['demandes_mois','Demandes par mois et par établissement',0,5000,10,''];
+   tog='<div style="display:flex;gap:6px;margin-bottom:8px;font-size:13px;align-items:center">Je saisis les demandes :'
+    +['mois','jour'].map(u=>'<button type="button" class="'+((jr?'jour':'mois')===u?'on':'')+'" onclick="roiUnite(\''+u+'\')" style="padding:3px 12px;border-radius:999px;border:1px solid var(--line);background:'+((jr?'jour':'mois')===u?'var(--accent-soft)':'var(--paper)')+';font-weight:700;cursor:pointer">par '+u+'</button>').join('')+'</div>';
+  }
   // Levier UNIQUE (SoConnect, Soview, SoReach) : pas de case à cocher, décocher donnerait 0 € de gain.
   const uni=D.cartes.filter(x=>x.s).length===1;
   if(uni)delete c.off[k.id];
   return `<div class="roi-c${c.off[k.id]?' off':''}" id="roi-c-${k.id}">
    <h3>${uni?'':`<input type="checkbox" ${c.off[k.id]?'':'checked'} onchange="roiOff('${k.id}',!this.checked)" title="Inclure ce levier dans l'étude">`}<i class="roi-pt" style="background:${coul[k.id]||'#999'}"></i>${htmlSafe(k.t)}<span class="roi-gn" id="roi-g-${k.id}"></span></h3>
-   <div class="roi-b"><div class="roi-x">${htmlSafe(k.x)}</div><div class="roi-2">${k.s.map(roiCurseur).join('')}</div></div></div>`;
+   <div class="roi-b"><div class="roi-x">${htmlSafe(k.x)}</div>${tog}<div class="roi-2">${ss.map(roiCurseur).join('')}</div></div></div>`;
  }).join('');
  document.getElementById('roi-go').textContent=ROI.jeton?'💾 Mettre à jour l\'étude (même lien)':'📄 Générer l\'étude client';
  // Trois scénarios : une hypothèse varie (bas / moyen / haut), le reste ne bouge pas.
@@ -8406,6 +8416,14 @@ function roiDessiner(){
   </div>
   <div id="roi-scen-t"></div></div>`:'';
  roiCalc();
+}
+// SoConnect : bascule « demandes par mois / par jour » en gardant le même volume mensuel.
+function roiUnite(u){
+ const c=ROI.cfg;if(!c||(c.demandes_unite||'mois')===u)return;
+ const j=Math.max(1,Number(c.jours_mois)||26);
+ c.demandes_mois=u==='jour'?Math.max(0,Math.round((Number(c.demandes_mois)||0)/j)):Math.round((Number(c.demandes_mois)||0)*j);
+ c.demandes_unite=u;
+ roiDessiner();
 }
 function roiSet(k,v,src){
  const x=parseFloat(String(v).replace(',','.'));

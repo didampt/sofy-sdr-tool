@@ -160,7 +160,8 @@ export function calculerSoconnect(c) {
   const panier = pos(c.panier, 0, 1000000), marge = pct(c.marge, 0);
   const surMarge = c.seuil_base === 'marge';
 
-  const demandes = sites * pos(c.demandes_mois, 0, 10000000);
+  // Les demandes se saisissent par mois OU par jour ouvré (demandes_unite, retour Didier 16/11/2026).
+  const demandes = sites * pos(c.demandes_mois, 0, 10000000) * (c.demandes_unite === 'jour' ? jours : 1);
   const nonTraitees = demandes * pct(c.taux_non_traitees, 0);
   // Levier UNIQUE et non décochable (16/11/2026) : reprendre les demandes non traitées EST ce que
   // SoConnect vend. Décocher donnait 0 € de gain, un non-sens commercial.
@@ -232,7 +233,7 @@ export const PRODUITS = {
     presets: { defaut: {
       produit: 'soconnect', profil: 'defaut', off: {}, seuil_base: 'ca',
       sites: 1, jours_mois: 26, cout_horaire: 20,
-      demandes_mois: 540, taux_non_traitees: 10, taux_conversion: 10, scen_bas: 1, scen_haut: 25,
+      demandes_mois: 540, demandes_unite: 'mois', taux_non_traitees: 10, taux_conversion: 10, scen_bas: 1, scen_haut: 25,
       panier: 250, marge: 35, min_gagnees: 2,
       abonnement: 389, frais_installation: 0
     } },
@@ -320,6 +321,7 @@ export function nettoyerConfig(c) {
       ia_cite: m.ia_cite === true ? true : (m.ia_cite === false ? false : null)
     };
   }
+  if (produit === 'soconnect') out.demandes_unite = c.demandes_unite === 'jour' ? 'jour' : 'mois';
   if (c.secteur) out.secteur = txt(c.secteur, 80);
   return out;
 }
@@ -666,7 +668,7 @@ function pageSoconnect(doc, meta, sdr, apercu, lienDemo, preuves) {
   P.push(pageCalcul({ r, c, produit: 'SoConnect', unite, surCa, sensible: 'le taux de conversion retenu',
     lignesCout: [[`Abonnement SoConnect (${eur(c.abonnement || 0)}/mois${r.sites > 1 ? ` × ${r.sites} établissements` : ''} × 12)`, r.abonnement_mois * 12]].concat(r.frais ? [['Mise en place', r.frais]] : []),
     hypotheses: [
-      [['Vos demandes', [['Établissements', r.sites], ['Demandes par mois et par établissement', ent(c.demandes_mois || 0)], ['Demandes non traitées aujourd\'hui', p0(c.taux_non_traitees)], ['Taux de conversion (scénario moyen)', p0(c.taux_conversion)]]]],
+      [['Vos demandes', [['Établissements', r.sites], ['Demandes par mois et par établissement', ent(r.demandes_total_mois / r.sites)], ['Demandes non traitées aujourd\'hui', p0(c.taux_non_traitees)], ['Taux de conversion (scénario moyen)', p0(c.taux_conversion)]]]],
       [['Ce que vaut une vente', [['Panier moyen', eur(c.panier || 0)]].concat(surCa ? [] : [['Marge', p0(c.marge)]])]]
     ] }));
   cloture(P, preuves, { sdr, lienDemo, eyebrow: 'Pourquoi Sofy', titre: 'Une seule interface, <span class="g">et une équipe qui reste</span>',
