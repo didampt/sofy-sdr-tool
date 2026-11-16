@@ -2159,3 +2159,8 @@ Trois règles qui en découlent, à ne plus jamais enfreindre :
 - `listes.entreprises` (JSONB) = source de vérité ; préserver sa forme.
 - Secrets : valeurs dans **Vercel → Environment Variables** (27 vars ; `RINGOVER_WEBHOOK_SECRET`, `SNITCHER_WEBHOOK_SECRET`, etc.). Ne jamais les exposer côté client ni les committer.
 - Les fiches Hot Lead Snitcher niveau entreprise n'ont pas de personne nommée → les contacts proposés viennent de LinkedIn (personas) : **normal**.
+- v413 (16/11, demande Didier « condenser les pages ») : `PAGES_ETUDE.calcul` (false) s'applique maintenant
+  aussi à SoConnect, Soview et SoReach (page « Le calcul » retirée), et pour SoConnect la page « en
+  situation » (4 points + iPhone réduit, `echelle: .82`) est fusionnée sous « Ce que coûtent les demandes
+  restées sans suite » (tableau à une ligne et chiffres de marché retirés). Pages : SoConnect 6 → 4,
+  Soview 5 → 4, SoReach 5 → 4 ; Budy concession 8 et pièces 7 inchangés (pages pleines, à arbitrer).

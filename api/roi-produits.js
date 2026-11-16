@@ -513,7 +513,7 @@ function pageSoview(doc, meta, sdr, apercu, lienDemo, preuves) {
   <div><i>4</i><span><b>Un coach Sofy dédié.</b> Un interlocuteur qui connaît votre réseau, inclus dans l'abonnement.</span></div>
  </div>
  ${mesure ? `<p class="note">Mesures relevées par Sofy sur les résultats publics de Google${m.requete ? ` pour la recherche « ${esc(m.requete)} »` : ''}. Elles décrivent un instant : une position locale varie selon le lieu et le moment de la recherche.</p>` : ''}` });
-  P.push(pageCalcul({ r, c, produit: 'Soview', unite, surCa: !r.sur_marge, sensible: 'la hausse de visibilité retenue',
+  if (PAGES_ETUDE.calcul) P.push(pageCalcul({ r, c, produit: 'Soview', unite, surCa: !r.sur_marge, sensible: 'la hausse de visibilité retenue',
     lignesCout: [[`Abonnement Soview (${eur(c.abonnement || 0)}/mois${r.sites > 1 ? ` × ${r.sites} établissements` : ''} × 12)`, r.abonnement_mois * 12]].concat(r.frais ? [['Mise en place', r.frais]] : []),
     hypotheses: [
       [['Votre fiche Google aujourd\'hui', [['Établissements', r.sites], ['Vues de la fiche par mois et par établissement', ent(c.vues_mois || 0)], ['Vues suivies d\'une action (appel, itinéraire, site)', p0(c.taux_action)], ['Actions qui deviennent un client', p0(c.taux_transfo)], ['Panier moyen', eur(c.panier || 0)]].concat(r.sur_marge ? [['Marge', p0(c.marge)]] : [])]],
@@ -584,7 +584,7 @@ function pageSoreach(doc, meta, sdr, apercu, lienDemo, preuves) {
   <div><b>47 %</b><span>de taux de clic sur ces mêmes campagnes<i>Groupe Kiosque, 32 points de vente — interview client Sofy</i></span></div>
  </div>
  <p class="note">Sofy est Google Partner RBM : l'agent RCS de votre enseigne est vérifié par Google, et Sofy porte le déploiement. L'exemple de message est illustratif.</p>` });
-  P.push(pageCalcul({ r, c, produit: 'SoReach', unite, surCa: !r.sur_marge, sensible: 'le taux de clic et le taux de conversion retenus',
+  if (PAGES_ETUDE.calcul) P.push(pageCalcul({ r, c, produit: 'SoReach', unite, surCa: !r.sur_marge, sensible: 'le taux de clic et le taux de conversion retenus',
     lignesCout: [[`Messages (${ent(r.messages_mois)}/mois × ${eur2(c.cout_message || 0)} × 12)`, r.cout_messages_mois * 12]]
       .concat(r.abonnement_mois ? [[`Abonnement (${eur(c.abonnement || 0)}/mois × 12)`, r.abonnement_mois * 12]] : [])
       .concat(r.frais ? [['Mise en place', r.frais]] : []),
@@ -627,11 +627,11 @@ function pageSoconnect(doc, meta, sdr, apercu, lienDemo, preuves) {
   if (s) P.push(s);
   // ── Aujourd'hui : ce que coûtent les demandes restées sans suite (demande Didier 16/11/2026) ──
   // non traitées × conversion × panier : c'est exactement le CA que SoConnect récupère.
-  if (r.perdu_mois > 0) P.push({ corps: `
+  P.push({ corps: `
  <div class="ey">Aujourd'hui</div>
  <h2>Ce que coûtent les demandes <span class="g">restées sans suite</span></h2>
  <div class="rule"></div>
- <div class="big">
+ ${r.perdu_mois > 0 ? `<div class="big">
   <div class="loss">
    <small>Chiffre d'affaires qui vous échappe</small>
    <b>${eur(r.perdu_an)}</b>
@@ -643,20 +643,9 @@ function pageSoconnect(doc, meta, sdr, apercu, lienDemo, preuves) {
    <div class="fx"><span>Ventes perdues par mois</span><b>${nb(r.ventes_perdues_mois)}</b></div>
   </div>
  </div>
- <div class="h3">Où part ce chiffre d'affaires</div>
- <table>
-  <tr><th>Fuite</th><th>Par mois</th><th>CA perdu par an</th></tr>
-  <tr><td><i class="pt" style="background:#EC4899"></i>Demandes sans réponse (WhatsApp, Messenger, Instagram, webchat)</td><td>${ent(r.non_traitees_mois)}</td><td>${eur(r.perdu_an)}</td></tr>
- </table>
- <p class="note" style="margin-top:8px">Le calcul : ${ent(r.non_traitees_mois)} demandes non traitées × ${p0(c.taux_conversion)} qui deviendraient une vente × ${eur(c.panier || 0)} de panier moyen = ${eur(r.perdu_mois)} par mois.</p>
- <div class="h3">Ce que mesure le marché</div>
- <div class="mk">
-  ${SOURCES_ROI.filter(x => /WhatsApp|conversationnels/.test(x.t)).map(x => `<div><b>${esc(x.v)}</b><span>${esc(x.t)}<i>${esc(x.s)}</i></span></div>`).join('')}
- </div>` });
-  P.push({ corps: `
- <div class="ey">SoConnect en situation</div>
- <h2>Toutes vos demandes, <span class="g">une seule boîte</span></h2>
- <div class="rule"></div>
+ <p class="note" style="margin-top:8px">Le calcul : ${ent(r.non_traitees_mois)} demandes non traitées × ${p0(c.taux_conversion)} qui deviendraient une vente × ${eur(c.panier || 0)} de panier moyen = ${eur(r.perdu_mois)} par mois.</p>` : ''}
+
+ <div class="h3" style="margin-top:22px">Avec SoConnect : toutes vos demandes, une seule boîte</div>
  <div class="rl" style="grid-template-columns:1fr auto;gap:30px;align-items:center">
   <div class="res" style="grid-template-columns:1fr;gap:16px">
    <div><i>1</i><span><b>Quatre canaux écrits, une seule boîte.</b> WhatsApp, webchat du site, Facebook et Messenger, RCS : un canal de plus n'ajoute pas un écran de plus.</span></div>
@@ -664,14 +653,14 @@ function pageSoconnect(doc, meta, sdr, apercu, lienDemo, preuves) {
    <div><i>3</i><span><b>Ouvert quand vos clients écrivent.</b> Le soir et le week-end, la demande est prise et attend votre équipe à l'ouverture.</span></div>
    <div><i>4</i><span><b>Rien ne se perd.</b> Chaque demande a un responsable, un statut et une relance.</span></div>
   </div>
-  <figure class="phs" style="margin:0;display:block">${iphone({ canal: 'whatsapp', nom: client, fil: [
+  <figure class="phs" style="margin:0;display:block">${iphone({ canal: 'whatsapp', nom: client, echelle: 0.82, fil: [
     { de: 'client', t: "Bonjour, vous avez ce modèle en stock ? J'en aurais besoin pour samedi.", h: '18:42' },
     { de: 'budy', t: 'Bonjour ! Je regarde ça pour vous. Pour quel usage, et à quel nom dois-je préparer le devis ?', h: '18:42' },
     { de: 'client', t: 'Pour un usage pro. Au nom de Martin SARL.', h: '18:44' },
     { de: 'budy', t: "Merci ! Votre demande est transmise à l'équipe, qui vous répond dès l'ouverture demain à 8 h 30 ✓", h: '18:44', boutons: ['Être rappelé', 'Recevoir le devis'] }] })}</figure>
  </div>
  <p class="note">L'exemple de conversation est illustratif.</p>` });
-  P.push(pageCalcul({ r, c, produit: 'SoConnect', unite, surCa, sensible: 'le taux de conversion retenu',
+  if (PAGES_ETUDE.calcul) P.push(pageCalcul({ r, c, produit: 'SoConnect', unite, surCa, sensible: 'le taux de conversion retenu',
     lignesCout: [[`Abonnement SoConnect (${eur(c.abonnement || 0)}/mois${r.sites > 1 ? ` × ${r.sites} établissements` : ''} × 12)`, r.abonnement_mois * 12]].concat(r.frais ? [['Mise en place', r.frais]] : []),
     hypotheses: [
       [['Vos demandes', [['Établissements', r.sites], ['Demandes par mois et par établissement', ent(r.demandes_total_mois / r.sites)], ['Demandes non traitées aujourd\'hui', p0(c.taux_non_traitees)], ['Taux de conversion (scénario moyen)', p0(c.taux_conversion)]]]],
