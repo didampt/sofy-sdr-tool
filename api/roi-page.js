@@ -458,16 +458,21 @@ export function scenariosEtude(calc, cfg, def) {
   const moyen = nombre(cfg[def.cle], 0);
   const run = v => { const c2 = Object.assign({}, cfg); c2[def.cle] = v; return calc(c2); };
   const net = r => r.gain_ventes_mois - r.cout_mois;
-  const colonnes = [['bas', 'Bas', nombre(cfg.scen_bas, moyen)], ['moyen', 'Moyen', moyen], ['haut', 'Haut', nombre(cfg.scen_haut, moyen)]].map(x => {
-    const r = run(x[2]);
-    return { id: x[0], label: x[1], valeur: x[2], ventes_mois: r.ventes_mois, ca_mois: r.ca_mois, marge_mois: r.marge_mois,
-      cout_mois: r.cout_mois, gain_mois: net(r), gain_an: net(r) * 12 };
-  });
+  // Le seuil d'abord : le scénario BAS est le taux minimum de rentabilité (demande Didier 16/11/2026,
+  // « même ici, vous ne perdez rien »). Si l'abonnement est déjà couvert à 0 %, ou pas couvert au
+  // taux moyen, le bas reste la valeur saisie (scen_bas).
   let lo = 0, hi = def.max || 100, seuil = null;
   if (net(run(hi)) > 0) {
     if (net(run(lo)) >= 0) seuil = 0;
     else { for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (net(run(m)) >= 0) hi = m; else lo = m; } seuil = hi; }
   }
+  const basSeuil = seuil != null && seuil > 0 && seuil < moyen;
+  const colonnes = [['bas', 'Bas', basSeuil ? seuil : nombre(cfg.scen_bas, moyen)], ['moyen', 'Moyen', moyen], ['haut', 'Haut', nombre(cfg.scen_haut, moyen)]].map(x => {
+    const r = run(x[2]);
+    const g = net(r), gn = Math.abs(g) < 0.5 ? 0 : g;   // le seuil tombe à 0 € près
+    return { id: x[0], label: x[1], valeur: x[2], seuil: x[0] === 'bas' && basSeuil, ventes_mois: r.ventes_mois, ca_mois: r.ca_mois, marge_mois: r.marge_mois,
+      cout_mois: r.cout_mois, gain_mois: gn, gain_an: gn * 12 };
+  });
   return { cle: def.cle, label: def.label, colonnes, seuil };
 }
 export const SCENARIO_BUDY = { cle: 'taux_conversion', label: 'Clients sauvés qui achètent', max: 100, simple: true };
@@ -483,7 +488,7 @@ export function tableScenarios(sc, o) {
   const signe = v => `<span${v < 0 ? ' class="neg"' : ''}>${v < 0 ? '−' + NBSP : ''}${ex(Math.abs(v))}</span>`;
   const pc = v => fmt(v, v < 10 && v % 1 ? 1 : 0) + NBSP + '%';
   return `<table class="sc">
-  <tr><th></th>${C.map(x => `<th${x.id === 'moyen' ? ' class="m"' : ''}>${esc(x.label)}</th>`).join('')}</tr>
+  <tr><th></th>${C.map(x => `<th${x.id === 'moyen' ? ' class="m"' : ''}>${esc(x.label)}${x.seuil ? '<br><small style="font-weight:600;text-transform:none;letter-spacing:0">seuil de rentabilité</small>' : ''}</th>`).join('')}</tr>
   ${(o.avant || []).map(([l, v]) => `<tr><td>${l}</td>${cel(() => v)}</tr>`).join('')}
   <tr><td>${esc(sc.label)}</td>${cel(x => pc(x.valeur))}</tr>
   <tr><td>${esc(o.unite[1].charAt(0).toUpperCase() + o.unite[1].slice(1))} en plus par mois</td>${cel(x => nb(x.ventes_mois))}</tr>
@@ -536,8 +541,10 @@ export function pageSynthese(r, o) {
    <div class="vg-j"><i style="width:${Math.max(1.5, Math.min(100, r.ventes_mois / Math.max(sv, r.ventes_mois) * 100)).toFixed(1)}%"></i></div>
   </div>
   <div class="k">
-   <b class="g">${eur(r.gain_net_mois)}</b><span>de gain net par mois, abonnement déduit</span>
-   <b style="margin-top:14px">${eur(r.gain_net_an)}</b><span>de gain net la première année</span>
+   ${r.gain_net_mois > 0.5 ? `<b class="g">${eur(r.gain_net_mois)}</b><span>de gain net par mois, abonnement déduit</span>
+   <b style="margin-top:14px">${eur(r.gain_net_an)}</b><span>de gain net la première année</span>`
+   : `<b class="g">${eur(r.gain_mois)}</b><span>de chiffre d'affaires récupéré par mois, pour ${eur(r.cout_mois)} d'abonnement</span>
+   <b style="margin-top:14px">${eur(r.gain_an)}</b><span>de chiffre d'affaires récupéré par an</span>`}
   </div>
  </div>
  ${o.scenariosHtml ? `<div class="h3" style="margin-top:24px">Du scénario prudent au scénario ambitieux</div>

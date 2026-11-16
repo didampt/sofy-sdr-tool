@@ -1555,7 +1555,7 @@ Spot-Hit</textarea>
           <div class="roi-r">
             <div class="lab">Gain total potentiel · an 1</div>
             <div class="big" id="roi-gain">—</div>
-            <div style="font-size:12px;color:#B9B2E0;margin:4px 0 0" id="roi-base-x">chiffre d'affaires + temps et coûts évités</div>
+            <div style="font-size:12px;color:#B9B2E0;margin:4px 0 0" id="roi-base-x">chiffre d'affaires récupéré</div>
             <div id="roi-synth" style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.08);font-size:12.5px;line-height:1.5"></div>
             <div class="roi-pile" id="roi-pile"></div>
             <div id="roi-leviers" style="margin-bottom:8px"></div>
@@ -2657,7 +2657,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v409';
+const VERSION='v410';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -8387,8 +8387,11 @@ function roiDessiner(){
     <div class="roi-2">${ROI_MESURES.map(x=>`<div class="roi-s"><div class="roi-s-h"><span>${htmlSafe(x[1])}</span><span class="u"><input type="number" min="${x[2]}" max="${x[3]}" step="${x[4]}" value="${m[x[0]]==null?'':m[x[0]]}" placeholder="—" oninput="roiMesure('${x[0]}',this.value)"></span></div></div>`).join('')}</div>
     <div class="roi-s-x">${m.requete?'Recherche testée : « '+htmlSafe(m.requete)+' ». ':''}${prem?'Devant lui : '+prem+'. ':''}${m.ia_present===true?('Aperçu IA de Google : '+(m.ia_cite?'il est cité.':'il n\'est pas cité.')):''}</div></div>`;
   }
+  // Levier UNIQUE (SoConnect, Soview, SoReach) : pas de case à cocher, décocher donnerait 0 € de gain.
+  const uni=D.cartes.filter(x=>x.s).length===1;
+  if(uni)delete c.off[k.id];
   return `<div class="roi-c${c.off[k.id]?' off':''}" id="roi-c-${k.id}">
-   <h3><input type="checkbox" ${c.off[k.id]?'':'checked'} onchange="roiOff('${k.id}',!this.checked)" title="Inclure ce levier dans l'étude"><i class="roi-pt" style="background:${coul[k.id]||'#999'}"></i>${htmlSafe(k.t)}<span class="roi-gn" id="roi-g-${k.id}"></span></h3>
+   <h3>${uni?'':`<input type="checkbox" ${c.off[k.id]?'':'checked'} onchange="roiOff('${k.id}',!this.checked)" title="Inclure ce levier dans l'étude">`}<i class="roi-pt" style="background:${coul[k.id]||'#999'}"></i>${htmlSafe(k.t)}<span class="roi-gn" id="roi-g-${k.id}"></span></h3>
    <div class="roi-b"><div class="roi-x">${htmlSafe(k.x)}</div><div class="roi-2">${k.s.map(roiCurseur).join('')}</div></div></div>`;
  }).join('');
  document.getElementById('roi-go').textContent=ROI.jeton?'💾 Mettre à jour l\'étude (même lien)':'📄 Générer l\'étude client';
@@ -8396,9 +8399,9 @@ function roiDessiner(){
  const sd=(window.ROI_SCEN_DEF||{})[prod];
  const scOk=sd&&!(sd.simple&&c.panier_mode!=='simple');
  document.getElementById('roi-scen').innerHTML=scOk?`<div class="roi-c"><h3>📊 Trois scénarios <span class="roi-gn" id="roi-scen-seuil" style="background:var(--paper);color:var(--ink-soft)"></span></h3>
-  <div class="roi-x">Une seule hypothèse change : <b>${htmlSafe(sd.label.toLowerCase())}</b>. Le scénario moyen reprend la valeur réglée plus haut ; règle ici le bas et le haut. Le tableau part tel quel dans l'étude.</div>
+  <div class="roi-x">Une seule hypothèse change : <b>${htmlSafe(sd.label.toLowerCase())}</b>. Le scénario moyen reprend la valeur réglée plus haut ; le bas est le seuil de rentabilité (calculé), règle ici le haut. Le tableau part tel quel dans l'étude.</div>
   <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:13px;margin-bottom:8px">
-   <label>Bas <input type="number" id="roi-i-scen_bas" min="0" step="0.5" value="${c.scen_bas==null?'':c.scen_bas}" oninput="roiSet('scen_bas',this.value,'i')" style="width:70px;padding:3px 6px;border:1px solid var(--line);border-radius:7px;text-align:right;font-weight:700"> %</label>
+   <span>Bas <b id="roi-bas-v"></b> <span id="roi-bas-x" style="color:var(--ink-soft)"></span></span>
    <label>Haut <input type="number" id="roi-i-scen_haut" min="0" step="0.5" value="${c.scen_haut==null?'':c.scen_haut}" oninput="roiSet('scen_haut',this.value,'i')" style="width:70px;padding:3px 6px;border:1px solid var(--line);border-radius:7px;text-align:right;font-weight:700"> %</label>
   </div>
   <div id="roi-scen-t"></div></div>`:'';
@@ -8431,7 +8434,7 @@ function roiCalc(){
  }
  document.getElementById('roi-gain').textContent=roiEur(r.gain_an);
  const bx=document.getElementById('roi-base-x');
- if(bx)bx.textContent=(r.sur_marge?'marge':'chiffre d\'affaires')+' + temps et coûts évités';
+ if(bx)bx.textContent=(r.sur_marge?'marge':'chiffre d\'affaires')+(prod==='budy'?' + coûts évités':'');
  const U=D.unite,sv=r.seuil_ventes_mois;
  const sy=document.getElementById('roi-synth');
  if(sy)sy.innerHTML=sv!=null
@@ -8440,6 +8443,8 @@ function roiCalc(){
    +'.<br>'+htmlSafe(D.nom)+' en vise <b>'+roiNb(r.ventes_mois)+'</b>'+(r.multiple_seuil>=2?', soit '+roiFmt(Math.floor(r.multiple_seuil))+' fois le seuil':'')
    +'. Panier moyen '+roiEur(r.panier_moyen)+', investissement '+roiEur(r.cout_mois)+' HT / mois.'
   :'Renseigne un tarif et un panier pour calculer le seuil de rentabilité.';
+ // Un gain qui ne couvre pas l'abonnement ne doit pas partir chez le client sans que le sales le sache.
+ if(sy&&r.gain_net_mois<-0.5)sy.innerHTML+='<div style="margin-top:8px;padding:7px 9px;border-radius:8px;background:#7A3B00;color:#FFD9A8;font-weight:600">⚠️ Avec ces hypothèses, le gain ne couvre pas l\'abonnement ('+roiEur(r.gain_net_mois)+' / mois). Revois-les avec le client avant d\'envoyer l\'étude.</div>';
  const st=document.getElementById('roi-scen-t');
  if(st&&window.ROI_SCENARIOS){
   const sc=window.ROI_SCENARIOS(window.ROI_MOTEURS[prod],ROI.cfg,(window.ROI_SCEN_DEF||{})[prod]);
@@ -8455,7 +8460,9 @@ function roiCalc(){
     +lig('Investissement mensuel',x=>ex(x.cout_mois))
     +lig('Gain ou perte par mois',x=>eu(x.gain_mois),true)
     +lig('Gain ou perte par an',x=>eu(x.gain_an),true)+'</table>'
-    +'<div class="roi-s-x" style="margin-top:6px">Gain des ventes seules'+(r.sur_marge?', sur la marge':', sur le chiffre d\'affaires')+' ; le temps rendu s\'ajoute dans tous les scénarios.</div>';
+    +'<div class="roi-s-x" style="margin-top:6px">Gain des ventes seules'+(r.sur_marge?', sur la marge':', sur le chiffre d\'affaires')+'.</div>';
+   const bv=document.getElementById('roi-bas-v'),bx=document.getElementById('roi-bas-x');
+   if(bv){bv.textContent=pcs(C[0].valeur);bx.textContent=C[0].seuil?'= seuil de rentabilité (calculé)':'(valeur par défaut, le seuil n\'est pas atteint)';}
    const ss=document.getElementById('roi-scen-seuil');
    if(ss)ss.textContent=sc.seuil===0?'rentable dans les trois cas':(sc.seuil!=null?'rentable dès '+pcs(sc.seuil):'jamais rentable sur cette plage');
   }

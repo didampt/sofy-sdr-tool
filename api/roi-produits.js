@@ -18,7 +18,7 @@
 
 import {
   esc, NBSP, fmt, eur, eur2, ent, nb, roiX, p0, kpi, bulle, pageSynthese, pagePreuve, blocFin, gabarit,
-  PIED_ESTIMATION, PAGES_ETUDE, iphone, calculerRoi, PRESETS_ROI, COULEURS_ROI, pageRoi, scenariosEtude, tableScenarios, SCENARIO_BUDY
+  PIED_ESTIMATION, PAGES_ETUDE, SOURCES_ROI, iphone, calculerRoi, PRESETS_ROI, COULEURS_ROI, pageRoi, scenariosEtude, tableScenarios, SCENARIO_BUDY
 } from './roi-page.js';
 
 // ── Soview ────────────────────────────────────────────────────────────────────────────────────
@@ -162,7 +162,9 @@ export function calculerSoconnect(c) {
 
   const demandes = sites * pos(c.demandes_mois, 0, 10000000);
   const nonTraitees = demandes * pct(c.taux_non_traitees, 0);
-  const prises = on('demandes') ? nonTraitees : 0;          // reprises par SoConnect
+  // Levier UNIQUE et non décochable (16/11/2026) : reprendre les demandes non traitées EST ce que
+  // SoConnect vend. Décocher donnait 0 € de gain, un non-sens commercial.
+  const prises = nonTraitees;                                // reprises par SoConnect
   const ventes = prises * pct(c.taux_conversion, 0);
   const ca = ventes * panier, m = ca * marge;
   const gVentes = surMarge ? m : ca;
@@ -176,10 +178,15 @@ export function calculerSoconnect(c) {
   const base = surMarge ? panier * marge : panier;
   const seuil = (base > 0 && coutMois > 0) ? Math.max(1, Math.ceil(coutMois / base)) : null;
   const gainJour = gainMois / jours;
-  const L = (id, label, caL, gain) => ({ id, label, actif: on(id), ca_an: caL * 12, gain_an: gain * 12 });
+  const L = (id, label, caL, gain) => ({ id, label, actif: true, ca_an: caL * 12, gain_an: gain * 12 });
+  // Ce que coûtent les demandes restées sans suite : non traitées × conversion × panier (toujours en CA,
+  // c'est ce qui échappe au client). Égal au CA que SoConnect récupère : perte et gain sont les deux faces
+  // d'un même chiffre.
+  const ventesPerdues = nonTraitees * pct(c.taux_conversion, 0), perduMois = ventesPerdues * panier;
   return {
     produit: 'soconnect', sites, jours, sur_marge: surMarge,
     demandes_total_mois: demandes, non_traitees_mois: nonTraitees, prises_mois: prises,
+    ventes_perdues_mois: ventesPerdues, perdu_mois: perduMois, perdu_an: perduMois * 12, perdu_jour: perduMois / jours,
     leviers: [
       L('demandes', 'Ventes sur les demandes aujourd\'hui non traitées', ca, gVentes)
     ],
@@ -610,6 +617,34 @@ function pageSoconnect(doc, meta, sdr, apercu, lienDemo, preuves) {
   const s = pageSynthese(r, { scenariosHtml: sc ? tableScenarios(sc, { unite, marge: !surCa, note: noteSo }) : '', produit: 'SoConnect', unite, enPlus: true, demandes: 'demandes par mois', demandesCourt: 'demandes',
     panier: 'Commande moyenne', temps: 'préqualification des demandes par Budy' });
   if (s) P.push(s);
+  // ── Aujourd'hui : ce que coûtent les demandes restées sans suite (demande Didier 16/11/2026) ──
+  // non traitées × conversion × panier : c'est exactement le CA que SoConnect récupère.
+  if (r.perdu_mois > 0) P.push({ corps: `
+ <div class="ey">Aujourd'hui</div>
+ <h2>Ce que coûtent les demandes <span class="g">restées sans suite</span></h2>
+ <div class="rule"></div>
+ <div class="big">
+  <div class="loss">
+   <small>Chiffre d'affaires qui vous échappe</small>
+   <b>${eur(r.perdu_an)}</b>
+   <p>par an : demandes écrites restées sans réponse.<br>Soit <b>${eur(r.perdu_jour)}</b> par jour ouvré.</p>
+  </div>
+  <div class="flux">
+   <div class="fx"><span>Demandes reçues par mois</span><b>${ent(r.demandes_total_mois)}</b></div>
+   <div class="fx rouge"><span>… restées sans réponse</span><b>${ent(r.non_traitees_mois)}</b></div>
+   <div class="fx"><span>Ventes perdues par mois</span><b>${nb(r.ventes_perdues_mois)}</b></div>
+  </div>
+ </div>
+ <div class="h3">Où part ce chiffre d'affaires</div>
+ <table>
+  <tr><th>Fuite</th><th>Par mois</th><th>CA perdu par an</th></tr>
+  <tr><td><i class="pt" style="background:#EC4899"></i>Demandes sans réponse (WhatsApp, Messenger, Instagram, webchat)</td><td>${ent(r.non_traitees_mois)}</td><td>${eur(r.perdu_an)}</td></tr>
+ </table>
+ <p class="note" style="margin-top:8px">Le calcul : ${ent(r.non_traitees_mois)} demandes non traitées × ${p0(c.taux_conversion)} qui deviendraient une vente × ${eur(c.panier || 0)} de panier moyen = ${eur(r.perdu_mois)} par mois.</p>
+ <div class="h3">Ce que mesure le marché</div>
+ <div class="mk">
+  ${SOURCES_ROI.filter(x => /WhatsApp|conversationnels/.test(x.t)).map(x => `<div><b>${esc(x.v)}</b><span>${esc(x.t)}<i>${esc(x.s)}</i></span></div>`).join('')}
+ </div>` });
   P.push({ corps: `
  <div class="ey">SoConnect en situation</div>
  <h2>Toutes vos demandes, <span class="g">une seule boîte</span></h2>

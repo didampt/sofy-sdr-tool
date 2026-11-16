@@ -193,6 +193,16 @@ Budy Auto et exporte le gabarit commun (gabarit, pageSynthese, pagePreuve, blocF
   affichées. Défauts désormais : concession ×28,0, pièces ×21,2 (cibles ×30 / ×25 non retenues sans le
   temps : à recaler via le panier si Didier le veut). Les anciennes études stockées gardent `off.cout_temps`
   sans effet.
+- v410 (16/11, demande Didier) : SoConnect « le must have ». (1) Nouvelle page « Ce que coûtent les demandes
+  restées sans suite » (après la synthèse) : perte = non traitées × conversion × panier (CA), égale au gain
+  de SoConnect ; ventes_perdues_mois / perdu_mois / perdu_an / perdu_jour dans `calculerSoconnect`. La
+  formule SANS conversion (non traitées × panier) avait été écartée : 162 000 €/an contre un gain de 16 200.
+  (2) Levier unique non décochable (SoConnect, Soview, SoReach) : plus de case, `prises = nonTraitees`
+  en dur, `off.demandes` ignoré. (3) Scénario BAS = taux minimum de rentabilité calculé (bissection de
+  `scenariosEtude`, colonne `seuil:true`, libellé « seuil de rentabilité ») pour tous les produits quand
+  0 < seuil < moyen ; sinon scen_bas. Le curseur « Bas » du simulateur est remplacé par un affichage.
+  (4) Gain net ≤ 0 : bandeau orange dans le simulateur, et dans le PDF la tuile « gain net » est remplacée
+  par le CA récupéré par mois / par an.
 
 Bancs (scratchpad banc-roi) : serveur.mjs (app + CSP de prod + API simulées), calc.mjs (profils,
 autonomie du moteur, somme des leviers = gain), pdf.sh (PDF + planches PNG).
