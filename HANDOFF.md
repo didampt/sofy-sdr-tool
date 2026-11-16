@@ -107,6 +107,70 @@ Budy Auto et exporte le gabarit commun (gabarit, pageSynthese, pagePreuve, blocF
   pièces 45 appels et 30 messages/jour, 12 % de conversion, 750 devis, 2 % de ventes additionnelles.
   Sur la marge, ces mêmes défauts donnent ≈ ×13 et ≈ ×11.
 - Soview / SoReach / SoConnect affichent ≈ ×5, ×6 et ×4 sur le CA (aucun multiple visé).
+- v406 (PAS ENCORE COMMITÉ NI POUSSÉ) : RETOURS DE ROMAIN sur l'étude AAA (PDF annoté en rouge, 16/11).
+  Corrigé dans roi-page.js / roi-produits.js :
+  · BUG : les leviers DÉCOCHÉS restaient affichés (fuites, appels reçus, taux de réponse, devis…),
+    comptés dans « CA qui vous échappe » et dans « vos demandes ». Tout suit maintenant les leviers
+    cochés ; les libellés (« clients sauvés : messages traités », phrase de couverture) aussi.
+  · Montants EXACTS à l'euro près (plus d'arrondi commercial) : 49 896 − 4 188 = 45 708.
+  · Couverture : retire « Toutes les hypothèses sont en annexe », « soit ×12 la mise, rentabilisé en
+    31 jours » (aussi sur Soview / SoReach / SoConnect), la carte « CA récupéré » (déjà en gros) et
+    la carte « 0 h » (n'apparaît que si des heures sont rendues, avec leur valeur en €).
+  · Synthèse : retire « Soit N fois le seuil… » et les trois cartes du bas.
+  · Scénarios : retire l'intro et le bloc « Comment lire ce tableau » (tous produits).
+  · PAGES RETIRÉES (Budy Auto) : « répondre », « le calcul », « annexe hypothèses », « pourquoi Budy »
+    — drapeaux PAGES_ETUDE (roi-page.js), remettre true pour les rétablir. Pour les 3 autres
+    produits seule la page « Pourquoi » est retirée (leur calcul et leurs hypothèses sont sur une
+    même page, gardée). Étude Budy : 7 pages (tout coché) ou 5 (messages seuls).
+  · Bouton de démonstration + carte du conseiller passent en bas de « Ils l'ont fait » (le conseiller
+    doit rester en fin de document) ; sans cas ni logo, une page « Prochaine étape » les porte.
+  · Cas client SANS localisation (Guadeloupe, Baie-Mahault, Pointe-à-Pitre) : peu vendeur pour la
+    métropole. ⚠️ je n'ai pas su si « la localisation de ces enseignes » visait aussi les logos.
+- v406 (suite, 16/11, retours Didier) — PAS COMMITÉ :
+  · Les trois pages « synthèse / scénarios » n'en font plus qu'une : le tableau Bas / Moyen / Haut est
+    sous « Le vrai gain » (page 2) pour tous les produits (pageSynthese({scenariosHtml})).
+  · NOUVELLE page « Budy en conversation » (Budy Auto) : maquettes d'iPhone WhatsApp et RCS
+    conversationnel (iphone() dans roi-page.js, CSS .ip) + bloc « Les options Budy Auto — en sus de
+    SoConnect » (blocOptions : TecDoc, TecRMI, Mecaplanning en concession ; TecDoc, TecRMI, 500 plaques
+    et 1 000 messages en pièces ; prix repris de la config si > 0). Scénarios illustratifs :
+    concession = créneau frein + préconisation constructeur (disques) + rappel RCS ; pièces = pièce
+    trouvée par la plaque + disques + relance de devis RCS. Drapeau PAGES_ETUDE.conversation.
+  · Cas Marimax réservé au profil « pièces » (hors sujet pour une concession) : la page « Ils l'ont
+    fait » d'une concession ne porte que les logos + la clôture (page claire, peu remplie — à enrichir
+    avec un cas concession quand il existera).
+  · SoConnect : sa page devient « SoConnect en situation » avec un iPhone WhatsApp.
+  · RETOURS DIDIER du 17/11 (PAS COMMITÉ) :
+    - AUCUNE MARQUE PARTENAIRE dans les études (TecDoc, TecRMI, TecAlliance, Mecaplanning, SIV) :
+      « catalogues électroniques », « préconisations constructeur », « intégration DMS / ERP »,
+      « API », « MCP » (assistants IA) ; le conseiller cite les marques en démonstration.
+    - Page 4 : 500 interrogations de plaque et 1 000 messages NE SONT PLUS CITÉS (non confirmés) —
+      ⚠️ le moteur garde pourtant messages_inclus 1000 / plaques_incluses 500 dans le preset pièces :
+      à reprendre quand le tarif sera tranché. Socle SoConnect Basic avec « mémoire persistante » ;
+      option « Budy Auto Pièces / Concession » avec le MONTANT SAISI par le sales (c.module) et la
+      mention « tarif selon la taille et le nombre d'établissements ». Trois iPhone : WhatsApp, RCS,
+      « Budy se souvient » (mémoire).
+    - Pages « relancer » et « vendre juste » : bulles remplacées par des iPhone « courts » (haut du
+      téléphone, fondu bas ; échelle .82 quand 3 sections). Étiquette « Option Budy Auto … » sur
+      catalogues, préconisation, révisions et (concession) planning atelier.
+    - Cas Marimax ANONYMISÉ (« Un distributeur de pièces auto », eyebrow « Exemple client », sans lieu)
+      — il ne parle pas à un prospect de métropole. Le logo Marimax reste dans le bandeau (bibliothèque).
+    - Concession : dernière page complétée par une illustration de concession (ILLU_CONCESSION, SVG).
+    - Libellés des leviers sans marque (« Révisions relancées », « Bonne pièce par immatriculation »).
+  · RETOURS DIDIER du 17/11 (suite) :
+    - Mention « tarif selon la taille et le nombre d'établissements » retirée de la page 4.
+    - « Bien plus qu'un assistant IA : un vendeur IA » (vendeurIA() dans roi-page.js) : mémoire
+      persistante + option → Budy est PROACTIF et relance sans action du vendeur, avec l'accord du
+      client et dans le respect du RGPD. Pièces : section ajoutée à la page « relancer » (Mme F., devis
+      plaquettes en janvier → relance plaquettes + disques 12 mois plus tard, iPhone RCS). Concession :
+      page dédiée (Mme F., vidange en janvier → relance à 15 mois ; deux iPhone : WhatsApp de janvier avec
+      demande d'accord, RCS de la relance). Aucun chiffre inventé (récit seulement).
+    - PHOTOS de la bibliothèque (kb_visuels) : preuvesVisuels() classe les types « ambiance » ET
+      « produit » par mots-clés PRIORISÉS (concession : showroom/concession d'abord ; pièces :
+      distributeur/pièces d'abord ; api/p.js) et renvoie 2 photos : couverture, puis page finale d'une
+      concession (à défaut le dessin ILLU_CONCESSION). Pour être retrouvée, la description d'une photo
+      doit contenir « concession », « garage » ou « distributeur de pièces ».
+  ⚠️ Le banc local (banc-roi/serveur.mjs) met roi-produits.js en cache-bust mais PAS roi-page.js
+    (importé sans ?t=) : redémarrer le serveur après toute modification de roi-page.js.
 - v405 : « 💼 Valoriser le temps rendu à ses équipes » est une OPTION cochable (config.off.cout_temps).
   Décochée, le coût horaire vaut 0 dans les quatre moteurs : les heures restent affichées, mais ne
   comptent plus dans le gain (Budy concession ×30 → ×28, pièces ×25 → ×21).

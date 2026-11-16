@@ -1685,11 +1685,17 @@ export default async function handler(req, res) {
         preuves.cas = casClient(cas.find(proche) || (auto ? null : (cas.find(b => b.module === produitDe(cfg)) || cas[0])) || null);
       } catch (_) {}
       try {
+        // Photos de la bibliothèque, dans l'ordre de ce qu'on veut voir : concession → showroom d'abord ;
+        // distributeur de pièces → distributeur / pièces / entrepôt d'abord (retour Didier 17/11).
+        const motsPhoto = !auto ? motsSecteur
+          : (cfg.profil === 'pieces'
+            ? ['distributeur', 'pieces', 'piece', 'entrepot', 'comptoir', 'magasin', 'stock', 'garage', 'garagiste', 'automobile', 'voiture']
+            : ['concession', 'showroom', 'concessionnaire', 'vehicule', 'voiture', 'garage', 'garagiste', 'atelier', 'mecanicien', 'automobile']);
         const v = await preuvesVisuels(auto ? {
           mots: ['auto', 'garage', 'concession', 'piece', 'carrosserie', 'marimax', 'gbh', 'ad distribution', 'peugeot', 'renault', 'toyota', 'citroen', 'stellantis'],
-          motsPhoto: ['garage', 'garagiste', 'concession', 'atelier', 'mecanicien', 'automobile', 'voiture', 'piece']
-        } : { mots: motsSecteur, motsPhoto: motsSecteur });
-        preuves.logos = v.logos; preuves.illustration = v.illustration;
+          motsPhoto
+        } : { mots: motsSecteur, motsPhoto });
+        preuves.logos = v.logos; preuves.illustration = v.illustration; preuves.illustrations = v.illustrations;
       } catch (_) {}
       return res.status(200).send(pageEtude(doc, { jeton, cree_le: row.created_at }, sdr, interne, LIEN_DEMO(), preuves));
     }

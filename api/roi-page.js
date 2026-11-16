@@ -165,12 +165,16 @@ export function calculerRoi(c) {
   const paniers = mix.filter(m => m.conv > 0 && m.panier > 0).map(m => m.panier);
   const baseSeuil = c.seuil_base === 'marge' ? margeVente : panierMoyen;
   const seuilVentes = (baseSeuil > 0 && coutMois > 0) ? Math.max(1, Math.ceil(coutMois / baseSeuil)) : null;
-  const demandesMois = appelsMois + msgMois;
+  let demandesMois = (on('appels') ? appelsMois : 0) + (on('messages') ? msgMois : 0);
+  if (!demandesMois) demandesMois = (on('devis') ? devisMois : 0) + (on('atelier') ? rdvMois : 0) + (on('revisions') ? revRelances : 0);
   const ventesMois = (oppRecup + msgRecup) * tauxVente + devisRecup + noshowEvites + revRdv + upsVentes;
   const gainJourOuvre = gainMois / jours;
     const L = (id, label, ca, gain) => ({ id, label, actif: on(id), ca_an: ca * 12, gain_an: gain * 12 });
-  const caPerdu = oppPerduesAuj * valeurOpp + msgPerdus * valeurOpp + devisRecupPot * panierDevis
-    + noshow * panierRdv + revPot * panierRev + upsPot * panierUps;
+  // Un levier décoché ne doit rien laisser dans l'étude (bug relevé par Romain 16/11 : tout restait
+  // affiché alors qu'il n'avait coché que les messages).
+  const caPerdu = (on('appels') ? oppPerduesAuj * valeurOpp : 0) + (on('messages') ? msgPerdus * valeurOpp : 0)
+    + (on('devis') ? devisRecupPot * panierDevis : 0) + (on('atelier') ? noshow * panierRdv : 0)
+    + (on('revisions') ? revPot * panierRev : 0) + (on('upsell') ? upsPot * panierUps : 0);
 
   return {
     sites, jours,
@@ -202,9 +206,9 @@ export function calculerRoi(c) {
       L('messages', 'Messages WhatsApp / RCS sauvés', caMsg, G(caMsg, gMsg)),
       L('devis', 'Devis relancés', caDevis, G(caDevis, gDevis)),
       L('atelier', 'Rendez-vous atelier sécurisés', caNoshow, G(caNoshow, gNoshow)),
-      L('revisions', 'Révisions relancées (TecRMI)', caRev, G(caRev, gRev)),
+      L('revisions', 'Révisions relancées', caRev, G(caRev, gRev)),
       L('upsell', 'Ventes additionnelles par préconisation', caUps, G(caUps, gUps)),
-      L('identif', 'Bonne pièce par immatriculation (TecDoc + SIV)', 0, gIdentif),
+      L('identif', 'Bonne pièce par immatriculation', 0, gIdentif),
       L('temps', 'Appels et messages traités seul par Budy', 0, gTemps)
     ],
     clients_sauves_mois: oppRecup + msgRecup + devisRecup + noshowEvites + revRdv,
@@ -305,16 +309,23 @@ export const SOURCES_ROI = [
   { v: '60 %', t: "des prises de rendez-vous après-vente automatisées par un agent IA, sur un test de 117 concessions — et −30 % d'appels à traiter par les équipes", s: "L'Argus, 22/09/2026" }
 ];
 
+// ── Pages de l'étude ───────────────────────────────────────────────────────────────────────────
+// Retours de Romain sur l'étude AAA (16/11/2026) : le document accompagne une présentation, les
+// pages qui répètent ce qu'on y dit sont retirées. Remettre un drapeau à true la rétablit.
+//   repondre : « Plus aucun appel ni message sans réponse » (Budy Auto)
+//   calcul   : « Un retour sur investissement calculé sur… » (Budy Auto)
+//   annexe   : « Les hypothèses retenues » (Budy Auto)
+//   conversation : « Budy en conversation » (maquettes d'iPhone WhatsApp et RCS + options en sus)
+//   pourquoi : « Pourquoi Budy / Sofy » — quand elle est retirée, le bouton de démonstration et la
+//              carte du conseiller passent en bas de la page « Ils l'ont fait ».
+export const PAGES_ETUDE = { repondre: false, calcul: false, annexe: false, pourquoi: false, conversation: true };
+
 // ── Rendu ─────────────────────────────────────────────────────────────────────────────────────
 export const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 export const NBSP = ' ';
-function arrondi(v) {
-  const a = Math.abs(v);
-  if (a >= 100000) return Math.round(v / 1000) * 1000;
-  if (a >= 10000) return Math.round(v / 100) * 100;
-  if (a >= 1000) return Math.round(v / 10) * 10;
-  return Math.round(v);
-}
+// Montants EXACTS, à l'euro près : un client refait la soustraction à la calculette (retour Romain
+// 16/11 : 49 900 − 4 188 donne 45 712, pas 45 700). Aucun arrondi commercial.
+function arrondi(v) { return Math.round(v); }
 export const fmt = (v, d = 0) => (Number(v) || 0).toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }).replace(/[  ]/g, NBSP);
 export const eur = v => fmt(arrondi(v)) + NBSP + '€';
 export const eur2 = v => fmt(v, 2) + NBSP + '€';
@@ -341,6 +352,33 @@ export function bulle(canal, emetteur, fil, boutons) {
 // « Base de connaissance » met donc à jour les prez ET les études ROI, sans toucher au code.
 // Le bloc est rédigé en texte : « intro. **Avant :** … **Résultats :** a · b · c. **Verbatim
 // client :** « … » ». On le découpe ici ; un bloc écrit autrement s'affiche en texte simple.
+// ── Maquette d'iPhone : une conversation telle que le client final la voit ─────────────────────
+// o : { canal: 'whatsapp' | 'rcs', nom, sous, fil: [msg], puces?: [libellés] }
+// msg : { de: 'client' | 'budy', t, h } (bulle) ou { de: 'budy', carte: { titre, texte, boutons: [] }, h }
+//        et, pour WhatsApp, { de: 'budy', t, h, boutons: [] } (réponses rapides sous la bulle).
+// Côté client = à droite ; côté entreprise = à gauche, comme sur le téléphone du client.
+export function iphone(o) {
+  const wa = o.canal === 'whatsapp';
+  const court = o.court ? Math.round(o.court) : 0;
+  const zoom = o.echelle && o.echelle < 1 ? `zoom:${o.echelle};` : '';   // hauteur d'écran en px : on ne montre que le haut du téléphone
+  const ini = esc(String(o.nom || '?').trim().charAt(0).toUpperCase());
+  const bulle1 = m => {
+    const out = m.de === 'client';
+    const hh = m.h ? `<em>${esc(m.h)}${out && wa ? ' <b>✓✓</b>' : ''}</em>` : '';
+    if (m.carte) return `<div class="ip-c"><i class="ip-ci"></i><b>${esc(m.carte.titre)}</b><p>${esc(m.carte.texte)}</p>${(m.carte.boutons || []).map(x => `<span>${esc(x)}</span>`).join('')}${hh}</div>`;
+    return `<div class="ip-m ${out ? 'out' : 'in'}">${esc(m.t)}${hh}</div>${(m.boutons || []).length ? `<div class="ip-r">${m.boutons.map(x => `<span>${esc(x)}</span>`).join('')}</div>` : ''}`;
+  };
+  return `<div class="ip ${wa ? 'wa' : 'rcs'}${court ? ' court' : ''}"${(court || zoom) ? ` style="${court ? `--ih:${court}px;` : ''}${zoom}"` : ''} role="img" aria-label="Exemple de conversation ${wa ? 'WhatsApp' : 'RCS'}">
+  <div class="ip-s"><i class="ip-isl"></i>
+   <div class="ip-st"><b>9:41</b><span class="ip-ic"><i></i><i></i><i></i><u></u></span></div>
+   <div class="ip-hd"><span class="ip-bk">‹</span><span class="ip-av">${ini}</span>
+    <span class="ip-who"><b>${esc(o.nom)}${wa ? '' : ' <u>✓</u>'}</b><small>${esc(o.sous || (wa ? 'compte professionnel' : 'agent vérifié'))}</small></span></div>
+   <div class="ip-bd"><div class="ip-day">${esc(o.jour || "Aujourd'hui")}</div>${o.fil.map(bulle1).join('')}</div>
+   ${(o.puces || []).length ? `<div class="ip-q">${o.puces.map(x => `<span>${esc(x)}</span>`).join('')}</div>` : ''}
+   ${court ? '' : `<div class="ip-in"><span>${wa ? 'Message' : 'Message RCS'}</span></div>`}
+  </div></div>`;
+}
+
 export function casClient(bloc) {
   if (!bloc || !bloc.titre) return null;
   const titre = String(bloc.titre);
@@ -368,6 +406,30 @@ export function casClient(bloc) {
 
 // Illustration de repli (aucune photo « garage / concession » validée dans la bibliothèque) :
 // un atelier, une voiture, une conversation. Dessinée ici pour ne dépendre d'aucun fichier.
+export const ILLU_CONCESSION = `<svg viewBox="0 0 716 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Une concession automobile et ses véhicules" style="display:block;width:100%;height:auto;border-radius:18px">
+ <defs>
+  <linearGradient id="cg" x1="0" x2="1"><stop offset="0" stop-color="#8F86FF"/><stop offset="1" stop-color="#F0428A"/></linearGradient>
+  <linearGradient id="cs" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ECE8FF"/><stop offset="1" stop-color="#FCEFF6"/></linearGradient>
+  <linearGradient id="cv" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F4F8FF"/><stop offset="1" stop-color="#DCE6FB"/></linearGradient>
+  <clipPath id="cc"><rect width="716" height="340" rx="18"/></clipPath>
+  <g id="voit"><path d="M0 44 q3 -16 20 -19 l16 -3 q11 -17 33 -18 h26 q20 1 33 18 l22 5 q10 3 10 16 v5 h-160 z"/><path d="M34 22 q8 -11 25 -12 h24 q14 1 24 12 z" fill="rgba(255,255,255,.55)"/><circle cx="38" cy="50" r="10" fill="#17123A"/><circle cx="38" cy="50" r="3.4" fill="#B9B2E0"/><circle cx="122" cy="50" r="10" fill="#17123A"/><circle cx="122" cy="50" r="3.4" fill="#B9B2E0"/></g>
+ </defs>
+ <g clip-path="url(#cc)">
+  <rect width="716" height="340" fill="url(#cs)"/>
+  <circle cx="620" cy="50" r="30" fill="#fff" opacity=".7"/><circle cx="96" cy="44" r="16" fill="#fff" opacity=".55"/>
+  <rect x="0" y="288" width="716" height="52" fill="#E4DFF7"/><rect x="0" y="288" width="716" height="3" fill="#CFC8F0"/>
+  <g transform="translate(0 50)"><rect x="56" y="66" width="604" height="172" rx="8" fill="#fff" stroke="#CFC8F0" stroke-width="2"/>
+  <rect x="56" y="66" width="604" height="30" rx="8" fill="url(#cg)"/>
+  <rect x="320" y="76" width="76" height="10" rx="5" fill="#fff" opacity=".85"/>
+  <rect x="78" y="112" width="176" height="126" rx="5" fill="url(#cv)"/><rect x="270" y="112" width="176" height="126" rx="5" fill="url(#cv)"/><rect x="462" y="112" width="176" height="126" rx="5" fill="url(#cv)"/>
+  <g fill="#5B4FE9"><use href="#voit" transform="translate(86 172) scale(1.04)"/></g>
+  <g fill="#F0428A"><use href="#voit" transform="translate(278 172) scale(1.04)"/></g>
+  <g fill="#8F86FF"><use href="#voit" transform="translate(470 172) scale(1.04)"/></g>
+  </g>
+  <g transform="translate(560 18)"><rect width="120" height="42" rx="13" fill="url(#cg)"/><path d="M20 42 l-7 13 l20 -13 z" fill="#C36BC0"/><circle cx="38" cy="21" r="5" fill="#fff"/><circle cx="60" cy="21" r="5" fill="#fff"/><circle cx="82" cy="21" r="5" fill="#fff"/></g>
+  <g transform="translate(30 24)"><rect width="104" height="34" rx="12" fill="#fff" stroke="#DAD6F2"/><path d="M26 18 l8 8 l16 -16" fill="none" stroke="#2FB67B" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><rect x="58" y="12" width="36" height="6" rx="3" fill="#C9C3F0"/><rect x="58" y="22" width="24" height="5" rx="2.5" fill="#E1DDF6"/></g>
+ </g>
+</svg>`;
 export const ILLU_AUTO = `<svg viewBox="0 0 320 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Un atelier automobile et une conversation client">
  <defs><linearGradient id="ig" x1="0" x2="1"><stop offset="0" stop-color="#8F86FF"/><stop offset="1" stop-color="#F0428A"/></linearGradient></defs>
  <rect x="1" y="1" width="318" height="228" rx="18" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.14)"/>
@@ -473,38 +535,48 @@ export function pageSynthese(r, o) {
    <div class="vg-j"><i style="width:${Math.max(1.5, Math.min(100, sv / Math.max(sv, r.ventes_mois) * 100)).toFixed(1)}%;background:#B9B2E0"></i></div>
    <div class="vg-l" style="margin-top:12px"><span>Ce que ${esc(o.produit)} vise chez vous</span><b class="g">${ent(r.ventes_mois)} ${U[1]} / mois</b></div>
    <div class="vg-j"><i style="width:${Math.max(1.5, Math.min(100, r.ventes_mois / Math.max(sv, r.ventes_mois) * 100)).toFixed(1)}%"></i></div>
-   ${r.multiple_seuil != null && r.multiple_seuil >= 2 ? `<p>Soit <b>${fmt(Math.floor(r.multiple_seuil))} fois le seuil</b> : même si une petite partie seulement se réalise, ${esc(o.produit)} est payé.</p>` : ''}
   </div>
   <div class="k">
    <b class="g">${eur(r.gain_net_mois)}</b><span>de gain net par mois, abonnement déduit</span>
    <b style="margin-top:14px">${eur(r.gain_net_an)}</b><span>de gain net la première année</span>
   </div>
  </div>
- <div class="k3">
-  ${k(roiX(r.roi).replace('×', '') + NBSP + '€', 'récupérés pour 1 € investi')}
-  ${k(r.jour_rentable != null ? (r.jour_rentable === 1 ? '1er jour' : ent(r.jour_rentable) + 'ᵉ jour') : '—', r.jour_rentable != null ? `ouvré du mois : l'abonnement est payé, les ${ent(r.jours - r.jour_rentable)} jours suivants sont du gain net` : 'pour rentabiliser le mois')}
-  ${k(eur(r.gain_mois), 'de gain non réalisé pour chaque mois d\'attente')}
- </div>
- <p class="note">* Données à valider ensemble. Calcul sur ${r.seuil_base === 'marge' ? 'la marge brute' : "le chiffre d'affaires"}. Montants hors taxes. Détail des hypothèses plus loin dans ce document.</p>` };
+ ${o.scenariosHtml ? `<div class="h3" style="margin-top:24px">Du scénario prudent au scénario ambitieux</div>
+ ${o.scenariosHtml}` : ''}
+ <p class="note">* Données à valider ensemble. Calcul sur ${r.seuil_base === 'marge' ? 'la marge brute' : "le chiffre d'affaires"}. Montants hors taxes.</p>` };
 }
 
 // ── Page « Ils l'ont fait » : cas client + logos, commune à toutes les études ──
-export function pagePreuve(cas, logos) {
+export function pagePreuve(cas, logos, fin, pied, visuel) {
   logos = logos || [];
-  if (!cas && !logos.length) return null;
-  return { corps: `
- <div class="ey">Ils l'ont fait</div>
+  // Retour Romain 16/11 : pas de localisation du cas (Guadeloupe, Baie-Mahault…) — peu vendeur pour
+  // un prospect de métropole.
+  const sansLieu = t => String(t || '').replace(/\s*\([^)]*(Baie-Mahault|Pointe-à-Pitre|Guadeloupe)[^)]*\)/gi, '').trim();
+  // Retour Didier 17/11 : « Marimax » (Antilles) ne parle pas à un distributeur de métropole — le cas
+  // est présenté sans nom, sous la forme d'un exemple client.
+  const anon = c => c ? ({ ...c, nom: /pi[eè]ces/i.test(String(c.secteur || '') + ' ' + String(c.titre || '')) ? 'Un distributeur de pièces auto' : 'Un client Sofy' }) : c;
+  cas = anon(cas);
+  if (!cas && !logos.length) return fin ? { pied, corps: `
+ <div class="ey">Prochaine étape</div>
+ <h2>On regarde <span class="g">vos propres chiffres</span> ensemble</h2>
+ <div class="rule"></div>
+ ${visuel ? `<div style="margin-top:8px">${visuel}</div>` : ''}
+ ${fin}` } : null;
+  return { pied, corps: `
+ <div class="ey">${cas ? 'Exemple client' : "Ils l'ont fait"}</div>
  <h2>${cas ? `${esc(cas.nom)} : <span class="g">${esc(cas.accroche || 'les résultats')}</span>` : `Ils nous confient <span class="g">leur relation client</span>`}</h2>
  <div class="rule"></div>
  ${cas ? `
- <p class="lead" style="font-size:15px">${esc(cas.intro)}</p>
+ <p class="lead" style="font-size:15px">${esc(sansLieu(cas.intro))}</p>
  ${cas.avant ? `<div class="h3">Avant Sofy</div><p class="tx" style="max-width:none">${esc(cas.avant)}</p>` : ''}
  ${cas.resultats.length ? `<div class="h3">Les résultats</div>
  <div class="res">${cas.resultats.map(x => `<div><i>✓</i><span>${esc(x.charAt(0).toUpperCase() + x.slice(1))}</span></div>`).join('')}</div>` : ''}
- ${cas.verbatim ? `<blockquote class="vb">« ${esc(cas.verbatim)} »<cite>${esc(cas.nom)}${cas.secteur ? ' · ' + esc(cas.secteur) : ''}${cas.territoire ? ' · ' + esc(cas.territoire) : ''}</cite></blockquote>` : ''}
+ ${cas.verbatim ? `<blockquote class="vb">« ${esc(cas.verbatim)} »<cite>${esc(cas.nom)}${cas.secteur ? ' · ' + esc(cas.secteur) : ''}</cite></blockquote>` : ''}
  <p class="note" style="margin-top:10px">${cas.lien ? `<a href="${esc(cas.lien)}" target="_blank" rel="noopener">Lire l'interview complète →</a> · ` : ''}Source : ${esc(cas.source || 'interview client Sofy')}</p>` : ''}
- ${logos.length ? `<div class="h3" style="margin-top:${cas ? 26 : 8}px">Ils nous font confiance</div>
- <div class="lg">${logos.map(l => `<span><img src="${esc(l.image)}" alt="${esc(l.description || '')}"></span>`).join('')}</div>` : ''}` };
+ ${logos.length ? `<div class="h3" style="margin-top:${cas ? 22 : 8}px">Ils nous font confiance</div>
+ <div class="lg">${logos.map(l => `<span><img src="${esc(l.image)}" alt="${esc(l.description || '')}"></span>`).join('')}</div>` : ''}
+ ${visuel ? `<div style="margin-top:24px">${visuel}</div>` : ''}
+ ${fin || ''}` };
 }
 
 // ── Fin de document : le bouton de démonstration et la carte du conseiller ──
@@ -522,7 +594,127 @@ export function blocFin(sdr, lienDemo, bouton, texte) {
   ${signature}
  </div>`;
 }
-export const PIED_ESTIMATION = "Les montants sont des estimations établies à partir des hypothèses détaillées dans ce document ; ils ne constituent pas un engagement de résultat.";
+// Les options Budy Auto s'ajoutent à SoConnect : on le dit, avec ce que chacune apporte. Le texte
+// reste LARGE et sans marque partenaire (retour Didier 17/11/2026) : le conseiller les cite en
+// démonstration ; le prospect doit comprendre qu'on s'intègre à son DMS, son ERP, ses outils.
+// Les montants sont ceux saisis par le sales (ils varient avec la taille et le nombre d'établissements,
+// mais le document ne le dit pas : retour Didier 17/11).
+export function blocOptions(c, pieces, sites) {
+  const par = sites > 1 ? ' par établissement' : '';
+  return `<div class="h3" style="margin-top:20px">Budy Auto — une option en sus de SoConnect</div>
+ <div class="opt">
+  <div class="opt-b"><small>Le socle</small><b>SoConnect Basic</b>${c.abonnement ? `<span>${eur(c.abonnement)} / mois${par}</span>` : ''}
+   <p>Une seule boîte pour vos appels, WhatsApp, RCS, Messenger et votre webchat. Budy répond, qualifie la demande et <b>garde la mémoire</b> : il se souvient de votre client et de ses messages précédents.</p></div>
+  <div class="opt-p">+</div>
+  <div class="opt-b opt-o"><small>Option · en sus</small><b>Budy Auto ${pieces ? 'Pièces' : 'Concession'}</b>${c.module ? `<span>+ ${eur(c.module)} / mois${par}</span>` : ''}
+   <span class="inc">Inclus</span>
+   <ul>
+    <li><b>Catalogues électroniques</b> et <b>préconisations constructeur</b></li>
+    <li><b>Intégration</b> à votre DMS, votre ERP et vos outils métier</li>
+    <li><b>API</b> ouverte et <b>MCP</b> : vos assistants IA (ChatGPT, Claude…) interrogent Budy</li>
+    ${pieces ? '' : '<li><b>Planning atelier</b> branché : créneaux libres, rappels de rendez-vous</li>'}
+   </ul>
+   </div>
+ </div>`;
+}
+
+// Page « Budy en conversation » : trois iPhone (WhatsApp, RCS conversationnel, mémoire) et les
+// options en sus. En concession un client réserve un créneau frein (la préconisation constructeur
+// déclenche la vente des disques) ; chez un distributeur de pièces la plaque donne la référence.
+// Tous les exemples sont illustratifs (véhicule, prix, horaires inventés).
+export function pageConversation(o) {
+  const { c, pieces, client } = o;
+  const wa = pieces ? {
+    fil: [
+      { de: 'client', t: 'Bonjour, il me faut des plaquettes de frein avant pour ma Clio IV. FG-482-KL, 87 000 km.', h: '9:38' },
+      { de: 'budy', t: 'Clio IV 1.5 dCi 90 (2017) identifiée ✓ 3 plaquettes avant compatibles en stock.', h: '9:38' },
+      { de: 'budy', t: 'À 87 000 km, le constructeur préconise aussi de remplacer les disques avant. Je les ajoute au devis ?', h: '9:38', boutons: ['Ajouter les disques', 'Plaquettes seules'] },
+      { de: 'client', t: 'Ajoutez les disques.', h: '9:40' },
+      { de: 'budy', t: 'Devis n° 2841 : plaquettes + disques, 186 €. Retrait dès 14 h ✓', h: '9:40' }],
+    cap: ['WhatsApp — la bonne pièce', 'La plaque donne le véhicule ; Budy trouve la référence compatible et cite la préconisation constructeur.']
+  } : {
+    fil: [
+      { de: 'client', t: 'Bonjour, un créneau pour changer mes plaquettes de frein avant ? FG-482-KL, 68 000 km.', h: '9:38' },
+      { de: 'budy', t: '308 II 1.5 BlueHDi (2019) identifiée ✓ Plaquettes compatibles référencées.', h: '9:38' },
+      { de: 'budy', t: 'À 68 000 km, le constructeur préconise aussi de contrôler les disques. Je vous propose plaquettes + disques ?', h: '9:38', boutons: ['Plaquettes + disques', 'Plaquettes seules'] },
+      { de: 'client', t: 'Plaquettes + disques, jeudi 14 h.', h: '9:40' },
+      { de: 'budy', t: 'Rendez-vous jeudi 14 h confirmé ✓ Rappel la veille.', h: '9:40' }],
+    cap: ['WhatsApp — réserver un créneau frein', 'Plaque et kilométrage : Budy identifie le véhicule, cite la préconisation constructeur et propose un créneau.']
+  };
+  const rcs = pieces ? {
+    fil: [
+      { de: 'budy', carte: { titre: 'Votre devis n° 2841', texte: "Plaquettes + disques avant · 186 € · valable jusqu'à vendredi", boutons: ['Réserver la pièce', 'Être rappelé'] }, h: 'Mer. 14:00' },
+      { de: 'client', t: 'Réserver la pièce', h: '14:02' },
+      { de: 'budy', t: 'Pièces réservées au comptoir ✓ Retrait dès demain 8 h.', h: '14:02' }],
+    cap: ['RCS — relance de devis', "Un message de marque vérifié, avec ses boutons : le client réserve d'un geste."]
+  } : {
+    fil: [
+      { de: 'budy', carte: { titre: 'Rappel de votre rendez-vous', texte: 'Jeudi 14 h · plaquettes et disques avant · Peugeot 308', boutons: ['Je confirme', 'Je décale'] }, h: 'Mer. 14:00' },
+      { de: 'client', t: 'Je décale', h: '14:02' },
+      { de: 'budy', t: 'Pas de souci. Quel créneau vous conviendrait ?', h: '14:02' },
+      { de: 'client', t: 'Vendredi 9 h', h: '14:03' },
+      { de: 'budy', t: "C'est reprogrammé : vendredi à 9 h ✓", h: '14:03' }],
+    cap: ['RCS — rappel de rendez-vous', "Le client confirme ou décale d'un geste ; le créneau se met à jour."]
+  };
+  const memoire = pieces ? {
+    fil: [
+      { de: 'client', t: "Bonjour, c'est Martin Auto : un filtre à huile, s'il vous plaît.", h: '10:12' },
+      { de: 'budy', t: 'Bonjour M. Martin ! Pour le Kangoo de votre atelier (FG-482-KL, commandé le 12/10) ?', h: '10:12', boutons: ['Oui, le même', 'Un autre véhicule'] },
+      { de: 'client', t: 'Oui, le même.', h: '10:13' },
+      { de: 'budy', t: 'Filtre référencé ✓ Ajouté à votre compte pro, retrait dès 14 h.', h: '10:13' }],
+    cap: ['WhatsApp — Budy se souvient', 'Votre client, son véhicule et ses échanges précédents : plus besoin de tout redemander.']
+  } : {
+    fil: [
+      { de: 'client', t: 'Bonjour, je dois repasser pour la révision de ma voiture.', h: '10:12' },
+      { de: 'budy', t: 'Bonjour Mme Durand ! Votre 208 (FG-482-KL) a eu sa dernière révision chez nous en mars, à 41 000 km. Elle approche des 60 000 km : je vous propose cette révision ?', h: '10:12', boutons: ['Oui, cette révision', 'Un autre besoin'] },
+      { de: 'client', t: 'Oui, jeudi matin.', h: '10:13' },
+      { de: 'budy', t: 'Jeudi 9 h réservé ✓ Avec Julien, comme la dernière fois.', h: '10:13' }],
+    cap: ['WhatsApp — Budy se souvient', 'Votre client, son véhicule et ses échanges précédents : plus besoin de tout redemander.']
+  };
+  const fig = (canal, d) => `<figure>${iphone({ canal, nom: client, fil: d.fil })}<figcaption><b>${esc(d.cap[0])}</b>${esc(d.cap[1])}</figcaption></figure>`;
+  return { corps: `
+ <div class="ey">Avec Budy · en conversation</div>
+ <h2>Budy en <span class="g">conversation</span></h2>
+ <div class="rule"></div>
+ <div class="phs" style="gap:16px">${fig('whatsapp', wa)}${fig('rcs', rcs)}${fig('whatsapp', memoire)}</div>
+ ${blocOptions(c, pieces, o.sites)}
+ <p class="note">Exemples de conversations illustratifs.</p>` };
+}
+
+// « Bien plus qu'un assistant IA : un vendeur IA » (retour Didier 17/11). La mémoire persistante
+// et l'option rendent Budy PROACTIF : il se souvient d'une demande passée et, selon les
+// préconisations constructeur, relance le client (RCS, WhatsApp ou SMS) sans action du vendeur —
+// avec l'accord du client et dans le respect du RGPD. Scénarios illustratifs (aucun chiffre inventé).
+export const INTRO_VENDEUR = "Grâce à sa mémoire persistante et à ses options, Budy ne se contente pas de répondre : il devient proactif. Il retient chaque demande et, au bon moment, propose la pièce ou l'entretien — sans aucune action de votre vendeur. Toujours avec l'accord du client, dans le respect du RGPD.";
+export function vendeurIA(pieces, client) {
+  const etapes = pieces ? [
+    ['Janvier', 'Madame F. demande un devis de plaquettes de frein pour sa Clio (FX-123-AB). Budy enregistre la demande et le véhicule.'],
+    ['Entre-temps', "Budy suit les préconisations constructeur de son véhicule. Aucune action de votre vendeur."],
+    ['12 mois plus tard', 'Budy propose le remplacement des plaquettes et des disques, par RCS, WhatsApp ou SMS : une vraie relance.']
+  ] : [
+    ['Janvier', "Madame F. demande un rendez-vous pour une vidange (AB-123-CF). Budy note le rendez-vous et retient le véhicule en mémoire."],
+    ['Entre-temps', "Budy suit les préconisations constructeur de son véhicule. Aucune action de votre conseiller."],
+    ['15 mois plus tard', 'Budy invite Madame F. à faire sa nouvelle vidange, par RCS, WhatsApp ou SMS : une vraie relance.']
+  ];
+  const mes = pieces ? [
+    { de: 'budy', carte: { titre: 'Vos freins ont un an', texte: "Madame F., en janvier vous aviez demandé un devis de plaquettes de frein pour votre Clio (FX-123-AB). Le constructeur préconise de contrôler plaquettes et disques à cette échéance.", boutons: ['Recevoir un devis', 'Plus tard'] }, h: '9:02' },
+    { de: 'client', t: 'Recevoir un devis', h: '9:15' },
+    { de: 'budy', t: 'Devis n° 3127 : plaquettes + disques avant, 186 €. Pièces disponibles dès demain ✓', h: '9:15' }
+  ] : [
+    { de: 'budy', carte: { titre: 'Votre vidange approche', texte: "Madame F., votre 208 (AB-123-CF) a eu sa dernière vidange en janvier. Le constructeur préconise de la renouveler à 15 mois.", boutons: ['Prendre rendez-vous', 'Plus tard'] }, h: '9:02' },
+    { de: 'client', t: 'Prendre rendez-vous', h: '9:15' },
+    { de: 'budy', t: 'Avec plaisir ! Jeudi 14 h ou vendredi 9 h ?', h: '9:15', boutons: ['Jeudi 14 h', 'Vendredi 9 h'] }
+  ];
+  const jan = [
+    { de: 'client', t: 'Bonjour, je voudrais un rendez-vous pour une vidange. AB-123-CF.', h: '10:12' },
+    { de: 'budy', t: 'Bonjour Mme F. ! Jeudi 14 h ou vendredi 9 h ?', h: '10:12', boutons: ['Jeudi 14 h', 'Vendredi 9 h'] },
+    { de: 'client', t: 'Jeudi 14 h.', h: '10:13' },
+    { de: 'budy', t: 'Rendez-vous confirmé ✓ Puis-je vous rappeler vos prochains entretiens par message ?', h: '10:13', boutons: ['Oui', 'Non'] }
+  ];
+  return { etapes, mes, jan };
+}
+
+export const PIED_ESTIMATION = "Les montants sont des estimations établies à partir des hypothèses retenues avec vous ; ils ne constituent pas un engagement de résultat.";
 
 // ── Gabarit : habille une liste de pages { dark?, corps, pied? } — styles, pagination, PDF ──
 export function gabarit(P, o) {
@@ -649,6 +841,66 @@ h2{font-size:32px;max-width:22ch}
 .ms-a{display:flex;gap:6px;margin-top:8px}
 .ms-a span{flex:1;text-align:center;border:1px solid #D9D4F5;border-radius:8px;padding:6px 4px;font-weight:700;color:var(--v);font-size:11px}
 .ms.wa .ms-a span{border-color:#BFE9D7;color:#0B6B4B}
+/* Maquette d'iPhone */
+.phs{display:flex;gap:26px;justify-content:center;margin:2px 0 0}
+.phs figure{margin:0;width:224px}
+.phs+.h3{margin-top:14px!important}
+.phs figcaption{font-size:11px;line-height:1.4;color:var(--ink-s);margin-top:10px;text-align:center}
+.phs figcaption b{display:block;color:var(--ink);font-size:12.5px;margin-bottom:2px}
+.ip{width:224px;padding:8px;position:relative;border-radius:38px;background:#16122E;box-shadow:0 14px 34px rgba(20,16,58,.22),inset 0 0 0 1.5px #3A3560}
+.ip-s{position:relative;height:var(--ih,462px);border-radius:30px;overflow:hidden;display:flex;flex-direction:column;background:#fff;color:#111}
+.ip-isl{position:absolute;top:7px;left:50%;transform:translateX(-50%);width:64px;height:19px;border-radius:12px;background:#0B0920;z-index:4}
+.ip-st{display:flex;justify-content:space-between;align-items:center;padding:9px 20px 3px;font-size:10px;position:relative;z-index:3}
+.ip-ic{display:flex;gap:2px;align-items:center}.ip-ic i{width:3px;height:6px;border-radius:1px;background:#111}.ip-ic i:nth-child(2){height:8px}.ip-ic i:nth-child(3){height:10px}
+.ip-ic u{width:15px;height:8px;border:1.4px solid #111;border-radius:3px;margin-left:3px;position:relative;text-decoration:none}.ip-ic u:after{content:"";position:absolute;inset:1px;background:#111;border-radius:1px}
+.ip-hd{display:flex;align-items:center;gap:6px;padding:5px 9px 7px;border-bottom:.5px solid rgba(0,0,0,.12);background:#F6F6F7}
+.ip-bk{font-size:20px;line-height:1;color:#0A7CFF;margin-right:-1px}
+.ip-av{width:24px;height:24px;border-radius:50%;background:var(--grad);color:#fff;font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center;flex:none}
+.ip-who b{display:block;font-size:10.5px;line-height:1.15}.ip-who small{display:block;font-size:8.5px;color:#6B7280}
+.ip-who u{text-decoration:none;display:inline-block;width:11px;height:11px;border-radius:50%;background:#1A73E8;color:#fff;font-size:7.5px;line-height:11px;text-align:center;vertical-align:1px}
+.ip-bd{flex:1;padding:7px 8px 6px;display:flex;flex-direction:column;gap:5px;overflow:hidden}
+.ip-day{align-self:center;font-size:8.5px;padding:2px 8px;border-radius:8px;background:rgba(0,0,0,.07);color:#555;margin-bottom:1px}
+.ip-m{max-width:84%;padding:6px 8px 5px;border-radius:9px;font-size:9.6px;line-height:1.36;position:relative}
+.ip-m em,.ip-c em{display:block;text-align:right;font-style:normal;font-size:7.5px;opacity:.55;margin-top:1px}.ip-m em b{color:#34B7F1;font-weight:700}
+.ip-m.in{align-self:flex-start;border-top-left-radius:2px}.ip-m.out{align-self:flex-end;border-top-right-radius:2px}
+.ip-r{align-self:flex-start;display:flex;flex-direction:column;gap:3px;width:84%;margin-top:-1px}
+.ip-r span{text-align:center;font-size:9.5px;font-weight:700;padding:5px 4px;border-radius:7px;background:#fff;color:#0A7CFF;box-shadow:0 .5px 1px rgba(0,0,0,.15)}
+.ip.wa .ip-bd{background:#EFE7DE}
+.ip.wa .ip-m.in{background:#fff}.ip.wa .ip-m.out{background:#D9FDD3}
+.ip.rcs .ip-bd{background:#fff}
+.ip.rcs .ip-m.in{background:#F1EFFD}.ip.rcs .ip-m.out{background:#5B4FE9;color:#fff}
+.ip-c{align-self:flex-start;width:90%;border-radius:11px;border:.5px solid #DAD6F2;background:#fff;overflow:hidden;font-size:10px;padding-bottom:5px}
+.ip-ci{display:block;height:40px;background:linear-gradient(135deg,#8F86FF,#F0428A)}
+.ip-c b{display:block;padding:6px 8px 0;font-size:10.5px}.ip-c p{margin:2px 8px 6px;font-size:9.5px;line-height:1.35;color:#444}
+.ip-c span{display:block;margin:3px 8px 0;text-align:center;font-size:9.5px;font-weight:700;padding:5px;border-radius:7px;border:.5px solid #C9C3F0;color:#5B4FE9}
+.ip-c em{padding:0 8px}
+.ip-q{display:flex;gap:4px;flex-wrap:wrap;justify-content:center;padding:4px 8px 5px;background:#fff}
+.ip-q span{font-size:9px;font-weight:700;padding:4px 8px;border-radius:11px;border:.5px solid #C9C3F0;color:#5B4FE9}
+.ip-in{padding:5px 9px 12px;background:#fff;border-top:.5px solid rgba(0,0,0,.1)}
+.ip-in span{display:block;font-size:9.5px;color:#9CA3AF;padding:5px 10px;border-radius:13px;border:.5px solid #D1D5DB}
+/* iPhone « court » : le haut du téléphone, fondu vers le bas de la page */
+.ip.court{padding-bottom:0;border-radius:38px 38px 0 0;margin:0 auto}
+.ip.court .ip-s{border-radius:30px 30px 0 0}
+.ip.court:after{content:"";position:absolute;left:0;right:0;bottom:0;height:42px;border-radius:0;background:linear-gradient(rgba(250,248,254,0),#FAF8FE 88%)}
+.rl .ip{margin:0 auto}
+.vis-fin{display:block;width:100%;height:330px;object-fit:cover;border-radius:18px;border:1px solid var(--line)}
+.ip.court .ip-ci{height:22px}
+.opt-tag{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:9px;background:#EEEBFD;color:var(--v);font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;vertical-align:2px}
+.opt-b .inc{display:block;margin-top:9px;font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--v)}
+.opt-b .tar{display:block;font-size:10.5px;color:#9990C4;margin-top:6px}
+/* Options Budy Auto (en sus) */
+.opt{display:grid;grid-template-columns:1fr auto 1.5fr;gap:10px;align-items:stretch;margin-top:6px}
+.opt-p{align-self:center;font-size:22px;font-weight:800;color:var(--v)}
+.opt-b{padding:13px 15px;border-radius:13px;background:#fff;border:1px solid var(--line)}
+.opt-b small{display:block;font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#9990C4}
+.opt-b>b{display:block;font-size:15px;margin-top:3px}
+.opt-b>span{display:block;font-size:13px;font-weight:700;color:var(--v);margin-top:2px}
+.opt-b p{margin:6px 0 0;font-size:11.5px;line-height:1.45;color:var(--ink-s)}
+.opt-b ul{margin:7px 0 0;padding:0;list-style:none;font-size:11.5px;line-height:1.45;color:var(--ink-s)}
+.opt-b li{padding:1px 0 1px 16px;position:relative}.opt-b li:before{content:"+";position:absolute;left:3px;color:var(--v);font-weight:800}
+.opt-b li b{color:var(--ink)}
+.opt-o{border:1.5px dashed #B7AEF3;background:#F7F5FE}
+.opt-o small{color:var(--v)}
 /* Calcul */
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:#9990C4;font-weight:700;padding:0 8px 7px 0;border-bottom:1px solid var(--line)}
@@ -698,6 +950,10 @@ td:not(:first-child),th:not(:first-child){text-align:right;white-space:nowrap}
 .sig b{display:block;font-size:17px;margin-top:2px}
 .sig span{display:block;font-size:12px;color:var(--ink-ds)}
 .sig p{margin:5px 0 0}.sig a{display:block;color:#fff;font-size:12.5px;text-decoration:none}
+.page:not(.dark) .fin{background:#fff;border:1px solid var(--line);margin-top:28px}
+.page:not(.dark) .fin p{color:var(--ink-s)}
+.page:not(.dark) .sig b{color:var(--ink)}.page:not(.dark) .sig span{color:var(--ink-s)}
+.page:not(.dark) .sig a{color:var(--v)}.page:not(.dark) .sig i,.page:not(.dark) .sig img{border-color:var(--line)}
 /* Pourquoi Budy */
 .why{display:flex;flex-direction:column;gap:11px}
 .w{display:flex;gap:13px;align-items:flex-start}
@@ -713,7 +969,7 @@ td:not(:first-child),th:not(:first-child){text-align:right;white-space:nowrap}
  h1{font-size:33px} h2{font-size:25px} .hero-v{font-size:44px} .loss>b{font-size:38px}
  .k3,.k4,.big,.mk,.cols,.rl,.vg{grid-template-columns:1fr}
  .ch{grid-template-columns:1fr 1fr}.ch-a{display:none}
- .cv-t,.fin,.res{grid-template-columns:1fr}.cv-i{max-width:260px}.lg{grid-template-columns:repeat(3,1fr)}
+ .cv-t,.fin,.res,.opt{grid-template-columns:1fr}.phs{flex-wrap:wrap}.opt-p{text-align:center}.cv-i{max-width:260px}.lg{grid-template-columns:repeat(3,1fr)}
  .mini{grid-template-columns:repeat(3,1fr)}
  .cmp{flex-wrap:wrap}.cmp .ar{display:none}.cmp .ga{flex:1 1 40%}
  table{font-size:12px}
@@ -748,9 +1004,13 @@ ${apercu ? `<div class="apercu">👁 Aperçu interne — cette visite n'est pas 
 
 export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
   preuves = preuves || {};
-  const cas = preuves.cas || null;
+  const c0 = (doc && doc.config) || {};
+  // Marimax est un distributeur de pièces : hors sujet pour une concession (retour Didier 16/11/2026).
+  const cas = c0.profil === 'pieces' ? (preuves.cas || null) : null;
   const logos = Array.isArray(preuves.logos) ? preuves.logos.filter(l => l && l.image) : [];
   const illu = preuves.illustration && preuves.illustration.image ? preuves.illustration : null;
+  // 2e photo de la bibliothèque : page finale d'une concession (à défaut, l'illustration dessinée).
+  const photoFin = (preuves.illustrations || [])[1] || null;
   const c = doc.config || {};
   const r = calculerRoi(c);
   const client = doc.client || 'votre entreprise';
@@ -762,14 +1022,22 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
   const maxGain = Math.max(1, ...leviersV.map(l => l.gain_an));
   const motifsV = r.motifs.filter(m => m.ca_mois > 0);
   const maxCa = Math.max(1, ...motifsV.map(m => m.ca_mois));
-  const fuitesV = r.fuites.filter(f => f.ca_an > 0);
+  const fuitesV = r.fuites.filter(f => f.ca_an > 0 && lev(f.id).actif);   // un levier décoché n'apparaît nulle part
   const contact = sdr ? `<div class="sdr">
       ${sdr.photo ? `<img src="${esc(sdr.photo)}" alt="">` : ''}
       <div><b>${esc(sdr.nom || '')}</b><span>${esc(sdr.poste || 'Votre interlocuteur chez Sofy')}</span>
       ${sdr.email ? `<a href="mailto:${esc(sdr.email)}">${esc(sdr.email)}</a>` : ''}
       ${sdr.ringover_numero ? `<a href="tel:${esc(String(sdr.ringover_numero).replace(/\s/g, ''))}">${esc(sdr.ringover_numero)}</a>` : ''}</div>
     </div>` : '';
+  const liste = (a, et) => a.length < 2 ? (a[0] || '') : a.slice(0, -1).join(', ') + (et || ' et ') + a[a.length - 1];
+  const sujets = liste([act('appels') && 'appel', act('messages') && 'message', act('devis') && 'devis'].filter(Boolean), ' ou ') || 'demande';
+  const sauves = liste([act('appels') && 'appels repris', act('messages') && 'messages traités', act('devis') && 'devis relancés',
+    act('atelier') && 'rendez-vous relancés', act('revisions') && 'révisions relancées'].filter(Boolean));
+  const fuitesTxt = liste([act('appels') && 'appels sans réponse', act('messages') && 'messages sans réponse', act('devis') && 'devis jamais relancés',
+    act('atelier') && 'rendez-vous non honorés', act('revisions') && 'révisions jamais proposées', act('upsell') && 'ventes jamais suggérées'].filter(Boolean));
   const k = kpi;
+  const tel = (canal, fil, h, echelle) => iphone({ canal, nom: client, fil, court: h, echelle });
+  const optTag = `<span class="opt-tag">Option Budy Auto ${pieces ? 'Pièces' : 'Concession'}</span>`;
   const surCa = !r.sur_marge;                 // gain lu sur le chiffre d'affaires (défaut) ou sur la marge
   const simple = r.panier_mode === 'simple';  // un seul panier moyen pour toutes les ventes
   const P = [];   // pages : { dark, corps, pied }
@@ -784,24 +1052,27 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
   </div>
   <figure class="cv-i">${illu ? `<img src="${esc(illu.image)}" alt="${esc(illu.description || '')}">` : ILLU_AUTO}</figure>
  </div>
- <p class="lead">Ce document chiffre ce que ${esc(client)} récupère quand plus aucun appel, message ou devis ne reste sans suite : chiffre d'affaires, marge et temps rendu à vos équipes. Toutes les hypothèses sont en annexe — modifiables avec vous.</p>
+ <p class="lead">Ce document chiffre ce que ${esc(client)} récupère quand plus aucun${sujets === 'demande' ? 'e demande' : ' ' + sujets} ne reste sans suite${r.eco_mois > 0 ? " : chiffre d'affaires et temps rendu à vos équipes" : ''}.</p>
  <p class="cv-for">Préparée pour<b>${esc(client)}${r.sites > 1 ? ` · ${r.sites} sites` : ''}</b></p>
  <div class="hero">
   <div class="hero-l">Gain total potentiel la première année</div>
   <div class="hero-v g">${eur(r.gain_an)}</div>
-  <div class="hero-s">${surCa ? "chiffre d'affaires récupéré" : 'marge récupérée'} + temps et coûts évités, pour ${eur(r.cout_an1)} investis${r.roi != null ? ` — soit <b>${roiX(r.roi)}</b> la mise` : ''}${r.payback_jours != null ? `, rentabilisé en <b>${ent(r.payback_jours)} jours</b>` : ''}.</div>
+  <div class="hero-s">${surCa ? "chiffre d'affaires récupéré" : 'marge récupérée'}${r.eco_mois > 0 ? ' + temps et coûts évités' : ''}, pour ${eur(r.cout_an1)} investis.</div>
   <div class="pile">${leviersV.map(l => `<i style="flex:${Math.max(1, Math.round(l.gain_an))};background:${COULEURS_ROI[l.id]}"></i>`).join('')}</div>
   <div class="pile-l">${leviersV.map(l => `<span><i style="background:${COULEURS_ROI[l.id]}"></i>${esc(l.label)} · <b>${eur(l.gain_an)}</b></span>`).join('')}</div>
  </div>
  <div class="k3">
-  ${k(ent(r.clients_sauves_mois), 'clients sauvés chaque mois : appels repris, messages traités, devis et rendez-vous relancés')}
-  ${k(eur(r.ca_an), "de chiffre d'affaires récupéré par an")}
-  ${k(ent(r.heures_an) + NBSP + 'h', `de travail rendues à vos équipes par an${r.etp >= 0.1 ? ` (≈ ${fmt(r.etp, 1)} ETP)` : ''}`)}
+  ${k(ent(r.clients_sauves_mois), 'clients sauvés chaque mois' + (sauves ? ' : ' + sauves : ''))}
+  ${r.heures_mois >= 1 ? k(ent(r.heures_an) + NBSP + 'h', `de travail rendues à vos équipes par an${r.valeur_temps_mois > 0 ? `, soit ${eur(r.valeur_temps_mois * 12)}` : ''}`) : ''}
  </div>
  ${contact}` });
 
   // ── 2. La synthèse : le seuil de rentabilité, puis le vrai gain ──
-  const synth = pageSynthese(r, { produit: 'Budy', demandes: 'appels et messages par mois', demandesCourt: 'demandes',
+  const canaux = liste([act('appels') && 'appels', act('messages') && 'messages'].filter(Boolean));
+  const scen = scenariosEtude(calculerRoi, c, SCENARIO_BUDY);
+  const scenariosHtml = scen ? tableScenarios(scen, { unite: ['vente', 'ventes'], marge: !surCa,
+    note: 'Gain calculé sur ' + (surCa ? "le chiffre d'affaires" : 'la marge') + ' des ventes, hors temps rendu et coûts évités' + (r.eco_mois > 0 ? ' (' + eur(r.eco_mois) + ' par mois en plus, quel que soit le scénario)' : '') + '.' }) : '';
+  const synth = pageSynthese(r, { scenariosHtml, produit: 'Budy', demandes: (canaux || 'demandes') + ' par mois', demandesCourt: canaux || 'demandes',
     panier: 'Vente moyenne', temps: 'préqualification, recherche de références, questions répétitives' });
   if (synth) P.push(synth);
 
@@ -814,14 +1085,14 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
   <div class="loss">
    <small>Chiffre d'affaires qui vous échappe</small>
    <b>${eur(r.ca_perdu_an)}</b>
-   <p>par an : appels et messages sans réponse, devis jamais relancés, rendez-vous non honorés, ventes jamais proposées.<br>Soit <b>${eur(r.cout_inaction_jour)}</b> par jour ouvré.</p>
+   <p>par an : ${fuitesTxt || 'demandes sans suite'}.<br>Soit <b>${eur(r.cout_inaction_jour)}</b> par jour ouvré.</p>
   </div>
   <div class="flux">
-   <div class="fx"><span>Appels reçus par mois</span><b>${ent(r.appels_mois)}</b></div>
+   ${lev('appels').actif ? `<div class="fx"><span>Appels reçus par mois</span><b>${ent(r.appels_mois)}</b></div>
    <div class="fx rouge"><span>… restés sans réponse</span><b>${ent(r.manques_mois)}</b></div>
-   <div class="fx"><span>Taux de réponse téléphonique estimé</span><b>${p0(r.taux_reponse_actuel)}</b></div>
-   ${r.messages_mois ? `<div class="fx"><span>Messages écrits reçus par mois</span><b>${ent(r.messages_mois)}</b></div>` : ''}
-   ${r.devis_sans_suite_mois ? `<div class="fx rouge"><span>Devis sans suite par mois</span><b>${ent(r.devis_sans_suite_mois)}</b></div>` : ''}
+   <div class="fx"><span>Taux de réponse téléphonique estimé</span><b>${p0(r.taux_reponse_actuel)}</b></div>` : ''}
+   ${lev('messages').actif && r.messages_mois ? `<div class="fx"><span>Messages écrits reçus par mois</span><b>${ent(r.messages_mois)}</b></div>` : ''}
+   ${lev('devis').actif && r.devis_sans_suite_mois ? `<div class="fx rouge"><span>Devis sans suite par mois</span><b>${ent(r.devis_sans_suite_mois)}</b></div>` : ''}
   </div>
  </div>
  <div class="h3">Où part ce chiffre d'affaires</div>
@@ -834,8 +1105,11 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
   ${SOURCES_ROI.slice(0, 6).map(s => `<div><b>${esc(s.v)}</b><span>${esc(s.t)}<i>${esc(s.s)}</i></span></div>`).join('')}
  </div>` });
 
+  // ── Budy en conversation : deux iPhone (WhatsApp, RCS) et les options en sus ──
+  if (PAGES_ETUDE.conversation) P.push(pageConversation({ c, pieces, client, sites: r.sites }));
+
   // ── 3. Répondre ──
-  if (act('appels') || act('messages') || act('temps')) P.push({ corps: `
+  if (PAGES_ETUDE.repondre && (act('appels') || act('messages') || act('temps'))) P.push({ corps: `
  <div class="ey">Avec Budy · répondre</div>
  <h2>Plus aucun appel ni message <span class="g">sans réponse</span></h2>
  <div class="rule"></div>
@@ -874,6 +1148,22 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
  </div>` : ''}` });
 
   // ── 4. Relancer ──
+  const nRel = ['devis', 'atelier', 'revisions'].filter(act).length;
+  const vi = vendeurIA(pieces, client);
+  const etapesHtml = `<div class="res" style="grid-template-columns:1fr;gap:9px">${vi.etapes.map((e, i) => `<div><i>${i + 1}</i><span><b>${esc(e[0])}.</b> ${esc(e[1])}</span></div>`).join('')}</div>`;
+  // Pièces : la section s'ajoute à la page « relancer » ; concession : page dédiée.
+  const vendeurSurRelance = pieces && nRel > 0;
+  const nSec = nRel + (vendeurSurRelance ? 1 : 0);
+  const hRel = nSec >= 3 ? 246 : nSec === 2 ? 250 : 330;
+  const eRel = nSec >= 3 ? 0.82 : 1;
+  const sectionVendeur = `<div class="h3"><i class="pt" style="background:#A855F7"></i>Bien plus qu'un assistant IA : un vendeur IA${optTag}</div>
+ <div class="rl">
+  <div>
+   <p class="tx">${esc(INTRO_VENDEUR)}</p>
+   ${etapesHtml}
+  </div>
+  ${iphone({ canal: 'rcs', nom: client, fil: vi.mes, jour: pieces ? '12 mois après son devis' : '15 mois après sa vidange', court: nSec <= 2 ? 380 : 330 })}
+ </div>`;
   if (act('devis') || act('atelier') || act('revisions')) P.push({ corps: `
  <div class="ey">Avec Budy · relancer</div>
  <h2>Le bon message, <span class="g">au bon moment</span>, sur WhatsApp et RCS</h2>
@@ -888,50 +1178,63 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
     ${k(eur(r.ca_devis_mois), 'de CA récupéré par mois', true)}
    </div>
   </div>
-  ${bulle('WhatsApp', client, [['b', pieces
+  ${tel('whatsapp', [{ de: 'budy', t: pieces
     ? 'Bonjour, votre devis n° 2841 (kit de distribution, 186 €) est toujours valable. Souhaitez-vous que nous vous mettions la pièce de côté ?'
-    : 'Bonjour M. Martin, votre devis freinage pour votre 308 (389 €) est valable jusqu\'à vendredi. Je vous réserve un créneau ?']],
-    [pieces ? 'Réserver la pièce' : 'Réserver un créneau', 'Être rappelé'])}
+    : 'Bonjour M. Martin, votre devis freinage pour votre 308 (389 €) est valable jusqu\'à vendredi. Je vous réserve un créneau ?',
+    h: 'Mer. 9:15', boutons: [pieces ? 'Réserver la pièce' : 'Réserver un créneau', 'Être rappelé'] }], hRel, eRel)}
  </div>` : ''}
- ${act('atelier') ? `<div class="h3"><i class="pt" style="background:${COULEURS_ROI.atelier}"></i>Rendez-vous atelier</div>
+ ${act('atelier') ? `<div class="h3"><i class="pt" style="background:${COULEURS_ROI.atelier}"></i>Rendez-vous atelier${pieces ? '' : optTag}</div>
  <div class="rl">
   <div>
-   <p class="tx">Un pont vide ne se rattrape pas. Relié à votre planning atelier Mecaplanning, Budy rappelle chaque rendez-vous l'avant-veille et la veille ; le client confirme ou décale d'un geste, et le créneau libéré peut être reproposé.</p>
+   <p class="tx">Un pont vide ne se rattrape pas. Relié à votre planning atelier, Budy rappelle chaque rendez-vous l'avant-veille et la veille ; le client confirme ou décale d'un geste, et le créneau libéré peut être reproposé.</p>
    <div class="k3 mini">
     ${k(ent(r.noshow_mois), 'rendez-vous non honorés par mois')}
     ${k(nb(r.noshow_evites_mois), 'évités grâce aux rappels')}
     ${k(eur(r.ca_noshow_mois), 'de CA atelier sécurisé par mois', true)}
    </div>
   </div>
-  ${bulle('RCS', client, [['b', 'Rappel : votre Clio est attendue demain à 8 h 30 pour sa révision. Pensez à la carte grise et au carnet d\'entretien. Vous confirmez ?']], ['Je confirme', 'Je décale'])}
+  ${tel('rcs', [{ de: 'budy', t: 'Rappel : votre Clio est attendue demain à 8 h 30 pour sa révision. Pensez à la carte grise et au carnet d\'entretien. Vous confirmez ?', h: 'Mar. 17:00', boutons: ['Je confirme', 'Je décale'] }], hRel, eRel)}
  </div>` : ''}
- ${act('revisions') ? `<div class="h3"><i class="pt" style="background:${COULEURS_ROI.revisions}"></i>Révisions à échéance — plan d'entretien constructeur (TecRMI)</div>
+ ${act('revisions') ? `<div class="h3"><i class="pt" style="background:${COULEURS_ROI.revisions}"></i>Révisions à échéance — plan d'entretien constructeur${optTag}</div>
  <div class="rl">
   <div>
-   <p class="tx">Budy croise votre base clients avec les préconisations constructeur TecRMI : chaque véhicule reçoit sa relance au bon kilométrage, avec le contenu exact de la révision.</p>
+   <p class="tx">Budy croise votre base clients avec les préconisations constructeur : chaque véhicule reçoit sa relance au bon kilométrage, avec le contenu exact de la révision.</p>
    <div class="k3 mini">
     ${k(ent(r.revisions_relances_mois), 'relances de révision par mois')}
     ${k(nb(r.revisions_rdv_mois), 'rendez-vous pris')}
     ${k(eur(r.ca_revisions_mois), 'de CA atelier généré par mois', true)}
    </div>
   </div>
-  ${bulle('WhatsApp', client, [['b', 'Bonjour Mme Durand, d\'après le plan d\'entretien constructeur de votre 208 (62 000 km), la révision des 60 000 km est à prévoir : vidange, filtres, liquide de frein. Je vous propose un créneau ?']], ['Choisir un créneau', 'Plus tard'])}
- </div>` : ''}` });
+  ${tel('whatsapp', [{ de: 'budy', t: 'Bonjour Mme Durand, d\'après le plan d\'entretien constructeur de votre 208 (62 000 km), la révision des 60 000 km est à prévoir. Je vous propose un créneau ?', h: 'Lun. 10:05', boutons: ['Choisir un créneau', 'Plus tard'] }], hRel, eRel)}
+ </div>` : ''}
+ ${vendeurSurRelance ? sectionVendeur : ''}` });
+
+  // ── Vendeur IA : page dédiée (concession, ou pièces sans page « relancer ») ──
+  if (!vendeurSurRelance) P.push({ corps: `
+ <div class="ey">Avec Budy · proactif</div>
+ <h2>Bien plus qu'un assistant IA : <span class="g">un vendeur IA</span></h2>
+ <div class="rule"></div>
+ <p class="tx" style="max-width:none">${esc(INTRO_VENDEUR)}</p>
+ ${etapesHtml}
+ <div class="phs" style="gap:26px;margin-top:18px">
+  <figure>${iphone({ canal: 'whatsapp', nom: client, fil: vi.jan, jour: 'Janvier' })}<figcaption><b>${pieces ? 'Janvier' : 'Janvier'} — la demande</b>Budy enregistre le rendez-vous, retient le véhicule et demande l'accord du client pour la suite.</figcaption></figure>
+  <figure>${iphone({ canal: 'rcs', nom: client, fil: vi.mes, jour: pieces ? '12 mois plus tard' : '15 mois plus tard' })}<figcaption><b>${pieces ? '12' : '15'} mois plus tard — la relance</b>Selon les préconisations constructeur, Budy écrit le premier. Aucune action de votre ${pieces ? 'vendeur' : 'conseiller'}.</figcaption></figure>
+ </div>` });
 
   // ── 5. Vendre juste ──
   if (act('identif') || act('upsell')) P.push({ corps: `
  <div class="ey">Avec Budy · vendre juste</div>
  <h2>La bonne pièce du premier coup, <span class="g">et celle qui va avec</span></h2>
  <div class="rule"></div>
- ${act('identif') ? `<div class="h3"><i class="pt" style="background:${COULEURS_ROI.identif}"></i>De l'immatriculation à la bonne référence — TecDoc + SIV</div>
- <p class="tx" style="max-width:none">Le client donne sa plaque : Budy identifie le véhicule exact via le fichier des immatriculations (SIV), puis la référence compatible dans le catalogue TecDoc. Plus de recherche manuelle, plus de « c'est quel moteur ? », moins de pièces qui reviennent.</p>
+ ${act('identif') ? `<div class="h3"><i class="pt" style="background:${COULEURS_ROI.identif}"></i>De l'immatriculation à la bonne référence — catalogues électroniques pièces auto inclus${optTag}</div>
+ <p class="tx" style="max-width:none">Le client donne sa plaque : Budy identifie le véhicule exact, puis trouve la référence compatible dans les catalogues électroniques pièces auto, inclus dans l'option. Plus de recherche manuelle, plus de « c'est quel moteur ? », moins de pièces qui reviennent.</p>
  <div class="k4">
   ${k(ent(r.recherches_mois), 'recherches de pièces par mois')}
   ${k(ent(r.heures_identif_mois) + NBSP + 'h', 'de recherche économisées par mois')}
   ${k(nb(r.erreurs_evitees_mois), 'erreurs de référence et retours évités par mois')}
   ${k(eur(r.eco_identif_mois), 'd\'économie par mois', true)}
  </div>` : ''}
- ${act('upsell') ? `<div class="h3"><i class="pt" style="background:${COULEURS_ROI.upsell}"></i>La vente additionnelle guidée par la préconisation constructeur</div>
+ ${act('upsell') ? `<div class="h3"><i class="pt" style="background:${COULEURS_ROI.upsell}"></i>La vente additionnelle guidée par la préconisation constructeur${optTag}</div>
  <div class="rl">
   <div>
    <p class="tx">Budy connaît le véhicule, son kilométrage et ce que le constructeur préconise. Quand un client demande des plaquettes, il sait si les disques sont à remplacer — et le propose au bon moment, sans insister.</p>
@@ -941,17 +1244,16 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
     ${k(eur(r.marge_upsell_mois), 'de marge par mois')}
    </div>
   </div>
-  ${bulle('WhatsApp', client, [
-    ['c', 'Bonjour, il me faut des plaquettes avant pour ma Clio, AB-123-CD.'],
-    ['b', 'Clio IV 1.5 dCi 90 identifiée ✓ Plaquettes avant compatibles trouvées. À 87 000 km, le constructeur préconise aussi de remplacer les disques avant. Je les ajoute au devis ?']
-  ], ['Ajouter les disques', 'Plaquettes seules'])}
+  ${tel('whatsapp', [
+    { de: 'client', t: 'Bonjour, il me faut des plaquettes avant pour ma Clio, FG-482-KL.', h: '9:38' },
+    { de: 'budy', t: 'Clio IV 1.5 dCi 90 identifiée ✓ À 87 000 km, le constructeur préconise aussi de remplacer les disques avant. Je les ajoute au devis ?', h: '9:38', boutons: ['Ajouter les disques', 'Plaquettes seules'] }
+  ], 330)}
  </div>` : ''}
- <p class="note">TecDoc et TecRMI sont des bases de données de TecAlliance. Les exemples de messages sont illustratifs.</p>` });
+ <p class="note">Les exemples de messages sont illustratifs.</p>` });
 
   // ── 6. Le calcul ──
-  const scen = scenariosEtude(calculerRoi, c, SCENARIO_BUDY);
   const seuilCli = r.seuil_clients_mois != null ? Math.ceil(r.seuil_clients_mois) : null;
-  P.push({ corps: `
+  if (PAGES_ETUDE.calcul) P.push({ corps: `
  <div class="ey">Le calcul</div>
  <h2>Un retour sur investissement <span class="g">calculé sur ${surCa ? "le chiffre d'affaires" : 'la marge'}</span></h2>
  <div class="rule"></div>
@@ -961,7 +1263,7 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
   <tr class="jauge"><td colspan="${surCa ? 2 : 3}"><i style="width:${Math.max(1, Math.round(l.gain_an / maxGain * 100))}%;background:${COULEURS_ROI[l.id]}"></i></td></tr>`).join('')}
   <tr class="st"><td>Gain total (${surCa ? "chiffre d'affaires" : 'marge'} + temps et coûts évités)</td>${surCa ? '' : `<td>${eur(r.ca_an)}</td>`}<td>${eur(r.gain_an)}</td></tr>
   <tr><td>SoConnect Basic (${eur(c.abonnement || 0)}/mois${r.sites > 1 ? ` × ${r.sites} sites` : ''} × 12)</td>${surCa ? '' : '<td></td>'}<td class="neg">− ${eur(r.socle_mois * 12)}</td></tr>
-  ${r.module_mois ? `<tr><td>Module Budy Auto ${pieces ? 'Pièces' : 'Concession'} (${eur(c.module || 0)}/mois${r.sites > 1 ? ` × ${r.sites} sites` : ''} × 12) — ${pieces ? 'TecDoc, TecRMI, plaques et messages inclus' : 'TecDoc, TecRMI et Mecaplanning inclus'}</td>${surCa ? '' : '<td></td>'}<td class="neg">− ${eur(r.module_mois * 12)}</td></tr>` : ''}
+  ${r.module_mois ? `<tr><td>Module Budy Auto ${pieces ? 'Pièces' : 'Concession'} (${eur(c.module || 0)}/mois${r.sites > 1 ? ` × ${r.sites} sites` : ''} × 12) — catalogues électroniques, préconisations constructeur et intégrations inclus</td>${surCa ? '' : '<td></td>'}<td class="neg">− ${eur(r.module_mois * 12)}</td></tr>` : ''}
   ${r.cout_messages_mois ? `<tr><td>Messages WhatsApp / RCS au-delà du forfait (${ent(r.messages_hors_forfait_mois)}/mois × ${eur2(c.cout_message || 0)})</td>${surCa ? '' : '<td></td>'}<td class="neg">− ${eur(r.cout_messages_mois * 12)}</td></tr>` : ''}
   ${r.cout_plaques_mois ? `<tr><td>Interrogations de plaque au-delà du forfait (${ent(r.plaques_hors_forfait_mois)}/mois × ${eur2(c.cout_plaque || 0)})</td>${surCa ? '' : '<td></td>'}<td class="neg">− ${eur(r.cout_plaques_mois * 12)}</td></tr>` : ''}
   ${r.frais ? `<tr><td>Mise en place</td>${surCa ? '' : '<td></td>'}<td class="neg">− ${eur(r.frais)}</td></tr>` : ''}
@@ -980,27 +1282,11 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
   ${k(r.interactions_mois ? eur2(r.cout_mois / r.interactions_mois) : '—', `par contact traité par Budy (${ent(r.interactions_mois)} par mois)`)}
  </div>` });
   // Trois scénarios (mode « panier moyen ») : leur propre page, le tableau se lit d'un coup d'œil.
-  if (scen) P.push({ corps: `
- <div class="ey">Trois scénarios</div>
- <h2>Du scénario prudent <span class="g">au scénario ambitieux</span></h2>
- <div class="rule"></div>
- <p class="tx" style="max-width:none">Une seule hypothèse change d'une colonne à l'autre : la part des clients repris par Budy (appels et messages) qui achètent réellement. Tout le reste — volumes, panier moyen de ${eur(c.panier_moyen || 0)} pour toutes les ventes, relances, tarif — est identique.</p>
- ${tableScenarios(scen, { unite: ['vente', 'ventes'], marge: !surCa, avant: [
-    ['Appels et messages repris par mois', ent(r.reprises_mois + r.messages_recup_mois)],
-    ['Panier moyen', eur(c.panier_moyen || 0)]
-  ], note: 'Gain calculé sur ' + (surCa ? "le chiffre d'affaires" : 'la marge') + ' des ventes, hors temps rendu et coûts évités (' + eur(r.eco_mois) + ' par mois en plus, quel que soit le scénario).' })}
- <div class="h3">Comment lire ce tableau</div>
- <div class="res" style="grid-template-columns:1fr">
-  <div><i>1</i><span><b>Le scénario bas est volontairement sévère.</b> Il suppose que très peu des clients à qui Budy répond enfin passent commande.</span></div>
-  <div><i>2</i><span><b>Le scénario moyen est celui de cette étude.</b> C'est lui qui donne les montants des autres pages.</span></div>
-  <div><i>3</i><span><b>Les relances ne dépendent pas de ce taux.</b> Devis relancés, rendez-vous sécurisés, révisions et ventes additionnelles sont comptés à l'identique dans les trois colonnes.</span></div>
- </div>` });
-
   // ── 7. Annexe : hypothèses ──
   const h = (l, v) => `<tr><td>${l}</td><td>${v}</td></tr>`;
   const bloc = (id, titre, lignes) => (!id || lev(id).actif)
     ? `<div class="hb"><h5>${id ? `<i class="pt" style="background:${COULEURS_ROI[id]}"></i>` : ''}${titre}</h5><table class="hyp">${lignes.join('')}</table></div>` : '';
-  P.push({ corps: `
+  if (PAGES_ETUDE.annexe) P.push({ corps: `
  <div class="ey">Annexe</div>
  <h2>Les hypothèses retenues — <span class="g">à ajuster avec vous</span></h2>
  <div class="rule"></div>
@@ -1028,7 +1314,9 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
  </div>` });
 
   // ── Preuve sociale : cas client + logos, lus dans la base commune aux prez ──
-  const pp = pagePreuve(cas, logos);
+  const fin = blocFin(sdr, lienDemo, 'Réserver une démonstration de Budy →', 'Une démonstration de 30 minutes sur vos propres demandes.');
+  // Concession : pas de cas client, la page se complète d'une image de concession.
+  const pp = pagePreuve(cas, logos, PAGES_ETUDE.pourquoi ? null : fin, PIED_ESTIMATION, pieces ? '' : (photoFin && photoFin.image ? `<img class="vis-fin" src="${esc(photoFin.image)}" alt="${esc(photoFin.description || '')}">` : ILLU_CONCESSION));
   if (pp) P.push(pp);
 
   // ── 8. Pourquoi Budy ──
@@ -1041,18 +1329,18 @@ export function pageRoi(doc, meta, sdr, apercu, lienDemo, preuves) {
     ['Vos conseillers se concentrent sur la vente', "Horaires, suivi de réparation, documents : Budy absorbe les demandes répétitives. Le téléphone ne sonne plus que pour ce qui demande un humain."],
     ['Ouvert quand vos clients vous cherchent', "Le soir, le samedi, à l'heure du déjeuner : Budy répond 24 h/24. La demande attend votre équipe à l'ouverture, avec tout le contexte."]
   ];
-  P.push({ dark: true, corps: `
+  if (PAGES_ETUDE.pourquoi) P.push({ dark: true, corps: `
  <div class="ey">Pourquoi Budy</div>
  <h2>Plus qu'un robot qui décroche : <span class="g">toute votre relation client</span> au même endroit</h2>
  <div class="rule"></div>
  <div class="why">
   ${benef.map((b, i) => `<div class="w"><div class="w-n">${i + 1}</div><div><div class="w-t">${esc(b[0])}</div><div class="w-x">${esc(b[1])}</div></div></div>`).join('')}
-  <div class="w"><div class="w-n">4</div><div><div class="w-t">Une IA qui connaît l'automobile</div><div class="w-x">Reliée au fichier des immatriculations, au catalogue TecDoc et aux plans d'entretien TecRMI${pieces ? '' : ', ainsi qu\'à votre planning atelier Mecaplanning'}, Budy parle véhicule, référence et préconisation constructeur — pas un script générique.</div></div></div>
+  <div class="w"><div class="w-n">4</div><div><div class="w-t">Une IA qui connaît l'automobile</div><div class="w-x">Reliée à vos catalogues électroniques, à vos préconisations constructeur et à votre DMS, Budy parle véhicule, référence et préconisation — pas un script générique.</div></div></div>
   <div class="w"><div class="w-n">5</div><div><div class="w-t">La voix et l'écrit dans une seule boîte</div><div class="w-x">Téléphone, WhatsApp, Messenger, Instagram, webchat et RCS arrivent dans SoConnect, avec l'historique du client. Un canal de plus n'ajoute pas un écran de plus.</div></div></div>
   <div class="w"><div class="w-n">6</div><div><div class="w-t">Une équipe qui reste</div><div class="w-x">Sofy est une marque d'Optima Group, éditeur de SunSMS : 14 ans de messagerie d'entreprise. Une coach dédiée suit votre déploiement — pas une hotline anonyme.</div></div></div>
  </div>
  ${blocFin(sdr, lienDemo, 'Réserver une démonstration de Budy →', 'Une démonstration de 30 minutes sur vos propres demandes : appels, WhatsApp, devis.')}
- `, pied: "Les montants sont des estimations établies à partir des hypothèses détaillées dans ce document ; ils ne constituent pas un engagement de résultat." });
+ `, pied: "Les montants sont des estimations établies à partir des hypothèses retenues avec vous ; ils ne constituent pas un engagement de résultat." });
 
   return gabarit(P, { client, date, apercu, nom: 'Étude de rentabilité Budy' });
 }

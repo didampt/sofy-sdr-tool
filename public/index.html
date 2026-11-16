@@ -2659,7 +2659,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v405';
+const VERSION='v406';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -8168,7 +8168,7 @@ const ROI_DEF={
   intro:'Chiffre en direct, avec le client, ce que <b>Budy</b> lui rapporte : appels et messages repris, devis et révisions relancés, bonne pièce du premier coup, ventes additionnelles. C\'est toi qui remplis, avec lui.',
   profils:[['concession','🚗 Concession / garage'],['pieces','🔩 Distributeur de pièces']],
   perimetre:[['sites','Sites équipés',1,50,1,''],['jours_mois','Jours d\'ouverture par mois',18,30,1,' j']],
-  tarif:'SoConnect Basic 389 € + module Budy Auto : <b>Concession + 249 €</b> (TecDoc, TecRMI, Mecaplanning) ou <b>Pièces + 199 €</b> (TecDoc, TecRMI, 500 interrogations de plaque, 1 000 messages RCS / WhatsApp). Au-delà du forfait, les messages sont au prix Sofy — business model en cours : vérifie avant envoi.',
+  tarif:'SoConnect Basic 389 € + option Budy Auto : <b>Concession + 249 €</b> ou <b>Pièces + 199 €</b> (catalogues électroniques, préconisations constructeur, intégration DMS / ERP, API, MCP). Ces montants varient avec la taille et le nombre d\'établissements : <b>ce que tu saisis ici s\'affiche tel quel dans l\'étude</b>. Les forfaits de messages et d\'interrogations de plaque ne sont pas confirmés : ils ne sont pas cités dans l\'étude — business model en cours, vérifie avant envoi.',
   cout:[['abonnement','SoConnect Basic, par site',0,2000,1,' €/mois'],['module','Module Budy Auto, par site',0,1000,1,' €/mois'],
    ['messages_inclus','Messages WhatsApp / RCS inclus par site',0,5000,100,' /mois'],['cout_message','Message au-delà du forfait (prix Sofy)',0,0.5,0.01,' €'],
    ['plaques_incluses','Interrogations de plaque incluses par site',0,5000,100,' /mois'],['cout_plaque','Interrogation au-delà du forfait',0,0.5,0.01,' €'],
@@ -8190,13 +8190,13 @@ const ROI_DEF={
     ['taux_devis_conv','Conclus grâce à la relance',0,40,1,' %'],
     ['panier_devis','Montant moyen d\'un devis',0,3000,10,' €'],
     ['marge_devis','Marge',0,70,1,' %']]},
-   {id:'atelier',t:'🔧 Rappels de rendez-vous atelier',x:'Deux rappels WhatsApp / RCS (avant-veille et veille) avec « Je confirme / Je décale », reliés au planning Mecaplanning : moins de ponts vides.',s:[
+   {id:'atelier',t:'🔧 Rappels de rendez-vous atelier',x:'Deux rappels WhatsApp / RCS (avant-veille et veille) avec « Je confirme / Je décale », reliés au planning atelier : moins de ponts vides.',s:[
     ['rdv_mois','Rendez-vous atelier par mois et par site',0,2000,10,''],
     ['taux_noshow','Rendez-vous non honorés',0,30,1,' %'],
     ['reduction_noshow','Évités grâce aux rappels',0,80,1,' %'],
     ['panier_rdv','Facture atelier moyenne',0,1500,10,' €'],
     ['marge_rdv','Marge atelier (sert aussi aux révisions)',0,70,1,' %']]},
-   {id:'revisions',t:'🗓 Relance des révisions — TecRMI',x:'Budy croise la base clients avec le plan d\'entretien constructeur (TecRMI, TecAlliance) et relance chaque véhicule à la bonne échéance.',s:[
+   {id:'revisions',t:'🗓 Relance des révisions — préconisation constructeur',x:'Budy croise la base clients avec le plan d\'entretien constructeur et relance chaque véhicule à la bonne échéance.',s:[
     ['revisions_mois','Relances de révision par mois et par site',0,3000,10,''],
     ['taux_revision_conv','Relances suivies d\'un rendez-vous',0,40,1,' %'],
     ['panier_revision','Facture moyenne d\'une révision',0,1500,10,' €']]},
@@ -8205,7 +8205,7 @@ const ROI_DEF={
     ['taux_upsell','Demandes avec vente additionnelle',0,30,1,' %'],
     ['panier_upsell','Panier additionnel moyen',0,500,5,' €'],
     ['marge_upsell','Marge',0,70,1,' %']]},
-   {id:'identif',t:'🔎 Bonne pièce par immatriculation — TecDoc + SIV',x:'De la plaque à la référence compatible : moins de recherche manuelle, moins d\'erreurs de référence et de retours.',s:[
+   {id:'identif',t:'🔎 Bonne pièce par immatriculation — catalogues électroniques',x:'De la plaque à la référence compatible : moins de recherche manuelle, moins d\'erreurs de référence et de retours.',s:[
     ['recherches_mois','Recherches de pièces par mois et par site',0,5000,10,''],
     ['min_recherche','Temps gagné par recherche',0,10,0.5,' min'],
     ['taux_erreur','Erreurs de référence aujourd\'hui',0,20,1,' %'],
@@ -8285,7 +8285,8 @@ const ROI_MESURES=[['note','Note Google',0,5,0.1],['avis','Nombre d\'avis',0,100
  ['position','Position locale',1,50,1],['taux_reponse','Avis avec réponse (%)',0,100,1]];
 function roiProd(){return (ROI.cfg&&ROI_DEF[ROI.cfg.produit])?ROI.cfg.produit:'budy';}
 function roiFmt(v,d){return (Number(v)||0).toLocaleString('fr-FR',{minimumFractionDigits:d||0,maximumFractionDigits:d||0});}
-function roiEur(v){const a=Math.abs(v);const r=a>=100000?Math.round(v/1000)*1000:a>=10000?Math.round(v/100)*100:a>=1000?Math.round(v/10)*10:Math.round(v);return roiFmt(r)+' €';}
+// Montants exacts, à l'euro près (retour Romain 16/11) : le client refait les opérations à la calculette.
+function roiEur(v){return roiFmt(Math.round(v))+' €';}
 function roiX(r){return r==null?'—':'×'+(r>=10?roiFmt(Math.round(r)):roiFmt(r,1));}
 function roiNb(v){return (v>=10||v===0)?roiFmt(v):roiFmt(v,1);}
 function roiCharger(){

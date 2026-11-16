@@ -18,7 +18,7 @@
 
 import {
   esc, NBSP, fmt, eur, eur2, ent, nb, roiX, p0, kpi, bulle, pageSynthese, pagePreuve, blocFin, gabarit,
-  PIED_ESTIMATION, calculerRoi, PRESETS_ROI, COULEURS_ROI, pageRoi, scenariosEtude, tableScenarios, SCENARIO_BUDY
+  PIED_ESTIMATION, PAGES_ETUDE, iphone, calculerRoi, PRESETS_ROI, COULEURS_ROI, pageRoi, scenariosEtude, tableScenarios, SCENARIO_BUDY
 } from './roi-page.js';
 
 // ── Soview ────────────────────────────────────────────────────────────────────────────────────
@@ -375,7 +375,7 @@ function couverture(o) {
  <div class="hero">
   <div class="hero-l">${r.seuil_ventes_mois != null ? 'Rentabilisé avec' : 'Gain potentiel la première année'}</div>
   <div class="hero-v g">${r.seuil_ventes_mois != null ? `${ent(r.seuil_ventes_mois)} ${r.seuil_ventes_mois > 1 ? o.unite[1] : o.unite[0]} par mois` : eur(r.gain_an)}</div>
-  <div class="hero-s">pour un investissement de <b>${eur(r.cout_mois)} HT par mois</b>. Avec les hypothèses de cette étude, le gain potentiel atteint <b>${eur(r.gain_an)}</b> la première année${r.roi != null && r.roi >= 1 ? `, soit <b>${roiX(r.roi)}</b> la mise` : ''}.</div>
+  <div class="hero-s">pour un investissement de <b>${eur(r.cout_mois)} HT par mois</b>. Avec les hypothèses de cette étude, le gain potentiel atteint <b>${eur(r.gain_an)}</b> la première année.</div>
   ${leviersV.length > 1 ? `<div class="pile">${leviersV.map(l => `<i style="flex:${Math.max(1, Math.round(l.gain_an))};background:${COULEURS[l.id]}"></i>`).join('')}</div>
   <div class="pile-l">${leviersV.map(l => `<span><i style="background:${COULEURS[l.id]}"></i>${esc(l.label)} · <b>${eur(l.gain_an)}</b></span>`).join('')}</div>` : ''}
  </div>
@@ -414,19 +414,14 @@ function pageCalcul(o) {
  </div>` };
 }
 
-// Page « Trois scénarios » (Soview, SoReach) : le tableau Bas / Moyen / Haut et sa lecture.
-function pageScenarios(o) {
-  if (!o.sc) return null;
-  return { corps: `
- <div class="ey">Trois scénarios</div>
- <h2>Du scénario prudent <span class="g">au scénario ambitieux</span></h2>
- <div class="rule"></div>
- <p class="tx" style="max-width:none">${esc(o.intro)}</p>
- ${tableScenarios(o.sc, { unite: o.unite, marge: !o.surCa, avant: o.avant, note: o.note })}
- <div class="h3">Comment lire ce tableau</div>
- <div class="res" style="grid-template-columns:1fr">
-  ${o.lecture.map((x, i) => `<div><i>${i + 1}</i><span><b>${esc(x[0])}</b> ${esc(x[1])}</span></div>`).join('')}
- </div>` };
+// Clôture : bouton de démonstration + carte du conseiller. Quand la page « Pourquoi » est retirée
+// (PAGES_ETUDE.pourquoi, retour Romain 16/11/2026), elles passent en bas de la page « Ils l'ont fait ».
+function cloture(P, preuves, o) {
+  const garder = PAGES_ETUDE.pourquoi;
+  const fin = blocFin(o.sdr, o.lienDemo, o.bouton, o.texte);
+  const pp = pagePreuve(preuves.cas, preuves.logos, garder ? null : fin, PIED_ESTIMATION);
+  if (pp) P.push(pp);
+  if (garder) P.push(pageFin(o));
 }
 
 function pageFin(o) {
@@ -480,7 +475,9 @@ function pageSoview(doc, meta, sdr, apercu, lienDemo, preuves) {
       kpi(nb(r.clients_plus_mois), 'clients en plus par mois visés'),
       kpi(ent(r.heures_an) + NBSP + 'h', 'de gestion et de réponses aux avis rendues par an')
     ] }));
-  const s = pageSynthese(r, { produit: 'Soview', unite, enPlus: true, demandes: 'contacts par mois venus de Google', demandesCourt: 'contacts venus de Google',
+  const sc0 = scenariosDe(c);
+  const noteSc = 'Gain calculé sur ' + (r.sur_marge ? 'la marge' : "le chiffre d'affaires") + ' des clients gagnés, hors temps rendu' + (r.valeur_temps_mois > 0 ? ' (' + eur(r.valeur_temps_mois) + ' par mois en plus, quel que soit le scénario)' : '') + '.';
+  const s = pageSynthese(r, { scenariosHtml: sc0 ? tableScenarios(sc0, { unite, marge: !r.sur_marge, note: noteSc }) : '', produit: 'Soview', unite, enPlus: true, demandes: 'contacts par mois venus de Google', demandesCourt: 'contacts venus de Google',
     panier: 'Panier moyen', temps: 'réponses aux avis, mise à jour des fiches' });
   if (s) P.push(s);
   P.push({ corps: `
@@ -507,29 +504,19 @@ function pageSoview(doc, meta, sdr, apercu, lienDemo, preuves) {
   <div><i>4</i><span><b>Un coach Sofy dédié.</b> Un interlocuteur qui connaît votre réseau, inclus dans l'abonnement.</span></div>
  </div>
  ${mesure ? `<p class="note">Mesures relevées par Sofy sur les résultats publics de Google${m.requete ? ` pour la recherche « ${esc(m.requete)} »` : ''}. Elles décrivent un instant : une position locale varie selon le lieu et le moment de la recherche.</p>` : ''}` });
-  const pSc = pageScenarios({ sc: scenariosDe(c), unite, surCa: !r.sur_marge,
-    intro: "Une seule hypothèse change d'une colonne à l'autre : la hausse des contacts que Google vous envoie une fois vos fiches tenues, vos avis traités et votre position locale travaillée. Tout le reste vient de vos chiffres.",
-    avant: [['Contacts venus de Google par mois', ent(r.actions_mois)], ['Clients actuels via Google par mois', ent(r.clients_actuels_mois)], ['Panier moyen', eur(c.panier || 0)]],
-    note: 'Gain calculé sur ' + (r.sur_marge ? 'la marge' : "le chiffre d'affaires") + ' des clients gagnés, hors temps rendu (' + eur(r.valeur_temps_mois) + ' par mois en plus, quel que soit le scénario).',
-    lecture: [['La hausse retenue est une hypothèse.', "Elle dépend de votre point de départ : plus l'écart avec vos concurrents est grand, plus la marge de progression l'est aussi."],
-      ['Le scénario moyen est celui de cette étude.', "C'est lui qui donne les montants des autres pages."],
-      ['Le temps rendu ne dépend pas du scénario.', "Réponses aux avis et gestion des fiches sont gagnées dans les trois colonnes."]] });
-  if (pSc) P.push(pSc);
   P.push(pageCalcul({ r, c, produit: 'Soview', unite, surCa: !r.sur_marge, sensible: 'la hausse de visibilité retenue',
     lignesCout: [[`Abonnement Soview (${eur(c.abonnement || 0)}/mois${r.sites > 1 ? ` × ${r.sites} établissements` : ''} × 12)`, r.abonnement_mois * 12]].concat(r.frais ? [['Mise en place', r.frais]] : []),
     hypotheses: [
       [['Votre fiche Google aujourd\'hui', [['Établissements', r.sites], ['Vues de la fiche par mois et par établissement', ent(c.vues_mois || 0)], ['Vues suivies d\'une action (appel, itinéraire, site)', p0(c.taux_action)], ['Actions qui deviennent un client', p0(c.taux_transfo)], ['Panier moyen', eur(c.panier || 0)]].concat(r.sur_marge ? [['Marge', p0(c.marge)]] : [])]],
       [['Avec Soview', [['Hausse des contacts venus de Google', '+ ' + p0(c.gain_visibilite)], ['Avis reçus par mois et par établissement', ent(c.avis_mois || 0)], ['Temps pour répondre à un avis aujourd\'hui', fmt(c.min_reponse || 0, 0) + ' min'], ['Gestion des fiches économisée par établissement', fmt(c.heures_gestion || 0, 1) + ' h / mois'], ['Coût horaire chargé', (c.off && c.off.cout_temps) ? 'temps rendu non valorisé' : eur(c.cout_horaire || 0)]]]]
     ] }));
-  const pp = pagePreuve(preuves.cas, preuves.logos);
-  if (pp) P.push(pp);
-  P.push(pageFin({ sdr, lienDemo, eyebrow: 'Pourquoi Sofy', titre: 'Une équipe qui connaît votre réseau, <span class="g">et un outil qui tient dans la durée</span>',
+  cloture(P, preuves, { sdr, lienDemo, eyebrow: 'Pourquoi Sofy', titre: 'Une équipe qui connaît votre réseau, <span class="g">et un outil qui tient dans la durée</span>',
     points: [
       ['Budy, votre IA incluse', "Réponses aux avis, suggestions de publication, analyse concurrentielle : sans surcoût ni option."],
       ['Un déploiement en 12 semaines', "État des lieux et score par établissement, mise en ordre des fiches, puis régime de croisière : réponses sous 24 à 48 heures sur tout le réseau."],
       ['La voix, l\'écrit et les campagnes au même endroit', "Soview s'articule avec SoConnect (messagerie) et SoReach (SMS et RCS) : un avis demandé par SMS, une réponse au client dans la même boîte."],
       ['Une équipe qui reste', "Sofy est une marque d'Optima Group, éditeur de SunSMS : 14 ans de messagerie d'entreprise et de visibilité locale. Une coach dédiée suit votre déploiement."]
-    ], bouton: 'Réserver une démonstration de Soview →', texte: 'Trente minutes sur vos propres fiches : ce qui se voit, ce qui manque, par où commencer.' }));
+    ], bouton: 'Réserver une démonstration de Soview →', texte: 'Trente minutes sur vos propres fiches : ce qui se voit, ce qui manque, par où commencer.' });
   return gabarit(P, { client, date, apercu, nom: 'Étude de rentabilité Soview' });
 }
 
@@ -551,7 +538,9 @@ function pageSoreach(doc, meta, sdr, apercu, lienDemo, preuves) {
       kpi(nb(r.ventes_mois), 'ventes par mois visées'),
       kpi(eur(r.ca_an), 'de chiffre d\'affaires généré par an')
     ] }));
-  const s = pageSynthese(r, { produit: 'SoReach', unite, demandes: 'messages envoyés par mois à vos clients', demandesCourt: 'messages envoyés', sansJour: true,
+  const sc1 = scenariosDe(c);
+  const noteSr = 'Gain calculé sur ' + (r.sur_marge ? 'la marge' : "le chiffre d'affaires") + ' des ventes, coût des envois déduit.';
+  const s = pageSynthese(r, { scenariosHtml: sc1 ? tableScenarios(sc1, { unite, marge: !r.sur_marge, note: noteSr }) : '', produit: 'SoReach', unite, demandes: 'messages envoyés par mois à vos clients', demandesCourt: 'messages envoyés', sansJour: true,
     panier: 'Panier moyen', temps: 'rédaction et ciblage des campagnes' });
   if (s) P.push(s);
   P.push({ corps: `
@@ -586,14 +575,6 @@ function pageSoreach(doc, meta, sdr, apercu, lienDemo, preuves) {
   <div><b>47 %</b><span>de taux de clic sur ces mêmes campagnes<i>Groupe Kiosque, 32 points de vente — interview client Sofy</i></span></div>
  </div>
  <p class="note">Sofy est Google Partner RBM : l'agent RCS de votre enseigne est vérifié par Google, et Sofy porte le déploiement. L'exemple de message est illustratif.</p>` });
-  const pSc = pageScenarios({ sc: scenariosDe(c), unite, surCa: !r.sur_marge,
-    intro: "Une seule hypothèse change d'une colonne à l'autre : la part des clients qui achètent après avoir cliqué. Tout le reste — taille de la base, rythme des campagnes, panier — vient de vos chiffres.",
-    avant: [['Messages envoyés par mois', ent(r.messages_mois)], ['Clients qui cliquent par mois', ent(r.clics_mois)], ['Panier moyen', eur(c.panier || 0)]],
-    note: 'Gain calculé sur ' + (r.sur_marge ? 'la marge' : "le chiffre d'affaires") + ' des ventes, coût des envois déduit.',
-    lecture: [['Le coût des envois est le même partout.', "Un message coûte autant qu'il déclenche une vente ou non : c'est ce qui rend le scénario bas instructif."],
-      ['Le scénario moyen est celui de cette étude.', "C'est lui qui donne les montants des autres pages."],
-      ['Une campagne se mesure.', "Dès le premier envoi, les clics et les ventes réels remplacent ces hypothèses."]] });
-  if (pSc) P.push(pSc);
   P.push(pageCalcul({ r, c, produit: 'SoReach', unite, surCa: !r.sur_marge, sensible: 'le taux de clic et le taux de conversion retenus',
     lignesCout: [[`Messages (${ent(r.messages_mois)}/mois × ${eur2(c.cout_message || 0)} × 12)`, r.cout_messages_mois * 12]]
       .concat(r.abonnement_mois ? [[`Abonnement (${eur(c.abonnement || 0)}/mois × 12)`, r.abonnement_mois * 12]] : [])
@@ -602,15 +583,13 @@ function pageSoreach(doc, meta, sdr, apercu, lienDemo, preuves) {
       [['Votre base', [['Établissements', r.sites], ['Contacts joignables par établissement', ent(c.contacts || 0)], ['Campagnes par mois', fmt(c.campagnes_mois || 0, 1)], ['Coût d\'un message', eur2(c.cout_message || 0)]]]],
       [['Ce que les campagnes déclenchent', [['Messages suivis d\'un clic', p0(c.taux_clic)], ['Clics suivis d\'un achat', p0(c.taux_conv)], ['Panier moyen', eur(c.panier || 0)]].concat(r.sur_marge ? [['Marge', p0(c.marge)]] : []).concat([['Temps gagné par campagne', fmt(c.heures_campagne || 0, 1) + ' h'], ['Coût horaire chargé', (c.off && c.off.cout_temps) ? 'temps rendu non valorisé' : eur(c.cout_horaire || 0)]])]]
     ] }));
-  const pp = pagePreuve(preuves.cas, preuves.logos);
-  if (pp) P.push(pp);
-  P.push(pageFin({ sdr, lienDemo, eyebrow: 'Pourquoi Sofy', titre: 'Quatorze ans de messagerie d\'entreprise, <span class="g">et le RCS vérifié par Google</span>',
+  cloture(P, preuves, { sdr, lienDemo, eyebrow: 'Pourquoi Sofy', titre: 'Quatorze ans de messagerie d\'entreprise, <span class="g">et le RCS vérifié par Google</span>',
     points: [
       ['Un opérateur, pas un revendeur', "Sofy est une marque d'Optima Group, éditeur de SunSMS : agrégateur direct, habilité ARCEP, 14 ans d'envois pour les enseignes."],
       ['Budy prépare la campagne', "Ciblage, rédaction, personnalisation : vous validez, Budy envoie au bon moment."],
       ['La réponse du client ne se perd pas', "Chaque réponse arrive dans SoConnect, à côté de WhatsApp, Messenger et du webchat."],
       ['Une coach dédiée', "Un interlocuteur qui connaît vos saisons et vos points de vente, inclus."]
-    ], bouton: 'Réserver une démonstration de SoReach →', texte: 'Trente minutes pour monter ensemble votre première campagne RCS.' }));
+    ], bouton: 'Réserver une démonstration de SoReach →', texte: 'Trente minutes pour monter ensemble votre première campagne RCS.' });
   return gabarit(P, { client, date, apercu, nom: 'Étude de rentabilité SoReach' });
 }
 
@@ -633,46 +612,41 @@ function pageSoconnect(doc, meta, sdr, apercu, lienDemo, preuves) {
       kpi(ent(r.prises_mois), 'demandes aujourd\'hui non traitées, reprises par SoConnect'),
       kpi(ent(r.heures_mois) + NBSP + 'h', 'de préqualification rendues à vos vendeurs par mois')
     ] }));
-  const s = pageSynthese(r, { produit: 'SoConnect', unite, enPlus: true, demandes: 'demandes par mois', demandesCourt: 'demandes',
+  const noteSo = `Gain calculé sur ${surCa ? "le chiffre d'affaires" : 'la marge'}. ${noteTemps}`;
+  const s = pageSynthese(r, { scenariosHtml: sc ? tableScenarios(sc, { unite, marge: !surCa, note: noteSo }) : '', produit: 'SoConnect', unite, enPlus: true, demandes: 'demandes par mois', demandesCourt: 'demandes',
     panier: 'Commande moyenne', temps: 'préqualification des demandes par Budy' });
   if (s) P.push(s);
   P.push({ corps: `
- <div class="ey">Trois scénarios</div>
- <h2>Du scénario prudent <span class="g">au scénario ambitieux</span></h2>
+ <div class="ey">SoConnect en situation</div>
+ <h2>Toutes vos demandes, <span class="g">une seule boîte</span></h2>
  <div class="rule"></div>
- <p class="tx" style="max-width:none">Une seule hypothèse change d'une colonne à l'autre : la part des demandes reprises qui se transforment en vente. Tout le reste vient de vos chiffres.</p>
- ${tableScenarios(sc, { unite, marge: !surCa, avant: [
-    ['Demandes par mois', ent(r.demandes_total_mois)],
-    ['Demandes non traitées aujourd\'hui', p0(c.taux_non_traitees)],
-    ['Demandes prises en charge par SoConnect', ent(r.prises_mois)],
-    ['Panier moyen', eur(c.panier || 0)]
-  ], note: `Gain calculé sur ${surCa ? "le chiffre d'affaires" : 'la marge'}. ${noteTemps}` })}
- <div class="h3">Ce que SoConnect change</div>
- <div class="rl">
-  <div class="res" style="grid-template-columns:1fr">
+ <div class="rl" style="grid-template-columns:1fr auto;gap:30px;align-items:center">
+  <div class="res" style="grid-template-columns:1fr;gap:16px">
    <div><i>1</i><span><b>Quatre canaux écrits, une seule boîte.</b> WhatsApp, webchat du site, Facebook et Messenger, RCS : un canal de plus n'ajoute pas un écran de plus.</span></div>
    <div><i>2</i><span><b>Budy pré-qualifie.</b> Il répond tout de suite, relève le besoin et les coordonnées, puis passe la main à votre équipe avec l'historique.</span></div>
    <div><i>3</i><span><b>Ouvert quand vos clients écrivent.</b> Le soir et le week-end, la demande est prise et attend votre équipe à l'ouverture.</span></div>
    <div><i>4</i><span><b>Rien ne se perd.</b> Chaque demande a un responsable, un statut et une relance.</span></div>
   </div>
-  ${bulle('WhatsApp', client, [['c', 'Bonjour, vous avez ce modèle en stock ? J\'en aurais besoin pour samedi.'], ['b', 'Bonjour ! Je regarde ça pour vous. Pour quel usage, et à quel nom dois-je préparer le devis ?']], ['Recevoir le devis', 'Être rappelé'])}
+  <figure class="phs" style="margin:0;display:block">${iphone({ canal: 'whatsapp', nom: client, fil: [
+    { de: 'client', t: "Bonjour, vous avez ce modèle en stock ? J'en aurais besoin pour samedi.", h: '18:42' },
+    { de: 'budy', t: 'Bonjour ! Je regarde ça pour vous. Pour quel usage, et à quel nom dois-je préparer le devis ?', h: '18:42' },
+    { de: 'client', t: 'Pour un usage pro. Au nom de Martin SARL.', h: '18:44' },
+    { de: 'budy', t: "Merci ! Votre demande est transmise à l'équipe, qui vous répond dès l'ouverture demain à 8 h 30 ✓", h: '18:44', boutons: ['Être rappelé', 'Recevoir le devis'] }] })}</figure>
  </div>
- <p class="note">L'exemple de message est illustratif.</p>` });
+ <p class="note">L'exemple de conversation est illustratif.</p>` });
   P.push(pageCalcul({ r, c, produit: 'SoConnect', unite, surCa, sensible: 'le taux de conversion retenu',
     lignesCout: [[`Abonnement SoConnect (${eur(c.abonnement || 0)}/mois${r.sites > 1 ? ` × ${r.sites} établissements` : ''} × 12)`, r.abonnement_mois * 12]].concat(r.frais ? [['Mise en place', r.frais]] : []),
     hypotheses: [
       [['Vos demandes', [['Établissements', r.sites], ['Demandes par mois et par établissement', ent(c.demandes_mois || 0)], ['Demandes non traitées aujourd\'hui', p0(c.taux_non_traitees)], ['Taux de conversion (scénario moyen)', p0(c.taux_conversion)]]]],
       [['Ce que vaut une vente', [['Panier moyen', eur(c.panier || 0)]].concat(surCa ? [] : [['Marge', p0(c.marge)]]).concat([['Temps gagné par demande traitée', fmt(c.min_gagnees || 0, 1) + ' min'], ['Coût horaire chargé d\'un vendeur', (c.off && c.off.cout_temps) ? 'temps rendu non valorisé' : eur(c.cout_horaire || 0)]])]]
     ] }));
-  const pp = pagePreuve(preuves.cas, preuves.logos);
-  if (pp) P.push(pp);
-  P.push(pageFin({ sdr, lienDemo, eyebrow: 'Pourquoi Sofy', titre: 'Une seule interface, <span class="g">et une équipe qui reste</span>',
+  cloture(P, preuves, { sdr, lienDemo, eyebrow: 'Pourquoi Sofy', titre: 'Une seule interface, <span class="g">et une équipe qui reste</span>',
     points: [
       ['Budy, votre IA incluse', "Pré-qualification, réponses aux questions récurrentes, relances : sans surcoût ni option."],
       ['Vos avis et vos campagnes au même endroit', "SoConnect s'articule avec Soview (fiches Google, avis) et SoReach (SMS et RCS) : la réponse du client arrive dans la même boîte."],
       ['Une mise en route accompagnée', "Une coach dédiée branche vos canaux, forme votre équipe et suit les premières semaines."],
       ['Une équipe qui reste', "Sofy est une marque d'Optima Group, éditeur de SunSMS : 14 ans de messagerie d'entreprise."]
-    ], bouton: 'Réserver une démonstration de SoConnect →', texte: 'Trente minutes sur vos propres demandes : WhatsApp, Messenger, webchat.' }));
+    ], bouton: 'Réserver une démonstration de SoConnect →', texte: 'Trente minutes sur vos propres demandes : WhatsApp, Messenger, webchat.' });
   return gabarit(P, { client, date, apercu, nom: 'Étude de rentabilité SoConnect' });
 }
 
