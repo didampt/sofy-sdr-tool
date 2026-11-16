@@ -2173,3 +2173,7 @@ Trois règles qui en découlent, à ne plus jamais enfreindre :
   PREMIER canal reste (mise en page et nombre de pages inchangés). Usages : SoConnect (WhatsApp / Instagram
   / RCS), Budy relances devis / atelier / révisions et relance proactive (WhatsApp / RCS / SMS) ; titre
   « sur WhatsApp, RCS et SMS ». Pas de carrousel sur « Budy en conversation » ni sur la page « vendre juste ».
+- v415 (16/11, demande Didier) : page 3 SoConnect, liste des fonctions portée de 4 à 7 : relance par WhatsApp / SMS /
+  RCS, statistiques détaillées (temps par opérateur, satisfaction, tags et sujets), MCP (ChatGPT ou Claude),
+  et « NOUVEAU » mémoire de Budy avec pastille clignotante (classe `.new`, animation coupée à l'impression et
+  si prefers-reduced-motion). Tient sur la page A4 (vérifié au PDF).

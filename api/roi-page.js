@@ -928,6 +928,9 @@ h2{font-size:32px;max-width:22ch}
 .ip-in{padding:5px 9px 12px;background:#fff;border-top:.5px solid rgba(0,0,0,.1)}
 .ip-in span{display:block;font-size:9.5px;color:#9CA3AF;padding:5px 10px;border-radius:13px;border:.5px solid #D1D5DB}
 /* iPhone « court » : le haut du téléphone, fondu vers le bas de la page */
+.new{display:inline-block;font-style:normal;font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#fff;background:#F0428A;padding:2px 7px;border-radius:999px;vertical-align:1px;margin-right:4px}
+@media (prefers-reduced-motion:no-preference){.new{animation:clig 1.4s ease-in-out infinite}}
+@keyframes clig{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(240,66,138,.5)}50%{opacity:.55;box-shadow:0 0 0 5px rgba(240,66,138,0)}}
 .car{width:250px;max-width:100%;margin:0 auto}
 .car-tabs{display:flex;gap:4px;justify-content:center;margin-bottom:6px}
 .car-t{font:700 11px/1 inherit;padding:6px 11px;border-radius:999px;border:1px solid #D6D1F2;background:#fff;color:#5B4FE9;cursor:pointer}
@@ -1037,6 +1040,7 @@ td:not(:first-child),th:not(:first-child){text-align:right;white-space:nowrap}
  :root{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
  body{background:#fff}
  .tools,.apercu{display:none!important}
+ .new{animation:none!important}
  .car-tabs{display:none!important}.car-vp{overflow:hidden}.car-s:not(:first-child){display:none!important}
  *{box-shadow:none!important}
  .page{width:210mm;height:297mm;min-height:0;margin:0;border-radius:0;padding:12mm 15mm 8mm;break-after:page;page-break-after:always;overflow:hidden}

@@ -647,11 +647,14 @@ function pageSoconnect(doc, meta, sdr, apercu, lienDemo, preuves) {
 
  <div class="h3" style="margin-top:22px">Avec SoConnect : toutes vos demandes, une seule boîte</div>
  <div class="rl" style="grid-template-columns:1fr auto;gap:30px;align-items:center">
-  <div class="res" style="grid-template-columns:1fr;gap:16px">
+  <div class="res" style="grid-template-columns:1fr;gap:11px">
    <div><i>1</i><span><b>Quatre canaux écrits, une seule boîte.</b> WhatsApp, webchat du site, Facebook et Messenger, RCS : un canal de plus n'ajoute pas un écran de plus.</span></div>
    <div><i>2</i><span><b>Budy pré-qualifie.</b> Il répond tout de suite, relève le besoin et les coordonnées, puis passe la main à votre équipe avec l'historique.</span></div>
    <div><i>3</i><span><b>Ouvert quand vos clients écrivent.</b> Le soir et le week-end, la demande est prise et attend votre équipe à l'ouverture.</span></div>
-   <div><i>4</i><span><b>Rien ne se perd.</b> Chaque demande a un responsable, un statut et une relance.</span></div>
+   <div><i>4</i><span><b>Rien ne se perd.</b> Chaque demande a un responsable, un statut et une relance, par WhatsApp, SMS ou RCS.</span></div>
+   <div><i>5</i><span><b>Des statistiques détaillées.</b> Temps de réponse par opérateur, satisfaction client, tags et sujets principaux des demandes.</span></div>
+   <div><i>6</i><span><b>Vos données, à portée de question.</b> Connectez ChatGPT ou Claude par MCP et obtenez toutes les réponses à vos questions sur vos échanges clients.</span></div>
+   <div><i>7</i><span><b>Une mémoire qui suit chaque client.</b> <em class="new">Nouveau</em> Budy se rappelle de vos clients et des échanges précédents : plus besoin de tout redemander.</span></div>
   </div>
   <figure class="phs" style="margin:0;display:block">${carrouselCanaux({ canaux: ['whatsapp', 'instagram', 'rcs'], nom: client, echelle: 0.82, fil: [
     { de: 'client', t: "Bonjour, vous avez ce modèle en stock ? J'en aurais besoin pour samedi.", h: '18:42' },
