@@ -65,20 +65,29 @@ if (!globalThis.__compteurIA && typeof globalThis.fetch === 'function') {
 }
 
 let ready = false;
-// ⚡ Garde de version : les ~50 requêtes de migration ne tournent que si le schéma a changé.
-// À INCRÉMENTER à chaque ajout de table/colonne dans ensureSchema — sinon la migration ne
-// s'exécutera pas en prod. En régime de croisière : 1 seul SELECT par démarrage à froid
-// (au lieu de ~50 allers-retours Neon ≈ 1,5-2,5 s sur chaque fonction).
-// ⚠️ 03/08 : le passage 2→3 a fait re-tourner TOUTE la migration au login → 500 « A server
-// error » en prod (cause exacte à identifier — voir HANDOFF). Hotfix : retour à 2 (la garde
-// court-circuite), la table analyses_appels est créée PARESSEUSEMENT par api/coach*.js.
-const SCHEMA_VERSION = 2;
+// Un seul SELECT par démarrage à froid quand le schéma est à jour.
+// Appliquer les migrations de façon incrémentale pour éviter de rejouer le schéma de base au login.
+const SCHEMA_VERSION = 3;
 export async function ensureSchema() {
   if (ready || !sql) return;
+  let version = 0;
   try {
-    const v = await sql`SELECT valeur FROM config WHERE cle = 'schema_version'`;
-    if (v.length && Number(v[0].valeur) >= SCHEMA_VERSION) { ready = true; return; }
+    const [v] = await sql`SELECT valeur FROM config WHERE cle = 'schema_version'`;
+    version = Number(v?.valeur) || 0;
   } catch (_) { /* table config absente = première installation : on migre */ }
+  if (version < 2) await ensureBaseSchema();
+  if (version < SCHEMA_VERSION) {
+    // L’archivage dans la boîte Signups survit aux réécritures du JSON des fiches Hot Leads.
+    await sql.transaction([
+      sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS signups_archives TEXT[] NOT NULL DEFAULT '{}'`,
+      sql`INSERT INTO config (cle, valeur) VALUES ('schema_version', ${JSON.stringify(SCHEMA_VERSION)})
+        ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur`
+    ]);
+  }
+  ready = true;
+}
+
+async function ensureBaseSchema() {
   await sql`CREATE TABLE IF NOT EXISTS listes (
     id SERIAL PRIMARY KEY,
     nom TEXT NOT NULL,
@@ -93,6 +102,7 @@ export async function ensureSchema() {
   await sql`CREATE INDEX IF NOT EXISTS idx_listes_hash ON listes(criteres_hash)`;
   // Cycle de vie des listes : active (SDR au travail) | nurturing (séquences/rappels encore
   // vivants, alertes conservées) | archivee (terminal). Rétro-compatible avec `archivee`.
+  await sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS archivee BOOLEAN DEFAULT FALSE`;
   await sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS statut TEXT`;
   await sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS statut_depuis TIMESTAMPTZ`;
   await sql`UPDATE listes SET statut = CASE WHEN archivee THEN 'archivee' ELSE 'active' END, statut_depuis = COALESCE(statut_depuis, NOW()) WHERE statut IS NULL`;
@@ -138,7 +148,6 @@ export async function ensureSchema() {
   }
   await sql`CREATE TABLE IF NOT EXISTS etats_api (api TEXT PRIMARY KEY, solde NUMERIC, maj TIMESTAMPTZ DEFAULT NOW())`;
   await sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS createur TEXT DEFAULT NULL`;
-  await sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS archivee BOOLEAN DEFAULT FALSE`;
   await sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS veille BOOLEAN DEFAULT FALSE`;
   await sql`ALTER TABLE listes ADD COLUMN IF NOT EXISTS veille_fin TIMESTAMPTZ DEFAULT NULL`;
   await sql`CREATE TABLE IF NOT EXISTS signaux (
@@ -261,9 +270,6 @@ export async function ensureSchema() {
   await sql`CREATE INDEX IF NOT EXISTS idx_conso_liste ON consommations (liste_id)`;
   await sql`INSERT INTO tarifs (api, prix) VALUES ('soreach', 0.07) ON CONFLICT (api) DO NOTHING`;
   await sql`INSERT INTO tarifs (api, prix) VALUES ('basile', 0.01) ON CONFLICT (api) DO NOTHING`;
-  await sql`INSERT INTO config (cle, valeur) VALUES ('schema_version', ${JSON.stringify(SCHEMA_VERSION)})
-    ON CONFLICT (cle) DO UPDATE SET valeur = ${JSON.stringify(SCHEMA_VERSION)}`;
-  ready = true;
 }
 
 // ── Authentification : jetons signés HMAC ──

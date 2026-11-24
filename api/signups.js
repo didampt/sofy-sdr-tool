@@ -1,10 +1,15 @@
-// /api/signups.js — Dedicated signup inbox and enable action for Sofy Scrap.
+// /api/signups.js — Dedicated signup inbox for Sofy Scrap.
 
+import { createHash } from 'node:crypto';
 import { sql, ensureSchema, verifierToken } from './db.js';
 import { decryptSignupProvisioning } from './signup-provisioning.js';
 
 function signupInfo(e) {
   return (e && (e.signup || (e.signal && e.signal.signup))) || null;
+}
+
+function isSignup(e) {
+  return e?.signal?.type === 'signup' || Boolean(signupInfo(e));
 }
 
 function signupContact(e) {
@@ -23,7 +28,18 @@ function signupKey(e) {
   return `${(e && e.signal && e.signal.date) || ''}${(e && e.nom) || ''}`;
 }
 
-function normalizeSignup(e, idx, listId) {
+function signupArchiveKey(e) {
+  const info = signupInfo(e);
+  const identity = info?.otp_token ? ['otp', info.otp_token] : [
+    'fiche',
+    e.signal?.date || info?.submitted_at || e.date_hotlead || '',
+    info?.payload?.email || signupContact(e).email || e.nom || ''
+  ];
+  return createHash('sha256').update(JSON.stringify(identity)).digest('hex');
+}
+
+function normalizeSignup(e, idx, list) {
+  const key = signupKey(e);
   const info = signupInfo(e) || {};
   const payload = info.payload || {};
   const company = payload.company || {};
@@ -35,10 +51,11 @@ function normalizeSignup(e, idx, listId) {
   const enabled = Boolean(enabledAt || info.enabled === true);
   const banned = Boolean(bannedAt || info.banned === true);
   return {
-    key: signupKey(e),
-    fiche_key: signupKey(e),
+    key,
+    fiche_key: key,
     index: idx,
-    list_id: listId,
+    list_id: list.id,
+    archived: list.signups_archives.has(signupArchiveKey(e)),
     company_name: company.name || e.nom || '',
     country: payload.country || e.region || '',
     country_code: payload.country_code || '',
@@ -63,8 +80,8 @@ function normalizeSignup(e, idx, listId) {
 }
 
 async function getHotLeadList() {
-  const rows = await sql`SELECT id, entreprises FROM listes WHERE criteres->>'auto' = 'hotleads' LIMIT 1`;
-  return rows[0] || null;
+  const [list] = await sql`SELECT id, entreprises, signups_archives FROM listes WHERE criteres->>'auto' = 'hotleads' LIMIT 1`;
+  return list ? { ...list, signups_archives: new Set(list.signups_archives) } : null;
 }
 
 function backendError(data, rawBody, status) {
@@ -157,28 +174,36 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       const signups = entreprises
         .map((e, idx) => ({ e, idx }))
-        .filter(({ e }) => ((e.signal && e.signal.type) || '') === 'signup' || signupInfo(e))
-        .map(({ e, idx }) => normalizeSignup(e, idx, list ? list.id : null))
+        .filter(({ e }) => isSignup(e))
+        .map(({ e, idx }) => normalizeSignup(e, idx, list))
         .sort((a, b) => new Date(b.submitted_at || 0) - new Date(a.submitted_at || 0));
       return res.status(200).json({
         ok: true,
         signups,
-        pending_count: signups.filter(s => s.pending).length
+        pending_count: signups.filter(s => s.pending && !s.archived).length
       });
     }
 
     if (req.method === 'POST') {
       const { key, action } = req.body || {};
       const signupAction = action || 'enable';
-      if (!['enable', 'ban'].includes(signupAction)) return res.status(400).json({ erreur: 'action invalide' });
+      if (!['enable', 'ban', 'archive'].includes(signupAction)) return res.status(400).json({ erreur: 'action invalide' });
       if (!list) return res.status(404).json({ erreur: 'Liste Hot Leads introuvable' });
       if (!key) return res.status(400).json({ erreur: 'key requis' });
 
-      const idx = entreprises.findIndex(e => signupKey(e) === key);
+      const idx = entreprises.findIndex(e => isSignup(e) && signupKey(e) === key);
       if (idx < 0) return res.status(404).json({ erreur: 'Signup introuvable' });
 
+      if (signupAction === 'archive') {
+        operation = 'archiver_signup';
+        const archiveKey = signupArchiveKey(entreprises[idx]);
+        await sql`UPDATE listes SET signups_archives = array_append(signups_archives, ${archiveKey})
+          WHERE id = ${list.id} AND NOT (${archiveKey} = ANY(signups_archives))`;
+        return res.status(200).json({ ok: true });
+      }
+
       const current = entreprises[idx];
-      const normalized = normalizeSignup(current, idx, list.id);
+      const normalized = normalizeSignup(current, idx, list);
       if (!normalized.pending) {
         return res.status(200).json({
           ok: true,
@@ -196,7 +221,7 @@ export default async function handler(req, res) {
         const latestIdx = latestEntreprises.findIndex(e => signupKey(e) === key);
         if (!latestList || latestIdx < 0) return res.status(404).json({ erreur: 'Signup introuvable après rechargement' });
         const latest = latestEntreprises[latestIdx];
-        const latestNormalized = normalizeSignup(latest, latestIdx, latestList.id);
+        const latestNormalized = normalizeSignup(latest, latestIdx, latestList);
         if (!latestNormalized.pending) {
           return res.status(200).json({
             ok: true,
@@ -223,7 +248,7 @@ export default async function handler(req, res) {
           }
         };
         await sql`UPDATE listes SET entreprises = ${JSON.stringify(latestEntreprises)} WHERE id = ${latestList.id}`;
-        return res.status(200).json({ ok: true, signup: normalizeSignup(latestEntreprises[latestIdx], latestIdx, latestList.id) });
+        return res.status(200).json({ ok: true, signup: normalizeSignup(latestEntreprises[latestIdx], latestIdx, latestList) });
       }
 
       if (!normalized.can_enable) return res.status(400).json({ erreur: 'Informations insuffisantes pour créer ou activer ce signup' });
@@ -272,7 +297,7 @@ export default async function handler(req, res) {
         }
       };
       await sql`UPDATE listes SET entreprises = ${JSON.stringify(latestEntreprises)} WHERE id = ${latestList.id}`;
-      return res.status(200).json({ ok: true, signup: normalizeSignup(latestEntreprises[latestIdx], latestIdx, latestList.id), backend });
+      return res.status(200).json({ ok: true, signup: normalizeSignup(latestEntreprises[latestIdx], latestIdx, latestList), backend });
     }
 
     return res.status(405).json({ erreur: 'Méthode non autorisée' });

@@ -54,7 +54,7 @@ h1{font-size:30px;letter-spacing:-.5px;margin-bottom:6px}
 .chips{display:flex;flex-wrap:wrap;gap:10px}
 .chip{padding:10px 16px;border-radius:99px;border:1.5px solid var(--line);background:#fff;font-size:14px;font-weight:500;color:var(--ink);transition:.15s}
 .chip:hover{border-color:var(--accent)}
-.chip.sel{background:var(--accent);border-color:var(--accent);color:#fff}
+.chip.sel,#signups-onglets .chip[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
 .naf-results{margin-top:10px;border:1px solid var(--line);border-radius:11px;overflow:hidden;display:none}
 .naf-item{display:flex;justify-content:space-between;align-items:center;padding:11px 14px;background:#fff;border-bottom:1px solid var(--line);cursor:pointer;font-size:14px}
 .naf-item:last-child{border-bottom:none}
@@ -1128,8 +1128,13 @@ title="Sans rien cocher : génère directement les N premiers prospects du gisem
     <section class="view" id="view-signups">
       <div class="eyebrow">Demandes entrantes</div>
       <h1>🆕 Signups</h1>
-      <p class="sub">Nouveaux comptes créés depuis signup.sofy.fr. Un clic ouvre la fiche Hot Lead complète avec les mêmes actions SDR.</p>
-      <div id="signups-liste"><p style="color:var(--ink-soft)">Chargement…</p></div>
+      <p class="sub">Demandes d’inscription reçues depuis signup.sofy.fr. Ouvrez une demande pour consulter sa fiche Hot Lead.</p>
+      <div class="chips" id="signups-onglets" role="tablist" aria-label="Demandes d’inscription" onkeydown="deplacerOngletSignups(event)" style="margin-bottom:18px">
+        <button type="button" class="chip" id="signups-tab-nouveau" role="tab" aria-selected="true" aria-controls="signups-nouveau" onclick="choisirOngletSignups(this)">Nouveau</button>
+        <button type="button" class="chip" id="signups-tab-archive" role="tab" aria-selected="false" aria-controls="signups-archive" tabindex="-1" onclick="choisirOngletSignups(this)">Archivé</button>
+      </div>
+      <div id="signups-nouveau" role="tabpanel" aria-labelledby="signups-tab-nouveau" tabindex="0"></div>
+      <div id="signups-archive" role="tabpanel" aria-labelledby="signups-tab-archive" tabindex="0" hidden></div>
     </section>
 
     <section class="view" id="view-history">
@@ -2659,7 +2664,7 @@ const APIS = [
  ["phantom","PhantomBuster","Signaux LinkedIn : likes, changement de job, concurrents","key"],
  ["rb2b","RB2B","Identification des visiteurs du site sofy.fr","key"]
 ];
-const VERSION='v415';
+const VERSION='v416';
 // F3 — Statuts d'appel (liste nettoyée, 17 options). score = impact sur la qualité de la liste.
 const STATUTS_APPEL=[
  {v:'RDV pris',e:'🤝',score:30,cat:'good'},
@@ -14212,30 +14217,47 @@ function signupSubtitle(s){
  const contact=s.contact||{};
  return [contact.full_name,contact.email,contact.phone,s.city,s.country].filter(Boolean).join(' · ');
 }
+let signupsLoadId=0;
 async function chargerSignupBadge(){
- const b=document.getElementById('signups-badge');
- if(!b)return;
+ const loadId=signupsLoadId;
  try{
   const r=await api('/api/signups');
   const d=await r.json();
-  const n=Number(d.pending_count||0);
-  if(n>0){b.textContent=n;b.style.display='inline-block';}
-  else b.style.display='none';
+  if(r.ok&&loadId===signupsLoadId)majBadgeSignups(d.pending_count);
  }catch(_){}
 }
+function choisirOngletSignups(onglet){
+ document.querySelectorAll('#signups-onglets [role="tab"]').forEach(tab=>{
+  const actif=tab===onglet;
+  tab.setAttribute('aria-selected',actif);
+  tab.tabIndex=actif?0:-1;
+  document.getElementById(tab.getAttribute('aria-controls')).hidden=!actif;
+ });
+}
+function deplacerOngletSignups(event){
+ if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+ const [nouveau,archive]=event.currentTarget.querySelectorAll('[role="tab"]');
+ const prochain=event.key==='Home'?nouveau:event.key==='End'||event.target===nouveau?archive:nouveau;
+ event.preventDefault();
+ choisirOngletSignups(prochain);
+ prochain.focus();
+}
 async function chargerSignups(){
- const zone=document.getElementById('signups-liste');
- if(!zone)return;
- zone.innerHTML='<p style="color:var(--ink-soft)">Chargement…</p>';
+ const loadId=++signupsLoadId;
+ const nouveau=document.getElementById('signups-nouveau');
+ const archive=document.getElementById('signups-archive');
+ const message=texte=>`<p style="color:var(--ink-soft)">${htmlSafe(texte)}</p>`;
+ nouveau.innerHTML=archive.innerHTML=message('Chargement…');
  try{
   const r=await api('/api/signups');
   const d=await r.json();
-  if(d.erreur){zone.innerHTML='<p style="color:var(--ink-soft)">'+htmlSafe(d.erreur)+'</p>';return;}
+  if(loadId!==signupsLoadId)return;
+  if(!r.ok||d.erreur)throw new Error(d.erreur||'Chargement impossible');
   majBadgeSignups(d.pending_count);
   const signups=d.signups||[];
-  if(!signups.length){zone.innerHTML='<p style="color:var(--ink-soft)">Aucune demande signup pour l’instant.</p>';return;}
-  zone.innerHTML=signups.map(s=>rendreSignup(s)).join('');
- }catch(e){zone.innerHTML='<p style="color:var(--ink-soft)">Erreur : '+htmlSafe(e.message)+'</p>';}
+  nouveau.innerHTML=signups.filter(s=>!s.archived).map(rendreSignup).join('')||message('Aucune demande dans cet onglet.');
+  archive.innerHTML=signups.filter(s=>s.archived).map(rendreSignup).join('')||message('Aucune demande archivée.');
+ }catch(e){if(loadId===signupsLoadId)nouveau.innerHTML=archive.innerHTML=message('Erreur : '+e.message);}
 }
 function majBadgeSignups(n){
  const b=document.getElementById('signups-badge');
@@ -14250,12 +14272,16 @@ function rendreSignup(s){
  const sub=htmlSafe(signupSubtitle(s));
  const vat=s.tva_id?`<span class="badge b-new">TVA ${htmlSafe(s.tva_id)}</span>`:'';
  const siret=s.siret?`<span class="badge b-gmb">SIRET ${htmlSafe(s.siret)}</span>`:'';
- const ficheKey=jsArg(s.fiche_key||s.key);
+ const key=jsArg(s.key);
+ const ficheKey=s.fiche_key?jsArg(s.fiche_key):key;
  const enable=s.pending&&s.can_enable
-  ?`<button class="act act-call" style="background:#10B981;color:#fff" onclick="event.stopPropagation();activerSignup('${jsArg(s.key)}',this)">✅ Activer le compte</button>`
+  ?`<button class="act act-call" style="background:#10B981;color:#fff" onclick="event.stopPropagation();activerSignup('${key}',this)">✅ Activer le compte</button>`
   :'';
  const ban=s.pending
-  ?`<button class="act act-del" onclick="event.stopPropagation();bannirSignup('${jsArg(s.key)}')">Bannir</button>`
+  ?`<button class="act act-del" onclick="event.stopPropagation();bannirSignup('${key}')">Bannir</button>`
+  :'';
+ const archive=!s.archived
+  ?`<button class="act act-export" onclick="event.stopPropagation();archiverSignup('${key}',this)">Archiver</button>`
   :'';
  return `<div class="fiche signup-card" style="cursor:pointer" onclick="ouvrirSignupFiche(${Number(s.list_id)||0},'${ficheKey}')">
   <div class="fiche-head">
@@ -14264,7 +14290,7 @@ function rendreSignup(s){
     <div class="lead-meta">${sub||'Contact non renseigné'} · ${date}</div>
     <div class="badges">${signupStatut(s)}${signupSmsInfo(s)}${siret}${vat}${s.organization_id?`<span class="badge b-new">Org ${htmlSafe(s.organization_id)}</span>`:''}</div>
    </div>
-   <div class="act-row signup-actions" style="border:0;padding:0;margin:0">${enable}${ban}<button class="act act-copy" onclick="event.stopPropagation();ouvrirSignupFiche(${Number(s.list_id)||0},'${ficheKey}')">Ouvrir la fiche →</button></div>
+   <div class="act-row signup-actions" style="border:0;padding:0;margin:0">${enable}${ban}${archive}<button class="act act-copy" onclick="event.stopPropagation();ouvrirSignupFiche(${Number(s.list_id)||0},'${ficheKey}')">Ouvrir la fiche →</button></div>
   </div>
  </div>`;
 }
@@ -14274,6 +14300,19 @@ async function ouvrirSignupFiche(listId,ficheKey){
  await ouvrirListe(listId,ficheKey);
  document.querySelectorAll('.nav-btn').forEach(x=>x.classList.remove('active'));
  const b=document.querySelector('[data-view="signups"]');if(b)b.classList.add('active');
+}
+async function archiverSignup(key,button){
+ if(button.disabled)return;
+ button.disabled=true;
+ button.textContent='Archivage…';
+ try{
+  const r=await api('/api/signups',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:decodeURIComponent(key),action:'archive'})});
+  const d=await r.json();
+  if(!r.ok||!d.ok)throw new Error(d.erreur||'Archivage impossible');
+  toast('Demande archivée');
+  await chargerSignups();
+ }catch(e){toast('Erreur : '+e.message);}
+ finally{button.disabled=false;button.textContent='Archiver';}
 }
 async function activerSignup(key,button){
  if(button&&button.disabled)return;
