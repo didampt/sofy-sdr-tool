@@ -35,11 +35,25 @@ The existing GTM container is `GTM-WLQCBNG3`. After `/api/signup` returns HTTP *
 
 The hash derives from the signup reference; the OTP token, email, phone, name and company identifiers are not sent in this event. Session storage and an in-memory guard suppress repeat emissions of the same reference. Previews and unsuccessful requests emit no conversion. This event means the signup was accepted, **including requests awaiting manual SMS review and before commercial activation**. Saved manual-review requests also run the same best-effort HubSpot acquisition sync as created accounts. Later SDR activation must not emit a second signup conversion. Browser blocking/closing the page can prevent delivery; this is not a durable server-side conversion queue.
 
+### Landing page confirmation for AdPremier
+
+On `signup.sofy.fr`, the same accepted submission also queues this separate data layer event once the HubSpot consent banner allows advertising:
+
+```js
+{ event: 'form_LP', mail: 'contact@example.com', tel: '+33612345678' }
+```
+
+The address is trimmed and lowercased, and the phone number uses E.164. The event fires once per accepted submission. If consent arrives after confirmation, it can still fire while the same page is open. Session storage holds only the opaque deduplication reference.
+
+For future landing pages, initialize `initFormLpTracking` from `public/tracking.js` before the HubSpot consent tracker loads. Call the returned function with `{ reference, mail, tel }` after the backend confirms the submission, using a stable opaque reference and an E.164 phone number. Disable it on previews and use an explicit production hostname check for each landing page.
+
+In GTM, use `form_LP` as the Custom Event trigger and map `mail` and `tel` from Data Layer Variables to Google Ads Enhanced Conversions user-provided data. Keep those fields out of GA4 parameters. If the existing `sign_up` trigger already counts the same conversion in Ads, configure a single trigger for the Ads conversion action to avoid counting it twice. The existing `sign_up` event can continue to drive GA4.
+
 ### GTM / AdPremier configuration required
 
-1. Use a **Custom Event** trigger named exactly `sign_up`, restricted to `signup.sofy.fr`.
-2. Attach a GA4 Event tag with event name `sign_up` and `method` from a Data Layer Variable. Mark `sign_up` as a GA4 key event.
-3. Attach a Google Ads Conversion Tracking tag for the signup action, using the conversion ID and label from AdPremier. Set its Transaction ID from the Data Layer Variable `transaction_id`; use the **One** counting option for this lead action.
+1. Restrict the signup tags to `signup.sofy.fr`.
+2. Use the **Custom Event** trigger `sign_up` for the GA4 tag, with `method` from a Data Layer Variable. Mark `sign_up` as a GA4 key event.
+3. Use the **Custom Event** trigger `form_LP` for the Google Ads signup action, using the conversion ID and label from AdPremier. Set its Transaction ID from the Data Layer Variable `transaction_id` populated by the preceding `sign_up` event. Use the **One** counting option for this lead action.
 4. Configure the Google tag / Conversion Linker on the marketing site, signup and app, with compatible domain cookie settings. Enable Google Ads auto-tagging. Keep consent handling in the existing GTM setup.
 5. Avoid counting the same signup twice in Ads: if the direct Ads conversion is the primary action, do not also count a GA4 import as a second primary action for that signup.
 6. Validate a signup in Tag Assistant, GA4 DebugView and the Ads conversion diagnostics. Publishing app code does not publish GTM changes. No live container or Ads configuration was changed here.
@@ -62,7 +76,7 @@ This links the browser's visitor cookie and earlier activity to the contact. Hub
 
 Identification is sent only after acceptance (HTTP 201 or saved manual review HTTP 202) and after the tracker has reported analytics consent. A pending confirmation waits in memory if consent has not yet been granted. Denying analytics prevents identity/confirmation delivery; consenting later on the same page delivers it once. Blocked scripts, storage restrictions and tracking failures do not block signup. No identity is sent for form entry, OTP requests, errors, or UI previews. Localhost and Vercel preview hosts do not load the live HubSpot tracker.
 
-HubSpot receives the email directly through its tracker; Google receives only the existing `sign_up` event with method and opaque transaction ID. Separate duplicate guards prevent Google tracking failure from suppressing HubSpot attribution or vice versa. The loader's optional advertising, collected-forms and interactive modules are not enabled in the signup CSP; native analytics and the consent banner are allowed. In particular, this does not auto-capture the signup/password form or count submit clicks before validation.
+HubSpot receives the email directly through its tracker. `sign_up` carries the method and opaque transaction ID, while `form_LP` carries the contact fields after advertising consent. Separate duplicate guards prevent Google tracking failure from suppressing HubSpot attribution or vice versa. The signup CSP allows native analytics and the consent banner; the loader’s optional advertising, collected-forms and interactive modules are disabled.
 
 ### HubSpot reporting and account settings
 

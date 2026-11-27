@@ -23,23 +23,59 @@ export function initAttribution(win, doc) {
   return { original, current: { ...current, seen_at: new Date().toISOString() } };
 }
 
-// One event per server-accepted signup, including saved manual-review requests. Never include form data or click IDs.
+// Acceptance includes saved manual-review requests.
 export function isAcceptedSignup(status, data) {
   return data?.ok === true && (status === 201 || (status === 202 && data.manual_review === true));
 }
 
-export function trackConfirmedSignup(win, { status, data, preview = false, reference }) {
-  const accepted = isAcceptedSignup(status, data);
-  if (preview || !accepted || data?.ok !== true || !reference) return false;
-  const key = `sofy_signup_conversion:${reference}`;
+function pushConversionOnce(win, key, event) {
   if (!win.__sofySignupConversions) win.__sofySignupConversions = new Set();
   if (win.__sofySignupConversions.has(key)) return false;
   try { if (win.sessionStorage.getItem(key)) return false; } catch {}
   try {
     win.dataLayer = win.dataLayer || [];
-    win.dataLayer.push({ event: 'sign_up', method: 'self_service', transaction_id: reference });
+    win.dataLayer.push(event);
   } catch { return false; }
   win.__sofySignupConversions.add(key);
   try { win.sessionStorage.setItem(key, '1'); } catch {}
   return true;
+}
+
+export function trackConfirmedSignup(win, { status, data, preview = false, reference }) {
+  if (preview || !isAcceptedSignup(status, data) || !reference) return false;
+  return pushConversionOnce(win, `sofy_signup_conversion:${reference}`, {
+    event: 'sign_up', method: 'self_service', transaction_id: reference
+  });
+}
+
+// Call the returned function after the form backend confirms acceptance.
+export function initFormLpTracking(win, { preview = false } = {}) {
+  if (preview) return () => false;
+
+  let advertisingAllowed = false;
+  let pending = null;
+
+  function flush() {
+    if (!advertisingAllowed || !pending) return false;
+    const { reference, mail, tel } = pending;
+    pending = null;
+    return pushConversionOnce(win, `sofy_form_LP:${reference}`, { event: 'form_LP', mail, tel });
+  }
+
+  try {
+    win._hsp = win._hsp || [];
+    win._hsp.push(['addPrivacyConsentListener', consent => {
+      advertisingAllowed = consent?.categories
+        ? consent.categories.advertisement === true
+        : consent?.allowed === true;
+      queueMicrotask(flush);
+    }]);
+  } catch { return () => false; }
+
+  return ({ reference, mail, tel }) => {
+    const email = String(mail || '').trim().toLowerCase();
+    if (!reference || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !/^\+[1-9]\d{1,14}$/.test(tel || '')) return false;
+    pending = { reference, mail: email, tel };
+    return flush();
+  };
 }
