@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
-import { initAttribution, initFormLpTracking, isAcceptedSignup, trackConfirmedSignup } from '../public/tracking.js';
+import { initAttribution, trackConfirmedSignup } from '../public/tracking.js';
 
 function storage() {
   const data = new Map();
@@ -45,41 +45,6 @@ test('storage and tag failures cannot break the signup UI', () => {
   assert.equal(trackConfirmedSignup({ dataLayer: { push() { throw Error('tag failed'); } } }, success), false);
 });
 
-test('form_LP waits for advertising consent and queues one event per confirmation', async () => {
-  const win = { sessionStorage: storage() };
-  const confirmation = { reference: 'opaque', mail: ' Test@Example.com ', tel: '+33612345678' };
-  const track = initFormLpTracking(win);
-  const consent = win._hsp[0][1];
-  assert.equal(track(confirmation), false);
-  consent({ allowed: true, categories: { analytics: true, advertisement: false } });
-  await Promise.resolve();
-  assert.equal(win.dataLayer, undefined);
-  consent({ categories: { advertisement: true } });
-  await Promise.resolve();
-  assert.deepEqual(win.dataLayer, [{ event: 'form_LP', mail: 'test@example.com', tel: '+33612345678' }]);
-  assert.equal(track(confirmation), false);
-  const afterReload = { sessionStorage: win.sessionStorage };
-  const retry = initFormLpTracking(afterReload);
-  afterReload._hsp[0][1]({ allowed: true });
-  assert.equal(retry(confirmation), false);
-  assert.equal(afterReload.dataLayer, undefined);
-});
-
-test('form_LP ignores previews and invalid contacts, and isolates tag failures', () => {
-  const win = {};
-  const confirmation = { reference: 'opaque', mail: 'test@example.com', tel: '+33612345678' };
-  assert.equal(initFormLpTracking(win, { preview: true })(confirmation), false);
-  assert.equal(win._hsp, undefined);
-  const track = initFormLpTracking(win);
-  win._hsp[0][1]({ allowed: true });
-  assert.equal(track({ ...confirmation, mail: '' }), false);
-  assert.equal(track({ ...confirmation, tel: '0612345678' }), false);
-  assert.equal(track({ ...confirmation, reference: '' }), false);
-  assert.equal(win.dataLayer, undefined);
-  win.dataLayer = { push() { throw Error('tag blocked'); } };
-  assert.equal(track(confirmation), false);
-});
-
 test('real submission flow counts saved manual review and created accounts, excluding errors', async () => {
   const source = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
   const submit = source.slice(source.indexOf('async function submitSignup('), source.indexOf('function validatedPayload('));
@@ -91,26 +56,15 @@ test('real submission flow counts saved manual review and created accounts, excl
     [401, { error: 'Invalid OTP' }, 0],
     [502, { error: 'Backend failed' }, 0]
   ]) {
-    const win = { sessionStorage: storage() };
-    const trackFormLp = initFormLpTracking(win);
-    win._hsp[0][1]({ categories: { advertisement: true } });
-    const context = vm.createContext({ window: win, trackConfirmedSignup, isAcceptedSignup, trackFormLp,
-      trackHubSpotSignup: () => false,
-      parsePhoneNumberFromString(phone, country) {
-        assert.equal(phone, '06 12 34 56 78');
-        assert.equal(country, 'FR');
-        return { number: '+33612345678' };
-      },
+    const win = {};
+    const context = vm.createContext({ window: win, trackConfirmedSignup, trackHubSpotSignup: () => false,
       fetch: async () => new Response(JSON.stringify(data), { status }),
       pendingSignupPayload: {}, otpValue: () => '123456', otpPayload: x => x,
       submitBtn: {}, resendOtpBtn: {}, missingOtpBtn: {}, previewMode: '', signupCompleted: false,
       setError() {}, resetOtpStep() {}, renderReceivedView() {}, showExistingEmailError() {}
     });
-    await vm.runInContext(`${submit}\nsubmitSignup({email:'test@example.com',phone:'06 12 34 56 78',phone_country:'FR'});`, context);
-    assert.deepEqual(win.dataLayer || [], expected ? [
-      { event: 'sign_up', method: 'self_service', transaction_id: data.conversion.id },
-      { event: 'form_LP', mail: 'test@example.com', tel: '+33612345678' }
-    ] : [], `HTTP ${status}`);
+    await vm.runInContext(`${submit}\nsubmitSignup({});`, context);
+    assert.equal(win.dataLayer?.length || 0, expected, `HTTP ${status}`);
     assert.equal(context.signupCompleted, status < 400, `completion for HTTP ${status}`);
   }
 });

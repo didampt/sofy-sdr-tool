@@ -1,5 +1,5 @@
 import { initHubSpotAttribution } from './hubspot.js';
-import { initAttribution, initFormLpTracking, isAcceptedSignup, trackConfirmedSignup } from './tracking.js';
+import { initAttribution, trackConfirmedSignup } from './tracking.js';
 import { getCountryCallingCode, parsePhoneNumberFromString } from 'https://cdn.jsdelivr.net/npm/libphonenumber-js@1.11.20/+esm';
 
 const ISO_COUNTRIES = [
@@ -157,12 +157,8 @@ let previewMode = '';
 let pendingSignupPayload = null;
 const searchCache = new Map();
 const attribution = initAttribution(window, document);
-const trackingPreview = Boolean(requestedPreviewState() || isReceivedViewRequested());
-const trackFormLp = initFormLpTracking(window, {
-  preview: trackingPreview || window.location.hostname !== 'signup.sofy.fr'
-});
 const trackHubSpotSignup = initHubSpotAttribution(window, document, {
-  preview: trackingPreview
+  preview: Boolean(requestedPreviewState() || isReceivedViewRequested())
 });
 
 const countryCombo = createCombo({
@@ -675,13 +671,6 @@ async function submitSignup(payload, manualSmsReview = false) {
       status: response.status, data, preview: previewMode,
       reference: data.conversion?.id, email: finalPayload.email
     });
-    if (!previewMode && isAcceptedSignup(response.status, data)) {
-      trackFormLp({
-        reference: data.conversion?.id,
-        mail: finalPayload.email,
-        tel: parsePhoneNumberFromString(finalPayload.phone, finalPayload.phone_country || finalPayload.country_code)?.number
-      });
-    }
     signupCompleted = true;
     renderReceivedView();
   } catch (err) {
